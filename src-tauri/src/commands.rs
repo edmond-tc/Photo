@@ -120,6 +120,28 @@ pub async fn choose_watched_folder(app: AppHandle) -> Result<Option<String>, Str
 }
 
 #[tauri::command]
+pub async fn choisir_logo_boutique(app: AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
+        .file()
+        .add_filter("Image", &["png", "jpg", "jpeg", "bmp"])
+        .pick_file(move |fichier| {
+            let _ = tx.send(fichier);
+        });
+    let picked = rx.recv().map_err(|e| e.to_string())?;
+
+    let Some(chemin) = picked else {
+        return Ok(None);
+    };
+    let path_str = chemin.to_string();
+
+    let state = app.state::<DbState>();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::set_setting(&conn, "boutique_logo_chemin", &path_str).map_err(|e| e.to_string())?;
+    Ok(Some(path_str))
+}
+
+#[tauri::command]
 pub fn open_file(state: State<DbState>, id: i64) -> Result<(), String> {
     let path = queue_item_path(&state, id)?;
     files::shell_open(&path, "open")
@@ -153,6 +175,7 @@ pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value,
         "whatsapp": db::get_setting(&conn, "boutique_whatsapp"),
         "url_verification_maj": db::get_setting(&conn, "url_verification_maj"),
         "dossier_sauvegarde": db::get_setting(&conn, "dossier_sauvegarde"),
+        "logo_chemin": db::get_setting(&conn, "boutique_logo_chemin"),
     }))
 }
 

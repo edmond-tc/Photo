@@ -281,9 +281,14 @@ async function remplirEmployes(selectEl) {
 
 async function ouvrirEncaissement(item) {
   idEncaissementEnCours = item.id;
+  const indiceFidelite = document.querySelector("#enc-fidelite");
+  indiceFidelite.hidden = true;
   try {
-    const prix = await invoke("calculer_prix", { id: item.id });
-    document.querySelector("#enc-montant").value = prix;
+    const resultat = await invoke("calculer_prix", { id: item.id });
+    document.querySelector("#enc-montant").value = resultat.total;
+    if (resultat.remise_fidelite_appliquee) {
+      indiceFidelite.hidden = false;
+    }
   } catch {
     document.querySelector("#enc-montant").value = 0;
   }
@@ -295,7 +300,7 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
   e.preventDefault();
   const moyen = document.querySelector("#enc-moyen").value;
   try {
-    const transactionId = await invoke("finaliser_commande", {
+    const resultat = await invoke("finaliser_commande", {
       id: idEncaissementEnCours,
       montant: Number(document.querySelector("#enc-montant").value) || 0,
       moyenPaiement: moyen,
@@ -306,10 +311,17 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
     retirerFichier(idEncaissementEnCours);
     if (confirm("Encaissement enregistré. Imprimer le reçu ?")) {
       try {
-        await invoke("imprimer_recu", { transactionId });
+        await invoke("imprimer_recu", { transactionId: resultat.transaction_id });
       } catch (err) {
         alert(`Impossible d'imprimer le reçu : ${err}`);
       }
+    }
+    if (resultat.alerte_entretien_imprimante) {
+      alert(
+        "L'imprimante a dépassé son seuil d'entretien préventif. Pensez à la faire vérifier " +
+          "(nettoyage, changement de pièces d'usure). Vous pourrez réinitialiser ce compteur " +
+          "dans Rapports une fois l'entretien fait."
+      );
     }
   } catch (err) {
     alert(`Impossible d'encaisser : ${err}`);
@@ -481,6 +493,36 @@ async function rendreRapports(corps) {
   `;
   corps.appendChild(resume);
 
+  const impayes = await invoke("list_impayes");
+  if (impayes.length) {
+    const sectionImpayes = document.createElement("section");
+    sectionImpayes.innerHTML = "<h3>Impayés à relancer</h3>";
+    for (const imp of impayes) {
+      const ligne = document.createElement("div");
+      ligne.className = "ligne-liste";
+      const info = document.createElement("div");
+      info.textContent = `${imp.client_name ?? "Client sans nom"} — ${formatFcfa(imp.montant)}`;
+      const sousTexte = document.createElement("div");
+      sousTexte.className = "meta-fichier";
+      sousTexte.textContent = [
+        imp.client_telephone ? `Tél. ${imp.client_telephone} — à relancer` : "Pas de téléphone enregistré",
+        imp.description,
+        formatHeure(imp.created_at),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      ligne.append(info, sousTexte);
+      ligne.appendChild(
+        bouton("Marquer réglé", "btn-discret", async () => {
+          await invoke("marquer_impaye_regle", { transactionId: imp.transaction_id });
+          await ouvrirSection("rapports");
+        })
+      );
+      sectionImpayes.appendChild(ligne);
+    }
+    corps.appendChild(sectionImpayes);
+  }
+
   const stock = await invoke("list_stock");
   const sectionStock = document.createElement("section");
   sectionStock.innerHTML = "<h3>Stock</h3>";
@@ -537,6 +579,61 @@ async function rendreRapports(corps) {
     URL.revokeObjectURL(url);
   });
   corps.appendChild(btnExport);
+
+  const sectionCloture = document.createElement("section");
+  sectionCloture.innerHTML = `
+    <h3>Clôture de caisse (espèces)</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Compte le cash réellement dans le tiroir et compare au total encaissé
+      en espèces aujourd'hui d'après l'application.
+    </p>
+  `;
+  const formCloture = document.createElement("form");
+  formCloture.innerHTML = `
+    <input type="number" placeholder="Montant réellement compté (FCFA)" id="clot-reel" min="0" required />
+    <button type="submit" class="btn-secondaire">Clôturer</button>
+  `;
+  const resultatCloture = document.createElement("p");
+  resultatCloture.className = "chemin-dossier";
+  formCloture.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const totalReel = Number(document.querySelector("#clot-reel").value) || 0;
+    const r = await invoke("cloturer_caisse", { totalReel });
+    resultatCloture.textContent =
+      r.ecart === 0
+        ? `Tout correspond : ${formatFcfa(r.total_attendu)}.`
+        : `Attendu ${formatFcfa(r.total_attendu)}, compté ${formatFcfa(r.total_reel)} — écart de ${formatFcfa(r.ecart)}.`;
+  });
+  sectionCloture.appendChild(formCloture);
+  sectionCloture.appendChild(resultatCloture);
+  corps.appendChild(sectionCloture);
+
+  const sectionImprimante = document.createElement("section");
+  sectionImprimante.innerHTML = "<h3>Entretien imprimante</h3>";
+  sectionImprimante.appendChild(
+    bouton("Entretien effectué — réinitialiser le compteur", "btn-discret", async () => {
+      await invoke("reinitialiser_compteur_imprimante");
+      alert("Compteur réinitialisé.");
+    })
+  );
+  corps.appendChild(sectionImprimante);
+
+  const sectionDemo = document.createElement("section");
+  sectionDemo.innerHTML = "<h3>Démonstration</h3><p style=\"font-size:0.8rem; color:var(--gris-texte-discret)\">Pour montrer le logiciel sans client réel présent.</p>";
+  sectionDemo.appendChild(
+    bouton("Ajouter des exemples de démonstration", "btn-secondaire", async () => {
+      await invoke("activer_mode_demo");
+      alert("Exemples ajoutés à la file d'attente.");
+    })
+  );
+  sectionDemo.appendChild(
+    bouton("Retirer les exemples de démonstration", "btn-discret", async () => {
+      await invoke("desactiver_mode_demo");
+      await chargerFile();
+      alert("Exemples retirés.");
+    })
+  );
+  corps.appendChild(sectionDemo);
 }
 
 async function rendreReglages(corps) {
@@ -575,6 +672,19 @@ async function rendreReglages(corps) {
     alert("Réglages enregistrés.");
   });
   secBoutique.appendChild(formBoutique);
+
+  const logoActuel = document.createElement("p");
+  logoActuel.className = "chemin-dossier";
+  logoActuel.textContent = params.logo_chemin
+    ? `Logo actuel : ${params.logo_chemin}`
+    : "Aucun logo — les reçus seront en texte simple.";
+  secBoutique.appendChild(logoActuel);
+  secBoutique.appendChild(
+    bouton("Choisir un logo (pour les reçus)…", "btn-secondaire", async () => {
+      const chemin = await invoke("choisir_logo_boutique");
+      if (chemin) await ouvrirSection("reglages");
+    })
+  );
   corps.appendChild(secBoutique);
 
   // Grille tarifaire

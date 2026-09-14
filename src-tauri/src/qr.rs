@@ -16,7 +16,10 @@ pub struct ServerInfo {
 pub fn build_server_info() -> Result<ServerInfo, String> {
     let ip = local_ip_address::local_ip().map_err(|_| {
         "Impossible de déterminer l'adresse Wi-Fi locale du PC. Vérifiez que le partage de \
-         connexion (Mobile Hotspot) est actif dans les paramètres Windows."
+         connexion (Mobile Hotspot) est actif dans les paramètres Windows (bouton ci-dessous). \
+         Si ça ne s'active toujours pas : certaines cartes Wi-Fi ne peuvent pas être à la fois \
+         connectées à internet ET créer un point d'accès — désactivez temporairement le Wi-Fi \
+         internet du PC, ou utilisez le dossier surveillé/la clé USB en attendant."
             .to_string()
     })?;
 

@@ -85,6 +85,21 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
             nom   TEXT NOT NULL UNIQUE,
             actif INTEGER NOT NULL DEFAULT 1
         );
+
+        CREATE TABLE IF NOT EXISTS clotures_caisse (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            date           TEXT NOT NULL,
+            total_attendu  INTEGER NOT NULL,
+            total_reel     INTEGER NOT NULL,
+            ecart          INTEGER NOT NULL,
+            created_at     TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS imprimante_compteur (
+            cle                       TEXT PRIMARY KEY,
+            feuilles_depuis_entretien INTEGER NOT NULL DEFAULT 0,
+            seuil_entretien           INTEGER NOT NULL DEFAULT 2000
+        );
         ",
     )?;
 
@@ -135,6 +150,12 @@ fn seed_defaults(conn: &Connection) -> rusqlite::Result<()> {
             )?;
         }
     }
+
+    conn.execute(
+        "INSERT OR IGNORE INTO imprimante_compteur (cle, feuilles_depuis_entretien, seuil_entretien)
+         VALUES ('principale', 0, 2000)",
+        [],
+    )?;
 
     Ok(())
 }

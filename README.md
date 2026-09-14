@@ -79,8 +79,14 @@ charges) ont une première implémentation :
   volumineux — affichés comme avertissements, jamais bloquants (cf.
   "Limites connues").
 - **Étape 5** — Suivi financier (encaissement espèces/Mobile Money/crédit),
-  stock papier/toner avec alerte, dépenses, employés, rapport du jour,
-  export CSV des transactions.
+  reçu imprimable après chaque encaissement (texte simple, ou HTML avec
+  logo si configuré), stock papier/toner avec alerte, dépenses, employés,
+  rapport du jour, export CSV des transactions (avec BOM UTF-8 pour un
+  affichage correct des accents dans Excel), clôture de caisse (écart
+  espèces attendu/compté), rappel des impayés, remise fidélité automatique
+  (10% à partir de 5 visites payées du même numéro de téléphone), compteur
+  d'entretien imprimante (alerte au-delà d'un seuil de feuilles), mode
+  démonstration (exemples factices pour un agent terrain sans client réel).
 - **Étape 6** — Menu latéral (⋮) avec Commandes en cours / Historique /
   Recherche client / Rapports / Réglages, dans l'esprit Claude.ai décrit au
   cahier des charges.
@@ -120,7 +126,25 @@ charges) ont une première implémentation :
   vérification des mises à jour"). Vide par défaut = fonctionnalité
   inactive, aucune erreur affichée.
 - Non testé sur un vrai PC Windows (7/8/10/11, antivirus/SmartScreen) —
-  seule la compilation via GitHub Actions est vérifiée automatiquement.
+  seule la compilation via GitHub Actions est vérifiée automatiquement. Voir
+  [`docs/guide-installation-terrain.md`](docs/guide-installation-terrain.md)
+  pour la marche à suivre face à l'écran SmartScreen.
+- **Alerte "carte Wi-Fi incapable de faire point d'accès + internet en même
+  temps"** : pas de détection automatique (nécessiterait l'API WinRT de
+  tethering, non testable ici) — le message d'erreur du QR explique le cas
+  et propose une solution de contournement, mais ne le détecte pas
+  précisément.
+- **Secret de licence codé en dur** dans `license.rs` : le dépôt étant
+  privé, il n'est pas exposé publiquement, mais reste extractible du
+  binaire compilé par quelqu'un de déterminé. À changer avant une
+  distribution à grande échelle (voir plus haut).
+- **Anti-piratage renforcé mais pas absolu** : la date de début d'essai est
+  écrite à la fois dans la base SQLite et le registre Windows (la plus
+  ancienne des deux fait foi) — supprimer un seul des deux ne suffit plus à
+  relancer l'essai, mais supprimer les deux (ou modifier le registre à la
+  main) reste possible pour quelqu'un de déterminé. Pas de solution
+  totalement étanche sans vérification serveur, ce que le cahier des
+  charges exclut explicitement (logiciel 100% hors ligne).
 
 ## Structure
 

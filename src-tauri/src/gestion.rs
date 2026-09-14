@@ -48,18 +48,34 @@ fn tarif_prix(conn: &rusqlite::Connection, service: &str) -> i64 {
     .unwrap_or(0)
 }
 
+const SEUIL_VISITES_FIDELITE: i64 = 5;
+const REMISE_FIDELITE_POURCENT: i64 = 10;
+
+#[derive(serde::Serialize)]
+pub struct PrixCalcule {
+    pub total: i64,
+    pub remise_fidelite_appliquee: bool,
+}
+
 /// Calcule un prix indicatif pour un fichier de la file, à partir de la
 /// grille tarifaire de la boutique. Le gérant peut toujours l'ajuster à la
-/// main avant d'encaisser (cf. `finaliser_commande`).
+/// main avant d'encaisser (cf. `finaliser_commande`). Applique
+/// automatiquement une remise fidélité (section 5bis) si le numéro de
+/// téléphone du client a déjà réglé plusieurs commandes précédentes.
 #[tauri::command]
-pub fn calculer_prix(state: State<DbState>, id: i64) -> Result<i64, String> {
+pub fn calculer_prix(state: State<DbState>, id: i64) -> Result<PrixCalcule, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
 
-    let (copies, couleur, finitions_json): (i64, bool, Option<String>) = conn
+    let (copies, couleur, finitions_json, client_telephone): (
+        i64,
+        bool,
+        Option<String>,
+        Option<String>,
+    ) = conn
         .query_row(
-            "SELECT copies, couleur, finitions FROM files_queue WHERE id = ?1",
+            "SELECT copies, couleur, finitions, client_telephone FROM files_queue WHERE id = ?1",
             params![id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(|_| "Fichier introuvable".to_string())?;
 
@@ -78,7 +94,27 @@ pub fn calculer_prix(state: State<DbState>, id: i64) -> Result<i64, String> {
         }
     }
 
-    Ok(total)
+    let mut remise_appliquee = false;
+    if let Some(telephone) = client_telephone.filter(|t| !t.is_empty()) {
+        let visites_payees: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transactions t
+                 JOIN files_queue f ON f.id = t.file_queue_id
+                 WHERE f.client_telephone = ?1 AND t.statut = 'paye'",
+                params![telephone],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if visites_payees >= SEUIL_VISITES_FIDELITE {
+            total -= total * REMISE_FIDELITE_POURCENT / 100;
+            remise_appliquee = true;
+        }
+    }
+
+    Ok(PrixCalcule {
+        total,
+        remise_fidelite_appliquee: remise_appliquee,
+    })
 }
 
 // ───────────── Détails de facturation (pas des options d'impression) ─────────────
@@ -108,10 +144,16 @@ pub fn set_print_options(
 
 // ───────────────────────── Finalisation / encaissement ─────────────────────────
 
+#[derive(serde::Serialize)]
+pub struct ResultatEncaissement {
+    pub transaction_id: i64,
+    pub alerte_entretien_imprimante: bool,
+}
+
 /// Marque une commande comme traitée, enregistre la transaction et met à
 /// jour le stock (approximation : le décompte exact de pages nécessiterait
 /// de lire les compteurs de l'imprimante, non implémenté pour l'instant —
-/// le gérant peut toujours corriger le stock manuellement dans Réglages).
+/// le gérant peut toujours corriger le stock manuellement dans Rapports).
 #[tauri::command]
 pub fn finaliser_commande(
     state: State<DbState>,
@@ -120,7 +162,7 @@ pub fn finaliser_commande(
     moyen_paiement: String,
     statut: String,
     employe: Option<String>,
-) -> Result<i64, String> {
+) -> Result<ResultatEncaissement, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = Local::now().to_rfc3339();
 
@@ -146,6 +188,7 @@ pub fn finaliser_commande(
     .map_err(|e| e.to_string())?;
     let transaction_id = conn.last_insert_rowid();
 
+    let mut alerte_entretien = false;
     if kind == "imprimable" {
         let _ = conn.execute(
             "UPDATE stock SET quantite = MAX(0, quantite - ?1) WHERE item = 'papier_a4'",
@@ -160,9 +203,38 @@ pub fn finaliser_commande(
             "UPDATE stock SET quantite = MAX(0, quantite - ?1) WHERE item = ?2",
             params![copies as f64 * 0.2, toner_item],
         );
+
+        let _ = conn.execute(
+            "UPDATE imprimante_compteur SET feuilles_depuis_entretien = feuilles_depuis_entretien + ?1
+             WHERE cle = 'principale'",
+            params![copies],
+        );
+        let (feuilles, seuil): (i64, i64) = conn
+            .query_row(
+                "SELECT feuilles_depuis_entretien, seuil_entretien FROM imprimante_compteur WHERE cle = 'principale'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or((0, i64::MAX));
+        alerte_entretien = feuilles >= seuil;
     }
 
-    Ok(transaction_id)
+    Ok(ResultatEncaissement {
+        transaction_id,
+        alerte_entretien_imprimante: alerte_entretien,
+    })
+}
+
+/// Remet le compteur à zéro après un entretien réel de l'imprimante.
+#[tauri::command]
+pub fn reinitialiser_compteur_imprimante(state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE imprimante_compteur SET feuilles_depuis_entretien = 0 WHERE cle = 'principale'",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // ───────────────────────────── Reçu imprimable ─────────────────────────────
@@ -193,6 +265,7 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
 
     let boutique_nom =
         db::get_setting(&conn, "boutique_nom").unwrap_or_else(|| "Photocopie".to_string());
+    let logo_chemin = db::get_setting(&conn, "boutique_logo_chemin");
     drop(conn);
 
     let moyen_libelle = match moyen_paiement.as_str() {
@@ -204,32 +277,74 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
     let date_lisible = chrono::DateTime::parse_from_rfc3339(&created_at)
         .map(|d| d.format("%d/%m/%Y %H:%M").to_string())
         .unwrap_or(created_at);
-
-    let separateur = "=".repeat(32);
-    let contenu = format!(
-        "{separateur}\n{boutique_nom:^32}\n{separateur}\n\
-         Reçu n°{transaction_id}\n\
-         Date : {date_lisible}\n\
-         {tiret}\n\
-         {description}\n\
-         Montant : {montant} FCFA\n\
-         Paiement : {moyen_libelle}\n\
-         {employe_ligne}\
-         {separateur}\n\
-         {merci:^32}\n\
-         {separateur}\n",
-        tiret = "-".repeat(32),
-        employe_ligne = employe
-            .map(|e| format!("Servi par : {e}\n"))
-            .unwrap_or_default(),
-        merci = "Merci de votre visite !",
-    );
+    let employe_ligne = employe
+        .map(|e| format!("Servi par : {e}"))
+        .unwrap_or_default();
 
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let dossier_recus = data_dir.join("recus_emis");
     std::fs::create_dir_all(&dossier_recus).map_err(|e| e.to_string())?;
-    let chemin = dossier_recus.join(format!("recu_{transaction_id}.txt"));
-    std::fs::write(&chemin, contenu).map_err(|e| e.to_string())?;
+
+    // Avec logo configuré : reçu HTML (s'imprime via le navigateur par défaut).
+    // Sans logo : texte brut, plus simple et tout aussi fonctionnel.
+    let logo_base64 = logo_chemin
+        .as_ref()
+        .and_then(|p| std::fs::read(p).ok())
+        .map(|octets| {
+            use base64::engine::general_purpose::STANDARD;
+            use base64::Engine;
+            STANDARD.encode(octets)
+        });
+
+    let chemin = if let Some(logo_base64) = logo_base64 {
+        let chemin = dossier_recus.join(format!("recu_{transaction_id}.html"));
+        let html = format!(
+            r#"<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<title>Reçu n°{transaction_id}</title>
+<style>
+  body {{ font-family: "Segoe UI", Calibri, Arial, sans-serif; max-width: 320px; margin: 1rem auto; color:#222; }}
+  img {{ max-width: 120px; display:block; margin: 0 auto 0.5rem; }}
+  h1 {{ text-align:center; font-size:1.1rem; margin: 0 0 1rem; }}
+  hr {{ border: none; border-top: 1px dashed #999; margin: 0.75rem 0; }}
+  .ligne {{ display:flex; justify-content:space-between; font-size:0.9rem; margin:0.2rem 0; }}
+  .merci {{ text-align:center; margin-top:1rem; font-size:0.85rem; }}
+</style></head><body>
+<img src="data:image/png;base64,{logo_base64}" alt="Logo" />
+<h1>{boutique_nom}</h1>
+<div class="ligne"><span>Reçu n°</span><span>{transaction_id}</span></div>
+<div class="ligne"><span>Date</span><span>{date_lisible}</span></div>
+<hr>
+<div class="ligne"><span>{description}</span></div>
+<div class="ligne"><strong>Montant</strong><strong>{montant} FCFA</strong></div>
+<div class="ligne"><span>Paiement</span><span>{moyen_libelle}</span></div>
+<div class="ligne"><span>{employe_ligne}</span></div>
+<hr>
+<p class="merci">Merci de votre visite !</p>
+</body></html>"#
+        );
+        std::fs::write(&chemin, html).map_err(|e| e.to_string())?;
+        chemin
+    } else {
+        let separateur = "=".repeat(32);
+        let contenu = format!(
+            "{separateur}\n{boutique_nom:^32}\n{separateur}\n\
+             Reçu n°{transaction_id}\n\
+             Date : {date_lisible}\n\
+             {tiret}\n\
+             {description}\n\
+             Montant : {montant} FCFA\n\
+             Paiement : {moyen_libelle}\n\
+             {employe_ligne}\n\
+             {separateur}\n\
+             {merci:^32}\n\
+             {separateur}\n",
+            tiret = "-".repeat(32),
+            merci = "Merci de votre visite !",
+        );
+        let chemin = dossier_recus.join(format!("recu_{transaction_id}.txt"));
+        std::fs::write(&chemin, contenu).map_err(|e| e.to_string())?;
+        chemin
+    };
 
     files::shell_open(&chemin, "print")
 }
@@ -450,10 +565,156 @@ pub fn exporter_transactions_csv(state: State<DbState>) -> Result<String, String
         })
         .map_err(|e| e.to_string())?;
 
-    let mut csv = String::from("date;description;montant_fcfa;moyen_paiement;statut;employe\n");
+    // BOM UTF-8 en tête : sans lui, Excel (notamment en français) affiche mal
+    // les accents d'un CSV ouvert par double-clic.
+    let mut csv =
+        String::from("\u{FEFF}date;description;montant_fcfa;moyen_paiement;statut;employe\n");
     for row in rows {
         csv.push_str(&row.map_err(|e| e.to_string())?);
         csv.push('\n');
     }
     Ok(csv)
+}
+
+// ───────────────────────────── Impayés ─────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct Impaye {
+    pub transaction_id: i64,
+    pub description: String,
+    pub montant: i64,
+    pub client_name: Option<String>,
+    pub client_telephone: Option<String>,
+    pub created_at: String,
+}
+
+/// Liste les commandes réglées "à crédit" et jamais soldées depuis (section
+/// 5bis : "rappel des impayés, avec relance suggérée"). Une fois payé, le
+/// gérant retrouve le client dans Recherche et enregistre un nouvel
+/// encaissement — il n'y a pas de "solder" séparé pour rester simple.
+#[tauri::command]
+pub fn list_impayes(state: State<DbState>) -> Result<Vec<Impaye>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT t.id, t.description, t.montant, f.client_name, f.client_telephone, t.created_at
+             FROM transactions t
+             LEFT JOIN files_queue f ON f.id = t.file_queue_id
+             WHERE t.statut = 'impaye'
+             ORDER BY t.created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(Impaye {
+                transaction_id: r.get(0)?,
+                description: r.get(1)?,
+                montant: r.get(2)?,
+                client_name: r.get(3)?,
+                client_telephone: r.get(4)?,
+                created_at: r.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn marquer_impaye_regle(state: State<DbState>, transaction_id: i64) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE transactions SET statut = 'paye' WHERE id = ?1",
+        params![transaction_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ───────────────────────────── Clôture de caisse ─────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct ResultatCloture {
+    pub total_attendu: i64,
+    pub total_reel: i64,
+    pub ecart: i64,
+}
+
+/// Compare ce que la caisse devrait contenir (somme des encaissements du
+/// jour enregistrés dans l'app) à ce que le gérant compte réellement, pour
+/// repérer un écart immédiatement (section 5bis).
+#[tauri::command]
+pub fn cloturer_caisse(state: State<DbState>, total_reel: i64) -> Result<ResultatCloture, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let motif = format!("{date}%");
+
+    let total_attendu: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(montant), 0) FROM transactions
+             WHERE created_at LIKE ?1 AND statut = 'paye' AND moyen_paiement = 'especes'",
+            params![motif],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let ecart = total_reel - total_attendu;
+
+    conn.execute(
+        "INSERT INTO clotures_caisse (date, total_attendu, total_reel, ecart, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            date,
+            total_attendu,
+            total_reel,
+            ecart,
+            Local::now().to_rfc3339()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(ResultatCloture {
+        total_attendu,
+        total_reel,
+        ecart,
+    })
+}
+
+// ───────────────────────────── Mode démonstration ─────────────────────────────
+
+/// Ajoute quelques commandes factices dans la file d'attente, pour qu'un
+/// agent terrain puisse faire une démonstration sans client réel sur place
+/// (suggestion de la section 10 du cahier des charges).
+#[tauri::command]
+pub fn activer_mode_demo(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<DbState>();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let now = Local::now().to_rfc3339();
+
+    let exemples = [
+        (
+            "Devoir_Maths_Terminale.pdf",
+            "imprimable",
+            Some("Chimène A."),
+        ),
+        ("CV_Candidature.docx", "editable", Some("Yves K.")),
+        ("Presentation.pages", "inconnu", None),
+    ];
+    for (nom, kind, client) in exemples {
+        conn.execute(
+            "INSERT INTO files_queue
+                (original_name, path, client_name, source, kind, status, received_at)
+             VALUES (?1, ?2, ?3, 'demo', ?4, 'en_attente', ?5)",
+            params![nom, format!("demo://{nom}"), client, kind, now],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn desactiver_mode_demo(state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM files_queue WHERE source = 'demo'", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
