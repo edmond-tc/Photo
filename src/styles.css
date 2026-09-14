@@ -1,0 +1,218 @@
+:root {
+  --bleu-office: #2b579a;
+  --bleu-office-fonce: #1f4172;
+  --gris-clair: #f3f2f1;
+  --gris-bordure: #d6d4d1;
+  --gris-texte: #323130;
+  --gris-texte-discret: #605e5c;
+  --rouge-alerte: #a4262c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Calibri, "Helvetica Neue", Arial, sans-serif;
+  color: var(--gris-texte);
+  background: #ffffff;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  background: var(--bleu-office);
+  color: #ffffff;
+}
+
+.topbar h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.statut-dossier {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+}
+.btn-icon:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.file-queue {
+  padding: 1.25rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.etat-vide {
+  color: var(--gris-texte-discret);
+  text-align: center;
+  padding: 3rem 1rem;
+  font-size: 0.95rem;
+}
+
+.liste-fichiers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ligne-fichier {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--gris-bordure);
+  border-radius: 6px;
+  background: var(--gris-clair);
+}
+
+.info-fichier {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.nom-fichier {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta-fichier {
+  font-size: 0.8rem;
+  color: var(--gris-texte-discret);
+}
+
+.actions-fichier {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.btn-primaire {
+  background: var(--bleu-office);
+  color: #ffffff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.btn-primaire:hover {
+  background: var(--bleu-office-fonce);
+}
+
+.btn-secondaire {
+  background: #ffffff;
+  color: var(--bleu-office);
+  border: 1px solid var(--bleu-office);
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.btn-secondaire:hover {
+  background: var(--gris-clair);
+}
+
+.btn-discret {
+  background: transparent;
+  color: var(--gris-texte-discret);
+  border: 1px solid var(--gris-bordure);
+  padding: 0.5rem 0.85rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.btn-discret:hover {
+  background: #ffffff;
+}
+
+.avertissement {
+  color: var(--rouge-alerte);
+  font-size: 0.8rem;
+  max-width: 220px;
+}
+
+.panneau-menu {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 85vw);
+  background: #ffffff;
+  border-left: 1px solid var(--gris-bordure);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.panneau-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--gris-bordure);
+}
+.panneau-entete h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+.panneau-entete .btn-icon {
+  color: var(--gris-texte);
+}
+
+.panneau-contenu {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.panneau-contenu h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--gris-texte-discret);
+  margin: 0 0 0.5rem;
+}
+
+.chemin-dossier {
+  font-size: 0.85rem;
+  word-break: break-all;
+  margin: 0 0 0.5rem;
+}
+
+.version {
+  font-size: 0.75rem;
+  color: var(--gris-texte-discret);
+  margin-top: auto;
+}

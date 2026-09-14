@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestion Photocopie</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <header class="topbar">
+      <h1>Gestion Photocopie</h1>
+      <div class="topbar-right">
+        <span id="statut-dossier" class="statut-dossier">Dossier surveillé : —</span>
+        <button id="btn-menu" class="btn-icon" title="Menu" aria-label="Ouvrir le menu">⋮</button>
+      </div>
+    </header>
+
+    <main class="file-queue">
+      <p id="etat-vide" class="etat-vide" hidden>
+        Aucun fichier en attente. Les fichiers déposés dans le dossier surveillé,
+        reçus par clé USB ou envoyés par QR apparaîtront ici automatiquement.
+      </p>
+      <ul id="liste-fichiers" class="liste-fichiers"></ul>
+    </main>
+
+    <aside id="panneau-menu" class="panneau-menu" hidden>
+      <div class="panneau-entete">
+        <h2>Réglages</h2>
+        <button id="btn-fermer-menu" class="btn-icon" aria-label="Fermer">✕</button>
+      </div>
+      <div class="panneau-contenu">
+        <section>
+          <h3>Dossier surveillé</h3>
+          <p id="chemin-dossier" class="chemin-dossier">Aucun dossier configuré</p>
+          <button id="btn-choisir-dossier" class="btn-secondaire">Choisir un dossier…</button>
+        </section>
+        <p class="version">Version 0.1.0</p>
+      </div>
+    </aside>
+
+    <template id="tpl-ligne-fichier">
+      <li class="ligne-fichier">
+        <div class="info-fichier">
+          <span class="nom-fichier"></span>
+          <span class="meta-fichier"></span>
+        </div>
+        <div class="actions-fichier"></div>
+      </li>
+    </template>
+  </body>
+</html>
