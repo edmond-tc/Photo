@@ -169,6 +169,7 @@ pub fn enqueue_file_avec_options(
         finitions: vec![],
         prix: None,
         employe: None,
+        raison_ignore: None,
     };
 
     let _ = app.emit("nouveau-fichier", item);

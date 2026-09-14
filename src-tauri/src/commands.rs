@@ -34,12 +34,13 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         finitions,
         prix: row.get(17)?,
         employe: row.get(18)?,
+        raison_ignore: row.get(19)?,
     })
 }
 
 const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telephone, source, kind,
      status, received_at, taille_octets, protege, format_detecte, copies, couleur, format_papier,
-     plage_pages, finitions, prix, employe";
+     plage_pages, finitions, prix, employe, raison_ignore";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {
@@ -156,13 +157,20 @@ pub fn print_file(state: State<DbState>, id: i64) -> Result<(), String> {
 
 /// Retire un fichier de la file sans encaissement (ex: format non
 /// supporté, doublon, client absent). Pour une commande payante, voir
-/// `gestion::finaliser_commande`.
+/// `gestion::finaliser_commande`. La raison est obligatoire et
+/// définitivement enregistrée : aucun fichier reçu ne peut disparaître de
+/// la file sans laisser une trace expliquant pourquoi (cf.
+/// docs/fonctionnalites-confiance.md).
 #[tauri::command]
-pub fn ignorer_fichier(state: State<DbState>, id: i64) -> Result<(), String> {
+pub fn ignorer_fichier(state: State<DbState>, id: i64, raison: String) -> Result<(), String> {
+    let raison = raison.trim();
+    if raison.is_empty() {
+        return Err("Une raison est obligatoire pour ignorer un fichier".to_string());
+    }
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE files_queue SET status = 'traite' WHERE id = ?1",
-        params![id],
+        "UPDATE files_queue SET status = 'traite', raison_ignore = ?1 WHERE id = ?2",
+        params![raison, id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

@@ -19,6 +19,7 @@ pub struct QueueItem {
     pub finitions: Vec<String>,
     pub prix: Option<i64>,
     pub employe: Option<String>,
+    pub raison_ignore: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -35,7 +36,9 @@ pub struct Transaction {
     pub id: i64,
     pub file_queue_id: Option<i64>,
     pub description: String,
+    pub montant_calcule: i64,
     pub montant: i64,
+    pub raison_ecart: Option<String>,
     pub moyen_paiement: String,
     pub statut: String,
     pub employe: Option<String>,

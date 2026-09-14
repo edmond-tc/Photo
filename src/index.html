@@ -122,7 +122,12 @@
         </div>
         <form id="form-encaissement">
           <p id="enc-fidelite" class="chemin-dossier" hidden>🎁 Remise fidélité appliquée (client régulier)</p>
-          <label>Montant (FCFA) <input type="number" id="enc-montant" min="0" required /></label>
+          <p class="chemin-dossier">Prix calculé : <strong id="enc-montant-calcule">0 FCFA</strong></p>
+          <label>Montant à encaisser (FCFA) <input type="number" id="enc-montant" min="0" required /></label>
+          <label id="enc-raison-champ" class="champ-raison-ecart" hidden>
+            Raison de l'écart avec le prix calculé (obligatoire)
+            <input type="text" id="enc-raison-ecart" placeholder="ex: remise négociée, erreur corrigée…" />
+          </label>
           <label>Moyen de paiement
             <select id="enc-moyen">
               <option value="especes">Espèces</option>
@@ -134,6 +139,34 @@
             <select id="enc-employe"></select>
           </label>
           <button type="submit" class="btn-primaire">Valider l'encaissement</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Raison obligatoire pour ignorer un fichier -->
+    <div id="modal-raison-ignore" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2>Pourquoi ignorer ce fichier ?</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-raison-ignore" aria-label="Fermer">✕</button>
+        </div>
+        <p style="font-size:0.85rem; color:var(--gris-texte-discret); margin-top:0">
+          Obligatoire — aucun fichier reçu ne peut disparaître de la file sans explication.
+        </p>
+        <form id="form-raison-ignore">
+          <label>Raison
+            <select id="raison-ignore-select">
+              <option value="Format non supporté">Format non supporté</option>
+              <option value="Doublon">Doublon</option>
+              <option value="Client absent / n'est jamais venu">Client absent / n'est jamais venu</option>
+              <option value="Fichier vide ou illisible">Fichier vide ou illisible</option>
+              <option value="Autre">Autre (préciser ci-dessous)</option>
+            </select>
+          </label>
+          <label>Précision (si "Autre")
+            <input type="text" id="raison-ignore-texte" />
+          </label>
+          <button type="submit" class="btn-primaire">Confirmer</button>
         </form>
       </div>
     </div>

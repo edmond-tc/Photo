@@ -28,15 +28,68 @@ pub fn list_tarifs(state: State<DbState>) -> Result<Vec<Tarif>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Modifie un tarif — journalise systématiquement l'ancien et le nouveau
+/// prix, de façon permanente (aucune fonction ne permet d'effacer cet
+/// historique), pour qu'un changement de prix ne puisse jamais passer
+/// inaperçu (cf. docs/fonctionnalites-confiance.md).
 #[tauri::command]
 pub fn update_tarif(state: State<DbState>, id: i64, prix_unitaire: i64) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
+
+    let (service, libelle, ancien_prix): (String, String, i64) = conn
+        .query_row(
+            "SELECT service, libelle, prix_unitaire FROM tarifs WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(|_| "Tarif introuvable".to_string())?;
+
     conn.execute(
         "UPDATE tarifs SET prix_unitaire = ?1 WHERE id = ?2",
         params![prix_unitaire, id],
     )
     .map_err(|e| e.to_string())?;
+
+    if ancien_prix != prix_unitaire {
+        conn.execute(
+            "INSERT INTO tarifs_historique (service, libelle, ancien_prix, nouveau_prix, changed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![service, libelle, ancien_prix, prix_unitaire, Local::now().to_rfc3339()],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct ChangementTarif {
+    pub libelle: String,
+    pub ancien_prix: i64,
+    pub nouveau_prix: i64,
+    pub changed_at: String,
+}
+
+#[tauri::command]
+pub fn list_historique_tarifs(state: State<DbState>) -> Result<Vec<ChangementTarif>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT libelle, ancien_prix, nouveau_prix, changed_at
+             FROM tarifs_historique ORDER BY changed_at DESC LIMIT 100",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(ChangementTarif {
+                libelle: r.get(0)?,
+                ancien_prix: r.get(1)?,
+                nouveau_prix: r.get(2)?,
+                changed_at: r.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 fn tarif_prix(conn: &rusqlite::Connection, service: &str) -> i64 {
@@ -154,15 +207,32 @@ pub struct ResultatEncaissement {
 /// jour le stock (approximation : le décompte exact de pages nécessiterait
 /// de lire les compteurs de l'imprimante, non implémenté pour l'instant —
 /// le gérant peut toujours corriger le stock manuellement dans Rapports).
+///
+/// Le montant calculé par la grille tarifaire est toujours enregistré à
+/// côté du montant réellement encaissé. S'ils diffèrent, une raison est
+/// obligatoire — jamais un simple écrasement silencieux du prix (cf.
+/// docs/fonctionnalites-confiance.md).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn finaliser_commande(
     state: State<DbState>,
     id: i64,
+    montant_calcule: i64,
     montant: i64,
+    raison_ecart: Option<String>,
     moyen_paiement: String,
     statut: String,
     employe: Option<String>,
 ) -> Result<ResultatEncaissement, String> {
+    let raison_ecart = raison_ecart.filter(|r| !r.trim().is_empty());
+    if montant != montant_calcule && raison_ecart.is_none() {
+        return Err(
+            "Le montant diffère du prix calculé : une raison est obligatoire (ex: remise, \
+             négociation, erreur de calcul corrigée)."
+                .to_string(),
+        );
+    }
+
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = Local::now().to_rfc3339();
 
@@ -181,9 +251,21 @@ pub fn finaliser_commande(
     .map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT INTO transactions (file_queue_id, description, montant, moyen_paiement, statut, employe, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![id, original_name, montant, moyen_paiement, statut, employe, now],
+        "INSERT INTO transactions
+            (file_queue_id, description, montant_calcule, montant, raison_ecart,
+             moyen_paiement, statut, employe, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            id,
+            original_name,
+            montant_calcule,
+            montant,
+            raison_ecart,
+            moyen_paiement,
+            statut,
+            employe,
+            now
+        ],
     )
     .map_err(|e| e.to_string())?;
     let transaction_id = conn.last_insert_rowid();
@@ -464,7 +546,8 @@ pub fn list_transactions(state: State<DbState>, limite: i64) -> Result<Vec<Trans
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, file_queue_id, description, montant, moyen_paiement, statut, employe, created_at
+            "SELECT id, file_queue_id, description, montant_calcule, montant, raison_ecart,
+                    moyen_paiement, statut, employe, created_at
              FROM transactions ORDER BY created_at DESC LIMIT ?1",
         )
         .map_err(|e| e.to_string())?;
@@ -474,11 +557,13 @@ pub fn list_transactions(state: State<DbState>, limite: i64) -> Result<Vec<Trans
                 id: r.get(0)?,
                 file_queue_id: r.get(1)?,
                 description: r.get(2)?,
-                montant: r.get(3)?,
-                moyen_paiement: r.get(4)?,
-                statut: r.get(5)?,
-                employe: r.get(6)?,
-                created_at: r.get(7)?,
+                montant_calcule: r.get(3)?,
+                montant: r.get(4)?,
+                raison_ecart: r.get(5)?,
+                moyen_paiement: r.get(6)?,
+                statut: r.get(7)?,
+                employe: r.get(8)?,
+                created_at: r.get(9)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -541,12 +626,101 @@ pub fn rapport_du_jour(state: State<DbState>) -> Result<RapportJour, String> {
     })
 }
 
+#[derive(serde::Serialize)]
+pub struct RaisonCompte {
+    pub raison: String,
+    pub nombre: i64,
+}
+
+#[derive(serde::Serialize)]
+pub struct RapportReconciliation {
+    pub date: String,
+    pub recus: i64,
+    pub payes: i64,
+    pub ignores: i64,
+    pub ignores_par_raison: Vec<RaisonCompte>,
+    pub en_attente: i64,
+    /// Doit toujours valoir 0 : recus - (payes + ignores + en_attente).
+    /// Un chiffre différent de zéro signalerait un bug, pas une fraude —
+    /// chaque fichier reçu a forcément l'un de ces trois statuts.
+    pub ecart_verification: i64,
+}
+
+/// Compare les fichiers reçus (comptés automatiquement dès leur arrivée,
+/// avant tout geste humain) aux fichiers payés, ignorés (avec raison) et
+/// encore en attente. Aucun fichier ne peut disparaître de cette
+/// comptabilité sans laisser de trace (cf. docs/fonctionnalites-confiance.md).
+#[tauri::command]
+pub fn rapport_reconciliation(state: State<DbState>) -> Result<RapportReconciliation, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let motif = format!("{date}%");
+
+    let recus: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files_queue WHERE received_at LIKE ?1",
+            params![motif],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let payes: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files_queue WHERE received_at LIKE ?1 AND status = 'traite' AND raison_ignore IS NULL",
+            params![motif],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let ignores: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files_queue WHERE received_at LIKE ?1 AND status = 'traite' AND raison_ignore IS NOT NULL",
+            params![motif],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let en_attente: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files_queue WHERE received_at LIKE ?1 AND status = 'en_attente'",
+            params![motif],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT raison_ignore, COUNT(*) FROM files_queue
+             WHERE received_at LIKE ?1 AND status = 'traite' AND raison_ignore IS NOT NULL
+             GROUP BY raison_ignore ORDER BY COUNT(*) DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let ignores_par_raison = stmt
+        .query_map(params![motif], |r| {
+            Ok(RaisonCompte {
+                raison: r.get(0)?,
+                nombre: r.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(RapportReconciliation {
+        date,
+        recus,
+        payes,
+        ignores,
+        ignores_par_raison,
+        en_attente,
+        ecart_verification: recus - (payes + ignores + en_attente),
+    })
+}
+
 #[tauri::command]
 pub fn exporter_transactions_csv(state: State<DbState>) -> Result<String, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT created_at, description, montant, moyen_paiement, statut, COALESCE(employe, '')
+            "SELECT created_at, description, montant_calcule, montant, COALESCE(raison_ecart, ''),
+                    moyen_paiement, statut, COALESCE(employe, '')
              FROM transactions ORDER BY created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -554,21 +728,25 @@ pub fn exporter_transactions_csv(state: State<DbState>) -> Result<String, String
         .query_map([], |r| {
             let created_at: String = r.get(0)?;
             let description: String = r.get(1)?;
-            let montant: i64 = r.get(2)?;
-            let moyen: String = r.get(3)?;
-            let statut: String = r.get(4)?;
-            let employe: String = r.get(5)?;
+            let montant_calcule: i64 = r.get(2)?;
+            let montant: i64 = r.get(3)?;
+            let raison_ecart: String = r.get(4)?;
+            let moyen: String = r.get(5)?;
+            let statut: String = r.get(6)?;
+            let employe: String = r.get(7)?;
             Ok(format!(
-                "{created_at};{};{montant};{moyen};{statut};{employe}",
-                description.replace(';', ",")
+                "{created_at};{};{montant_calcule};{montant};{};{moyen};{statut};{employe}",
+                description.replace(';', ","),
+                raison_ecart.replace(';', ",")
             ))
         })
         .map_err(|e| e.to_string())?;
 
     // BOM UTF-8 en tête : sans lui, Excel (notamment en français) affiche mal
     // les accents d'un CSV ouvert par double-clic.
-    let mut csv =
-        String::from("\u{FEFF}date;description;montant_fcfa;moyen_paiement;statut;employe\n");
+    let mut csv = String::from(
+        "\u{FEFF}date;description;montant_calcule_fcfa;montant_encaisse_fcfa;raison_ecart;moyen_paiement;statut;employe\n",
+    );
     for row in rows {
         csv.push_str(&row.map_err(|e| e.to_string())?);
         csv.push('\n');

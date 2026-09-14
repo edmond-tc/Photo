@@ -40,7 +40,8 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
             plage_pages      TEXT,             -- ex: 1-5, 8 -- indicatif, saisi par le client via QR
             finitions        TEXT,             -- JSON: ['agrafage', 'plastification', ...]
             prix             INTEGER,
-            employe          TEXT
+            employe          TEXT,
+            raison_ignore    TEXT -- obligatoire quand le fichier est classé sans encaissement
         );
 
         CREATE INDEX IF NOT EXISTS idx_files_queue_status
@@ -55,14 +56,25 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
         );
 
         CREATE TABLE IF NOT EXISTS transactions (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_queue_id  INTEGER REFERENCES files_queue(id) ON DELETE SET NULL,
-            description    TEXT NOT NULL,
-            montant        INTEGER NOT NULL,
-            moyen_paiement TEXT NOT NULL,   -- 'especes' | 'mobile_money' | 'credit'
-            statut         TEXT NOT NULL DEFAULT 'paye', -- 'paye' | 'impaye'
-            employe        TEXT,
-            created_at     TEXT NOT NULL
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_queue_id   INTEGER REFERENCES files_queue(id) ON DELETE SET NULL,
+            description     TEXT NOT NULL,
+            montant_calcule INTEGER NOT NULL, -- prix proposé par la grille tarifaire, jamais modifié
+            montant         INTEGER NOT NULL, -- montant réellement encaissé
+            raison_ecart    TEXT,             -- obligatoire si montant != montant_calcule
+            moyen_paiement  TEXT NOT NULL,   -- 'especes' | 'mobile_money' | 'credit'
+            statut          TEXT NOT NULL DEFAULT 'paye', -- 'paye' | 'impaye'
+            employe         TEXT,
+            created_at      TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS tarifs_historique (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            service      TEXT NOT NULL,
+            libelle      TEXT NOT NULL,
+            ancien_prix  INTEGER NOT NULL,
+            nouveau_prix INTEGER NOT NULL,
+            changed_at   TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS depenses (

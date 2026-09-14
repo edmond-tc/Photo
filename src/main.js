@@ -194,14 +194,32 @@ async function ouvrir(id) {
   }
 }
 
-async function ignorer(id) {
+let idIgnorerEnCours = null;
+
+function ignorer(id) {
+  idIgnorerEnCours = id;
+  document.querySelector("#raison-ignore-select").value = "Format non supporté";
+  document.querySelector("#raison-ignore-texte").value = "";
+  ouvrirModal("modal-raison-ignore");
+}
+
+document.querySelector("#form-raison-ignore").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const select = document.querySelector("#raison-ignore-select").value;
+  const texte = document.querySelector("#raison-ignore-texte").value.trim();
+  const raison = select === "Autre" ? texte : select;
+  if (!raison) {
+    alert("Merci de préciser la raison.");
+    return;
+  }
   try {
-    await invoke("ignorer_fichier", { id });
-    retirerFichier(id);
+    await invoke("ignorer_fichier", { id: idIgnorerEnCours, raison });
+    retirerFichier(idIgnorerEnCours);
+    fermerModal("modal-raison-ignore");
   } catch (e) {
     alert(`Impossible de mettre à jour le fichier : ${e}`);
   }
-}
+});
 
 // ───────────── Détails de facturation (pas des options d'impression) ─────────────
 // L'impression elle-même passe toujours directement par la boîte de dialogue
@@ -282,30 +300,51 @@ async function remplirEmployes(selectEl) {
   }
 }
 
+let montantCalculeEnCours = 0;
+
 async function ouvrirEncaissement(item) {
   idEncaissementEnCours = item.id;
   const indiceFidelite = document.querySelector("#enc-fidelite");
   indiceFidelite.hidden = true;
+  document.querySelector("#enc-raison-champ").hidden = true;
+  document.querySelector("#enc-raison-ecart").value = "";
   try {
     const resultat = await invoke("calculer_prix", { id: item.id });
+    montantCalculeEnCours = resultat.total;
+    document.querySelector("#enc-montant-calcule").textContent = formatFcfa(resultat.total);
     document.querySelector("#enc-montant").value = resultat.total;
     if (resultat.remise_fidelite_appliquee) {
       indiceFidelite.hidden = false;
     }
   } catch {
+    montantCalculeEnCours = 0;
+    document.querySelector("#enc-montant-calcule").textContent = formatFcfa(0);
     document.querySelector("#enc-montant").value = 0;
   }
   await remplirEmployes(document.querySelector("#enc-employe"));
   ouvrirModal("modal-encaissement");
 }
 
+document.querySelector("#enc-montant").addEventListener("input", (e) => {
+  const diffère = Number(e.target.value) !== montantCalculeEnCours;
+  document.querySelector("#enc-raison-champ").hidden = !diffère;
+});
+
 document.querySelector("#form-encaissement").addEventListener("submit", async (e) => {
   e.preventDefault();
   const moyen = document.querySelector("#enc-moyen").value;
+  const montant = Number(document.querySelector("#enc-montant").value) || 0;
+  const raisonEcart = document.querySelector("#enc-raison-ecart").value.trim() || null;
+  if (montant !== montantCalculeEnCours && !raisonEcart) {
+    alert("Le montant diffère du prix calculé : merci de préciser la raison.");
+    return;
+  }
   try {
     const resultat = await invoke("finaliser_commande", {
       id: idEncaissementEnCours,
-      montant: Number(document.querySelector("#enc-montant").value) || 0,
+      montantCalcule: montantCalculeEnCours,
+      montant,
+      raisonEcart,
       moyenPaiement: moyen,
       statut: moyen === "credit" ? "impaye" : "paye",
       employe: document.querySelector("#enc-employe").value || null,
@@ -506,6 +545,24 @@ async function rendreRapports(corps) {
     <p>Bénéfice net : <strong>${formatFcfa(rapport.benefice_net)}</strong></p>
   `;
   corps.appendChild(resume);
+
+  const reconciliation = await invoke("rapport_reconciliation");
+  const carteReconciliation = document.createElement("div");
+  carteReconciliation.className = "carte-rapport";
+  const raisonsHtml = reconciliation.ignores_par_raison
+    .map((r) => `<li>${r.raison} : ${r.nombre}</li>`)
+    .join("");
+  carteReconciliation.innerHTML = `
+    <h3>Réconciliation — tous les fichiers reçus aujourd'hui</h3>
+    <p>Reçus : <strong>${reconciliation.recus}</strong> · Payés : ${reconciliation.payes} ·
+       Ignorés : ${reconciliation.ignores} · En attente : ${reconciliation.en_attente}</p>
+    ${raisonsHtml ? `<ul style="margin:0.3rem 0 0; padding-left:1.2rem; font-size:0.85rem">${raisonsHtml}</ul>` : ""}
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin-top:0.5rem">
+      Chaque fichier reçu (dossier surveillé, USB, QR) est compté automatiquement dès son
+      arrivée — aucun ne peut disparaître sans une raison enregistrée.
+    </p>
+  `;
+  corps.appendChild(carteReconciliation);
 
   const impayes = await invoke("list_impayes");
   if (impayes.length) {
@@ -742,6 +799,21 @@ async function rendreReglages(corps) {
     secTarifs.appendChild(ligne);
   }
   corps.appendChild(secTarifs);
+
+  const historiqueTarifs = await invoke("list_historique_tarifs");
+  if (historiqueTarifs.length) {
+    const secHistoriqueTarifs = document.createElement("section");
+    secHistoriqueTarifs.innerHTML = "<h3>Historique des changements de tarifs</h3>";
+    for (const h of historiqueTarifs) {
+      secHistoriqueTarifs.appendChild(
+        ligneListe(
+          `${h.libelle} : ${h.ancien_prix} → ${h.nouveau_prix} FCFA`,
+          formatHeure(h.changed_at) + " · " + new Date(h.changed_at).toLocaleDateString("fr-FR")
+        )
+      );
+    }
+    corps.appendChild(secHistoriqueTarifs);
+  }
 
   // Employés
   const employes = await invoke("list_employes");
