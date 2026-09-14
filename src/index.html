@@ -43,13 +43,18 @@
       </div>
     </div>
 
-    <!-- Modal options d'impression / finitions -->
+    <!-- Détails de facturation (pas les options d'impression : l'impression
+         elle-même passe directement par la boîte de dialogue Windows) -->
     <div id="modal-options" class="modal" hidden>
       <div class="modal-carte">
         <div class="modal-entete">
-          <h2>Options de la commande</h2>
+          <h2>Détails pour la facturation</h2>
           <button class="btn-icon btn-fermer-modal" data-cible="modal-options" aria-label="Fermer">✕</button>
         </div>
+        <p style="font-size:0.85rem; color:var(--gris-texte-discret); margin-top:0">
+          Sert uniquement à calculer le prix — l'impression se fait directement
+          avec le bouton Imprimer, qui ouvre la boîte de dialogue de Windows.
+        </p>
         <form id="form-options">
           <label>Copies <input type="number" id="opt-copies" min="1" value="1" /></label>
           <label class="champ-inline">
@@ -60,15 +65,6 @@
               <option value="A4">A4</option>
               <option value="A3">A3</option>
               <option value="A5">A5</option>
-            </select>
-          </label>
-          <label class="champ-inline">
-            <input type="checkbox" id="opt-recto-verso" /> Recto-verso
-          </label>
-          <label>Orientation
-            <select id="opt-orientation">
-              <option value="portrait">Portrait</option>
-              <option value="paysage">Paysage</option>
             </select>
           </label>
           <fieldset>

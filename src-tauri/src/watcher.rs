@@ -65,6 +65,9 @@ pub fn enqueue_file(
         .unwrap_or_else(|| "fichier".to_string());
     let kind = files::classify(path);
     let received_at = Local::now().to_rfc3339();
+    let taille_octets = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let (protege, format_detecte) = files::diagnostiquer_pdf(path);
+    let format_detecte = format_detecte.map(str::to_string);
 
     let state = app.state::<DbState>();
     let conn = state.0.lock().expect("verrou base de données corrompu");
@@ -82,8 +85,9 @@ pub fn enqueue_file(
 
     let insert_result = conn.execute(
         "INSERT INTO files_queue
-            (original_name, path, client_name, client_telephone, source, kind, status, received_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'en_attente', ?7)",
+            (original_name, path, client_name, client_telephone, source, kind, status,
+             received_at, taille_octets, protege, format_detecte)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'en_attente', ?7, ?8, ?9, ?10)",
         params![
             original_name,
             path.to_string_lossy(),
@@ -91,7 +95,10 @@ pub fn enqueue_file(
             client_telephone,
             source,
             kind,
-            received_at
+            received_at,
+            taille_octets as i64,
+            protege,
+            format_detecte
         ],
     );
 
@@ -112,11 +119,12 @@ pub fn enqueue_file(
         kind: kind.to_string(),
         status: "en_attente".to_string(),
         received_at,
+        taille_octets: taille_octets as i64,
+        protege,
+        format_detecte,
         copies: 1,
         couleur: false,
         format_papier: "A4".to_string(),
-        recto_verso: false,
-        orientation: "portrait".to_string(),
         finitions: vec![],
         prix: None,
         employe: None,

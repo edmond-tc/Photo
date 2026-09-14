@@ -68,9 +68,16 @@ charges) ont une première implémentation :
   affiché à l'écran (bouton 📶 dans la barre du haut). Le partage de
   connexion Wi-Fi (Mobile Hotspot) s'active via un raccourci vers les
   paramètres Windows plutôt qu'une automatisation WinRT non testable ici.
-- **Étape 4** — Options d'impression (copies, couleur, format, recto-verso,
-  orientation) et finitions par commande, calcul de prix à partir d'une
-  grille tarifaire modifiable.
+- **Étape 4** — L'impression elle-même passe *toujours* directement par la
+  boîte de dialogue Windows native (bouton *Imprimer*), qui gère déjà
+  copies/couleur/recto-verso/format — pas de double saisie dans l'appli.
+  L'écran « Détails » ne sert qu'à ce que Windows ne peut pas savoir : les
+  finitions (agrafage, reliure...) et ce qu'il faut facturer, pour le
+  calcul de prix.
+- Diagnostics à la réception d'un fichier : PDF probablement protégé par
+  mot de passe, format détecté différent de A4 (ex. US Letter), fichier
+  volumineux — affichés comme avertissements, jamais bloquants (cf.
+  "Limites connues").
 - **Étape 5** — Suivi financier (encaissement espèces/Mobile Money/crédit),
   stock papier/toner avec alerte, dépenses, employés, rapport du jour,
   export CSV des transactions.
@@ -99,6 +106,15 @@ charges) ont une première implémentation :
 - **Aperçu avant impression** : pas de moteur de rendu PDF maison — le clic
   *Imprimer* route vers l'application déjà installée sur le PC (Edge, Acrobat,
   Photos…), qui affiche elle-même un aperçu avant impression.
+- **Détection PDF protégé / format papier** : heuristiques par lecture
+  directe des octets du fichier (recherche de `/Encrypt`, `/MediaBox`), pas
+  un vrai analyseur PDF. Peut manquer certains PDF récents dont les objets
+  de page sont dans un flux compressé ("object streams", PDF 1.5+). Jamais
+  bloquant : juste un avertissement affiché au gérant.
+- **Service de saisie/dactylographie** (section 4 du cahier des charges) :
+  volontairement pas implémenté pour l'instant — le gérant tape directement
+  dans Word comme il le fait déjà. À revoir selon les retours terrain une
+  fois que de vrais gérants auront utilisé le logiciel.
 - **Vérification des mises à jour** : nécessite que le porteur du projet
   héberge une URL renvoyant `{"version": "x.y.z"}` (réglage "URL de
   vérification des mises à jour"). Vide par défaut = fonctionnalité

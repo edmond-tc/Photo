@@ -1,5 +1,14 @@
 use std::path::Path;
 
+/// Taille au-delà de laquelle on prévient le gérant qu'un fichier est
+/// volumineux (section 4 : "indicateur de progression clair").
+pub const SEUIL_FICHIER_VOLUMINEUX: u64 = 20 * 1024 * 1024; // 20 Mo
+
+/// Limite de lecture pour les diagnostics PDF ci-dessous : au-delà, on ne
+/// scanne pas le fichier (documents de boutique de photocopie rarement
+/// aussi gros) plutôt que de ralentir la réception.
+const LIMITE_DIAGNOSTIC_PDF: u64 = 25 * 1024 * 1024;
+
 /// Classe un fichier reçu selon le routage décrit dans le cahier des charges :
 /// PDF/image -> impression directe ; bureautique -> ouverture dans l'éditeur natif.
 pub fn classify(path: &Path) -> &'static str {
@@ -49,6 +58,75 @@ pub fn miniature_base64(path: &Path) -> Option<String> {
         "data:image/png;base64,{}",
         STANDARD.encode(buffer.into_inner())
     ))
+}
+
+/// Diagnostics légers sur un PDF, par lecture directe des octets (pas un
+/// vrai analyseur PDF — cf. limites documentées dans le README). Renvoie
+/// (protégé_par_mot_de_passe, format_papier_detecte).
+pub fn diagnostiquer_pdf(path: &Path) -> (bool, Option<&'static str>) {
+    let est_pdf = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("pdf"))
+        .unwrap_or(false);
+    if !est_pdf {
+        return (false, None);
+    }
+    let Ok(meta) = std::fs::metadata(path) else {
+        return (false, None);
+    };
+    if meta.len() > LIMITE_DIAGNOSTIC_PDF {
+        return (false, None);
+    }
+    let Ok(contenu) = std::fs::read(path) else {
+        return (false, None);
+    };
+
+    let protege = contient_motif(&contenu, b"/Encrypt");
+    let format = detecter_format_papier(&contenu);
+    (protege, format)
+}
+
+fn contient_motif(hay: &[u8], motif: &[u8]) -> bool {
+    hay.windows(motif.len()).any(|fenetre| fenetre == motif)
+}
+
+/// Cherche `/MediaBox [x0 y0 x1 y1]` (en points, 1/72 pouce) et compare aux
+/// dimensions standard. Best-effort : peut manquer les PDF dont les objets
+/// de page sont dans un flux compressé (PDF 1.5+, "object streams").
+fn detecter_format_papier(contenu: &[u8]) -> Option<&'static str> {
+    let texte = String::from_utf8_lossy(contenu);
+    let debut = texte.find("/MediaBox")?;
+    let apres = &texte[debut + "/MediaBox".len()..];
+    let ouverture = apres.find('[')?;
+    let fermeture = apres.find(']')?;
+    if fermeture < ouverture {
+        return None;
+    }
+    let nombres: Vec<f64> = apres[ouverture + 1..fermeture]
+        .split_whitespace()
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let [x0, y0, x1, y1] = nombres[..].try_into().ok()?;
+    let largeur = (x1 - x0).abs();
+    let hauteur = (y1 - y0).abs();
+    let (petit, grand) = if largeur < hauteur {
+        (largeur, hauteur)
+    } else {
+        (hauteur, largeur)
+    };
+
+    const TOLERANCE: f64 = 5.0;
+    const A4: (f64, f64) = (595.0, 842.0);
+    const LETTER: (f64, f64) = (612.0, 792.0);
+
+    if (petit - A4.0).abs() < TOLERANCE && (grand - A4.1).abs() < TOLERANCE {
+        None // déjà au format A4, rien à signaler
+    } else if (petit - LETTER.0).abs() < TOLERANCE && (grand - LETTER.1).abs() < TOLERANCE {
+        Some("US Letter")
+    } else {
+        None
+    }
 }
 
 /// Ouvre le fichier avec le programme associé par défaut sur Windows (Word,

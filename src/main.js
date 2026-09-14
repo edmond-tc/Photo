@@ -88,21 +88,40 @@ function creerLigne(item) {
     LIBELLES_KIND[item.kind] ?? item.kind,
     item.copies > 1 ? `${item.copies} copies` : null,
     item.finitions?.length ? item.finitions.length + " finition(s)" : null,
+    item.taille_octets > 20 * 1024 * 1024
+      ? `${(item.taille_octets / 1024 / 1024).toFixed(1)} Mo — fichier volumineux`
+      : null,
   ]
     .filter(Boolean)
     .join(" · ");
   noeud.querySelector(".meta-fichier").textContent = meta;
 
+  if (item.protege || item.format_detecte) {
+    const alertes = document.createElement("span");
+    alertes.className = "meta-fichier";
+    alertes.style.color = "var(--rouge-alerte)";
+    alertes.textContent = [
+      item.protege ? "🔒 PDF probablement protégé par mot de passe — le demander au client" : null,
+      item.format_detecte ? `Format détecté : ${item.format_detecte} (pas A4) — vérifier l'ajustement à l'impression` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    noeud.querySelector(".info-fichier").appendChild(alertes);
+  }
+
   const actions = noeud.querySelector(".actions-fichier");
 
+  // Le bouton Imprimer/Ouvrir passe toujours en premier et va droit au but
+  // (boîte de dialogue Windows native) — les détails de facturation sont
+  // secondaires et n'empêchent jamais d'imprimer ou d'éditer directement.
   if (item.kind === "imprimable") {
-    actions.appendChild(bouton("Options", "btn-discret", () => ouvrirOptions(item)));
     actions.appendChild(bouton("Imprimer", "btn-primaire", () => imprimer(item.id)));
     actions.appendChild(bouton("Encaisser", "btn-secondaire", () => ouvrirEncaissement(item)));
+    actions.appendChild(bouton("Détails", "btn-discret", () => ouvrirOptions(item)));
   } else if (item.kind === "editable") {
-    actions.appendChild(bouton("Options", "btn-discret", () => ouvrirOptions(item)));
     actions.appendChild(bouton("Ouvrir/Éditer", "btn-primaire", () => ouvrir(item.id)));
     actions.appendChild(bouton("Encaisser", "btn-secondaire", () => ouvrirEncaissement(item)));
+    actions.appendChild(bouton("Détails", "btn-discret", () => ouvrirOptions(item)));
   } else if (item.kind === "installateur") {
     actions.appendChild(
       bouton("Installer la mise à jour", "btn-primaire", () => ouvrir(item.id))
@@ -181,15 +200,17 @@ async function ignorer(id) {
   }
 }
 
-// ───────────────────────────── Options d'impression ─────────────────────────────
+// ───────────── Détails de facturation (pas des options d'impression) ─────────────
+// L'impression elle-même passe toujours directement par la boîte de dialogue
+// Windows native (bouton Imprimer) — elle gère déjà copies/couleur/recto-verso.
+// Ceci ne sert qu'à noter ce qu'il faut facturer : copies, N&B/couleur, format
+// papier et finitions.
 
 function ouvrirOptions(item) {
   idOptionsEnCours = item.id;
   document.querySelector("#opt-copies").value = item.copies ?? 1;
   document.querySelector("#opt-couleur").checked = !!item.couleur;
   document.querySelector("#opt-format").value = item.format_papier ?? "A4";
-  document.querySelector("#opt-recto-verso").checked = !!item.recto_verso;
-  document.querySelector("#opt-orientation").value = item.orientation ?? "portrait";
 
   const grille = document.querySelector("#opt-finitions");
   grille.innerHTML = "";
@@ -220,14 +241,12 @@ document.querySelector("#form-options").addEventListener("submit", async (e) => 
       copies: Number(document.querySelector("#opt-copies").value) || 1,
       couleur: document.querySelector("#opt-couleur").checked,
       formatPapier: document.querySelector("#opt-format").value,
-      rectoVerso: document.querySelector("#opt-recto-verso").checked,
-      orientation: document.querySelector("#opt-orientation").value,
       finitions,
     });
     fermerModal("modal-options");
     await chargerFile();
   } catch (err) {
-    alert(`Impossible d'enregistrer les options : ${err}`);
+    alert(`Impossible d'enregistrer les détails : ${err}`);
   }
 });
 

@@ -1,5 +1,5 @@
 use crate::watcher::enqueue_file;
-use axum::extract::{Multipart, State};
+use axum::extract::{DefaultBodyLimit, Multipart, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
@@ -7,6 +7,10 @@ use axum::Router;
 use tauri::{AppHandle, Manager};
 
 pub const PORT: u16 = 4173;
+
+/// Limite haute pour un fichier envoyé par un client (au-delà, on refuse
+/// proprement plutôt que de laisser le serveur consommer toute la mémoire).
+const TAILLE_MAX_ENVOI: usize = 200 * 1024 * 1024; // 200 Mo
 
 /// Normalise un numéro béninois selon la réforme du 30/11/2024 : le préfixe
 /// "01" fait partie intégrante du numéro à 10 chiffres, ce n'est pas un
@@ -32,6 +36,7 @@ pub fn start(app: AppHandle) {
         let router = Router::new()
             .route("/", get(page_accueil))
             .route("/envoyer", post(recevoir_fichier))
+            .layer(DefaultBodyLimit::max(TAILLE_MAX_ENVOI))
             .with_state(app);
 
         let addr = format!("0.0.0.0:{PORT}");
@@ -83,6 +88,9 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
   .liens-secondaires {{ margin-top:1.5rem; text-align:center; font-size:0.8rem; }}
   .liens-secondaires a {{ color:#605e5c; text-decoration:underline; }}
   #confirmation {{ display:none; text-align:center; color:#107c10; font-weight:600; margin-top:1rem; }}
+  #progression {{ display:none; height:8px; background:#e8e6e4; border-radius:4px; overflow:hidden; margin-bottom:1rem; }}
+  #progression > div {{ height:100%; width:0%; background:#2b579a; transition:width .15s; }}
+  #texte-progression {{ display:none; text-align:center; font-size:0.8rem; color:#605e5c; margin:-0.5rem 0 1rem; }}
 </style>
 </head>
 <body>
@@ -92,6 +100,8 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
       <input type="text" name="nom" placeholder="Votre nom (optionnel)" />
       <input type="tel" name="telephone" placeholder="Votre numéro (optionnel)" />
       <input type="file" name="fichier" required />
+      <div id="progression"><div></div></div>
+      <p id="texte-progression"></p>
       <button type="submit">Envoyer à la boutique</button>
     </form>
     <p id="confirmation">Fichier envoyé, merci ! Le gérant a été prévenu.</p>
@@ -101,23 +111,45 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     </div>
   </div>
   <script>
-    document.getElementById('form-envoi').addEventListener('submit', async (e) => {{
+    document.getElementById('form-envoi').addEventListener('submit', (e) => {{
       e.preventDefault();
       const form = e.target;
       const donnees = new FormData(form);
       const bouton = form.querySelector('button');
+      const barre = document.querySelector('#progression');
+      const remplissage = barre.querySelector('div');
+      const texte = document.querySelector('#texte-progression');
       bouton.disabled = true;
       bouton.textContent = 'Envoi en cours…';
-      try {{
-        const reponse = await fetch('/envoyer', {{ method: 'POST', body: donnees }});
-        if (!reponse.ok) throw new Error('echec');
-        form.hidden = true;
-        document.getElementById('confirmation').style.display = 'block';
-      }} catch (err) {{
+      barre.style.display = 'block';
+      texte.style.display = 'block';
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/envoyer');
+      xhr.upload.addEventListener('progress', (ev) => {{
+        if (!ev.lengthComputable) return;
+        const pourcent = Math.round((ev.loaded / ev.total) * 100);
+        remplissage.style.width = pourcent + '%';
+        texte.textContent = `Envoi… ${{pourcent}}%  (fichier volumineux : patientez)`;
+      }});
+      xhr.addEventListener('load', () => {{
+        if (xhr.status >= 200 && xhr.status < 300) {{
+          form.hidden = true;
+          barre.style.display = 'none';
+          texte.style.display = 'none';
+          document.getElementById('confirmation').style.display = 'block';
+        }} else {{
+          bouton.disabled = false;
+          bouton.textContent = 'Envoyer à la boutique';
+          alert("L'envoi a échoué, réessayez.");
+        }}
+      }});
+      xhr.addEventListener('error', () => {{
         bouton.disabled = false;
         bouton.textContent = 'Envoyer à la boutique';
         alert("L'envoi a échoué, réessayez.");
-      }}
+      }});
+      xhr.send(donnees);
     }});
   </script>
 </body>

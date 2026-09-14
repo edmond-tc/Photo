@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
-    let finitions_json: Option<String> = row.get(14)?;
+    let finitions_json: Option<String> = row.get(15)?;
     let finitions = finitions_json
         .and_then(|j| serde_json::from_str(&j).ok())
         .unwrap_or_default();
@@ -24,20 +24,21 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         kind: row.get(6)?,
         status: row.get(7)?,
         received_at: row.get(8)?,
-        copies: row.get(9)?,
-        couleur: row.get(10)?,
-        format_papier: row.get(11)?,
-        recto_verso: row.get(12)?,
-        orientation: row.get(13)?,
+        taille_octets: row.get(9)?,
+        protege: row.get(10)?,
+        format_detecte: row.get(11)?,
+        copies: row.get(12)?,
+        couleur: row.get(13)?,
+        format_papier: row.get(14)?,
         finitions,
-        prix: row.get(15)?,
-        employe: row.get(16)?,
+        prix: row.get(16)?,
+        employe: row.get(17)?,
     })
 }
 
 const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telephone, source, kind,
-     status, received_at, copies, couleur, format_papier, recto_verso, orientation, finitions,
-     prix, employe";
+     status, received_at, taille_octets, protege, format_detecte, copies, couleur, format_papier,
+     finitions, prix, employe";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {

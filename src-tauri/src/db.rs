@@ -31,11 +31,12 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
             kind             TEXT NOT NULL,   -- 'imprimable' | 'editable' | 'inconnu'
             status           TEXT NOT NULL DEFAULT 'en_attente', -- 'en_attente' | 'traite'
             received_at      TEXT NOT NULL,
+            taille_octets    INTEGER NOT NULL DEFAULT 0,
+            protege          INTEGER NOT NULL DEFAULT 0, -- PDF probablement protégé par mot de passe
+            format_detecte   TEXT,             -- ex: 'US Letter' si différent de A4 (indicatif)
             copies           INTEGER NOT NULL DEFAULT 1,
             couleur          INTEGER NOT NULL DEFAULT 0,
             format_papier    TEXT NOT NULL DEFAULT 'A4',
-            recto_verso      INTEGER NOT NULL DEFAULT 0,
-            orientation      TEXT NOT NULL DEFAULT 'portrait',
             finitions        TEXT,             -- JSON: ['agrafage', 'plastification', ...]
             prix             INTEGER,
             employe          TEXT

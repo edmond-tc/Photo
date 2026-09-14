@@ -80,35 +80,26 @@ pub fn calculer_prix(state: State<DbState>, id: i64) -> Result<i64, String> {
     Ok(total)
 }
 
-// ───────────────────────── Options d'impression ─────────────────────────
+// ───────────── Détails de facturation (pas des options d'impression) ─────────────
+// L'impression réelle passe toujours par la boîte de dialogue native de Windows
+// (qui gère déjà copies/couleur/recto-verso/format) — ceci ne sert qu'à calculer
+// le prix et enregistrer les finitions demandées par le client.
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn set_print_options(
     state: State<DbState>,
     id: i64,
     copies: i64,
     couleur: bool,
     format_papier: String,
-    recto_verso: bool,
-    orientation: String,
     finitions: Vec<String>,
 ) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let finitions_json = serde_json::to_string(&finitions).map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE files_queue SET copies=?1, couleur=?2, format_papier=?3, recto_verso=?4,
-                                 orientation=?5, finitions=?6
-         WHERE id = ?7",
-        params![
-            copies.max(1),
-            couleur,
-            format_papier,
-            recto_verso,
-            orientation,
-            finitions_json,
-            id
-        ],
+        "UPDATE files_queue SET copies=?1, couleur=?2, format_papier=?3, finitions=?4
+         WHERE id = ?5",
+        params![copies.max(1), couleur, format_papier, finitions_json, id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
