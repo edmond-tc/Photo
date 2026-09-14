@@ -32,6 +32,7 @@ pub fn run() {
             let watched_folder = db::get_setting(&conn, "dossier_surveille");
 
             app.manage(DbState(Mutex::new(conn)));
+            app.manage(server::EtatServeur::default());
 
             if let Some(folder) = watched_folder {
                 watcher::watch_folder(app.handle().clone(), PathBuf::from(folder));
@@ -61,6 +62,7 @@ pub fn run() {
             gestion::calculer_prix,
             gestion::set_print_options,
             gestion::finaliser_commande,
+            gestion::imprimer_recu,
             gestion::list_stock,
             gestion::ajuster_stock,
             gestion::list_depenses,

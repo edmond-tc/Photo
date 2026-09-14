@@ -4,6 +4,7 @@ use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use axum::Router;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager};
 
 pub const PORT: u16 = 4173;
@@ -11,6 +12,12 @@ pub const PORT: u16 = 4173;
 /// Limite haute pour un fichier envoyé par un client (au-delà, on refuse
 /// proprement plutôt que de laisser le serveur consommer toute la mémoire).
 const TAILLE_MAX_ENVOI: usize = 200 * 1024 * 1024; // 200 Mo
+
+/// Reflète si le serveur local a effectivement réussi à démarrer. Sans ça,
+/// on pourrait afficher un QR code qui pointe vers un serveur mort (ex: port
+/// déjà utilisé) sans jamais prévenir le gérant.
+#[derive(Default)]
+pub struct EtatServeur(pub AtomicBool);
 
 /// Normalise un numéro béninois selon la réforme du 30/11/2024 : le préfixe
 /// "01" fait partie intégrante du numéro à 10 chiffres, ce n'est pas un
@@ -33,6 +40,7 @@ pub fn normalize_phone(raw: &str) -> Option<String> {
 /// asynchrone. Sert la boutique en Wi-Fi local, sans passer par internet.
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let app_pour_etat = app.clone();
         let router = Router::new()
             .route("/", get(page_accueil))
             .route("/envoyer", post(recevoir_fichier))
@@ -42,9 +50,17 @@ pub fn start(app: AppHandle) {
         let addr = format!("0.0.0.0:{PORT}");
         match tokio::net::TcpListener::bind(&addr).await {
             Ok(listener) => {
+                app_pour_etat
+                    .state::<EtatServeur>()
+                    .0
+                    .store(true, Ordering::SeqCst);
                 if let Err(e) = axum::serve(listener, router).await {
                     eprintln!("Serveur local arrêté avec une erreur : {e}");
                 }
+                app_pour_etat
+                    .state::<EtatServeur>()
+                    .0
+                    .store(false, Ordering::SeqCst);
             }
             Err(e) => {
                 eprintln!(
@@ -55,6 +71,12 @@ pub fn start(app: AppHandle) {
             }
         }
     });
+}
+
+/// Le serveur local a-t-il réussi à démarrer ? Utilisé avant d'afficher le
+/// QR code pour ne jamais présenter un lien mort au gérant.
+pub fn est_actif(app: &AppHandle) -> bool {
+    app.state::<EtatServeur>().0.load(Ordering::SeqCst)
 }
 
 async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {

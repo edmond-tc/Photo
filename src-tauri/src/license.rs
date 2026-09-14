@@ -57,10 +57,54 @@ pub struct StatutLicence {
     pub date_expiration: Option<String>,
 }
 
-pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
-    if db::get_setting(conn, "essai_debut").is_none() {
-        let _ = db::set_setting(conn, "essai_debut", &Local::now().to_rfc3339());
+/// Clé de registre miroir de `essai_debut` (Windows uniquement). Le fichier
+/// SQLite de l'app est facile à supprimer pour relancer un essai gratuit —
+/// ce second emplacement, moins évident, relève le niveau sans prétendre à
+/// une protection absolue (mécanisme "léger" assumé, cf. section 7).
+#[cfg(windows)]
+mod registre {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    const CHEMIN: &str = r"Software\AtinzPhotocopieBenin";
+    const VALEUR: &str = "EssaiDebut";
+
+    pub fn lire() -> Option<String> {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let cle = hkcu.open_subkey(CHEMIN).ok()?;
+        cle.get_value(VALEUR).ok()
     }
+
+    pub fn ecrire(valeur: &str) {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        if let Ok((cle, _)) = hkcu.create_subkey(CHEMIN) {
+            let _ = cle.set_value(VALEUR, &valeur);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod registre {
+    pub fn lire() -> Option<String> {
+        None
+    }
+    pub fn ecrire(_valeur: &str) {}
+}
+
+pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
+    let depuis_db = db::get_setting(conn, "essai_debut");
+    let depuis_registre = registre::lire();
+
+    let plus_ancienne = [depuis_db, depuis_registre]
+        .into_iter()
+        .flatten()
+        .filter_map(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+        .min()
+        .map(|d| d.to_rfc3339())
+        .unwrap_or_else(|| Local::now().to_rfc3339());
+
+    let _ = db::set_setting(conn, "essai_debut", &plus_ancienne);
+    registre::ecrire(&plus_ancienne);
 }
 
 #[tauri::command]

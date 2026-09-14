@@ -19,6 +19,38 @@
       </div>
     </header>
 
+    <!-- Assistant de premier lancement -->
+    <div id="modal-bienvenue" class="modal" hidden>
+      <div class="modal-carte">
+        <div id="etape-bienvenue-1">
+          <h2>Bienvenue dans Gestion Photocopie</h2>
+          <p>Trois petites étapes avant de commencer à recevoir des fichiers clients.</p>
+          <button class="btn-primaire" style="width:100%" data-suivant="etape-bienvenue-2">Commencer</button>
+        </div>
+        <div id="etape-bienvenue-2" hidden>
+          <h2>Étape 1 sur 2 — Votre boutique</h2>
+          <label>Nom de la boutique <input type="text" id="bv-nom" required /></label>
+          <label>Numéro WhatsApp (optionnel) <input type="text" id="bv-whatsapp" /></label>
+          <p style="font-size:0.85rem; color:var(--gris-texte-discret)">
+            Dossier surveillé : <span id="bv-dossier">non choisi</span>
+          </p>
+          <button type="button" class="btn-secondaire" style="width:100%; margin-bottom:0.75rem" id="bv-choisir-dossier">
+            Choisir le dossier surveillé…
+          </button>
+          <button class="btn-primaire" style="width:100%" id="bv-suivant-2">Suivant</button>
+        </div>
+        <div id="etape-bienvenue-3" hidden>
+          <h2>Étape 2 sur 2 — Essai gratuit</h2>
+          <p>Vous démarrez avec <strong>30 jours d'essai gratuit</strong>, toutes les fonctionnalités incluses.</p>
+          <p style="font-size:0.85rem; color:var(--gris-texte-discret)">
+            Identifiant de cette machine (à communiquer plus tard pour l'abonnement) :<br />
+            <span id="bv-machine-id" style="word-break:break-all"></span>
+          </p>
+          <button class="btn-primaire" style="width:100%" id="bv-terminer">C'est parti</button>
+        </div>
+      </div>
+    </div>
+
     <main class="file-queue">
       <p id="etat-vide" class="etat-vide" hidden>
         Aucun fichier en attente. Les fichiers déposés dans le dossier surveillé,
@@ -56,7 +88,9 @@
           avec le bouton Imprimer, qui ouvre la boîte de dialogue de Windows.
         </p>
         <form id="form-options">
-          <label>Copies <input type="number" id="opt-copies" min="1" value="1" /></label>
+          <label>Pages du document <input type="number" id="opt-pages" min="1" value="1" /></label>
+          <label>Nombre de copies <input type="number" id="opt-nb-copies" min="1" value="1" /></label>
+          <p id="opt-total-feuilles" class="chemin-dossier">= 1 feuille au total</p>
           <label class="champ-inline">
             <input type="checkbox" id="opt-couleur" /> Couleur (sinon Noir & Blanc)
           </label>

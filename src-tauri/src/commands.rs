@@ -176,7 +176,15 @@ pub fn set_boutique_setting(
 }
 
 #[tauri::command]
-pub fn get_server_info() -> Result<qr::ServerInfo, String> {
+pub fn get_server_info(app: AppHandle) -> Result<qr::ServerInfo, String> {
+    if !crate::server::est_actif(&app) {
+        return Err(
+            "Le service de réception QR n'a pas pu démarrer (port 4173 déjà utilisé par un \
+             autre programme ?). Les autres canaux (dossier surveillé, clé USB) fonctionnent \
+             normalement. Redémarrez l'application pour réessayer."
+                .to_string(),
+        );
+    }
     qr::build_server_info()
 }
 

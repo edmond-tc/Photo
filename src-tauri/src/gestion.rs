@@ -1,8 +1,9 @@
-use crate::db::DbState;
+use crate::db::{self, DbState};
+use crate::files;
 use crate::models::{Depense, Employe, StockItem, Tarif, Transaction};
 use chrono::Local;
 use rusqlite::params;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 // ───────────────────────────── Tarifs ─────────────────────────────
 
@@ -119,7 +120,7 @@ pub fn finaliser_commande(
     moyen_paiement: String,
     statut: String,
     employe: Option<String>,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let now = Local::now().to_rfc3339();
 
@@ -143,6 +144,7 @@ pub fn finaliser_commande(
         params![id, original_name, montant, moyen_paiement, statut, employe, now],
     )
     .map_err(|e| e.to_string())?;
+    let transaction_id = conn.last_insert_rowid();
 
     if kind == "imprimable" {
         let _ = conn.execute(
@@ -160,7 +162,76 @@ pub fn finaliser_commande(
         );
     }
 
-    Ok(())
+    Ok(transaction_id)
+}
+
+// ───────────────────────────── Reçu imprimable ─────────────────────────────
+
+/// Génère un reçu texte simple pour une transaction et l'envoie directement
+/// à l'impression (même mécanisme que pour les fichiers clients : dialogue
+/// Windows natif). Le texte brut s'imprime sans dépendance supplémentaire —
+/// pas besoin d'un générateur de PDF pour un reçu de quelques lignes.
+#[tauri::command]
+pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> {
+    let state = app.state::<DbState>();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+
+    let (description, montant, moyen_paiement, employe, created_at): (
+        String,
+        i64,
+        String,
+        Option<String>,
+        String,
+    ) = conn
+        .query_row(
+            "SELECT description, montant, moyen_paiement, employe, created_at
+             FROM transactions WHERE id = ?1",
+            params![transaction_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .map_err(|_| "Transaction introuvable".to_string())?;
+
+    let boutique_nom =
+        db::get_setting(&conn, "boutique_nom").unwrap_or_else(|| "Photocopie".to_string());
+    drop(conn);
+
+    let moyen_libelle = match moyen_paiement.as_str() {
+        "especes" => "Espèces",
+        "mobile_money" => "Mobile Money",
+        "credit" => "À crédit",
+        autre => autre,
+    };
+    let date_lisible = chrono::DateTime::parse_from_rfc3339(&created_at)
+        .map(|d| d.format("%d/%m/%Y %H:%M").to_string())
+        .unwrap_or(created_at);
+
+    let separateur = "=".repeat(32);
+    let contenu = format!(
+        "{separateur}\n{boutique_nom:^32}\n{separateur}\n\
+         Reçu n°{transaction_id}\n\
+         Date : {date_lisible}\n\
+         {tiret}\n\
+         {description}\n\
+         Montant : {montant} FCFA\n\
+         Paiement : {moyen_libelle}\n\
+         {employe_ligne}\
+         {separateur}\n\
+         {merci:^32}\n\
+         {separateur}\n",
+        tiret = "-".repeat(32),
+        employe_ligne = employe
+            .map(|e| format!("Servi par : {e}\n"))
+            .unwrap_or_default(),
+        merci = "Merci de votre visite !",
+    );
+
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let dossier_recus = data_dir.join("recus_emis");
+    std::fs::create_dir_all(&dossier_recus).map_err(|e| e.to_string())?;
+    let chemin = dossier_recus.join(format!("recu_{transaction_id}.txt"));
+    std::fs::write(&chemin, contenu).map_err(|e| e.to_string())?;
+
+    files::shell_open(&chemin, "print")
 }
 
 // ───────────────────────────── Stock ─────────────────────────────

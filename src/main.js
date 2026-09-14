@@ -206,9 +206,23 @@ async function ignorer(id) {
 // Ceci ne sert qu'à noter ce qu'il faut facturer : copies, N&B/couleur, format
 // papier et finitions.
 
+function majTotalFeuilles() {
+  const pages = Number(document.querySelector("#opt-pages").value) || 1;
+  const copies = Number(document.querySelector("#opt-nb-copies").value) || 1;
+  const total = pages * copies;
+  document.querySelector("#opt-total-feuilles").textContent =
+    `= ${total} feuille${total > 1 ? "s" : ""} au total`;
+}
+document.querySelector("#opt-pages").addEventListener("input", majTotalFeuilles);
+document.querySelector("#opt-nb-copies").addEventListener("input", majTotalFeuilles);
+
 function ouvrirOptions(item) {
   idOptionsEnCours = item.id;
-  document.querySelector("#opt-copies").value = item.copies ?? 1;
+  // On ne connaît que le total de feuilles déjà enregistré (pas le détail
+  // pages × copies) : on repart d'une copie pour ce total, modifiable.
+  document.querySelector("#opt-pages").value = 1;
+  document.querySelector("#opt-nb-copies").value = item.copies ?? 1;
+  majTotalFeuilles();
   document.querySelector("#opt-couleur").checked = !!item.couleur;
   document.querySelector("#opt-format").value = item.format_papier ?? "A4";
 
@@ -235,10 +249,12 @@ document.querySelector("#form-options").addEventListener("submit", async (e) => 
   const finitions = [...document.querySelectorAll("#opt-finitions input:checked")].map(
     (i) => i.value
   );
+  const pages = Number(document.querySelector("#opt-pages").value) || 1;
+  const nbCopies = Number(document.querySelector("#opt-nb-copies").value) || 1;
   try {
     await invoke("set_print_options", {
       id: idOptionsEnCours,
-      copies: Number(document.querySelector("#opt-copies").value) || 1,
+      copies: pages * nbCopies,
       couleur: document.querySelector("#opt-couleur").checked,
       formatPapier: document.querySelector("#opt-format").value,
       finitions,
@@ -279,7 +295,7 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
   e.preventDefault();
   const moyen = document.querySelector("#enc-moyen").value;
   try {
-    await invoke("finaliser_commande", {
+    const transactionId = await invoke("finaliser_commande", {
       id: idEncaissementEnCours,
       montant: Number(document.querySelector("#enc-montant").value) || 0,
       moyenPaiement: moyen,
@@ -288,6 +304,13 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
     });
     fermerModal("modal-encaissement");
     retirerFichier(idEncaissementEnCours);
+    if (confirm("Encaissement enregistré. Imprimer le reçu ?")) {
+      try {
+        await invoke("imprimer_recu", { transactionId });
+      } catch (err) {
+        alert(`Impossible d'imprimer le reçu : ${err}`);
+      }
+    }
   } catch (err) {
     alert(`Impossible d'encaisser : ${err}`);
   }
@@ -661,6 +684,51 @@ async function verifierMiseAJour() {
   }
 }
 
+// ───────────────────────────── Assistant de premier lancement ─────────────────────────────
+
+function afficherEtapeBienvenue(id) {
+  for (const el of document.querySelectorAll('[id^="etape-bienvenue-"]')) {
+    el.hidden = el.id !== id;
+  }
+}
+
+async function lancerAssistantPremierDemarrage() {
+  const params = await invoke("get_boutique_settings");
+  if (params.nom) return; // déjà configuré, pas besoin de l'assistant
+
+  ouvrirModal("modal-bienvenue");
+  afficherEtapeBienvenue("etape-bienvenue-1");
+
+  document
+    .querySelector('[data-suivant="etape-bienvenue-2"]')
+    .addEventListener("click", () => afficherEtapeBienvenue("etape-bienvenue-2"));
+
+  document.querySelector("#bv-choisir-dossier").addEventListener("click", async () => {
+    const dossier = await invoke("choose_watched_folder");
+    if (dossier) document.querySelector("#bv-dossier").textContent = dossier;
+  });
+
+  document.querySelector("#bv-suivant-2").addEventListener("click", async () => {
+    const nom = document.querySelector("#bv-nom").value.trim();
+    if (!nom) {
+      alert("Le nom de la boutique est nécessaire pour continuer.");
+      return;
+    }
+    await invoke("set_boutique_setting", { cle: "boutique_nom", valeur: nom });
+    const whatsapp = document.querySelector("#bv-whatsapp").value.trim();
+    if (whatsapp) {
+      await invoke("set_boutique_setting", { cle: "boutique_whatsapp", valeur: whatsapp });
+    }
+    const licence = await invoke("get_license_status");
+    document.querySelector("#bv-machine-id").textContent = licence.machine_id;
+    afficherEtapeBienvenue("etape-bienvenue-3");
+  });
+
+  document.querySelector("#bv-terminer").addEventListener("click", () => {
+    fermerModal("modal-bienvenue");
+  });
+}
+
 // ───────────────────────────── Démarrage ─────────────────────────────
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -679,6 +747,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   document.querySelector("#btn-recevoir-qr").addEventListener("click", afficherQr);
 
+  await lancerAssistantPremierDemarrage();
   await chargerFile();
   await rafraichirBadgeAbonnement();
   await verifierMiseAJour();
