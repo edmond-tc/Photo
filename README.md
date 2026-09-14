@@ -81,7 +81,11 @@ charges) ont une première implémentation :
   copies/couleur/recto-verso/format — pas de double saisie dans l'appli.
   L'écran « Détails » ne sert qu'à ce que Windows ne peut pas savoir : les
   finitions (agrafage, reliure...) et ce qu'il faut facturer, pour le
-  calcul de prix.
+  calcul de prix. **Aperçu intégré** (bouton *Aperçu*, PDF/image) avant
+  d'imprimer : le document s'affiche directement dans l'application (PDF
+  via le moteur de rendu intégré de WebView2, image directement), avec le
+  bouton *Imprimer* juste en dessous — aucune autre application à ouvrir
+  entre les deux, pas de va-et-vient.
 - Diagnostics à la réception d'un fichier : PDF probablement protégé par
   mot de passe, format détecté différent de A4 (ex. US Letter), fichier
   volumineux — affichés comme avertissements, jamais bloquants (cf.
@@ -117,9 +121,14 @@ charges) ont une première implémentation :
 - **Export des rapports** : CSV (ouvrable dans Excel) plutôt que `.xlsx`/`.pdf`
   binaires, pour rester simple et robuste sans dépendance lourde
   supplémentaire.
-- **Aperçu avant impression** : pas de moteur de rendu PDF maison — le clic
-  *Imprimer* route vers l'application déjà installée sur le PC (Edge, Acrobat,
-  Photos…), qui affiche elle-même un aperçu avant impression.
+- **Aperçu avant impression** : intégré dans l'app pour PDF/image (bouton
+  *Aperçu*) via le moteur de rendu PDF de WebView2 (le composant Chromium
+  embarqué par Tauri sur Windows) — pas un moteur de rendu maison, mais pas
+  non plus besoin d'ouvrir Edge/Acrobat séparément. Fichiers volumineux
+  (> 15 Mo) : l'aperçu intégré est désactivé (le data URI deviendrait trop
+  lourd pour la vue web), le bouton *Imprimer* reste utilisable directement.
+  Pour les fichiers Word/Excel/PowerPoint, l'aperçu se fait dans l'éditeur
+  natif (bouton *Ouvrir/Éditer*), pas dans l'app.
 - **Détection PDF protégé / format papier** : heuristiques par lecture
   directe des octets du fichier (recherche de `/Encrypt`, `/MediaBox`), pas
   un vrai analyseur PDF. Peut manquer certains PDF récents dont les objets

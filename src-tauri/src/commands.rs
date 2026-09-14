@@ -92,6 +92,15 @@ pub fn get_thumbnail(state: State<DbState>, id: i64) -> Result<Option<String>, S
     Ok(files::miniature_base64(&path))
 }
 
+/// Pour l'aperçu intégré avant impression (voir modal-apercu côté
+/// interface) : évite d'avoir à ouvrir une autre application pour
+/// simplement regarder le document.
+#[tauri::command]
+pub fn get_apercu(state: State<DbState>, id: i64) -> Result<String, String> {
+    let path = queue_item_path(&state, id)?;
+    files::apercu_data_uri(&path)
+}
+
 #[tauri::command]
 pub fn get_watched_folder(state: State<DbState>) -> Result<Option<String>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;

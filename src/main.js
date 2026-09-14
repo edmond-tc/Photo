@@ -118,6 +118,7 @@ function creerLigne(item) {
   // (boîte de dialogue Windows native) — les détails de facturation sont
   // secondaires et n'empêchent jamais d'imprimer ou d'éditer directement.
   if (item.kind === "imprimable") {
+    actions.appendChild(bouton("Aperçu", "btn-secondaire", () => ouvrirApercu(item)));
     actions.appendChild(bouton("Imprimer", "btn-primaire", () => imprimer(item.id)));
     actions.appendChild(bouton("Encaisser", "btn-secondaire", () => ouvrirEncaissement(item)));
     actions.appendChild(bouton("Détails", "btn-discret", () => ouvrirOptions(item)));
@@ -185,6 +186,36 @@ async function imprimer(id) {
     alert(`Impossible d'imprimer ce fichier : ${e}`);
   }
 }
+
+let idApercuEnCours = null;
+
+async function ouvrirApercu(item) {
+  idApercuEnCours = item.id;
+  document.querySelector("#apercu-titre").textContent = item.original_name;
+  const conteneur = document.querySelector("#apercu-contenu");
+  conteneur.innerHTML = "Chargement de l'aperçu…";
+  ouvrirModal("modal-apercu");
+  try {
+    const dataUri = await invoke("get_apercu", { id: item.id });
+    conteneur.innerHTML = "";
+    if (dataUri.startsWith("data:application/pdf")) {
+      const iframe = document.createElement("iframe");
+      iframe.src = dataUri;
+      conteneur.appendChild(iframe);
+    } else {
+      const img = document.createElement("img");
+      img.src = dataUri;
+      img.alt = item.original_name;
+      conteneur.appendChild(img);
+    }
+  } catch (e) {
+    conteneur.innerHTML = `<p class="avertissement">${e}</p>`;
+  }
+}
+
+document.querySelector("#btn-imprimer-depuis-apercu").addEventListener("click", () => {
+  if (idApercuEnCours != null) imprimer(idApercuEnCours);
+});
 
 async function ouvrir(id) {
   try {

@@ -60,6 +60,50 @@ pub fn miniature_base64(path: &Path) -> Option<String> {
     ))
 }
 
+/// Limite pour l'aperçu intégré (au-delà, le data URI deviendrait trop
+/// volumineux pour la vue web — le gérant utilise alors directement le
+/// bouton Imprimer, qui fonctionne quelle que soit la taille du fichier).
+const LIMITE_APERCU: u64 = 15 * 1024 * 1024;
+
+fn type_mime(ext: &str) -> Option<&'static str> {
+    match ext {
+        "pdf" => Some("application/pdf"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "png" => Some("image/png"),
+        "bmp" => Some("image/bmp"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "tif" | "tiff" => Some("image/tiff"),
+        _ => None,
+    }
+}
+
+/// Lit un fichier imprimable (PDF/image) et le renvoie en data URI, pour un
+/// aperçu affiché directement dans l'application — le gérant voit le
+/// document et imprime depuis le même écran, sans ouvrir une autre
+/// application entre les deux (pas de va-et-vient).
+pub fn apercu_data_uri(path: &Path) -> Result<String, String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime = type_mime(&ext).ok_or_else(|| "Aperçu non disponible pour ce format".to_string())?;
+
+    let taille = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
+    if taille > LIMITE_APERCU {
+        return Err(format!(
+            "Fichier trop volumineux pour l'aperçu intégré ({:.1} Mo) — imprimez directement.",
+            taille as f64 / 1024.0 / 1024.0
+        ));
+    }
+
+    let contenu = std::fs::read(path).map_err(|e| e.to_string())?;
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    Ok(format!("data:{mime};base64,{}", STANDARD.encode(contenu)))
+}
+
 /// Diagnostics légers sur un PDF, par lecture directe des octets (pas un
 /// vrai analyseur PDF — cf. limites documentées dans le README). Renvoie
 /// (protégé_par_mot_de_passe, format_papier_detecte).

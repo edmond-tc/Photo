@@ -48,6 +48,7 @@ pub fn run() {
             commands::get_historique,
             commands::rechercher_client,
             commands::get_thumbnail,
+            commands::get_apercu,
             commands::get_watched_folder,
             commands::choose_watched_folder,
             commands::open_file,

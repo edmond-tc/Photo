@@ -78,6 +78,21 @@
       </div>
     </div>
 
+    <!-- Aperçu intégré avant impression : pas besoin d'ouvrir une autre
+         application, le bouton Imprimer est juste en dessous. -->
+    <div id="modal-apercu" class="modal" hidden>
+      <div class="modal-carte modal-carte-large">
+        <div class="modal-entete">
+          <h2 id="apercu-titre">Aperçu</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-apercu" aria-label="Fermer">✕</button>
+        </div>
+        <div id="apercu-contenu" class="apercu-contenu"></div>
+        <div class="apercu-actions">
+          <button id="btn-imprimer-depuis-apercu" class="btn-primaire">Imprimer</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Détails de facturation (pas les options d'impression : l'impression
          elle-même passe directement par la boîte de dialogue Windows) -->
     <div id="modal-options" class="modal" hidden>
