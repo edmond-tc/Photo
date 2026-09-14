@@ -66,11 +66,14 @@
           <h2>Recevoir un fichier client</h2>
           <button class="btn-icon btn-fermer-modal" data-cible="modal-qr" aria-label="Fermer">✕</button>
         </div>
-        <p>Le client scanne ce code avec son téléphone (connecté au Wi-Fi de la boutique) :</p>
+        <p id="qr-intro">Le client scanne ce code avec son téléphone :</p>
         <div id="qr-conteneur" class="qr-conteneur"></div>
         <p id="qr-url" class="qr-url"></p>
         <button id="btn-parametres-partage" class="btn-secondaire">
           Ouvrir le partage de connexion Windows (Mobile Hotspot)
+        </button>
+        <button id="btn-imprimer-qr" class="btn-secondaire">
+          Imprimer ce QR (à coller à l'entrée)
         </button>
       </div>
     </div>

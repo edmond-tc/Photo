@@ -15,6 +15,7 @@ pub struct QueueItem {
     pub copies: i64,
     pub couleur: bool,
     pub format_papier: String,
+    pub plage_pages: Option<String>,
     pub finitions: Vec<String>,
     pub prix: Option<i64>,
     pub employe: Option<String>,

@@ -50,6 +50,17 @@ pub fn watch_folder(app: AppHandle, folder: PathBuf) {
     });
 }
 
+/// Préférences d'impression indiquées par le client lui-même (ex: via le
+/// formulaire QR), pour que le gérant n'ait qu'à confirmer plutôt qu'à
+/// redemander à chacun comment il veut son document.
+#[derive(Default)]
+pub struct OptionsImpression {
+    pub couleur: bool,
+    pub format_papier: Option<String>,
+    pub copies: Option<i64>,
+    pub plage_pages: Option<String>,
+}
+
 /// Enregistre un fichier reçu (quel que soit le canal) dans la file d'attente
 /// et prévient l'interface. Ignoré silencieusement si le chemin est déjà connu.
 pub fn enqueue_file(
@@ -58,6 +69,24 @@ pub fn enqueue_file(
     source: &str,
     client_name: Option<&str>,
     client_telephone: Option<&str>,
+) -> Option<i64> {
+    enqueue_file_avec_options(
+        app,
+        path,
+        source,
+        client_name,
+        client_telephone,
+        OptionsImpression::default(),
+    )
+}
+
+pub fn enqueue_file_avec_options(
+    app: &AppHandle,
+    path: &std::path::Path,
+    source: &str,
+    client_name: Option<&str>,
+    client_telephone: Option<&str>,
+    options: OptionsImpression,
 ) -> Option<i64> {
     let original_name = path
         .file_name()
@@ -83,11 +112,18 @@ pub fn enqueue_file(
         return None;
     }
 
+    let copies = options.copies.unwrap_or(1).max(1);
+    let format_papier = options
+        .format_papier
+        .clone()
+        .unwrap_or_else(|| "A4".to_string());
+
     let insert_result = conn.execute(
         "INSERT INTO files_queue
             (original_name, path, client_name, client_telephone, source, kind, status,
-             received_at, taille_octets, protege, format_detecte)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'en_attente', ?7, ?8, ?9, ?10)",
+             received_at, taille_octets, protege, format_detecte, couleur, format_papier,
+             copies, plage_pages)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'en_attente', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             original_name,
             path.to_string_lossy(),
@@ -98,7 +134,11 @@ pub fn enqueue_file(
             received_at,
             taille_octets as i64,
             protege,
-            format_detecte
+            format_detecte,
+            options.couleur,
+            format_papier,
+            copies,
+            options.plage_pages
         ],
     );
 
@@ -122,9 +162,10 @@ pub fn enqueue_file(
         taille_octets: taille_octets as i64,
         protege,
         format_detecte,
-        copies: 1,
-        couleur: false,
-        format_papier: "A4".to_string(),
+        copies,
+        couleur: options.couleur,
+        format_papier,
+        plage_pages: options.plage_pages,
         finitions: vec![],
         prix: None,
         employe: None,

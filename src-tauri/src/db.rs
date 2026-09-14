@@ -37,6 +37,7 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
             copies           INTEGER NOT NULL DEFAULT 1,
             couleur          INTEGER NOT NULL DEFAULT 0,
             format_papier    TEXT NOT NULL DEFAULT 'A4',
+            plage_pages      TEXT,             -- ex: 1-5, 8 -- indicatif, saisi par le client via QR
             finitions        TEXT,             -- JSON: ['agrafage', 'plastification', ...]
             prix             INTEGER,
             employe          TEXT

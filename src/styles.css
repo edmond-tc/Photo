@@ -401,3 +401,31 @@ fieldset {
 .carte-rapport h3 {
   margin-top: 0;
 }
+
+@media print {
+  body > *:not(#modal-qr) {
+    display: none !important;
+  }
+  #modal-qr {
+    position: static;
+    background: none;
+  }
+  #modal-qr .modal-entete,
+  #modal-qr #btn-parametres-partage,
+  #modal-qr #btn-imprimer-qr,
+  #modal-qr #qr-url {
+    display: none !important;
+  }
+  #modal-qr .modal-carte {
+    box-shadow: none;
+    max-width: none;
+  }
+  #qr-conteneur img {
+    width: 320px;
+    height: 320px;
+  }
+  #qr-intro {
+    text-align: center;
+    font-size: 1.1rem;
+  }
+}

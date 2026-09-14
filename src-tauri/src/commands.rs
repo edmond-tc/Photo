@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
-    let finitions_json: Option<String> = row.get(15)?;
+    let finitions_json: Option<String> = row.get(16)?;
     let finitions = finitions_json
         .and_then(|j| serde_json::from_str(&j).ok())
         .unwrap_or_default();
@@ -30,15 +30,16 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         copies: row.get(12)?,
         couleur: row.get(13)?,
         format_papier: row.get(14)?,
+        plage_pages: row.get(15)?,
         finitions,
-        prix: row.get(16)?,
-        employe: row.get(17)?,
+        prix: row.get(17)?,
+        employe: row.get(18)?,
     })
 }
 
 const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telephone, source, kind,
      status, received_at, taille_octets, protege, format_detecte, copies, couleur, format_papier,
-     finitions, prix, employe";
+     plage_pages, finitions, prix, employe";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {
@@ -176,6 +177,8 @@ pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value,
         "url_verification_maj": db::get_setting(&conn, "url_verification_maj"),
         "dossier_sauvegarde": db::get_setting(&conn, "dossier_sauvegarde"),
         "logo_chemin": db::get_setting(&conn, "boutique_logo_chemin"),
+        "wifi_ssid": db::get_setting(&conn, "wifi_ssid"),
+        "wifi_mot_de_passe": db::get_setting(&conn, "wifi_mot_de_passe"),
     }))
 }
 
@@ -190,6 +193,8 @@ pub fn set_boutique_setting(
         "boutique_whatsapp",
         "url_verification_maj",
         "dossier_sauvegarde",
+        "wifi_ssid",
+        "wifi_mot_de_passe",
     ];
     if !CLES_AUTORISEES.contains(&cle.as_str()) {
         return Err("réglage inconnu".to_string());
@@ -208,7 +213,12 @@ pub fn get_server_info(app: AppHandle) -> Result<qr::ServerInfo, String> {
                 .to_string(),
         );
     }
-    qr::build_server_info()
+    let state = app.state::<DbState>();
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let ssid = db::get_setting(&conn, "wifi_ssid");
+    let mot_de_passe = db::get_setting(&conn, "wifi_mot_de_passe");
+    drop(conn);
+    qr::build_server_info(ssid, mot_de_passe)
 }
 
 /// Ouvre directement la page des paramètres Windows pour le partage de

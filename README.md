@@ -63,10 +63,18 @@ charges) ont une première implémentation :
   avant impression est déjà fourni par l'application native qui gère le
   clic *Imprimer* — voir "Limites connues" ci-dessous).
 - **Réception clé USB** : détection des disques amovibles, scan automatique.
-- **Étape 3** — Serveur HTTP local (page de réception mobile-friendly, bouton
-  d'envoi direct en avant, WhatsApp/Bluetooth en liens secondaires) + QR code
-  affiché à l'écran (bouton 📶 dans la barre du haut). Le partage de
-  connexion Wi-Fi (Mobile Hotspot) s'active via un raccourci vers les
+- **Étape 3** — Serveur HTTP local (page de réception mobile-friendly,
+  sélection de plusieurs fichiers avec options par fichier — N&B/couleur,
+  format, copies, plage de pages — pour que le gérant n'ait qu'à confirmer),
+  **un seul QR code** (retour explicite du porteur du projet : pas deux
+  codes) qui encode directement les identifiants Wi-Fi (format `WIFI:`
+  reconnu nativement par les appareils photo Android/iPhone) — le client
+  scanne, rejoint le réseau local en un geste (aucune saisie), puis la page
+  d'envoi s'ouvre. Réseau 100% local, sans internet — comme un talkie-walkie
+  entre le téléphone et le PC, rien ne sort de la boutique. Le QR est
+  imprimable (bouton dédié) pour être collé à l'entrée, et reste valable
+  tant que le mot de passe Wi-Fi ne change pas. Le partage de connexion
+  Wi-Fi (Mobile Hotspot) lui-même s'active via un raccourci vers les
   paramètres Windows plutôt qu'une automatisation WinRT non testable ici.
 - **Étape 4** — L'impression elle-même passe *toujours* directement par la
   boîte de dialogue Windows native (bouton *Imprimer*), qui gère déjà
@@ -134,6 +142,17 @@ charges) ont une première implémentation :
   tethering, non testable ici) — le message d'erreur du QR explique le cas
   et propose une solution de contournement, mais ne le détecte pas
   précisément.
+- **Ouverture automatique de la page après connexion Wi-Fi ("portail
+  captif")** : tentative best-effort (serveur qui répond sur le port 80 et
+  redirige tout vers la page d'envoi, comme les Wi-Fi d'hôtel/café). Ça
+  fonctionne sur une partie des téléphones seulement — la détection de
+  portail captif dépend du système et de sa version, et nécessiterait
+  aussi de contrôler le DNS du réseau local pour être fiable partout, ce
+  que Windows Mobile Hotspot ne permet pas facilement. Si l'ouverture
+  automatique ne se déclenche pas, le client n'a qu'à ouvrir son navigateur
+  une fois connecté — la connexion Wi-Fi elle-même (la partie qui compte
+  le plus) reste, elle, automatique dans tous les cas grâce au QR au format
+  `WIFI:`.
 - **Secret de licence codé en dur** dans `license.rs` : le dépôt étant
   privé, il n'est pas exposé publiquement, mais reste extractible du
   binaire compilé par quelqu'un de déterminé. À changer avant une

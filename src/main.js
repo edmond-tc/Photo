@@ -86,7 +86,10 @@ function creerLigne(item) {
     item.client_name ? `Client : ${item.client_name}` : null,
     formatHeure(item.received_at),
     LIBELLES_KIND[item.kind] ?? item.kind,
+    item.couleur ? "Couleur" : null,
+    item.format_papier && item.format_papier !== "A4" ? item.format_papier : null,
     item.copies > 1 ? `${item.copies} copies` : null,
+    item.plage_pages ? `pages ${item.plage_pages}` : null,
     item.finitions?.length ? item.finitions.length + " finition(s)" : null,
     item.taille_octets > 20 * 1024 * 1024
       ? `${(item.taille_octets / 1024 / 1024).toFixed(1)} Mo — fichier volumineux`
@@ -344,7 +347,14 @@ async function afficherQr() {
     img.width = 220;
     img.height = 220;
     conteneur.appendChild(img);
-    urlEl.textContent = info.url;
+    if (info.wifi_configure) {
+      urlEl.textContent =
+        "Un seul geste : le client scanne, rejoint le Wi-Fi automatiquement, et la page d'envoi s'ouvre.";
+    } else {
+      urlEl.innerHTML =
+        `Wi-Fi non configuré — ce QR n'ouvre que la page (${info.url}), le client doit déjà être connecté. ` +
+        `Configurez le nom et le mot de passe du Wi-Fi dans Réglages pour un QR unique tout-en-un.`;
+    }
   } catch (e) {
     conteneur.innerHTML = `<p class="avertissement">${e}</p>`;
   }
@@ -357,6 +367,10 @@ document.querySelector("#btn-parametres-partage").addEventListener("click", asyn
   } catch (e) {
     alert(e);
   }
+});
+
+document.querySelector("#btn-imprimer-qr").addEventListener("click", () => {
+  window.print();
 });
 
 // ───────────────────────────── Panneau latéral ─────────────────────────────
@@ -686,6 +700,30 @@ async function rendreReglages(corps) {
     })
   );
   corps.appendChild(secBoutique);
+
+  const secWifi = document.createElement("section");
+  secWifi.innerHTML = `
+    <h3>Wi-Fi local (pour le QR unique)</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Recopiez ici le nom et le mot de passe affichés sur l'écran des
+      paramètres Windows (bouton "Ouvrir le partage de connexion" dans la
+      fenêtre QR) — permet au QR de connecter le client automatiquement.
+    </p>
+  `;
+  const formWifi = document.createElement("form");
+  formWifi.innerHTML = `
+    <label>Nom du réseau (SSID) <input type="text" id="reg-wifi-ssid" value="${params.wifi_ssid ?? ""}" /></label>
+    <label>Mot de passe <input type="text" id="reg-wifi-mdp" value="${params.wifi_mot_de_passe ?? ""}" /></label>
+    <button type="submit" class="btn-secondaire">Enregistrer</button>
+  `;
+  formWifi.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await invoke("set_boutique_setting", { cle: "wifi_ssid", valeur: document.querySelector("#reg-wifi-ssid").value });
+    await invoke("set_boutique_setting", { cle: "wifi_mot_de_passe", valeur: document.querySelector("#reg-wifi-mdp").value });
+    alert("Wi-Fi enregistré. Le QR (bouton 📶) l'utilisera dès maintenant.");
+  });
+  secWifi.appendChild(formWifi);
+  corps.appendChild(secWifi);
 
   // Grille tarifaire
   const tarifs = await invoke("list_tarifs");
