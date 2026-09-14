@@ -1,7 +1,15 @@
-mod commands;
-mod db;
-mod files;
-mod watcher;
+pub mod backup;
+pub mod commands;
+pub mod db;
+pub mod files;
+pub mod gestion;
+pub mod license;
+pub mod models;
+pub mod qr;
+pub mod server;
+pub mod updates;
+pub mod usb;
+pub mod watcher;
 
 use db::DbState;
 use std::path::PathBuf;
@@ -20,6 +28,7 @@ pub fn run() {
                 .expect("impossible de résoudre le dossier de données de l'application");
 
             let conn = db::open(&data_dir).expect("échec d'ouverture de la base SQLite");
+            license::assurer_debut_essai(&conn);
             let watched_folder = db::get_setting(&conn, "dossier_surveille");
 
             app.manage(DbState(Mutex::new(conn)));
@@ -27,16 +36,44 @@ pub fn run() {
             if let Some(folder) = watched_folder {
                 watcher::watch_folder(app.handle().clone(), PathBuf::from(folder));
             }
+            usb::watch_usb_drives(app.handle().clone());
+            server::start(app.handle().clone());
+            backup::start(app.handle().clone());
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_queue,
+            commands::get_historique,
+            commands::rechercher_client,
+            commands::get_thumbnail,
             commands::get_watched_folder,
             commands::choose_watched_folder,
             commands::open_file,
             commands::print_file,
-            commands::mark_processed,
+            commands::ignorer_fichier,
+            commands::get_boutique_settings,
+            commands::set_boutique_setting,
+            commands::get_server_info,
+            commands::ouvrir_parametres_partage_connexion,
+            gestion::list_tarifs,
+            gestion::update_tarif,
+            gestion::calculer_prix,
+            gestion::set_print_options,
+            gestion::finaliser_commande,
+            gestion::list_stock,
+            gestion::ajuster_stock,
+            gestion::list_depenses,
+            gestion::ajouter_depense,
+            gestion::list_employes,
+            gestion::ajouter_employe,
+            gestion::list_transactions,
+            gestion::rapport_du_jour,
+            gestion::exporter_transactions_csv,
+            license::get_license_status,
+            license::set_license_key,
+            updates::verifier_mise_a_jour,
+            updates::version_actuelle,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

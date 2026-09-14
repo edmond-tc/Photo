@@ -10,11 +10,45 @@ pub fn classify(path: &Path) -> &'static str {
         .to_lowercase();
 
     match ext.as_str() {
+        "exe" | "msi" => "installateur",
         "pdf" | "jpg" | "jpeg" | "png" | "bmp" | "tif" | "tiff" | "gif" | "webp" => "imprimable",
         "doc" | "docx" | "ppt" | "pptx" | "xls" | "xlsx" | "txt" | "rtf" | "odt" | "odp"
         | "ods" | "csv" => "editable",
         _ => "inconnu",
     }
+}
+
+/// Génère une petite vignette base64 pour les fichiers image (aperçu dans
+/// la file d'attente). Renvoie None pour les autres formats — l'interface
+/// affiche alors une icône générique par type, pas la peine de réinventer
+/// un moteur de rendu PDF pour une simple vignette (section 3 : router vers
+/// les outils déjà connus plutôt que tout réinventer).
+pub fn miniature_base64(path: &Path) -> Option<String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !matches!(
+        ext.as_str(),
+        "jpg" | "jpeg" | "png" | "bmp" | "gif" | "webp"
+    ) {
+        return None;
+    }
+
+    let img = image::open(path).ok()?;
+    let vignette = img.thumbnail(96, 96);
+    let mut buffer = std::io::Cursor::new(Vec::new());
+    vignette
+        .write_to(&mut buffer, image::ImageFormat::Png)
+        .ok()?;
+
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    Some(format!(
+        "data:image/png;base64,{}",
+        STANDARD.encode(buffer.into_inner())
+    ))
 }
 
 /// Ouvre le fichier avec le programme associé par défaut sur Windows (Word,

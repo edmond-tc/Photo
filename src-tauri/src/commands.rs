@@ -1,40 +1,92 @@
 use crate::db::{self, DbState};
 use crate::files;
-use crate::watcher::{self, QueueItem};
+use crate::models::QueueItem;
+use crate::qr;
+use crate::watcher;
 use rusqlite::params;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
+    let finitions_json: Option<String> = row.get(14)?;
+    let finitions = finitions_json
+        .and_then(|j| serde_json::from_str(&j).ok())
+        .unwrap_or_default();
+
+    Ok(QueueItem {
+        id: row.get(0)?,
+        original_name: row.get(1)?,
+        path: row.get(2)?,
+        client_name: row.get(3)?,
+        client_telephone: row.get(4)?,
+        source: row.get(5)?,
+        kind: row.get(6)?,
+        status: row.get(7)?,
+        received_at: row.get(8)?,
+        copies: row.get(9)?,
+        couleur: row.get(10)?,
+        format_papier: row.get(11)?,
+        recto_verso: row.get(12)?,
+        orientation: row.get(13)?,
+        finitions,
+        prix: row.get(15)?,
+        employe: row.get(16)?,
+    })
+}
+
+const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telephone, source, kind,
+     status, received_at, copies, couleur, format_papier, recto_verso, orientation, finitions,
+     prix, employe";
+
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, original_name, path, client_name, source, kind, status, received_at
-             FROM files_queue
-             WHERE status = 'en_attente'
-             ORDER BY received_at ASC",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(QueueItem {
-                id: row.get(0)?,
-                original_name: row.get(1)?,
-                path: row.get(2)?,
-                client_name: row.get(3)?,
-                source: row.get(4)?,
-                kind: row.get(5)?,
-                status: row.get(6)?,
-                received_at: row.get(7)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
-
+    let sql = format!(
+        "SELECT {COLONNES_QUEUE} FROM files_queue WHERE status = 'en_attente' ORDER BY received_at ASC"
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], lire_ligne).map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_historique(state: State<DbState>, limite: i64) -> Result<Vec<QueueItem>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let sql = format!(
+        "SELECT {COLONNES_QUEUE} FROM files_queue WHERE status = 'traite'
+         ORDER BY received_at DESC LIMIT ?1"
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![limite], lire_ligne)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn rechercher_client(state: State<DbState>, terme: String) -> Result<Vec<QueueItem>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let motif = format!("%{terme}%");
+    let sql = format!(
+        "SELECT {COLONNES_QUEUE} FROM files_queue
+         WHERE client_name LIKE ?1 OR client_telephone LIKE ?1 OR original_name LIKE ?1
+         ORDER BY received_at DESC LIMIT 100"
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![motif], lire_ligne)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_thumbnail(state: State<DbState>, id: i64) -> Result<Option<String>, String> {
+    let path = queue_item_path(&state, id)?;
+    Ok(files::miniature_base64(&path))
 }
 
 #[tauri::command]
@@ -78,8 +130,11 @@ pub fn print_file(state: State<DbState>, id: i64) -> Result<(), String> {
     files::shell_open(&path, "print")
 }
 
+/// Retire un fichier de la file sans encaissement (ex: format non
+/// supporté, doublon, client absent). Pour une commande payante, voir
+/// `gestion::finaliser_commande`.
 #[tauri::command]
-pub fn mark_processed(state: State<DbState>, id: i64) -> Result<(), String> {
+pub fn ignorer_fichier(state: State<DbState>, id: i64) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE files_queue SET status = 'traite' WHERE id = ?1",
@@ -87,6 +142,59 @@ pub fn mark_processed(state: State<DbState>, id: i64) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "nom": db::get_setting(&conn, "boutique_nom"),
+        "whatsapp": db::get_setting(&conn, "boutique_whatsapp"),
+        "url_verification_maj": db::get_setting(&conn, "url_verification_maj"),
+        "dossier_sauvegarde": db::get_setting(&conn, "dossier_sauvegarde"),
+    }))
+}
+
+#[tauri::command]
+pub fn set_boutique_setting(
+    state: State<DbState>,
+    cle: String,
+    valeur: String,
+) -> Result<(), String> {
+    const CLES_AUTORISEES: &[&str] = &[
+        "boutique_nom",
+        "boutique_whatsapp",
+        "url_verification_maj",
+        "dossier_sauvegarde",
+    ];
+    if !CLES_AUTORISEES.contains(&cle.as_str()) {
+        return Err("réglage inconnu".to_string());
+    }
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::set_setting(&conn, &cle, &valeur).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_server_info() -> Result<qr::ServerInfo, String> {
+    qr::build_server_info()
+}
+
+/// Ouvre directement la page des paramètres Windows pour le partage de
+/// connexion Wi-Fi (Mobile Hotspot) — plus simple et robuste que de piloter
+/// l'API WinRT de tethering sans pouvoir la tester sur une vraie machine.
+#[tauri::command]
+pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        files::shell_open(
+            std::path::Path::new("ms-settings:network-mobilehotspot"),
+            "open",
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        Err("Disponible uniquement sur Windows".to_string())
+    }
 }
 
 fn queue_item_path(state: &State<DbState>, id: i64) -> Result<PathBuf, String> {

@@ -23,9 +23,22 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 notify = "6"
 chrono = { version = "0.4", features = ["serde"] }
+sysinfo = "0.31"
+axum = { version = "0.7", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }
+local-ip-address = "0.6"
+machine-uid = "0.5"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+base32 = "0.5"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_UI_Shell", "Win32_Foundation"] }
