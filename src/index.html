@@ -12,7 +12,9 @@
     <header class="topbar">
       <h1>Gestion Photocopie</h1>
       <div class="topbar-right">
-        <span id="statut-dossier" class="statut-dossier">Dossier surveillé : —</span>
+        <span id="badge-abonnement" class="badge-abonnement" hidden></span>
+        <span id="badge-maj" class="badge-maj" hidden></span>
+        <button id="btn-recevoir-qr" class="btn-icon" title="Recevoir un fichier par QR">📶</button>
         <button id="btn-menu" class="btn-icon" title="Menu" aria-label="Ouvrir le menu">⋮</button>
       </div>
     </header>
@@ -25,23 +27,107 @@
       <ul id="liste-fichiers" class="liste-fichiers"></ul>
     </main>
 
+    <!-- Panneau QR (réception client) -->
+    <div id="modal-qr" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2>Recevoir un fichier client</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-qr" aria-label="Fermer">✕</button>
+        </div>
+        <p>Le client scanne ce code avec son téléphone (connecté au Wi-Fi de la boutique) :</p>
+        <div id="qr-conteneur" class="qr-conteneur"></div>
+        <p id="qr-url" class="qr-url"></p>
+        <button id="btn-parametres-partage" class="btn-secondaire">
+          Ouvrir le partage de connexion Windows (Mobile Hotspot)
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal options d'impression / finitions -->
+    <div id="modal-options" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2>Options de la commande</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-options" aria-label="Fermer">✕</button>
+        </div>
+        <form id="form-options">
+          <label>Copies <input type="number" id="opt-copies" min="1" value="1" /></label>
+          <label class="champ-inline">
+            <input type="checkbox" id="opt-couleur" /> Couleur (sinon Noir & Blanc)
+          </label>
+          <label>Format papier
+            <select id="opt-format">
+              <option value="A4">A4</option>
+              <option value="A3">A3</option>
+              <option value="A5">A5</option>
+            </select>
+          </label>
+          <label class="champ-inline">
+            <input type="checkbox" id="opt-recto-verso" /> Recto-verso
+          </label>
+          <label>Orientation
+            <select id="opt-orientation">
+              <option value="portrait">Portrait</option>
+              <option value="paysage">Paysage</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>Finitions</legend>
+            <div id="opt-finitions" class="grille-finitions"></div>
+          </fieldset>
+          <button type="submit" class="btn-primaire">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal encaissement -->
+    <div id="modal-encaissement" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2>Encaisser</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-encaissement" aria-label="Fermer">✕</button>
+        </div>
+        <form id="form-encaissement">
+          <label>Montant (FCFA) <input type="number" id="enc-montant" min="0" required /></label>
+          <label>Moyen de paiement
+            <select id="enc-moyen">
+              <option value="especes">Espèces</option>
+              <option value="mobile_money">Mobile Money</option>
+              <option value="credit">À crédit (impayé)</option>
+            </select>
+          </label>
+          <label>Employé
+            <select id="enc-employe"></select>
+          </label>
+          <button type="submit" class="btn-primaire">Valider l'encaissement</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Panneau latéral (⋮) -->
     <aside id="panneau-menu" class="panneau-menu" hidden>
       <div class="panneau-entete">
-        <h2>Réglages</h2>
+        <h2 id="panneau-titre">Menu</h2>
         <button id="btn-fermer-menu" class="btn-icon" aria-label="Fermer">✕</button>
       </div>
-      <div class="panneau-contenu">
-        <section>
-          <h3>Dossier surveillé</h3>
-          <p id="chemin-dossier" class="chemin-dossier">Aucun dossier configuré</p>
-          <button id="btn-choisir-dossier" class="btn-secondaire">Choisir un dossier…</button>
-        </section>
-        <p class="version">Version 0.1.0</p>
+
+      <nav id="panneau-nav" class="panneau-nav">
+        <button class="item-nav" data-section="commandes">Commandes en cours</button>
+        <button class="item-nav" data-section="historique">Historique</button>
+        <button class="item-nav" data-section="recherche">Documents reçus / Recherche client</button>
+        <button class="item-nav" data-section="rapports">Rapports</button>
+        <button class="item-nav" data-section="reglages">Réglages</button>
+      </nav>
+
+      <div id="panneau-contenu" class="panneau-contenu" hidden>
+        <button id="btn-retour-nav" class="btn-discret">← Retour</button>
+        <div id="section-corps"></div>
       </div>
     </aside>
 
     <template id="tpl-ligne-fichier">
       <li class="ligne-fichier">
+        <img class="vignette-fichier" hidden alt="" />
         <div class="info-fichier">
           <span class="nom-fichier"></span>
           <span class="meta-fichier"></span>

@@ -216,3 +216,188 @@ body {
   color: var(--gris-texte-discret);
   margin-top: auto;
 }
+
+/* ───────────────────────── Formulaires génériques ───────────────────────── */
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+label.champ-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+input[type="text"],
+input[type="tel"],
+input[type="number"],
+select {
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem;
+  border: 1px solid var(--gris-bordure);
+  border-radius: 4px;
+}
+
+fieldset {
+  border: 1px solid var(--gris-bordure);
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+}
+
+.grille-finitions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.4rem;
+}
+
+/* ───────────────────────────────── Badges ───────────────────────────────── */
+
+.badge-abonnement,
+.badge-maj {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.badge-essai {
+  background: #fff4ce;
+  color: #614300;
+}
+.badge-actif {
+  background: #dff6dd;
+  color: #0e5c1f;
+}
+.badge-expire,
+.badge-invalide {
+  background: #fde7e9;
+  color: var(--rouge-alerte);
+}
+
+/* ─────────────────────────────── Vignettes ─────────────────────────────── */
+
+.vignette-fichier {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* ───────────────────────────────── Modales ──────────────────────────────── */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 20;
+}
+
+.modal-carte {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 1.25rem;
+  max-width: 420px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.modal-entete h2 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+.modal-entete .btn-icon {
+  color: var(--gris-texte);
+}
+
+.qr-conteneur {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
+}
+
+.qr-url {
+  text-align: center;
+  font-size: 0.85rem;
+  word-break: break-all;
+  margin-bottom: 1rem;
+}
+
+/* ───────────────────────── Panneau latéral : navigation ─────────────────────── */
+
+.panneau-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+}
+
+.item-nav {
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.85rem 0.75rem;
+  font-size: 0.95rem;
+  color: var(--gris-texte);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.item-nav:hover {
+  background: var(--gris-clair);
+}
+
+.panneau-contenu {
+  overflow-y: auto;
+}
+
+.panneau-contenu section {
+  border-bottom: 1px solid var(--gris-bordure);
+  padding-bottom: 1rem;
+}
+
+.ligne-liste {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--gris-bordure);
+  font-size: 0.9rem;
+}
+
+.ligne-stock {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+.ligne-stock input {
+  width: 90px;
+}
+.ligne-stock.alerte {
+  color: var(--rouge-alerte);
+  font-weight: 600;
+}
+
+.carte-rapport {
+  background: var(--gris-clair);
+  border-radius: 6px;
+  padding: 0.85rem;
+  font-size: 0.9rem;
+}
+.carte-rapport h3 {
+  margin-top: 0;
+}
