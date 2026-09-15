@@ -19,34 +19,51 @@ connecté. Sert à :
   la boutique est créée automatiquement si c'est un nouveau gérant.
 
 La base D1 `photocopie-admin-db` (id `ca1a0e15-7e38-4eee-afb6-a44b5f6b4418`)
-est déjà créée et migrée en prod (3 tables : `boutiques`, `licences`,
-`rapports`). `wrangler.toml` pointe déjà dessus. Reste à déployer le
-Worker lui-même, ce que le connecteur Cloudflare utilisé pendant le
-développement ne permet pas de faire (il peut lire/lister les Workers,
-pas en déployer) — à faire depuis ta machine :
+est déjà créée et migrée en prod (5 tables : `boutiques`, `licences`,
+`rapports`, `demandes`, `parametres`). `wrangler.toml` pointe déjà dessus.
 
-```bash
-npm install -g wrangler        # si pas déjà installé
-cd admin
-npm install
-wrangler login                 # ouvre le navigateur, connecte le même compte Cloudflare
-wrangler secret put ADMIN_PASSWORD    # le mot de passe pour toi-même, choisis-en un fort
-wrangler secret put LICENSE_SECRET    # voir "Secret de licence" ci-dessous — TRÈS IMPORTANT
-npm run deploy                 # déploie le Worker
-```
+## Déploiement — sans terminal, GitHub s'en charge
+
+Un workflow (`.github/workflows/deploy-admin.yml`) déploie automatiquement
+le Worker à chaque changement poussé dans `admin/` — exactement comme la
+compilation automatique du `.exe` Windows. **Aucune commande à taper** :
+juste remplir 4 "secrets" une seule fois, dans deux pages web.
+
+**1. Créer un jeton d'accès Cloudflare** (page web, pas de terminal) :
+   - Va sur [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)
+   - "Create Token" → modèle "Edit Cloudflare Workers" → suivre les
+     étapes → "Continue to summary" → "Create Token"
+   - Copie le jeton affiché (il ne sera plus jamais montré après)
+   - Sur la même page Cloudflare, en bas à droite du tableau de bord
+     "Workers & Pages", note aussi l'**Account ID** affiché
+
+**2. Ajouter 4 secrets sur GitHub** (page web, pas de terminal) :
+   - Sur la page du dépôt GitHub → **Settings** → **Secrets and variables**
+     → **Actions** → **New repository secret**, répéter 4 fois :
+
+     | Nom du secret | Valeur |
+     |---|---|
+     | `CLOUDFLARE_API_TOKEN` | le jeton copié à l'étape 1 |
+     | `CLOUDFLARE_ACCOUNT_ID` | l'Account ID noté à l'étape 1 |
+     | `ADMIN_PASSWORD` | le mot de passe que tu veux utiliser pour te connecter au tableau de bord |
+     | `LICENSE_SECRET` | **copie exacte** de la constante `SECRET` dans `src-tauri/src/license.rs` — voir l'avertissement ci-dessous |
+
+**3.** Onglet **Actions** du dépôt → workflow **Deploy Admin** → **Run workflow**
+   (ou attendre le prochain push touchant `admin/`, qui le déclenche tout seul).
+
+Une fois terminé (quelques dizaines de secondes), le tableau de bord est en
+ligne à l'adresse affichée dans les logs du workflow (`https://photocopie-admin.<ton-sous-domaine>.workers.dev`).
 
 ## Secret de licence — le point le plus important
 
 `LICENSE_SECRET` doit être **exactement identique** à la constante `SECRET`
 dans `src-tauri/src/license.rs` — sinon les clés générées ici seraient
-rejetées par l'application des gérants (et vice-versa). Ouvre ce fichier,
-copie la valeur telle quelle, colle-la quand `wrangler secret put` te la
-demande. Si tu changes un jour le secret dans `license.rs` (par exemple en
-recompilant l'appli avec un nouveau secret), il faut aussi le remettre à
-jour ici avec `wrangler secret put LICENSE_SECRET`, sinon les deux ne
-seront plus synchronisés.
+rejetées par l'application des gérants (et vice-versa). Si tu changes un
+jour le secret dans `license.rs`, remets aussi à jour le secret GitHub
+`LICENSE_SECRET` (même page que l'étape 2 ci-dessus, "Update"), sinon les
+deux ne seront plus synchronisés.
 
-## Tester en local avant de déployer
+## Tester en local avant de déployer (facultatif, réservé au développement)
 
 ```bash
 npm run db:migrate:local       # recrée les tables dans une copie locale de D1
