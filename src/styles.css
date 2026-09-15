@@ -6,6 +6,10 @@
   --gris-texte: #323130;
   --gris-texte-discret: #605e5c;
   --rouge-alerte: #a4262c;
+  --vert-succes: #0e5c1f;
+  --vert-succes-fond: #dff6dd;
+  --jaune-alerte: #614300;
+  --jaune-alerte-fond: #fff4ce;
 }
 
 * {
@@ -275,18 +279,29 @@ fieldset {
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* Calme tant qu'il reste largement le temps de renouveler — seuls les
+   derniers jours passent en jaune/rouge, pour ne pas donner une impression
+   d'urgence permanente sur un essai qui vient tout juste de commencer. */
+.badge-essai-calme {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
 .badge-essai {
-  background: #fff4ce;
-  color: #614300;
+  background: var(--jaune-alerte-fond);
+  color: var(--jaune-alerte);
 }
 .badge-actif {
-  background: #dff6dd;
-  color: #0e5c1f;
+  background: var(--vert-succes-fond);
+  color: var(--vert-succes);
 }
 .badge-expire,
 .badge-invalide {
   background: #fde7e9;
   color: var(--rouge-alerte);
+}
+.badge-oublies {
+  background: var(--jaune-alerte-fond);
+  color: var(--jaune-alerte);
 }
 
 /* ─────────────────────────────── Vignettes ─────────────────────────────── */
@@ -448,6 +463,39 @@ fieldset {
 }
 .carte-rapport h3 {
   margin-top: 0;
+}
+
+/* ───────────────────────────────── Toast ───────────────────────────────── */
+/* Confirmation discrète qui apparaît puis disparaît seule — pour les actions
+   routinières (réglages enregistrés, sauvegarde faite...) qui n'ont pas
+   besoin d'interrompre le gérant avec une fenêtre à fermer. */
+
+.toast {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(-16px);
+  max-width: calc(100vw - 2rem);
+  background: var(--vert-succes-fond);
+  color: var(--vert-succes);
+  border: 1px solid #b7e2ba;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  z-index: 60;
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  pointer-events: none;
+  text-align: center;
+}
+.toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.toast.toast-attention {
+  background: var(--jaune-alerte-fond);
+  color: var(--jaune-alerte);
+  border-color: #f3d998;
 }
 
 @media print {

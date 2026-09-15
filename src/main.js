@@ -80,6 +80,40 @@ function jouerNotification() {
   }
 }
 
+// Petit "tic" — confirme que l'impression a bien été envoyée.
+function jouerSonImpression() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    jouerTonalite(ctx, { freq: 659, debut: 0, duree: 0.13, gainMax: 0.14 });
+  } catch {
+    // Pas grave si le son ne peut pas jouer.
+  }
+}
+
+// Deux notes montantes — confirme qu'un encaissement vient d'être validé.
+function jouerSonEncaissement() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    jouerTonalite(ctx, { freq: 523, debut: 0, duree: 0.14, gainMax: 0.16 });
+    jouerTonalite(ctx, { freq: 659, debut: 0.13, duree: 0.22, gainMax: 0.16 });
+  } catch {
+    // Pas grave si le son ne peut pas jouer.
+  }
+}
+
+// ── Confirmation discrète qui disparaît seule, pour ne pas interrompre le
+// gérant à chaque action routinière (contrairement à alert(), qui bloque
+// tant qu'on ne clique pas "OK"). type: "succes" (vert) ou "attention" (jaune).
+let toastMinuteur = null;
+function toast(message, type = "succes", dureeMs = 3200) {
+  const el = document.querySelector("#toast");
+  el.textContent = message;
+  el.classList.toggle("toast-attention", type === "attention");
+  el.classList.add("visible");
+  clearTimeout(toastMinuteur);
+  toastMinuteur = setTimeout(() => el.classList.remove("visible"), dureeMs);
+}
+
 function bouton(label, classe, onClick) {
   const b = document.createElement("button");
   b.type = "button";
@@ -197,6 +231,7 @@ function retirerFichier(id) {
   const li = listeEl.querySelector(`.ligne-fichier[data-id="${id}"]`);
   if (li) li.remove();
   if (!listeEl.children.length) etatVideEl.hidden = false;
+  mettreAJourBadgeOublies();
 }
 
 async function chargerFile() {
@@ -204,17 +239,20 @@ async function chargerFile() {
   listeEl.innerHTML = "";
   if (!items.length) {
     etatVideEl.hidden = false;
+    mettreAJourBadgeOublies();
     return;
   }
   etatVideEl.hidden = true;
   for (const item of items) ajouterFichier(item);
+  mettreAJourBadgeOublies();
 }
 
 async function imprimer(id) {
   try {
     await invoke("print_file", { id });
+    jouerSonImpression();
   } catch (e) {
-    alert(`Impossible d'imprimer ce fichier : ${e}`);
+    alert(`⚠️ L'impression n'a pas pu démarrer. Vérifiez que l'imprimante est allumée et connectée, puis réessayez.\n\nDétail : ${e}`);
   }
 }
 
@@ -252,7 +290,7 @@ async function ouvrir(id) {
   try {
     await invoke("open_file", { id });
   } catch (e) {
-    alert(`Impossible d'ouvrir ce fichier : ${e}`);
+    alert(`⚠️ Ce fichier n'a pas pu s'ouvrir — il est peut-être corrompu ou dans un format non pris en charge.\n\nDétail : ${e}`);
   }
 }
 
@@ -271,7 +309,7 @@ document.querySelector("#form-raison-ignore").addEventListener("submit", async (
   const texte = document.querySelector("#raison-ignore-texte").value.trim();
   const raison = select === "Autre" ? texte : select;
   if (!raison) {
-    alert("Merci de préciser la raison.");
+    toast("Merci de préciser une raison avant de continuer.", "attention");
     return;
   }
   try {
@@ -279,7 +317,7 @@ document.querySelector("#form-raison-ignore").addEventListener("submit", async (
     retirerFichier(idIgnorerEnCours);
     fermerModal("modal-raison-ignore");
   } catch (e) {
-    alert(`Impossible de mettre à jour le fichier : ${e}`);
+    alert(`⚠️ Ce fichier n'a pas pu être mis à jour. Réessayez dans un instant.\n\nDétail : ${e}`);
   }
 });
 
@@ -344,8 +382,9 @@ document.querySelector("#form-options").addEventListener("submit", async (e) => 
     });
     fermerModal("modal-options");
     await chargerFile();
+    toast("✓ Détails enregistrés");
   } catch (err) {
-    alert(`Impossible d'enregistrer les détails : ${err}`);
+    alert(`⚠️ Ces détails n'ont pas pu être enregistrés. Réessayez dans un instant.\n\nDétail : ${err}`);
   }
 });
 
@@ -398,7 +437,7 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
   const montant = Number(document.querySelector("#enc-montant").value) || 0;
   const raisonEcart = document.querySelector("#enc-raison-ecart").value.trim() || null;
   if (montant !== montantCalculeEnCours && !raisonEcart) {
-    alert("Le montant diffère du prix calculé : merci de préciser la raison.");
+    toast("Le montant diffère du prix calculé — précisez la raison pour continuer.", "attention");
     return;
   }
   try {
@@ -413,22 +452,23 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
     });
     fermerModal("modal-encaissement");
     retirerFichier(idEncaissementEnCours);
+    jouerSonEncaissement();
     if (confirm("Encaissement enregistré. Imprimer le reçu ?")) {
       try {
         await invoke("imprimer_recu", { transactionId: resultat.transaction_id });
       } catch (err) {
-        alert(`Impossible d'imprimer le reçu : ${err}`);
+        alert(`⚠️ Le reçu n'a pas pu s'imprimer. Vérifiez l'imprimante et réessayez depuis l'historique.\n\nDétail : ${err}`);
       }
     }
     if (resultat.alerte_entretien_imprimante) {
       alert(
-        "L'imprimante a dépassé son seuil d'entretien préventif. Pensez à la faire vérifier " +
-          "(nettoyage, changement de pièces d'usure). Vous pourrez réinitialiser ce compteur " +
-          "dans Rapports une fois l'entretien fait."
+        "🔧 Petit rappel : l'imprimante approche du seuil d'entretien préventif " +
+          "(nettoyage, pièces d'usure). Rien d'urgent, mais pensez à la faire vérifier bientôt. " +
+          "Vous pourrez réinitialiser ce compteur dans Rapports une fois l'entretien fait."
       );
     }
   } catch (err) {
-    alert(`Impossible d'encaisser : ${err}`);
+    alert(`⚠️ L'encaissement n'a pas pu être enregistré. Réessayez dans un instant — rien n'a été perdu.\n\nDétail : ${err}`);
   }
 });
 
@@ -466,7 +506,7 @@ document.querySelector("#btn-parametres-partage").addEventListener("click", asyn
   try {
     await invoke("ouvrir_parametres_partage_connexion");
   } catch (e) {
-    alert(e);
+    alert(`⚠️ Impossible d'ouvrir les paramètres Windows automatiquement. Ouvrez-les vous-même : Paramètres → Réseau et Internet → Partage de connexion.\n\nDétail : ${e}`);
   }
 });
 
@@ -747,7 +787,7 @@ async function rendreRapports(corps) {
   sectionImprimante.appendChild(
     bouton("Entretien effectué — réinitialiser le compteur", "btn-discret", async () => {
       await invoke("reinitialiser_compteur_imprimante");
-      alert("Compteur réinitialisé.");
+      toast("✓ Compteur d'entretien réinitialisé");
     })
   );
   corps.appendChild(sectionImprimante);
@@ -757,14 +797,14 @@ async function rendreRapports(corps) {
   sectionDemo.appendChild(
     bouton("Ajouter des exemples de démonstration", "btn-secondaire", async () => {
       await invoke("activer_mode_demo");
-      alert("Exemples ajoutés à la file d'attente.");
+      toast("✓ Exemples ajoutés à la file d'attente");
     })
   );
   sectionDemo.appendChild(
     bouton("Retirer les exemples de démonstration", "btn-discret", async () => {
       await invoke("desactiver_mode_demo");
       await chargerFile();
-      alert("Exemples retirés.");
+      toast("✓ Exemples retirés");
     })
   );
   corps.appendChild(sectionDemo);
@@ -803,7 +843,7 @@ async function rendreReglages(corps) {
     await invoke("set_boutique_setting", { cle: "boutique_whatsapp", valeur: document.querySelector("#reg-whatsapp").value });
     await invoke("set_boutique_setting", { cle: "dossier_sauvegarde", valeur: document.querySelector("#reg-sauvegarde").value });
     await invoke("set_boutique_setting", { cle: "url_verification_maj", valeur: document.querySelector("#reg-url-maj").value });
-    alert("Réglages enregistrés.");
+    toast("✓ Réglages enregistrés");
   });
   secBoutique.appendChild(formBoutique);
 
@@ -840,7 +880,7 @@ async function rendreReglages(corps) {
     e.preventDefault();
     await invoke("set_boutique_setting", { cle: "wifi_ssid", valeur: document.querySelector("#reg-wifi-ssid").value });
     await invoke("set_boutique_setting", { cle: "wifi_mot_de_passe", valeur: document.querySelector("#reg-wifi-mdp").value });
-    alert("Wi-Fi enregistré. Le QR (bouton 📶) l'utilisera dès maintenant.");
+    toast("✓ Wi-Fi enregistré — le QR l'utilisera dès maintenant");
   });
   secWifi.appendChild(formWifi);
   corps.appendChild(secWifi);
@@ -869,10 +909,10 @@ async function rendreReglages(corps) {
       const btnCopier = bouton("Copier", "btn-secondaire", async () => {
         try {
           await navigator.clipboard.writeText(texte);
-          alert("Rapport copié — colle-le dans un message au porteur du projet.");
+          toast("✓ Rapport copié — colle-le dans un message au porteur du projet");
         } catch {
           zone.select();
-          alert("Sélectionné — copie avec Ctrl+C, le copier automatique n'a pas fonctionné ici.");
+          toast("Sélectionné — copiez avec Ctrl+C, le copier automatique n'a pas fonctionné ici.", "attention");
         }
       });
       const ancienResultat = document.querySelector("#rapport-resultat");
@@ -959,11 +999,11 @@ async function rendreReglages(corps) {
     e.preventDefault();
     const ok = await invoke("set_license_key", { cle: document.querySelector("#cle-licence").value });
     if (ok) {
-      alert("Licence activée.");
       await ouvrirSection("reglages");
       await rafraichirBadgeAbonnement();
+      toast("✓ Licence activée — merci !");
     } else {
-      alert("Clé invalide.");
+      toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
     }
   });
   secLicence.appendChild(formLicence);
@@ -1018,7 +1058,7 @@ async function ouvrirEcranTechnique(corps) {
   sec.appendChild(
     bouton("Forcer une sauvegarde maintenant", "btn-secondaire", async () => {
       await invoke("sauvegarder_maintenant");
-      alert("Sauvegarde effectuée.");
+      toast("✓ Sauvegarde effectuée");
     })
   );
   sec.appendChild(
@@ -1042,8 +1082,39 @@ async function rafraichirBadgeAbonnement() {
       invalide: "Licence invalide",
     };
     badge.textContent = libelles[licence.statut] ?? "";
-    badge.className = "badge-abonnement badge-" + licence.statut;
+    // Calme tant qu'il reste largement le temps de renouveler — le jaune
+    // n'apparaît que dans les 7 derniers jours, pour ne pas donner une
+    // impression d'urgence permanente dès le premier jour d'essai.
+    const classeStatut =
+      licence.statut === "essai" && licence.jours_restants > 7 ? "essai-calme" : licence.statut;
+    badge.className = "badge-abonnement badge-" + classeStatut;
     badge.hidden = false;
+  } catch {
+    badge.hidden = true;
+  }
+}
+
+const SEUIL_OUBLI_MS = 30 * 60 * 1000; // 30 minutes
+
+// Badge doux (pas une alerte bruyante) qui signale les commandes prêtes à
+// imprimer/encaisser mais laissées de côté trop longtemps — le genre de
+// chose qu'on oublie facilement dans le rush.
+async function mettreAJourBadgeOublies() {
+  const badge = document.querySelector("#badge-oublies");
+  try {
+    const items = await invoke("get_queue");
+    const maintenant = Date.now();
+    const oublies = items.filter((item) => {
+      if (item.kind !== "imprimable" && item.kind !== "editable") return false;
+      const recu = new Date(item.received_at).getTime();
+      return !Number.isNaN(recu) && maintenant - recu > SEUIL_OUBLI_MS;
+    });
+    if (oublies.length) {
+      badge.textContent = `⏳ ${oublies.length} en attente depuis plus de 30 min`;
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+    }
   } catch {
     badge.hidden = true;
   }
@@ -1059,6 +1130,52 @@ async function verifierMiseAJour() {
     }
   } catch {
     // silencieux : pas de connexion, ce n'est pas une erreur.
+  }
+}
+
+// Message chaleureux au tout premier chargement du jour — ne se répète pas
+// à chaque réouverture de l'appli le même jour (voir verifier_et_marquer_-
+// affichage_du_jour côté Rust). Seulement le matin/début d'après-midi, pour
+// ne pas dire "Bonjour" en pleine soirée si la boutique ouvre tard.
+async function afficherAccueilDuJour() {
+  if (new Date().getHours() >= 14) return;
+  try {
+    const doitAfficher = await invoke("verifier_et_marquer_affichage_du_jour", { cle: "accueil" });
+    if (!doitAfficher) return;
+    const hier = await invoke("rapport_hier");
+    const message =
+      hier.nombre_commandes > 0
+        ? `👋 Bonjour ! Hier : ${hier.nombre_commandes} commande(s), ${formatFcfa(hier.total_encaisse)} encaissés.`
+        : "👋 Bonjour ! Prêt pour une nouvelle journée.";
+    toast(message, "succes", 6000);
+  } catch {
+    // Pas grave si ça échoue — ce n'est qu'un message de bienvenue.
+  }
+}
+
+const PHRASES_ENCOURAGEMENT = [
+  "Belle journée de travail !",
+  "Continuez comme ça !",
+  "Une bonne journée pour la boutique.",
+  "Bravo pour le travail accompli aujourd'hui !",
+];
+
+// Se propose tout seul en fin de journée, une seule fois — jamais à la
+// demande pour ne pas être intrusif, jamais deux fois le même jour.
+async function proposerResumeFinDeJournee() {
+  if (new Date().getHours() < 18) return;
+  try {
+    const doitAfficher = await invoke("verifier_et_marquer_affichage_du_jour", { cle: "resume_jour" });
+    if (!doitAfficher) return;
+    const rapport = await invoke("rapport_du_jour");
+    if (rapport.nombre_commandes === 0) return; // rien à résumer
+    let message = `🌙 Résumé du jour : ${rapport.nombre_commandes} commande(s), ${formatFcfa(rapport.total_encaisse)} encaissés. Bénéfice net : ${formatFcfa(rapport.benefice_net)}.`;
+    if (rapport.nombre_commandes >= 3 && Math.random() < 0.6) {
+      message += " " + PHRASES_ENCOURAGEMENT[Math.floor(Math.random() * PHRASES_ENCOURAGEMENT.length)];
+    }
+    toast(message, "succes", 7000);
+  } catch {
+    // Pas grave si ça échoue — ce n'est qu'un résumé de confort.
   }
 }
 
@@ -1089,7 +1206,7 @@ async function lancerAssistantPremierDemarrage() {
   document.querySelector("#bv-suivant-2").addEventListener("click", async () => {
     const nom = document.querySelector("#bv-nom").value.trim();
     if (!nom) {
-      alert("Le nom de la boutique est nécessaire pour continuer.");
+      toast("Il nous faut au moins le nom de votre boutique — c'est ce qui apparaîtra sur vos reçus.", "attention");
       return;
     }
     await invoke("set_boutique_setting", { cle: "boutique_nom", valeur: nom });
@@ -1129,6 +1246,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   await chargerFile();
   await rafraichirBadgeAbonnement();
   await verifierMiseAJour();
+  await afficherAccueilDuJour();
+  await proposerResumeFinDeJournee();
+  setInterval(mettreAJourBadgeOublies, 60000);
 
   await listen("nouveau-fichier", (event) => {
     ajouterFichier(event.payload, true);

@@ -220,6 +220,25 @@ pub fn set_boutique_setting(
     db::set_setting(&conn, &cle, &valeur).map_err(|e| e.to_string())
 }
 
+/// Pour les messages d'accueil / résumé de fin de journée : ne les montrer
+/// qu'une fois par jour civil. Renvoie true (et marque comme fait) la
+/// première fois qu'on l'appelle pour une `cle` donnée un jour donné ;
+/// false les fois suivantes ce même jour.
+#[tauri::command]
+pub fn verifier_et_marquer_affichage_du_jour(
+    state: State<DbState>,
+    cle: String,
+) -> Result<bool, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let aujourdhui = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let cle_stockage = format!("dernier_affichage_{cle}");
+    if db::get_setting(&conn, &cle_stockage).as_deref() == Some(aujourdhui.as_str()) {
+        return Ok(false);
+    }
+    db::set_setting(&conn, &cle_stockage, &aujourdhui).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 #[tauri::command]
 pub fn get_server_info(app: AppHandle) -> Result<qr::ServerInfo, String> {
     if !crate::server::est_actif(&app) {

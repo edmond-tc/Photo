@@ -599,10 +599,7 @@ pub struct RapportJour {
     pub benefice_net: i64,
 }
 
-#[tauri::command]
-pub fn rapport_du_jour(state: State<DbState>) -> Result<RapportJour, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let date = Local::now().format("%Y-%m-%d").to_string();
+fn calculer_rapport(conn: &rusqlite::Connection, date: String) -> RapportJour {
     let motif = format!("{date}%");
 
     let nombre_commandes: i64 = conn
@@ -634,14 +631,30 @@ pub fn rapport_du_jour(state: State<DbState>) -> Result<RapportJour, String> {
         )
         .unwrap_or(0);
 
-    Ok(RapportJour {
+    RapportJour {
         date,
         nombre_commandes,
         total_encaisse,
         total_impaye,
         total_depenses,
         benefice_net: total_encaisse - total_depenses,
-    })
+    }
+}
+
+#[tauri::command]
+pub fn rapport_du_jour(state: State<DbState>) -> Result<RapportJour, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    Ok(calculer_rapport(&conn, date))
+}
+
+/// Pour le message d'accueil du matin : "hier, vous aviez fait X commandes".
+#[tauri::command]
+pub fn rapport_hier(state: State<DbState>) -> Result<RapportJour, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let hier = Local::now() - chrono::Duration::days(1);
+    let date = hier.format("%Y-%m-%d").to_string();
+    Ok(calculer_rapport(&conn, date))
 }
 
 #[derive(serde::Serialize)]

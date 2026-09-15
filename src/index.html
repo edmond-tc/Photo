@@ -12,12 +12,15 @@
     <header class="topbar">
       <h1>Gestion Photocopie</h1>
       <div class="topbar-right">
+        <span id="badge-oublies" class="badge-oublies" hidden></span>
         <span id="badge-abonnement" class="badge-abonnement" hidden></span>
         <span id="badge-maj" class="badge-maj" hidden></span>
         <button id="btn-recevoir-qr" class="btn-icon" title="Recevoir un fichier par QR">📶</button>
         <button id="btn-menu" class="btn-icon" title="Menu" aria-label="Ouvrir le menu">⋮</button>
       </div>
     </header>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <!-- Assistant de premier lancement -->
     <div id="modal-bienvenue" class="modal" hidden>
