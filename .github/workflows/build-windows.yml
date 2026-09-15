@@ -30,6 +30,23 @@ jobs:
       - name: Compiler l'application Windows
         run: npm run tauri build
 
+      - name: Test de démarrage sur un vrai Windows (garde-fou automatique)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "src-tauri/target/release" -Filter "photocopie-benin.exe" -File | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "Exécutable introuvable après compilation."
+            exit 1
+          }
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 8
+          if ($proc.HasExited) {
+            Write-Error "L'application a quitté toute seule dans les 8 secondes (code $($proc.ExitCode)) — plantage probable au démarrage. Ne pas distribuer ce build."
+            exit 1
+          }
+          Write-Host "OK : l'application tourne toujours après 8 secondes sur ce Windows réel."
+          Stop-Process -Id $proc.Id -Force
+
       - name: Publier l'exécutable (.exe / installateurs)
         uses: actions/upload-artifact@v4
         with:
