@@ -115,7 +115,9 @@ pub fn est_actif(app: &AppHandle) -> bool {
 async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     let whatsapp = {
         let state = app.state::<crate::db::DbState>();
-        let conn = state.0.lock().unwrap();
+        let Ok(conn) = state.0.lock() else {
+            return Html("<p>Service temporairement indisponible, réessayez.</p>".to_string());
+        };
         crate::db::get_setting(&conn, "boutique_whatsapp")
     };
 
@@ -277,7 +279,24 @@ struct FichierRecu {
 /// écrire en dehors du dossier de réception (faille de traversée de chemin).
 fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
     let nom = nom_brut.rsplit(['/', '\\']).next().unwrap_or(nom_brut).trim();
-    if nom.is_empty() || nom == "." || nom == ".." {
+    // Retire aussi les caractères interdits dans un nom de fichier Windows et
+    // les caractères de contrôle, sinon std::fs::write échoue silencieusement
+    // plus loin et le fichier reçu disparaît sans que personne ne s'en rende
+    // compte (contredit la garantie de traçabilité de l'appli).
+    let nom: String = nom
+        .chars()
+        .filter(|c| !c.is_control() && !r#":*?"<>|"#.contains(*c))
+        .take(150)
+        .collect();
+    let nom = nom.trim();
+
+    const NOMS_RESERVES_WINDOWS: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    let base = nom.split('.').next().unwrap_or(nom).to_uppercase();
+
+    if nom.is_empty() || nom == "." || nom == ".." || NOMS_RESERVES_WINDOWS.contains(&base.as_str()) {
         "fichier_recu".to_string()
     } else {
         nom.to_string()
@@ -357,7 +376,10 @@ async fn recevoir_fichier(
             "copies" => {
                 if let Ok(v) = field.text().await {
                     if let Ok(n) = v.parse::<i64>() {
-                        options.entry(indice).or_default().copies = Some(n);
+                        // Le "min=1" du formulaire HTML est côté client, donc
+                        // contournable par une requête forgée ; on borne ici
+                        // pour éviter un débordement lors du calcul du prix.
+                        options.entry(indice).or_default().copies = Some(n.clamp(1, 500));
                     }
                 }
             }
@@ -385,6 +407,8 @@ async fn recevoir_fichier(
         return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response();
     }
 
+    let nombre_recus = fichiers.len();
+    let mut nombre_enregistres = 0usize;
     for (indice, fichier) in fichiers {
         let horodatage = chrono::Local::now().format("%Y%m%d-%H%M%S%3f");
         let nom_fichier_sur_disque = format!("{horodatage}_{}_{}", indice, fichier.original_name);
@@ -393,14 +417,30 @@ async fn recevoir_fichier(
             continue;
         }
         let opts = options.remove(&indice).unwrap_or_default();
-        enqueue_file_avec_options(
+        if enqueue_file_avec_options(
             &app,
             &chemin,
             "qr",
             nom.as_deref(),
             telephone.as_deref(),
             opts,
-        );
+        )
+        .is_some()
+        {
+            nombre_enregistres += 1;
+        }
+    }
+
+    // Ne jamais répondre "ok" si rien n'a pu être enregistré : le client
+    // verrait "Fichier envoyé, merci !" alors que la boutique n'a rien reçu,
+    // ce qui contredit la garantie de traçabilité (tout ce qui arrive doit
+    // être compté).
+    if nombre_recus > 0 && nombre_enregistres == 0 {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "L'envoi a échoué, réessayez.",
+        )
+            .into_response();
     }
 
     (StatusCode::OK, [(header::CONTENT_TYPE, "text/plain")], "ok").into_response()

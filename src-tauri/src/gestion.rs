@@ -224,6 +224,9 @@ pub fn finaliser_commande(
     statut: String,
     employe: Option<String>,
 ) -> Result<ResultatEncaissement, String> {
+    if montant < 0 || montant_calcule < 0 {
+        return Err("Le montant ne peut pas être négatif.".to_string());
+    }
     let raison_ecart = raison_ecart.filter(|r| !r.trim().is_empty());
     if montant != montant_calcule && raison_ecart.is_none() {
         return Err(

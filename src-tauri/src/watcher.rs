@@ -93,6 +93,18 @@ pub fn enqueue_file_avec_options(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "fichier".to_string());
     let kind = files::classify(path);
+    // Un .exe/.msi classé "installateur" obtient un bouton "Installer la mise
+    // à jour" qui l'exécute en un clic (voir files::shell_open). Le canal QR
+    // est accessible à n'importe qui connecté au Wi-Fi de la boutique — sans
+    // ce garde-fou, un client malveillant pourrait faire exécuter un fichier
+    // exécutable arbitraire au gérant en le nommant "Mise_a_jour.exe". Seuls
+    // les canaux qui exigent un accès physique au PC (clé USB, dossier
+    // surveillé/Bluetooth) restent traités comme une vraie mise à jour.
+    let kind = if kind == "installateur" && source == "qr" {
+        "inconnu"
+    } else {
+        kind
+    };
     let received_at = Local::now().to_rfc3339();
     let taille_octets = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     let (protege, format_detecte) = files::diagnostiquer_pdf(path);
@@ -112,7 +124,9 @@ pub fn enqueue_file_avec_options(
         return None;
     }
 
-    let copies = options.copies.unwrap_or(1).max(1);
+    // Borné aussi ici (pas seulement côté serveur HTTP) : ce point d'entrée
+    // sert à tous les canaux de réception, pas seulement le QR.
+    let copies = options.copies.unwrap_or(1).clamp(1, 500);
     let format_papier = options
         .format_papier
         .clone()

@@ -27,6 +27,19 @@ let idEncaissementEnCours = null;
 
 // ───────────────────────────── Utilitaires ─────────────────────────────
 
+// Pour toute valeur interpolée dans un gabarit HTML (innerHTML) plutôt que
+// posée via .textContent/.value — sinon un guillemet ou un chevron dans une
+// valeur saisie (nom de boutique, SSID Wi-Fi, raison personnalisée...) peut
+// casser un attribut ou injecter du HTML dans la page des réglages.
+function echapperHtml(valeur) {
+  return String(valeur ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function formatHeure(isoString) {
   try {
     return new Date(isoString).toLocaleTimeString("fr-FR", {
@@ -138,9 +151,12 @@ function creerLigne(item) {
     );
     actions.appendChild(bouton("Ignorer", "btn-discret", () => ignorer(item.id)));
   } else {
+    const estExecutable = /\.(exe|msi)$/i.test(item.original_name || "");
     const avert = document.createElement("span");
     avert.className = "avertissement";
-    avert.textContent = "Format non supporté — redemander un format standard au client";
+    avert.textContent = estExecutable
+      ? "⚠️ Fichier exécutable reçu d'un client — ne pas l'ouvrir, ce n'est pas une mise à jour officielle"
+      : "Format non supporté — redemander un format standard au client";
     actions.appendChild(avert);
     actions.appendChild(bouton("Ignorer", "btn-discret", () => ignorer(item.id)));
   }
@@ -588,7 +604,7 @@ async function rendreRapports(corps) {
   const carteReconciliation = document.createElement("div");
   carteReconciliation.className = "carte-rapport";
   const raisonsHtml = reconciliation.ignores_par_raison
-    .map((r) => `<li>${r.raison} : ${r.nombre}</li>`)
+    .map((r) => `<li>${echapperHtml(r.raison)} : ${r.nombre}</li>`)
     .join("");
   carteReconciliation.innerHTML = `
     <h3>Réconciliation — tous les fichiers reçus aujourd'hui</h3>
@@ -766,10 +782,10 @@ async function rendreReglages(corps) {
   secBoutique.innerHTML = "<h3>Boutique</h3>";
   const formBoutique = document.createElement("form");
   formBoutique.innerHTML = `
-    <label>Nom de la boutique <input type="text" id="reg-nom" value="${params.nom ?? ""}" /></label>
-    <label>Numéro WhatsApp <input type="text" id="reg-whatsapp" value="${params.whatsapp ?? ""}" /></label>
-    <label>Dossier de sauvegarde <input type="text" id="reg-sauvegarde" value="${params.dossier_sauvegarde ?? ""}" /></label>
-    <label>URL de vérification des mises à jour <input type="text" id="reg-url-maj" value="${params.url_verification_maj ?? ""}" /></label>
+    <label>Nom de la boutique <input type="text" id="reg-nom" value="${echapperHtml(params.nom)}" /></label>
+    <label>Numéro WhatsApp <input type="text" id="reg-whatsapp" value="${echapperHtml(params.whatsapp)}" /></label>
+    <label>Dossier de sauvegarde <input type="text" id="reg-sauvegarde" value="${echapperHtml(params.dossier_sauvegarde)}" /></label>
+    <label>URL de vérification des mises à jour <input type="text" id="reg-url-maj" value="${echapperHtml(params.url_verification_maj)}" /></label>
     <button type="submit" class="btn-secondaire">Enregistrer</button>
   `;
   formBoutique.addEventListener("submit", async (e) => {
@@ -807,8 +823,8 @@ async function rendreReglages(corps) {
   `;
   const formWifi = document.createElement("form");
   formWifi.innerHTML = `
-    <label>Nom du réseau (SSID) <input type="text" id="reg-wifi-ssid" value="${params.wifi_ssid ?? ""}" /></label>
-    <label>Mot de passe <input type="text" id="reg-wifi-mdp" value="${params.wifi_mot_de_passe ?? ""}" /></label>
+    <label>Nom du réseau (SSID) <input type="text" id="reg-wifi-ssid" value="${echapperHtml(params.wifi_ssid)}" /></label>
+    <label>Mot de passe <input type="text" id="reg-wifi-mdp" value="${echapperHtml(params.wifi_mot_de_passe)}" /></label>
     <button type="submit" class="btn-secondaire">Enregistrer</button>
   `;
   formWifi.addEventListener("submit", async (e) => {
