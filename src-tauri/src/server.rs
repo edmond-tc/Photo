@@ -207,6 +207,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
   .bluetooth-nom-puce {{ text-align:center; font-size:1.15rem; font-weight:700; color:#2b579a; background:#fff; border:2px dashed #2b579a; border-radius:6px; padding:0.6rem; margin:0; word-break:break-word; }}
   .btn-bluetooth {{ background:#fff; color:#2b579a; border:1px solid #2b579a; margin-bottom:1rem; }}
   .note-prix {{ font-size:0.72rem; color:#8a8886; text-align:center; margin:-0.5rem 0 1rem; }}
+  .note-confidentialite {{ font-size:0.72rem; color:#605e5c; line-height:1.5; background:#f3f2f1; padding:0.6rem 0.7rem; border-radius:6px; margin:1rem 0 0; }}
 </style>
 </head>
 <body>
@@ -231,6 +232,14 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
       <button type="submit">Envoyer à la boutique</button>
       <p class="note-prix">Le prix est à régler directement avec le gérant, sur place.</p>
     </form>
+    <p class="note-confidentialite">
+      🔒 Votre document reste sur l'ordinateur de la boutique : il ne passe
+      par aucun site internet et n'est envoyé à personne d'autre. Il est
+      effacé automatiquement quelque temps après votre commande. Votre nom
+      et votre numéro ne servent qu'à retrouver votre document et à votre
+      réduction fidélité ; demandez au gérant si vous voulez qu'ils soient
+      effacés.
+    </p>
     <p id="confirmation">Fichier(s) envoyé(s), merci ! Le gérant a été prévenu.</p>
     <p id="statut-fidelite"></p>
     <div class="liens-secondaires">
@@ -415,6 +424,22 @@ struct FichierRecu {
     bytes: Vec<u8>,
 }
 
+/// Marge sous laquelle on refuse d'écrire un nouveau fichier reçu.
+const ESPACE_DISQUE_MINIMUM: u64 = 500 * 1024 * 1024; // 500 Mo
+
+fn espace_disque_insuffisant(data_dir: &std::path::Path) -> bool {
+    let disques = sysinfo::Disks::new_with_refreshed_list();
+    // On retient le disque dont le point de montage correspond le plus
+    // précisément au dossier de données (sur Windows : la bonne lettre de
+    // lecteur). Si on n'arrive pas à le déterminer, on laisse passer plutôt
+    // que de bloquer à tort un client qui attend son document.
+    disques
+        .iter()
+        .filter(|d| data_dir.starts_with(d.mount_point()))
+        .max_by_key(|d| d.mount_point().as_os_str().len())
+        .is_some_and(|d| d.available_space() < ESPACE_DISQUE_MINIMUM)
+}
+
 /// Ne garde que le nom de fichier, sans le chemin — un client malveillant
 /// pourrait sinon envoyer un nom du type "../../Windows/Startup/x.exe" pour
 /// écrire en dehors du dossier de réception (faille de traversée de chemin).
@@ -546,6 +571,18 @@ async fn recevoir_fichier(
     let recus_dir = data_dir.join("recus");
     if std::fs::create_dir_all(&recus_dir).is_err() {
         return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response();
+    }
+
+    // La page d'envoi est ouverte à tout le Wi-Fi de la boutique : sans cette
+    // vérification, quelqu'un peut envoyer des fichiers de 200 Mo jusqu'à
+    // remplir le disque — et une fois le disque plein, ce n'est pas seulement
+    // l'appli qui s'arrête, c'est Windows entier qui devient inutilisable.
+    if espace_disque_insuffisant(&data_dir) {
+        return (
+            StatusCode::INSUFFICIENT_STORAGE,
+            "L'ordinateur de la boutique n'a plus assez d'espace. Prévenez le gérant.",
+        )
+            .into_response();
     }
 
     let nombre_recus = fichiers.len();

@@ -199,6 +199,7 @@ pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value,
         "fidelite_seuil_visites": db::get_setting(&conn, "fidelite_seuil_visites"),
         "fidelite_remise_pourcent": db::get_setting(&conn, "fidelite_remise_pourcent"),
         "bluetooth_nom": db::get_setting(&conn, "bluetooth_nom"),
+        "retention_jours": db::get_setting(&conn, "retention_jours"),
     }))
 }
 
@@ -218,6 +219,7 @@ pub fn set_boutique_setting(
         "fidelite_seuil_visites",
         "fidelite_remise_pourcent",
         "bluetooth_nom",
+        "retention_jours",
     ];
     if !CLES_AUTORISEES.contains(&cle.as_str()) {
         return Err("réglage inconnu".to_string());
@@ -241,6 +243,14 @@ pub fn set_boutique_setting(
                 .map_err(|_| "La réduction doit être un chiffre.".to_string())?;
             if !(0..=100).contains(&n) {
                 return Err("La réduction doit être entre 0 et 100 %.".to_string());
+            }
+        }
+        "retention_jours" if !valeur.is_empty() => {
+            let n: i64 = valeur
+                .parse()
+                .map_err(|_| "La durée doit être un nombre de jours.".to_string())?;
+            if !(0..=3650).contains(&n) {
+                return Err("La durée doit être entre 0 et 3650 jours.".to_string());
             }
         }
         _ => {}

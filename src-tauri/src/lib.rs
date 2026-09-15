@@ -6,6 +6,7 @@ pub mod gestion;
 pub mod license;
 pub mod models;
 pub mod qr;
+pub mod retention;
 pub mod server;
 pub mod updates;
 pub mod usb;
@@ -40,6 +41,7 @@ pub fn run() {
             usb::watch_usb_drives(app.handle().clone());
             server::start(app.handle().clone());
             backup::start(app.handle().clone());
+            retention::start(app.handle().clone());
 
             Ok(())
         })
@@ -61,6 +63,8 @@ pub fn run() {
             commands::ouvrir_parametres_partage_connexion,
             commands::generer_rapport_diagnostic,
             commands::sauvegarder_maintenant,
+            backup::lister_sauvegardes,
+            backup::restaurer_sauvegarde,
             commands::ouvrir_dossier_donnees,
             commands::verifier_et_marquer_affichage_du_jour,
             gestion::list_tarifs,

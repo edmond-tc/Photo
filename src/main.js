@@ -954,6 +954,36 @@ async function rendreReglages(corps) {
   secFidelite.appendChild(formFidelite);
   corps.appendChild(secFidelite);
 
+  // Conservation des documents clients
+  const secRetention = document.createElement("section");
+  secRetention.innerHTML = `
+    <h3>Conservation des documents clients</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Les documents envoyés par vos clients (CV, relevés, pièces...) sont
+      effacés automatiquement de ce PC passé ce délai, une fois la commande
+      terminée. Votre comptabilité, elle, n'est jamais effacée : seuls les
+      documents partent. Mettez 0 pour tout garder — mais le disque finira
+      par se remplir, et garder longtemps les papiers personnels de vos
+      clients vous engage.
+    </p>
+  `;
+  const formRetention = document.createElement("form");
+  formRetention.innerHTML = `
+    <label>Effacer les documents après (jours) <input type="number" id="reg-retention" min="0" max="3650" value="${echapperHtml(params.retention_jours || "30")}" /></label>
+    <button type="submit" class="btn-secondaire">Enregistrer</button>
+  `;
+  formRetention.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await invoke("set_boutique_setting", { cle: "retention_jours", valeur: document.querySelector("#reg-retention").value || "30" });
+      toast("✓ Durée de conservation enregistrée");
+    } catch (err) {
+      toast(String(err), "attention");
+    }
+  });
+  secRetention.appendChild(formRetention);
+  corps.appendChild(secRetention);
+
   // Rapport de diagnostic pour le porteur du projet
   const secRapport = document.createElement("section");
   secRapport.innerHTML = `
@@ -1133,6 +1163,52 @@ async function ouvrirEcranTechnique(corps) {
   sec.appendChild(
     bouton("Ouvrir le dossier de données", "btn-secondaire", async () => {
       await invoke("ouvrir_dossier_donnees");
+    })
+  );
+
+  // Restauration — le filet de sécurité qui manquait : sans lui, les
+  // sauvegardes automatiques ne servaient à rien tant que personne ne
+  // venait copier un fichier à la main sur place.
+  sec.appendChild(
+    bouton("Restaurer une sauvegarde…", "btn-secondaire", async () => {
+      const ancienne = document.querySelector("#liste-sauvegardes");
+      if (ancienne) {
+        ancienne.remove();
+        return;
+      }
+      const sauvegardes = await invoke("lister_sauvegardes");
+      const bloc = document.createElement("div");
+      bloc.id = "liste-sauvegardes";
+      if (!sauvegardes.length) {
+        bloc.innerHTML = `<p class="avertissement">Aucune sauvegarde disponible pour l'instant.</p>`;
+        sec.appendChild(bloc);
+        return;
+      }
+      bloc.innerHTML = `<p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+        Remplace les données actuelles par celles de la sauvegarde choisie.
+        L'état actuel est d'abord mis de côté, donc rien n'est perdu
+        définitivement même en cas d'erreur.</p>`;
+      for (const s of sauvegardes) {
+        const ligne = document.createElement("div");
+        ligne.className = "ligne-liste";
+        const info = document.createElement("div");
+        info.textContent = `${s.date_lisible} — ${(s.taille_octets / 1024).toFixed(0)} Ko`;
+        ligne.appendChild(info);
+        ligne.appendChild(
+          bouton("Restaurer", "btn-discret", async () => {
+            if (!confirm(`Remplacer les données actuelles par la sauvegarde du ${s.date_lisible} ?`)) return;
+            try {
+              await invoke("restaurer_sauvegarde", { chemin: s.chemin });
+              alert("Sauvegarde restaurée. L'application va se recharger.");
+              location.reload();
+            } catch (err) {
+              alert(`⚠️ La restauration a échoué.\n\nDétail : ${err}`);
+            }
+          })
+        );
+        bloc.appendChild(ligne);
+      }
+      sec.appendChild(bloc);
     })
   );
   corps.appendChild(sec);
