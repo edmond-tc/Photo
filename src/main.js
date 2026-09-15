@@ -68,6 +68,12 @@ function bouton(label, classe, onClick) {
 }
 
 function ouvrirModal(id) {
+  // Une seule fenêtre à la fois — sinon elles s'empilent et deviennent
+  // illisibles (bug remonté lors des tests).
+  document.querySelectorAll(".modal").forEach((m) => {
+    if (m.id !== id) m.hidden = true;
+  });
+  document.querySelector("#panneau-menu").hidden = true;
   document.querySelector(`#${id}`).hidden = false;
 }
 function fermerModal(id) {
@@ -446,6 +452,7 @@ document.querySelector("#btn-imprimer-qr").addEventListener("click", () => {
 // ───────────────────────────── Panneau latéral ─────────────────────────────
 
 function ouvrirPanneauMenu() {
+  document.querySelectorAll(".modal").forEach((m) => (m.hidden = true));
   document.querySelector("#panneau-menu").hidden = false;
   document.querySelector("#panneau-nav").hidden = false;
   document.querySelector("#panneau-contenu").hidden = true;
