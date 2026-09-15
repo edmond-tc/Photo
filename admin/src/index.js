@@ -1027,7 +1027,8 @@ async function router(request, env) {
       return new Response("Introuvable.", { status: 404 });
     } catch (err) {
       console.error("Erreur non gérée:", err);
-      return new Response("Erreur serveur.", { status: 500 });
+      // Diagnostic temporaire, à retirer une fois la cause identifiée.
+      return new Response("Erreur serveur : " + (err && err.stack ? err.stack : String(err)), { status: 500 });
     }
   }
 }
