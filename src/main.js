@@ -55,17 +55,26 @@ function formatFcfa(montant) {
   return `${Number(montant ?? 0).toLocaleString("fr-FR")} FCFA`;
 }
 
+function jouerTonalite(ctx, { freq, debut, duree, gainMax }) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime + debut);
+  gain.gain.exponentialRampToValueAtTime(gainMax, ctx.currentTime + debut + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + debut + duree);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(ctx.currentTime + debut);
+  osc.stop(ctx.currentTime + debut + duree + 0.02);
+}
+
+// Carillon "ding-dong" : signale l'arrivée d'un nouveau fichier (USB, dossier
+// surveillé ou Wi-Fi — les trois passent par le même événement côté Rust).
 function jouerNotification() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.08, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.4);
+    jouerTonalite(ctx, { freq: 988, debut: 0, duree: 0.35, gainMax: 0.22 });
+    jouerTonalite(ctx, { freq: 740, debut: 0.28, duree: 0.5, gainMax: 0.2 });
   } catch {
     // Pas grave si le son ne peut pas jouer (ex: pas d'interaction utilisateur encore).
   }
