@@ -272,6 +272,18 @@ struct FichierRecu {
     bytes: Vec<u8>,
 }
 
+/// Ne garde que le nom de fichier, sans le chemin — un client malveillant
+/// pourrait sinon envoyer un nom du type "../../Windows/Startup/x.exe" pour
+/// écrire en dehors du dossier de réception (faille de traversée de chemin).
+fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
+    let nom = nom_brut.rsplit(['/', '\\']).next().unwrap_or(nom_brut).trim();
+    if nom.is_empty() || nom == "." || nom == ".." {
+        "fichier_recu".to_string()
+    } else {
+        nom.to_string()
+    }
+}
+
 async fn recevoir_fichier(
     State(app): State<AppHandle>,
     mut multipart: Multipart,
@@ -316,7 +328,7 @@ async fn recevoir_fichier(
             "fichier" => {
                 let original_name = field
                     .file_name()
-                    .map(str::to_string)
+                    .map(nom_fichier_sans_chemin)
                     .unwrap_or_else(|| "fichier_recu".to_string());
                 if let Ok(bytes) = field.bytes().await {
                     if !bytes.is_empty() {

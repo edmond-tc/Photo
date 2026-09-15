@@ -363,6 +363,21 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
         .map(|e| format!("Servi par : {e}"))
         .unwrap_or_default();
 
+    // Le nom du fichier (description) vient du client via le formulaire QR,
+    // donc non fiable — on l'échappe avant de l'injecter dans le HTML du
+    // reçu pour empêcher une injection de script (ex: nom de fichier
+    // "<script>...</script>.pdf").
+    let echapper_html = |s: &str| -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    };
+    let boutique_nom_html = echapper_html(&boutique_nom);
+    let description_html = echapper_html(&description);
+    let employe_ligne_html = echapper_html(&employe_ligne);
+    let moyen_libelle_html = echapper_html(moyen_libelle);
+
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let dossier_recus = data_dir.join("recus_emis");
     std::fs::create_dir_all(&dossier_recus).map_err(|e| e.to_string())?;
@@ -392,14 +407,14 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
   .merci {{ text-align:center; margin-top:1rem; font-size:0.85rem; }}
 </style></head><body>
 <img src="data:image/png;base64,{logo_base64}" alt="Logo" />
-<h1>{boutique_nom}</h1>
+<h1>{boutique_nom_html}</h1>
 <div class="ligne"><span>Reçu n°</span><span>{transaction_id}</span></div>
 <div class="ligne"><span>Date</span><span>{date_lisible}</span></div>
 <hr>
-<div class="ligne"><span>{description}</span></div>
+<div class="ligne"><span>{description_html}</span></div>
 <div class="ligne"><strong>Montant</strong><strong>{montant} FCFA</strong></div>
-<div class="ligne"><span>Paiement</span><span>{moyen_libelle}</span></div>
-<div class="ligne"><span>{employe_ligne}</span></div>
+<div class="ligne"><span>Paiement</span><span>{moyen_libelle_html}</span></div>
+<div class="ligne"><span>{employe_ligne_html}</span></div>
 <hr>
 <p class="merci">Merci de votre visite !</p>
 </body></html>"#
