@@ -1,4 +1,4 @@
-CREATE TABLE boutiques (
+CREATE TABLE IF NOT EXISTS boutiques (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nom TEXT NOT NULL,
   gerant_nom TEXT,
@@ -9,7 +9,7 @@ CREATE TABLE boutiques (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE licences (
+CREATE TABLE IF NOT EXISTS licences (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   boutique_id INTEGER NOT NULL REFERENCES boutiques(id),
   cle TEXT NOT NULL,
@@ -18,14 +18,14 @@ CREATE TABLE licences (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE rapports (
+CREATE TABLE IF NOT EXISTS rapports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   boutique_id INTEGER NOT NULL REFERENCES boutiques(id),
   contenu_json TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE demandes (
+CREATE TABLE IF NOT EXISTS demandes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   machine_id TEXT NOT NULL,
   nom_boutique TEXT NOT NULL,
@@ -37,12 +37,12 @@ CREATE TABLE demandes (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE parametres (
+CREATE TABLE IF NOT EXISTS parametres (
   cle TEXT PRIMARY KEY,
   valeur TEXT
 );
 
-CREATE TABLE nouveautes (
+CREATE TABLE IF NOT EXISTS nouveautes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   version TEXT NOT NULL,
   titre TEXT NOT NULL,

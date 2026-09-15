@@ -4,8 +4,8 @@ compatibility_date = "2026-09-01"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "photocopie-admin-db"
-database_id = "ca1a0e15-7e38-4eee-afb6-a44b5f6b4418"
+database_name = "photocopie-admin"
+database_id = "db50c0ee-2e8e-4dfd-a98b-31c100c499e2"
 
 [[r2_buckets]]
 binding = "TELECHARGEMENTS"
