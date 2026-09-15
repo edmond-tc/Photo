@@ -90,6 +90,29 @@ mod registre {
     pub fn ecrire(_valeur: &str) {}
 }
 
+/// Date la plus avancée jamais observée sur cette machine.
+///
+/// Sans cela, reculer l'horloge de Windows de quelques mois suffit à
+/// prolonger l'essai indéfiniment et à faire revivre une licence expirée —
+/// l'application ne connaît aucune autre source de temps, puisqu'elle n'est
+/// jamais connectée à internet. On ne peut pas empêcher le geste, mais on
+/// peut refuser de l'oublier : la date de référence n'avance jamais à
+/// reculons.
+fn date_de_reference(conn: &rusqlite::Connection) -> chrono::DateTime<Local> {
+    let maintenant = Local::now();
+    let vue = db::get_setting(conn, "date_maximale_vue")
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+        .map(|d| d.with_timezone(&Local));
+
+    match vue {
+        Some(vue) if vue > maintenant => vue,
+        _ => {
+            let _ = db::set_setting(conn, "date_maximale_vue", &maintenant.to_rfc3339());
+            maintenant
+        }
+    }
+}
+
 pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
     let depuis_db = db::get_setting(conn, "essai_debut");
     let depuis_registre = registre::lire();
@@ -110,11 +133,12 @@ pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
 pub fn get_license_status(state: State<DbState>) -> Result<StatutLicence, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let id = machine_id();
+    let maintenant = date_de_reference(&conn);
 
     if let Some(cle) = db::get_setting(&conn, "cle_licence") {
         return Ok(match verifier_cle(&id, &cle) {
             Some(expiration) => {
-                let jours = (expiration - Local::now().date_naive()).num_days();
+                let jours = (expiration - maintenant.date_naive()).num_days();
                 StatutLicence {
                     statut: if jours >= 0 { "actif" } else { "expire" }.to_string(),
                     jours_restants: jours,
@@ -135,7 +159,7 @@ pub fn get_license_status(state: State<DbState>) -> Result<StatutLicence, String
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
         .map(|d| d.with_timezone(&Local))
         .unwrap_or_else(Local::now);
-    let jours_ecoules = (Local::now() - debut).num_days();
+    let jours_ecoules = (maintenant - debut).num_days();
     let jours_restants = DUREE_ESSAI_JOURS - jours_ecoules;
 
     Ok(StatutLicence {
