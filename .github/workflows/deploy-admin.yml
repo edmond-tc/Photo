@@ -12,10 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22+ : la dépendance wrangler@4 du dossier admin (utilisée par
+      # l'étape de migration ci-dessous) refuse de démarrer sur Node 20.
       - name: Installer Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Installer les dépendances
         working-directory: admin
