@@ -22,7 +22,9 @@ pub fn start(app: AppHandle) {
     });
 }
 
-fn sauvegarder_une_fois(app: &AppHandle) -> Result<(), String> {
+/// Déclenchement manuel (écran technique) — même logique que la sauvegarde
+/// automatique périodique, appelée à la demande.
+pub fn sauvegarder_une_fois(app: &AppHandle) -> Result<(), String> {
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
 
     let dossier_sauvegarde = {

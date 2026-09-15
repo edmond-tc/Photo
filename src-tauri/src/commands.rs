@@ -320,6 +320,22 @@ pub fn generer_rapport_diagnostic(
     })
 }
 
+/// Écran technique (Réglages, déverrouillé par mot de passe côté
+/// interface) : force une sauvegarde immédiate plutôt que d'attendre le
+/// prochain cycle automatique (toutes les 15 minutes).
+#[tauri::command]
+pub fn sauvegarder_maintenant(app: AppHandle) -> Result<(), String> {
+    crate::backup::sauvegarder_une_fois(&app)
+}
+
+/// Écran technique : ouvre le dossier de données de l'appli (base SQLite,
+/// sauvegardes) dans l'explorateur Windows, pour un dépannage sur place.
+#[tauri::command]
+pub fn ouvrir_dossier_donnees(app: AppHandle) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    files::shell_open(&data_dir, "open")
+}
+
 fn queue_item_path(state: &State<DbState>, id: i64) -> Result<PathBuf, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.query_row(

@@ -60,6 +60,8 @@ pub fn run() {
             commands::get_server_info,
             commands::ouvrir_parametres_partage_connexion,
             commands::generer_rapport_diagnostic,
+            commands::sauvegarder_maintenant,
+            commands::ouvrir_dossier_donnees,
             gestion::list_tarifs,
             gestion::update_tarif,
             gestion::list_historique_tarifs,

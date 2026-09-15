@@ -965,6 +965,59 @@ async function rendreReglages(corps) {
   versionEl.className = "version";
   versionEl.textContent = `Version ${version}`;
   corps.appendChild(versionEl);
+
+  // Écran technique caché — triple-clic sur le numéro de version, pour le
+  // porteur du projet en visite de dépannage. Pas une vraie barrière de
+  // sécurité (l'appli tourne déjà en local avec les mêmes droits que le
+  // gérant), juste pour éviter qu'un gérant curieux tombe dessus par hasard.
+  let clicsVersion = 0;
+  let minuteurClicsVersion = null;
+  versionEl.addEventListener("click", () => {
+    clicsVersion++;
+    clearTimeout(minuteurClicsVersion);
+    minuteurClicsVersion = setTimeout(() => {
+      clicsVersion = 0;
+    }, 1000);
+    if (clicsVersion >= 3) {
+      clicsVersion = 0;
+      ouvrirEcranTechnique(corps);
+    }
+  });
+}
+
+const MOT_DE_PASSE_TECHNIQUE = "ATINZ-TECH-2026";
+
+async function ouvrirEcranTechnique(corps) {
+  const ancien = document.querySelector("#section-technique");
+  if (ancien) {
+    ancien.remove();
+    return;
+  }
+  const mdp = prompt("Mot de passe technique :");
+  if (mdp === null) return;
+  if (mdp !== MOT_DE_PASSE_TECHNIQUE) {
+    alert("Mot de passe incorrect.");
+    return;
+  }
+  const rapport = await invoke("generer_rapport_diagnostic");
+  const sec = document.createElement("section");
+  sec.id = "section-technique";
+  sec.innerHTML = `
+    <h3>🔧 Outils techniques</h3>
+    <pre style="font-size:0.75rem; background:var(--gris-clair); padding:0.5rem; border-radius:4px; overflow-x:auto">${echapperHtml(JSON.stringify(rapport, null, 2))}</pre>
+  `;
+  sec.appendChild(
+    bouton("Forcer une sauvegarde maintenant", "btn-secondaire", async () => {
+      await invoke("sauvegarder_maintenant");
+      alert("Sauvegarde effectuée.");
+    })
+  );
+  sec.appendChild(
+    bouton("Ouvrir le dossier de données", "btn-secondaire", async () => {
+      await invoke("ouvrir_dossier_donnees");
+    })
+  );
+  corps.appendChild(sec);
 }
 
 // ───────────────────────────── Statut abonnement / mise à jour ─────────────────────────────
