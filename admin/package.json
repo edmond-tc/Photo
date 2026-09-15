@@ -11,5 +11,15 @@
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ADMIN_PASSWORD": {
+        "description": "Le mot de passe que tu veux utiliser pour te connecter à ton tableau de bord."
+      },
+      "LICENSE_SECRET": {
+        "description": "Copie exacte de la constante SECRET dans src-tauri/src/license.rs — doit être identique, sinon les clés générées ici ne marcheront pas dans l'application."
+      }
+    }
   }
 }

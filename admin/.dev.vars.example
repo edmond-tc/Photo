@@ -1,0 +1,2 @@
+ADMIN_PASSWORD=choisis-un-mot-de-passe-fort
+LICENSE_SECRET=copie-exacte-de-SECRET-dans-license.rs
