@@ -80,6 +80,21 @@ async function estConnecte(request, env) {
   return cookie === attendu;
 }
 
+// ─────────────────────────────── Paramètres ──────────────────────────────
+
+async function obtenirParametre(env, cle, defaut = "") {
+  const ligne = await env.DB.prepare(`SELECT valeur FROM parametres WHERE cle = ?`).bind(cle).first();
+  return ligne?.valeur ?? defaut;
+}
+
+async function definirParametre(env, cle, valeur) {
+  await env.DB.prepare(
+    `INSERT INTO parametres (cle, valeur) VALUES (?, ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur`
+  )
+    .bind(cle, valeur)
+    .run();
+}
+
 // ───────────────────────────────── HTML ──────────────────────────────────
 
 function echapper(valeur) {
@@ -201,12 +216,42 @@ async function pageAccueil(env) {
     )
     .join("");
 
+  const { results: demandes } = await env.DB.prepare(
+    `SELECT * FROM demandes WHERE statut = 'en_attente' ORDER BY created_at ASC`
+  ).all();
+
+  const lignesDemandes = demandes
+    .map(
+      (d) => `<li style="margin-bottom:0.5rem">
+        <strong>${echapper(d.nom_boutique)}</strong> — ${d.jours_demandes} jours,
+        payé au ${echapper(d.numero_paiement)}${d.telephone ? ` (tél. ${echapper(d.telephone)})` : ""}
+        ${d.commentaire ? `<br><span style="font-size:0.8rem; color:#605e5c">${echapper(d.commentaire)}</span>` : ""}
+        <br>
+        <form method="POST" action="/demandes/${d.id}/confirmer" style="display:inline">
+          <button type="submit" style="font-size:0.8rem; padding:0.3rem 0.6rem">✅ Confirmer et générer la clé</button>
+        </form>
+        <form method="POST" action="/demandes/${d.id}/rejeter" style="display:inline">
+          <button type="submit" class="secondaire" style="font-size:0.8rem; padding:0.3rem 0.6rem">Rejeter</button>
+        </form>
+      </li>`
+    )
+    .join("");
+
   return page(
     "Boutiques",
     `<div class="carte">
       <h1>Boutiques (${boutiques.length})</h1>
       <a class="btn" href="/boutiques/nouvelle">+ Ajouter une boutique</a>
+      <a class="btn secondaire" href="/parametres">Paramètres</a>
     </div>
+    ${
+      demandes.length
+        ? `<div class="carte" style="border-left:4px solid #2b579a">
+            <h2>📩 Demandes de renouvellement en attente (${demandes.length})</h2>
+            <ul style="margin:0; padding-left:1.2rem; font-size:0.9rem">${lignesDemandes}</ul>
+          </div>`
+        : ""
+    }
     ${
       alertes.length
         ? `<div class="carte" style="border-left:4px solid #a4262c">
@@ -319,6 +364,68 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
   );
 }
 
+async function pageRenouveler(env, { envoye, erreur } = {}) {
+  const numeros = await obtenirParametre(env, "numeros_paiement", "");
+  const contact = await obtenirParametre(env, "contact_whatsapp", "");
+  const montant = await obtenirParametre(env, "montant_indicatif", "");
+
+  return page(
+    "Renouveler mon abonnement",
+    `<div class="carte">
+      <h1>Renouveler l'abonnement</h1>
+      ${
+        envoye
+          ? `<p style="color:#0e5c1f">Demande envoyée. Le porteur du projet la vérifie et vous enverra
+             votre nouvelle clé (WhatsApp ou appel) — patientez quelques jours si besoin.</p>
+             ${contact ? `<p>En cas d'urgence : <a href="https://wa.me/${echapper(contact.replace(/[^0-9]/g, ""))}">WhatsApp</a> ou appelez le ${echapper(contact)}.</p>` : ""}`
+          : `
+      ${numeros ? `<p><strong>1. Payez</strong> ${montant ? `(${echapper(montant)})` : ""} au numéro Mobile Money :<br>${echapper(numeros).replace(/\n/g, "<br>")}</p>` : ""}
+      ${contact ? `<p><strong>2. Besoin d'aide ?</strong> <a href="https://wa.me/${echapper(contact.replace(/[^0-9]/g, ""))}">WhatsApp</a> ou appelez le ${echapper(contact)}.</p>` : ""}
+      <p><strong>3. Remplissez ce formulaire</strong> pour indiquer votre paiement :</p>
+      ${erreur ? `<p style="color:#a4262c">${echapper(erreur)}</p>` : ""}
+      <form method="POST" action="/renouveler">
+        <label>Nom de la boutique <input type="text" name="nom_boutique" required /></label>
+        <label>Identifiant machine (Réglages &gt; Licence, dans l'appli) <input type="text" name="machine_id" required /></label>
+        <label>Votre téléphone <input type="tel" name="telephone" required /></label>
+        <label>Numéro utilisé pour payer <input type="tel" name="numero_paiement" required /></label>
+        <label>Durée souhaitée
+          <select name="jours_demandes">
+            <option value="30">30 jours</option>
+            <option value="90">90 jours</option>
+            <option value="365">365 jours</option>
+          </select>
+        </label>
+        <label>Commentaire (optionnel) <textarea name="commentaire" rows="2"></textarea></label>
+        <button type="submit">Envoyer ma demande</button>
+      </form>`
+      }
+    </div>`,
+    { connecte: false }
+  );
+}
+
+async function pageParametres(env) {
+  const numeros = await obtenirParametre(env, "numeros_paiement", "");
+  const contact = await obtenirParametre(env, "contact_whatsapp", "");
+  const montant = await obtenirParametre(env, "montant_indicatif", "");
+  return page(
+    "Paramètres",
+    `<div class="carte">
+      <p><a href="/">&larr; Retour</a></p>
+      <h1>Paramètres de la page de renouvellement</h1>
+      <p style="font-size:0.85rem; color:#605e5c">
+        Ce que voient les gérants sur la page publique <code>/renouveler</code> quand ils veulent payer.
+      </p>
+      <form method="POST" action="/parametres">
+        <label>Numéro(s) Mobile Money (un par ligne) <textarea name="numeros_paiement" rows="2">${echapper(numeros)}</textarea></label>
+        <label>Montant indicatif à afficher (optionnel) <input type="text" name="montant_indicatif" value="${echapper(montant)}" /></label>
+        <label>Ton contact (WhatsApp/téléphone) <input type="text" name="contact_whatsapp" value="${echapper(contact)}" /></label>
+        <button type="submit">Enregistrer</button>
+      </form>
+    </div>`
+  );
+}
+
 // ─────────────────────────────── Routage ────────────────────────────────
 
 export default {
@@ -352,6 +459,34 @@ export default {
         return new Response(null, {
           status: 302,
           headers: { Location: "/connexion", "Set-Cookie": "session=; Path=/; Max-Age=0" },
+        });
+      }
+
+      // Page publique : n'importe quel gérant peut y accéder pour signaler
+      // un paiement, sans avoir de compte ni de mot de passe.
+      if (pathname === "/renouveler" && method === "GET") {
+        return new Response(await pageRenouveler(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      if (pathname === "/renouveler" && method === "POST") {
+        const donnees = await request.formData();
+        const nomBoutique = (donnees.get("nom_boutique") || "").trim();
+        const machineId = (donnees.get("machine_id") || "").trim();
+        const numeroPaiement = (donnees.get("numero_paiement") || "").trim();
+        if (!nomBoutique || !machineId || !numeroPaiement) {
+          return new Response(await pageRenouveler(env, { erreur: "Merci de remplir tous les champs obligatoires." }), {
+            status: 400,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+        const jours = Math.max(1, Math.min(3650, parseInt(donnees.get("jours_demandes"), 10) || 30));
+        await env.DB.prepare(
+          `INSERT INTO demandes (machine_id, nom_boutique, telephone, numero_paiement, jours_demandes, commentaire)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+          .bind(machineId, nomBoutique, donnees.get("telephone") || null, numeroPaiement, jours, donnees.get("commentaire") || null)
+          .run();
+        return new Response(await pageRenouveler(env, { envoye: true }), {
+          headers: { "content-type": "text/html; charset=utf-8" },
         });
       }
 
@@ -428,6 +563,54 @@ export default {
           .bind(id)
           .run();
         return new Response(null, { status: 302, headers: { Location: `/boutiques/${id}` } });
+      }
+
+      if (pathname === "/parametres" && method === "GET") {
+        return new Response(await pageParametres(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      if (pathname === "/parametres" && method === "POST") {
+        const donnees = await request.formData();
+        await definirParametre(env, "numeros_paiement", (donnees.get("numeros_paiement") || "").trim());
+        await definirParametre(env, "montant_indicatif", (donnees.get("montant_indicatif") || "").trim());
+        await definirParametre(env, "contact_whatsapp", (donnees.get("contact_whatsapp") || "").trim());
+        return new Response(null, { status: 302, headers: { Location: "/parametres" } });
+      }
+
+      const matchConfirmer = pathname.match(/^\/demandes\/(\d+)\/confirmer$/);
+      if (matchConfirmer && method === "POST") {
+        const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ? AND statut = 'en_attente'`)
+          .bind(matchConfirmer[1])
+          .first();
+        if (!demande) return new Response("Demande introuvable ou déjà traitée.", { status: 404 });
+
+        let boutique = await env.DB.prepare(`SELECT * FROM boutiques WHERE machine_id = ?`)
+          .bind(demande.machine_id)
+          .first();
+        if (!boutique) {
+          const resultat = await env.DB.prepare(
+            `INSERT INTO boutiques (nom, telephone, machine_id) VALUES (?, ?, ?)`
+          )
+            .bind(demande.nom_boutique, demande.telephone, demande.machine_id)
+            .run();
+          boutique = { id: resultat.meta.last_row_id };
+        }
+
+        const { cle, dateExpiration } = await genererCle(env, demande.machine_id, demande.jours_demandes);
+        await env.DB.prepare(
+          `INSERT INTO licences (boutique_id, cle, jours, date_expiration) VALUES (?, ?, ?, ?)`
+        )
+          .bind(boutique.id, cle, demande.jours_demandes, dateExpiration)
+          .run();
+        await env.DB.prepare(`UPDATE demandes SET statut = 'confirmee' WHERE id = ?`).bind(demande.id).run();
+
+        const html = await pageBoutique(env, boutique.id, { cleGeneree: { cle, dateExpiration } });
+        return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+
+      const matchRejeter = pathname.match(/^\/demandes\/(\d+)\/rejeter$/);
+      if (matchRejeter && method === "POST") {
+        await env.DB.prepare(`UPDATE demandes SET statut = 'rejetee' WHERE id = ?`).bind(matchRejeter[1]).run();
+        return new Response(null, { status: 302, headers: { Location: "/" } });
       }
 
       return new Response("Introuvable.", { status: 404 });

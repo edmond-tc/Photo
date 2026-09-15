@@ -24,3 +24,20 @@ CREATE TABLE rapports (
   contenu_json TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE demandes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  machine_id TEXT NOT NULL,
+  nom_boutique TEXT NOT NULL,
+  telephone TEXT,
+  numero_paiement TEXT NOT NULL,
+  jours_demandes INTEGER NOT NULL,
+  commentaire TEXT,
+  statut TEXT NOT NULL DEFAULT 'en_attente',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE parametres (
+  cle TEXT PRIMARY KEY,
+  valeur TEXT
+);

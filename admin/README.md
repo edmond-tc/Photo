@@ -9,7 +9,14 @@ connecté. Sert à :
 - générer les clés de licence (remplace `generer-licence.exe` — même
   algorithme, même résultat, vérifié) avec un historique automatique,
   sans rien à noter à la main ;
-- voir d'un coup d'œil les abonnements qui arrivent bientôt à expiration.
+- voir d'un coup d'œil les abonnements qui arrivent bientôt à expiration ;
+- laisser un gérant demander lui-même son renouvellement (page publique
+  `/renouveler`, sans compte ni mot de passe) : il paie au numéro Mobile
+  Money affiché, indique son paiement dans un formulaire, et la demande
+  apparaît sur ta page d'accueil. Tu vérifies (le porteur du projet n'a
+  pas de compte marchand API, donc pas de confirmation automatique du
+  paiement) et cliques "Confirmer" — la clé se génère à ce moment-là,
+  la boutique est créée automatiquement si c'est un nouveau gérant.
 
 La base D1 `photocopie-admin-db` (id `ca1a0e15-7e38-4eee-afb6-a44b5f6b4418`)
 est déjà créée et migrée en prod (3 tables : `boutiques`, `licences`,
@@ -49,6 +56,13 @@ npm run dev                    # wrangler dev, http://localhost:8787
 En local, `wrangler dev` te demande aussi `ADMIN_PASSWORD`/`LICENSE_SECRET`
 (via un fichier `.dev.vars` à créer toi-même, jamais commité — voir la doc
 Wrangler) plutôt que les vrais secrets de prod.
+
+## Après le premier déploiement
+
+Va dans **Paramètres** (lien en haut de la page d'accueil) pour renseigner
+tes numéros Mobile Money, un montant indicatif et ton contact WhatsApp —
+c'est ce que voient les gérants sur `/renouveler`. Tant que ce n'est pas
+rempli, la page de renouvellement s'affiche sans ces informations.
 
 ## Ce qui n'est pas encore fait
 
