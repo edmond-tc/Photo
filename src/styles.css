@@ -12,6 +12,15 @@
   box-sizing: border-box;
 }
 
+/* Garde-fou global : sans ça, tout élément dont la classe fixe "display"
+   (modales, panneau latéral, formulaires...) ignore l'attribut hidden posé
+   par le JS, car une règle d'auteur l'emporte toujours sur la règle par
+   défaut du navigateur pour [hidden]. Bug réel trouvé lors des premiers
+   tests (fenêtres qui refusaient de se fermer, empilées à l'écran). */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", Calibri, "Helvetica Neue", Arial, sans-serif;
