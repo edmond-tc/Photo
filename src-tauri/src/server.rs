@@ -1,9 +1,9 @@
 use crate::watcher::{enqueue_file_avec_options, OptionsImpression};
-use axum::extract::{DefaultBodyLimit, Multipart, State};
-use axum::http::{header, StatusCode, Uri};
+use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
+use axum::http::{StatusCode, Uri};
 use axum::response::{Html, IntoResponse, Redirect};
 use axum::routing::{any, get, post};
-use axum::Router;
+use axum::{Json, Router};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager};
 
@@ -45,6 +45,7 @@ pub fn start(app: AppHandle) {
         let router = Router::new()
             .route("/", get(page_accueil))
             .route("/envoyer", post(recevoir_fichier))
+            .route("/statut/:id", get(statut_fichier))
             .layer(DefaultBodyLimit::max(TAILLE_MAX_ENVOI))
             .with_state(app);
 
@@ -145,6 +146,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
   .liens-secondaires {{ margin-top:1.5rem; text-align:center; font-size:0.8rem; }}
   .liens-secondaires a {{ color:#605e5c; text-decoration:underline; }}
   #confirmation {{ display:none; text-align:center; color:#107c10; font-weight:600; margin-top:1rem; }}
+  #statut-fidelite {{ display:none; text-align:center; background:#dff6dd; color:#107c10; font-weight:600; padding:0.75rem; border-radius:6px; margin-top:0.75rem; }}
   #progression {{ display:none; height:8px; background:#e8e6e4; border-radius:4px; overflow:hidden; margin-bottom:1rem; }}
   #progression > div {{ height:100%; width:0%; background:#2b579a; transition:width .15s; }}
   #texte-progression {{ display:none; text-align:center; font-size:0.8rem; color:#605e5c; margin:-0.5rem 0 1rem; }}
@@ -172,6 +174,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
       <button type="submit">Envoyer à la boutique</button>
     </form>
     <p id="confirmation">Fichier(s) envoyé(s), merci ! Le gérant a été prévenu.</p>
+    <p id="statut-fidelite"></p>
     <div class="liens-secondaires">
       {lien_whatsapp}
       <p>Bluetooth : depuis votre téléphone, activez le Bluetooth et cherchez l'ordinateur de la boutique.</p>
@@ -250,6 +253,10 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
           barre.style.display = 'none';
           texte.style.display = 'none';
           document.getElementById('confirmation').style.display = 'block';
+          try {{
+            const reponse = JSON.parse(xhr.responseText);
+            if (reponse.ids && reponse.ids.length) surveillerStatut(reponse.ids);
+          }} catch {{}}
         }} else {{
           bouton.disabled = false;
           bouton.textContent = 'Envoyer à la boutique';
@@ -263,6 +270,35 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
       }});
       xhr.send(donnees);
     }});
+
+    // Tant que le client reste sur le Wi-Fi de la boutique (donc pas encore
+    // parti), on regarde discrètement si le gérant a encaissé — pour lui
+    // montrer un mot de remerciement en direct, sans imprimer de reçu ni
+    // passer par internet.
+    function surveillerStatut(ids) {{
+      const statutEl = document.getElementById('statut-fidelite');
+      let tentatives = 0;
+      const maxTentatives = 200; // ~15 minutes, le temps d'un passage en boutique
+      const minuteur = setInterval(async () => {{
+        tentatives++;
+        if (tentatives > maxTentatives) {{
+          clearInterval(minuteur);
+          return;
+        }}
+        for (const id of ids) {{
+          try {{
+            const r = await fetch(`/statut/${{id}}`);
+            const data = await r.json();
+            if (data.paye && data.message) {{
+              statutEl.textContent = data.message;
+              statutEl.style.display = 'block';
+              clearInterval(minuteur);
+              return;
+            }}
+          }} catch {{}}
+        }}
+      }}, 4500);
+    }}
   </script>
 </body>
 </html>"#
@@ -409,6 +445,7 @@ async fn recevoir_fichier(
 
     let nombre_recus = fichiers.len();
     let mut nombre_enregistres = 0usize;
+    let mut ids: Vec<i64> = Vec::new();
     for (indice, fichier) in fichiers {
         let horodatage = chrono::Local::now().format("%Y%m%d-%H%M%S%3f");
         let nom_fichier_sur_disque = format!("{horodatage}_{}_{}", indice, fichier.original_name);
@@ -417,17 +454,16 @@ async fn recevoir_fichier(
             continue;
         }
         let opts = options.remove(&indice).unwrap_or_default();
-        if enqueue_file_avec_options(
+        if let Some(id) = enqueue_file_avec_options(
             &app,
             &chemin,
             "qr",
             nom.as_deref(),
             telephone.as_deref(),
             opts,
-        )
-        .is_some()
-        {
+        ) {
             nombre_enregistres += 1;
+            ids.push(id);
         }
     }
 
@@ -443,5 +479,94 @@ async fn recevoir_fichier(
             .into_response();
     }
 
-    (StatusCode::OK, [(header::CONTENT_TYPE, "text/plain")], "ok").into_response()
+    // Les identifiants permettent à la page du client de surveiller elle-même
+    // (en interrogeant /statut/:id) le moment où le gérant encaisse, pour
+    // afficher un message de remerciement en direct sans jamais passer par
+    // internet (SMS/WhatsApp) — le téléphone reste sur le Wi-Fi local tant
+    // que le client n'a pas quitté la boutique.
+    (StatusCode::OK, Json(serde_json::json!({ "ids": ids }))).into_response()
+}
+
+#[derive(serde::Serialize)]
+struct StatutFichier {
+    traite: bool,
+    paye: bool,
+    message: Option<String>,
+}
+
+/// Interrogée par la page du client (en boucle discrète, tant qu'il est
+/// encore sur le Wi-Fi de la boutique) pour savoir si sa commande a été
+/// encaissée — et dans ce cas, afficher un mot de remerciement avec son
+/// compteur de fidélité, en direct, sans rien devoir imprimer ni envoyer.
+async fn statut_fichier(State(app): State<AppHandle>, Path(id): Path<i64>) -> impl IntoResponse {
+    let state = app.state::<crate::db::DbState>();
+    let Ok(conn) = state.0.lock() else {
+        return Json(StatutFichier {
+            traite: false,
+            paye: false,
+            message: None,
+        });
+    };
+
+    let statut_transaction: Option<String> = conn
+        .query_row(
+            "SELECT statut FROM transactions WHERE file_queue_id = ?1 ORDER BY id DESC LIMIT 1",
+            rusqlite::params![id],
+            |r| r.get(0),
+        )
+        .ok();
+
+    let Some(statut) = statut_transaction else {
+        return Json(StatutFichier {
+            traite: false,
+            paye: false,
+            message: None,
+        });
+    };
+
+    let paye = statut == "paye";
+    let message = if paye {
+        let telephone: Option<String> = conn
+            .query_row(
+                "SELECT client_telephone FROM files_queue WHERE id = ?1",
+                rusqlite::params![id],
+                |r| r.get(0),
+            )
+            .unwrap_or(None);
+
+        Some(match telephone.filter(|t| !t.is_empty()) {
+            Some(tel) => {
+                let visites: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM transactions t
+                         JOIN files_queue f ON f.id = t.file_queue_id
+                         WHERE f.client_telephone = ?1 AND t.statut = 'paye'",
+                        rusqlite::params![tel],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(1);
+                if visites >= crate::gestion::SEUIL_VISITES_FIDELITE {
+                    format!(
+                        "🎉 Merci pour votre fidélité ! Une réduction de {}% a été appliquée.",
+                        crate::gestion::REMISE_FIDELITE_POURCENT
+                    )
+                } else {
+                    let restantes = crate::gestion::SEUIL_VISITES_FIDELITE - visites;
+                    format!(
+                        "✅ Commande traitée, merci ! C'est votre {visites}ᵉ commande chez nous — \
+                         encore {restantes} avant votre réduction fidélité."
+                    )
+                }
+            }
+            None => "✅ Commande traitée, merci pour votre confiance !".to_string(),
+        })
+    } else {
+        None
+    };
+
+    Json(StatutFichier {
+        traite: true,
+        paye,
+        message,
+    })
 }

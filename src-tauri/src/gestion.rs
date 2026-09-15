@@ -101,8 +101,8 @@ fn tarif_prix(conn: &rusqlite::Connection, service: &str) -> i64 {
     .unwrap_or(0)
 }
 
-const SEUIL_VISITES_FIDELITE: i64 = 5;
-const REMISE_FIDELITE_POURCENT: i64 = 10;
+pub(crate) const SEUIL_VISITES_FIDELITE: i64 = 5;
+pub(crate) const REMISE_FIDELITE_POURCENT: i64 = 10;
 
 #[derive(serde::Serialize)]
 pub struct PrixCalcule {
