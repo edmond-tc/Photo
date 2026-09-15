@@ -7,45 +7,107 @@ use tauri::State;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Secret utilisé pour signer les clés de licence, partagé avec l'outil de
-/// génération du porteur du projet (`src-tauri/src/bin/generer-licence.rs`,
-/// qui appelle ce même module). Mécanisme léger tel que décrit au cahier
-/// des charges (section 7) : pas de vérification serveur, mais empêche la
-/// génération de clés sans connaître ce secret.
-const SECRET: &[u8] = b"890e198971a7863481701131b3b36386156972a265bbaa2c61a78446efa0e328";
+/// Clé PUBLIQUE de vérification des licences.
+///
+/// Elle ne permet que de vérifier une clé, jamais d'en fabriquer une : on
+/// peut donc la livrer dans chaque installation sans aucun risque. La clé
+/// privée correspondante, seule capable de signer, reste chez le porteur du
+/// projet (secret du tableau de bord Cloudflare) et n'est présente dans
+/// aucun fichier livré ni dans le dépôt.
+///
+/// C'est tout l'intérêt du changement : avant, la même valeur servait à
+/// signer ET à vérifier, elle était donc forcément dans l'exe distribué —
+/// n'importe qui pouvait l'en extraire et se fabriquer des licences à vie.
+const CLE_PUBLIQUE: [u8; 32] = [
+    45, 128, 43, 247, 147, 198, 43, 195, 181, 78, 252, 243, 244, 6, 244, 54, 167, 204, 112, 248,
+    108, 15, 214, 235, 109, 226, 1, 168, 95, 187, 33, 144,
+];
+
+/// Ancien secret symétrique, conservé le temps que les boutiques déjà
+/// équipées reçoivent une clé de nouvelle génération.
+///
+/// Il est présent dans les exes déjà distribués, donc à considérer comme
+/// connu : les clés qu'il valide ne sont plus acceptées au-delà de la date
+/// limite ci-dessous. Une fois cette date passée (ou toutes les boutiques
+/// migrées), ce bloc et `SECRET_HERITE` peuvent être supprimés d'un trait.
+const SECRET_HERITE: &[u8] = b"890e198971a7863481701131b3b36386156972a265bbaa2c61a78446efa0e328";
+const LIMITE_CLES_HERITEES: &str = "20261231";
+
 const DUREE_ESSAI_JOURS: i64 = 30;
 
 pub fn machine_id() -> String {
     machine_uid::get().unwrap_or_else(|_| "MACHINE-INCONNUE".to_string())
 }
 
-fn signature(machine_id: &str, expiration_compacte: &str) -> String {
-    let mut mac =
-        HmacSha256::new_from_slice(SECRET).expect("HMAC accepte des clés de toute longueur");
-    mac.update(machine_id.as_bytes());
-    mac.update(b"|");
-    mac.update(expiration_compacte.as_bytes());
-    let resultat = mac.finalize().into_bytes();
-    base32::encode(Alphabet::Crockford, &resultat[..10])
+/// Ce qui est signé : l'identifiant de la machine et la date d'expiration.
+/// Une clé fabriquée pour un PC ne vaut donc rien sur un autre.
+fn message_a_signer(machine_id: &str, expiration_compacte: &str) -> Vec<u8> {
+    format!("{machine_id}|{expiration_compacte}").into_bytes()
 }
 
-/// Formatte une clé de licence lisible : SIGNATURE-AAAAMMJJ
-pub fn generer_cle(machine_id: &str, expiration: NaiveDate) -> String {
+/// Signe une clé de licence. Réservé à l'outil du porteur du projet, qui
+/// fournit lui-même la clé privée — elle n'est écrite nulle part ici.
+pub fn generer_cle(
+    cle_privee: &ed25519_dalek::SigningKey,
+    machine_id: &str,
+    expiration: NaiveDate,
+) -> String {
+    use ed25519_dalek::Signer;
     let expiration_compacte = expiration.format("%Y%m%d").to_string();
+    let signature = cle_privee.sign(&message_a_signer(machine_id, &expiration_compacte));
     format!(
         "{}-{}",
-        signature(machine_id, &expiration_compacte),
+        base32::encode(Alphabet::Crockford, &signature.to_bytes()),
         expiration_compacte
     )
 }
 
-fn verifier_cle(machine_id: &str, cle: &str) -> Option<NaiveDate> {
-    let (sig_fournie, expiration_compacte) = cle.trim().rsplit_once('-')?;
-    let sig_attendue = signature(machine_id, expiration_compacte);
-    if sig_fournie.to_uppercase() != sig_attendue {
-        return None;
+fn signature_heritee(machine_id: &str, expiration_compacte: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(SECRET_HERITE)
+        .expect("HMAC accepte des clés de toute longueur");
+    mac.update(&message_a_signer(machine_id, expiration_compacte));
+    let resultat = mac.finalize().into_bytes();
+    base32::encode(Alphabet::Crockford, &resultat[..10])
+}
+
+fn signature_valide(machine_id: &str, expiration_compacte: &str, signature: &str) -> bool {
+    use ed25519_dalek::{Signature, VerifyingKey};
+
+    let message = message_a_signer(machine_id, expiration_compacte);
+
+    if let Some(octets) = base32::decode(Alphabet::Crockford, signature) {
+        if let Ok(octets) = <[u8; 64]>::try_from(octets.as_slice()) {
+            if let Ok(cle) = VerifyingKey::from_bytes(&CLE_PUBLIQUE) {
+                if cle
+                    .verify_strict(&message, &Signature::from_bytes(&octets))
+                    .is_ok()
+                {
+                    return true;
+                }
+            }
+        }
     }
-    NaiveDate::parse_from_str(expiration_compacte, "%Y%m%d").ok()
+
+    // Clé d'ancienne génération : acceptée seulement jusqu'à la date limite,
+    // pour ne pas couper une boutique déjà équipée du jour au lendemain.
+    expiration_compacte <= LIMITE_CLES_HERITEES
+        && signature == signature_heritee(machine_id, expiration_compacte)
+}
+
+fn verifier_cle(machine_id: &str, cle: &str) -> Option<NaiveDate> {
+    // Une clé collée depuis WhatsApp arrive souvent avec des espaces ou un
+    // retour à la ligne : ce n'est pas une raison de refuser le gérant.
+    let cle: String = cle.chars().filter(|c| !c.is_whitespace()).collect();
+    let cle = cle.to_uppercase();
+
+    let (signature, expiration_compacte) = cle.rsplit_once('-')?;
+    let expiration = NaiveDate::parse_from_str(expiration_compacte, "%Y%m%d").ok()?;
+
+    if signature_valide(machine_id, expiration_compacte, signature) {
+        Some(expiration)
+    } else {
+        None
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -184,4 +246,74 @@ pub fn set_license_key(state: State<DbState>, cle: String) -> Result<bool, Strin
     }
     db::set_setting(&conn, "cle_licence", &cle).map_err(|e| e.to_string())?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID: &str = "MACHINE-DE-TEST-1234";
+    // Clé produite par le tableau de bord (WebCrypto Ed25519), pour vérifier
+    // que les deux côtés parlent bien la même langue : si ce test casse, plus
+    // aucun gérant ne peut activer sa licence.
+    const CLE_DU_TABLEAU_DE_BORD: &str = "Y552T7QK7S0BE3ACTMW751Z9GP0Q9VVWHPX9AFSRNA95E9SZRM7V0MG78S89RV0ETKHKJKRHP8FMX20FYYYY22KPRX9W1JDXGKG2T2R-20261120";
+
+    #[test]
+    fn accepte_une_cle_signee_par_le_tableau_de_bord() {
+        let expiration = verifier_cle(ID, CLE_DU_TABLEAU_DE_BORD);
+        assert_eq!(
+            expiration,
+            Some(NaiveDate::from_ymd_opt(2026, 11, 20).unwrap())
+        );
+    }
+
+    #[test]
+    fn accepte_une_cle_collee_avec_espaces_et_retours_a_la_ligne() {
+        let collee = format!("  {}\n", CLE_DU_TABLEAU_DE_BORD);
+        assert!(verifier_cle(ID, &collee).is_some());
+    }
+
+    #[test]
+    fn refuse_la_cle_d_une_autre_machine() {
+        assert!(verifier_cle("UNE-AUTRE-MACHINE", CLE_DU_TABLEAU_DE_BORD).is_none());
+    }
+
+    #[test]
+    fn refuse_une_date_d_expiration_repoussee() {
+        // Reculer la date sans refaire signer ne doit rien donner.
+        let trafiquee = CLE_DU_TABLEAU_DE_BORD.replace("-20261120", "-20991231");
+        assert!(verifier_cle(ID, &trafiquee).is_none());
+    }
+
+    #[test]
+    fn refuse_une_signature_modifiee() {
+        let mut trafiquee = CLE_DU_TABLEAU_DE_BORD.to_string();
+        trafiquee.replace_range(0..1, "Z");
+        assert!(verifier_cle(ID, &trafiquee).is_none());
+    }
+
+    #[test]
+    fn refuse_n_importe_quoi() {
+        assert!(verifier_cle(ID, "").is_none());
+        assert!(verifier_cle(ID, "bonjour").is_none());
+        assert!(verifier_cle(ID, "-20261120").is_none());
+    }
+
+    #[test]
+    fn les_cles_heritees_ne_valent_plus_apres_la_date_limite() {
+        let apres = signature_heritee(ID, "20270101");
+        assert!(!signature_valide(ID, "20270101", &apres));
+
+        let avant = signature_heritee(ID, "20261001");
+        assert!(signature_valide(ID, "20261001", &avant));
+    }
+
+#[test]
+fn cle_generee_par_le_worker_reel_est_acceptee() {
+    // Clé produite par le Worker Cloudflare tournant en local (workerd),
+    // via le vrai parcours : connexion, création de boutique, génération.
+    let cle = "YXZJGFCYSJ4S6HAQCYEKSBF69R1JVCKH0QPGFVJ1FZ34W4AS2A85XEHZTW8AK0ZEZWN72QJ04HJ1AN8KB4MXF2JR2RFGP0475GDK838-20261015";
+    assert!(super::verifier_cle("MACHINE-DE-TEST-1234", cle).is_some());
+    assert!(super::verifier_cle("AUTRE-MACHINE", cle).is_none());
+}
 }

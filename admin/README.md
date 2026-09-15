@@ -46,7 +46,13 @@ juste remplir 4 "secrets" une seule fois, dans deux pages web.
      | `CLOUDFLARE_API_TOKEN` | le jeton copié à l'étape 1 |
      | `CLOUDFLARE_ACCOUNT_ID` | l'Account ID noté à l'étape 1 |
      | `ADMIN_PASSWORD` | le mot de passe que tu veux utiliser pour te connecter au tableau de bord |
-     | `LICENSE_SECRET` | **copie exacte** de la constante `SECRET` dans `src-tauri/src/license.rs` — voir l'avertissement ci-dessous |
+     | `CLE_PRIVEE_LICENCE` | la clé privée de signature (64 caractères) — voir ci-dessous |
+
+   Note : `ADMIN_PASSWORD` et `CLE_PRIVEE_LICENCE` se définissent **côté
+   Cloudflare**, pas côté GitHub (`npx wrangler secret put ADMIN_PASSWORD`,
+   ou Cloudflare → Workers → photocopie-admin → Settings → Variables). Seuls
+   `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID` sont des secrets GitHub :
+   le déploiement automatique ne fonctionne pas tant qu'ils manquent.
 
 **3.** Onglet **Actions** du dépôt → workflow **Deploy Admin** → **Run workflow**
    (ou attendre le prochain push touchant `admin/`, qui le déclenche tout seul).
@@ -72,14 +78,31 @@ ligne à l'adresse affichée dans les logs du workflow (`https://photocopie-admi
    - À refaire (juste le re-upload, pas le reste) à chaque nouvelle version
      que tu veux distribuer publiquement.
 
-## Secret de licence — le point le plus important
+## Clé de licence — le point le plus important
 
-`LICENSE_SECRET` doit être **exactement identique** à la constante `SECRET`
-dans `src-tauri/src/license.rs` — sinon les clés générées ici seraient
-rejetées par l'application des gérants (et vice-versa). Si tu changes un
-jour le secret dans `license.rs`, remets aussi à jour le secret GitHub
-`LICENSE_SECRET` (même page que l'étape 2 ci-dessus, "Update"), sinon les
-deux ne seront plus synchronisés.
+Les licences sont signées avec une **paire de clés** : une clé privée qui
+signe, une clé publique qui vérifie.
+
+- La **clé privée** (`CLE_PRIVEE_LICENCE`, 64 caractères) ne doit exister
+  qu'à deux endroits : dans les secrets Cloudflare de ce Worker, et dans ta
+  propre sauvegarde personnelle (clé USB, gestionnaire de mots de passe).
+  **Jamais** dans le dépôt, jamais sur le PC d'un gérant, jamais dans une
+  conversation. Qui la possède peut fabriquer des licences à vie.
+- La **clé publique** est écrite en clair dans `src-tauri/src/license.rs`
+  (constante `CLE_PUBLIQUE`). C'est normal et sans danger : elle ne sait que
+  vérifier une clé, jamais en créer.
+
+Les deux vont ensemble. Si tu regénères une paire, il faut mettre à jour les
+deux côtés **et** recompiler l'application, sinon les clés générées ici
+seront rejetées par les gérants.
+
+### Changer de paire de clés (en cas de fuite)
+
+1. Génère une nouvelle paire.
+2. Remplace `CLE_PUBLIQUE` dans `src-tauri/src/license.rs`, pousse, attends
+   la compilation, redistribue l'installateur.
+3. Mets à jour le secret `CLE_PRIVEE_LICENCE` côté Cloudflare.
+4. Regénère une clé pour chaque boutique active depuis le tableau de bord.
 
 ## Tester en local avant de déployer (facultatif, réservé au développement)
 
@@ -88,7 +111,7 @@ npm run db:migrate:local       # recrée les tables dans une copie locale de D1
 npm run dev                    # wrangler dev, http://localhost:8787
 ```
 
-En local, `wrangler dev` te demande aussi `ADMIN_PASSWORD`/`LICENSE_SECRET`
+En local, `wrangler dev` te demande aussi `ADMIN_PASSWORD`/`CLE_PRIVEE_LICENCE`
 (via un fichier `.dev.vars` à créer toi-même, jamais commité — voir la doc
 Wrangler) plutôt que les vrais secrets de prod.
 

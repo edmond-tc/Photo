@@ -48,13 +48,46 @@ function formatDateCompacte(date) {
   return `${y}${m}${d}`;
 }
 
+/// La clé privée (64 caractères hexadécimaux) est un secret du Worker. Elle
+/// seule permet de fabriquer une licence ; l'application, elle, ne contient
+/// que la clé publique correspondante, qui ne sait que vérifier. C'est ce qui
+/// empêche désormais quiconque possède l'exe de se fabriquer des licences.
+function decoderHex(hex) {
+  const propre = String(hex ?? "").trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(propre)) {
+    throw new Error("CLE_PRIVEE_LICENCE absente ou mal formée (64 caractères hexadécimaux attendus).");
+  }
+  const octets = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) octets[i] = parseInt(propre.slice(i * 2, i * 2 + 2), 16);
+  return octets;
+}
+
+/// Ed25519 attend une clé privée au format PKCS#8 : on enveloppe les 32
+/// octets bruts dans l'en-tête ASN.1 fixe correspondant.
+const PREFIXE_PKCS8_ED25519 = new Uint8Array([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+]);
+
+async function signerEd25519(cleHex, message) {
+  const graine = decoderHex(cleHex);
+  const pkcs8 = new Uint8Array(PREFIXE_PKCS8_ED25519.length + graine.length);
+  pkcs8.set(PREFIXE_PKCS8_ED25519, 0);
+  pkcs8.set(graine, PREFIXE_PKCS8_ED25519.length);
+
+  const cle = await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign({ name: "Ed25519" }, cle, new TextEncoder().encode(message));
+  return new Uint8Array(signature);
+}
+
 async function genererCle(env, machineId, jours) {
   const expiration = new Date();
   expiration.setUTCDate(expiration.getUTCDate() + Number(jours));
   const expirationCompacte = formatDateCompacte(expiration);
-  const digest = await hmacSha256(env.LICENSE_SECRET, `${machineId}|${expirationCompacte}`);
-  const signature = crockfordBase32(digest.slice(0, 10));
-  return { cle: `${signature}-${expirationCompacte}`, dateExpiration: expirationCompacte };
+  const signature = await signerEd25519(env.CLE_PRIVEE_LICENCE, `${machineId}|${expirationCompacte}`);
+  return {
+    cle: `${crockfordBase32(signature)}-${expirationCompacte}`,
+    dateExpiration: expirationCompacte,
+  };
 }
 
 // ───────────────────────────── Session admin ─────────────────────────────
@@ -615,8 +648,30 @@ async function pageParametres(env) {
 }
 
 const CLE_INSTALLATEUR = "GestionPhotocopie-Installateur.exe";
+const CLE_EMPREINTE = "empreinte-sha256.txt";
 
-function pageTelecharger(disponible) {
+function pageTelecharger(disponible, empreinte) {
+  // L'empreinte remplace ce qu'aurait apporté un certificat de signature :
+  // elle ne supprime pas l'avertissement de Windows, mais elle permet de
+  // vérifier que le fichier téléchargé est bien celui qui a été compilé, et
+  // pas une version modifiée en route.
+  const blocEmpreinte = empreinte
+    ? `<div style="text-align:left; background:#f3f2f1; padding:0.8rem; border-radius:6px; margin-top:1rem">
+         <p style="font-size:0.8rem; margin:0 0 0.4rem"><strong>Vérifier que le fichier est authentique</strong> (recommandé)</p>
+         <p style="font-size:0.78rem; margin:0 0 0.4rem; color:#605e5c">
+           Empreinte officielle de cette version :
+         </p>
+         <p class="cle-resultat" style="font-size:0.72rem; margin:0 0 0.5rem">${echapper(empreinte)}</p>
+         <p style="font-size:0.78rem; margin:0; color:#605e5c">
+           Sur le PC, ouvrez l'invite de commande dans le dossier du fichier
+           téléchargé et tapez :<br>
+           <code style="font-size:0.75rem">certutil -hashfile ${echapper(CLE_INSTALLATEUR)} SHA256</code><br>
+           Le résultat doit être identique, caractère pour caractère. S'il
+           diffère, n'installez pas le fichier.
+         </p>
+       </div>`
+    : "";
+
   return page(
     "Télécharger Gestion Photocopie",
     `<div class="carte" style="margin-top:2rem; text-align:center">
@@ -628,12 +683,16 @@ function pageTelecharger(disponible) {
       ${
         disponible
           ? `<a class="btn" href="/telecharger/exe" style="display:block; margin:1rem 0; padding:1rem;">⬇️ Télécharger pour Windows</a>
-             <p style="font-size:0.8rem; color:#605e5c">
-               Au premier lancement, Windows peut afficher un avertissement
-               "éditeur inconnu" — c'est normal pour un logiciel non payant
-               pour une signature numérique. Cliquez "Informations
-               complémentaires" puis "Exécuter quand même".
-             </p>`
+             <p style="font-size:0.8rem; color:#605e5c; text-align:left">
+               Au premier lancement, Windows affichera un avertissement
+               "éditeur inconnu". Il apparaît sur tout logiciel dont l'auteur
+               n'a pas payé de certificat, y compris celui-ci — mais il
+               apparaît aussi sur les vrais programmes malveillants. Ne
+               prenez donc pas l'habitude de passer outre sans réfléchir :
+               vérifiez d'abord l'empreinte ci-dessous, puis cliquez
+               "Informations complémentaires" et "Exécuter quand même".
+             </p>
+             ${blocEmpreinte}`
           : `<p style="color:#a4262c">Le fichier n'est pas encore disponible. Réessayez plus tard.</p>`
       }
     </div>`,
@@ -774,7 +833,17 @@ async function router(request, env) {
       // (privé) où est développé le code.
       if (pathname === "/telecharger" && method === "GET") {
         const objet = await env.TELECHARGEMENTS.head(CLE_INSTALLATEUR);
-        return new Response(await pageTelecharger(!!objet), {
+        // Petit fichier texte déposé à côté de l'installateur, produit par la
+        // compilation. Absent tant qu'il n'a pas été téléversé : la page
+        // fonctionne quand même, sans le bloc de vérification.
+        let empreinte = null;
+        try {
+          const fichier = await env.TELECHARGEMENTS.get(CLE_EMPREINTE);
+          if (fichier) empreinte = borner(await fichier.text(), 64);
+        } catch {
+          empreinte = null;
+        }
+        return new Response(await pageTelecharger(!!objet, empreinte), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }

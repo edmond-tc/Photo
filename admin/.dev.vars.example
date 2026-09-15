@@ -1,2 +1,2 @@
 ADMIN_PASSWORD=choisis-un-mot-de-passe-fort
-LICENSE_SECRET=copie-exacte-de-SECRET-dans-license.rs
+CLE_PRIVEE_LICENCE=cle-privee-ed25519-64-caracteres-hexadecimaux
