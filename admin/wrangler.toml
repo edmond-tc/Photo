@@ -6,3 +6,7 @@ compatibility_date = "2026-09-01"
 binding = "DB"
 database_name = "photocopie-admin-db"
 database_id = "ca1a0e15-7e38-4eee-afb6-a44b5f6b4418"
+
+[[r2_buckets]]
+binding = "TELECHARGEMENTS"
+bucket_name = "photocopie-telechargements"

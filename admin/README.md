@@ -54,6 +54,24 @@ juste remplir 4 "secrets" une seule fois, dans deux pages web.
 Une fois terminé (quelques dizaines de secondes), le tableau de bord est en
 ligne à l'adresse affichée dans les logs du workflow (`https://photocopie-admin.<ton-sous-domaine>.workers.dev`).
 
+**4. Déposer l'installateur pour la page de téléchargement publique**
+   (même visite, un pas de plus — page web, toujours pas de terminal) :
+   - Récupère le `.exe` le plus récent : onglet **Actions** du dépôt →
+     dernier run de *Build Windows* → artifact `photocopie-benin-windows`
+     → télécharge et dézippe, tu obtiens un fichier `.exe` dans le dossier
+     `bundle/nsis/`.
+   - Sur Cloudflare : menu ☰ → **R2** → bucket **photocopie-telechargements**
+     → **Upload** → choisis ce fichier.
+   - **Important** : une fois uploadé, renomme-le (bouton "..." à côté du
+     fichier → Rename, ou re-upload avec le bon nom) pour qu'il s'appelle
+     **exactement** `GestionPhotocopie-Installateur.exe` — le Worker ne
+     sert que ce nom précis.
+   - La page `https://<ton-worker>.workers.dev/telecharger` devient alors
+     utilisable : n'importe qui peut y télécharger l'appli sans compte
+     GitHub, à partager largement (affiche, réseaux sociaux, WhatsApp...).
+   - À refaire (juste le re-upload, pas le reste) à chaque nouvelle version
+     que tu veux distribuer publiquement.
+
 ## Secret de licence — le point le plus important
 
 `LICENSE_SECRET` doit être **exactement identique** à la constante `SECRET`
@@ -93,7 +111,6 @@ boutique soit connecté.
 
 ## Ce qui n'est pas encore fait
 
-- Page de téléchargement publique de l'appli (aujourd'hui, le `.exe` est
-  uniquement récupérable via les artefacts GitHub Actions).
-- Écran technique caché dans l'appli du gérant pour le dépannage sur
-  place.
+Rien de bloquant côté code — tout est construit et testé. Reste seulement
+le déploiement initial (étapes 1 à 4 ci-dessus), qui demande un accès
+direct au compte Cloudflare/GitHub.

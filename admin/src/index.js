@@ -243,6 +243,7 @@ async function pageAccueil(env) {
       <h1>Boutiques (${boutiques.length})</h1>
       <a class="btn" href="/boutiques/nouvelle">+ Ajouter une boutique</a>
       <a class="btn secondaire" href="/parametres">Paramètres</a>
+      <a class="btn secondaire" href="/telecharger" target="_blank">Page de téléchargement ↗</a>
     </div>
     ${
       demandes.length
@@ -472,6 +473,33 @@ async function pageParametres(env) {
   );
 }
 
+const CLE_INSTALLATEUR = "GestionPhotocopie-Installateur.exe";
+
+function pageTelecharger(disponible) {
+  return page(
+    "Télécharger Gestion Photocopie",
+    `<div class="carte" style="margin-top:2rem; text-align:center">
+      <h1>Gestion Photocopie</h1>
+      <p style="font-size:0.9rem; color:#605e5c">
+        Logiciel de gestion pour boutiques de photocopie — 100% hors ligne,
+        pour Windows.
+      </p>
+      ${
+        disponible
+          ? `<a class="btn" href="/telecharger/exe" style="display:block; margin:1rem 0; padding:1rem;">⬇️ Télécharger pour Windows</a>
+             <p style="font-size:0.8rem; color:#605e5c">
+               Au premier lancement, Windows peut afficher un avertissement
+               "éditeur inconnu" — c'est normal pour un logiciel non payant
+               pour une signature numérique. Cliquez "Informations
+               complémentaires" puis "Exécuter quand même".
+             </p>`
+          : `<p style="color:#a4262c">Le fichier n'est pas encore disponible. Réessayez plus tard.</p>`
+      }
+    </div>`,
+    { connecte: false }
+  );
+}
+
 // ─────────────────────────────── Routage ────────────────────────────────
 
 export default {
@@ -533,6 +561,26 @@ export default {
           .run();
         return new Response(await pageRenouveler(env, { envoye: true }), {
           headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+
+      // Page publique de téléchargement — pour n'importe quel gérant, sans
+      // compte ni mot de passe, sans avoir besoin d'accéder au dépôt GitHub
+      // (privé) où est développé le code.
+      if (pathname === "/telecharger" && method === "GET") {
+        const objet = await env.TELECHARGEMENTS.head(CLE_INSTALLATEUR);
+        return new Response(await pageTelecharger(!!objet), {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      if (pathname === "/telecharger/exe" && method === "GET") {
+        const objet = await env.TELECHARGEMENTS.get(CLE_INSTALLATEUR);
+        if (!objet) return new Response("Fichier indisponible pour l'instant.", { status: 404 });
+        return new Response(objet.body, {
+          headers: {
+            "content-type": "application/octet-stream",
+            "content-disposition": `attachment; filename="${CLE_INSTALLATEUR}"`,
+          },
         });
       }
 
