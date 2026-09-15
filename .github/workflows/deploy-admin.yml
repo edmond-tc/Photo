@@ -21,15 +21,19 @@ jobs:
         working-directory: admin
         run: npm ci
 
-      - name: Déployer sur Cloudflare (Worker + secrets)
+      # Le déploiement ne touche qu'au code. Le mot de passe admin et le
+      # secret de licence restent définis une seule fois, côté Cloudflare
+      # (`npx wrangler secret put ADMIN_PASSWORD`), et n'ont donc pas besoin
+      # d'exister aussi dans GitHub : moins d'endroits détiennent le secret
+      # qui signe les licences, mieux c'est.
+      #
+      # Auparavant cette étape renvoyait ces deux secrets à chaque
+      # déploiement, et échouait avant même d'avoir déployé quoi que ce soit
+      # quand ils n'étaient pas définis dans GitHub — ce qui a fait échouer
+      # la totalité des déploiements depuis la création de ce fichier.
+      - name: Déployer le Worker sur Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: admin
-          secrets: |
-            ADMIN_PASSWORD
-            LICENSE_SECRET
-        env:
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          LICENSE_SECRET: ${{ secrets.LICENSE_SECRET }}
