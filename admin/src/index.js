@@ -58,13 +58,45 @@ async function genererCle(env, machineId, jours) {
 }
 
 // ───────────────────────────── Session admin ─────────────────────────────
-// Pas de table de sessions : le cookie est lui-même la preuve, signé avec
-// le mot de passe admin. Seul quelqu'un qui connaît déjà le mot de passe
-// peut produire un cookie valide.
+// Pas de table de sessions : le cookie porte lui-même sa date d'expiration
+// et un numéro tiré au hasard, le tout signé avec le mot de passe admin.
+// Seul quelqu'un qui connaît déjà le mot de passe peut en fabriquer un.
+//
+// La date d'expiration et le tirage au sort comptent : un cookie qui vaut
+// toujours la même chose ne peut jamais être révoqué, et s'il fuite une
+// seule fois (téléphone prêté, historique de navigateur, sauvegarde) il
+// donne un accès administrateur permanent.
+
+const DUREE_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/// Comparaison à durée constante : comparer deux chaînes avec === s'arrête
+/// au premier caractère différent, ce qui laisse deviner un secret à la
+/// vitesse de réponse.
+function comparaisonConstante(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+  let difference = 0;
+  for (let i = 0; i < a.length; i++) difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return difference === 0;
+}
+
+async function signer(env, texte) {
+  return crockfordBase32(await hmacSha256(env.ADMIN_PASSWORD, texte));
+}
+
+/// Compare deux mots de passe par leurs empreintes : de longueurs toujours
+/// identiques, elles ne trahissent donc même pas la longueur du vrai mot de
+/// passe.
+async function motDePasseValide(env, fourni) {
+  const attendu = crockfordBase32(await hmacSha256(env.ADMIN_PASSWORD, "verification"));
+  const propose = crockfordBase32(await hmacSha256(String(fourni ?? ""), "verification"));
+  return comparaisonConstante(attendu, propose);
+}
 
 async function creerCookieSession(env) {
-  const digest = await hmacSha256(env.ADMIN_PASSWORD, "session-admin-photocopie");
-  return crockfordBase32(digest);
+  const expiration = Date.now() + DUREE_SESSION_MS;
+  const alea = crypto.randomUUID().replace(/-/g, "");
+  const charge = `${expiration}.${alea}`;
+  return `${charge}.${await signer(env, charge)}`;
 }
 
 function lireCookie(request, nom) {
@@ -76,8 +108,59 @@ function lireCookie(request, nom) {
 async function estConnecte(request, env) {
   const cookie = lireCookie(request, "session");
   if (!cookie) return false;
-  const attendu = await creerCookieSession(env);
-  return cookie === attendu;
+  const parties = cookie.split(".");
+  if (parties.length !== 3) return false;
+  const [expiration, alea, signature] = parties;
+  if (!/^\d+$/.test(expiration) || Number(expiration) < Date.now()) return false;
+  return comparaisonConstante(signature, await signer(env, `${expiration}.${alea}`));
+}
+
+// ───────────────── Protection contre les essais de mot de passe ──────────
+// Sans limite, le mot de passe qui protège la génération des licences peut
+// être essayé des milliers de fois par minute depuis n'importe où.
+
+const TENTATIVES_MAX = 8;
+const FENETRE_TENTATIVES_MS = 15 * 60 * 1000;
+
+function adresseAppelant(request) {
+  return request.headers.get("CF-Connecting-IP") || "inconnue";
+}
+
+async function tentativesRecentes(env, ip) {
+  try {
+    const brut = await obtenirParametre(env, `tentatives:${ip}`, "");
+    if (!brut) return 0;
+    const { n, debut } = JSON.parse(brut);
+    if (Date.now() - debut > FENETRE_TENTATIVES_MS) return 0;
+    return n;
+  } catch {
+    // Compteur illisible ou base indisponible : on ne bloque pas le porteur
+    // du projet hors de son propre tableau de bord pour autant.
+    return 0;
+  }
+}
+
+async function enregistrerEchec(env, ip) {
+  try {
+    const brut = await obtenirParametre(env, `tentatives:${ip}`, "");
+    let compteur = { n: 0, debut: Date.now() };
+    if (brut) {
+      const precedent = JSON.parse(brut);
+      if (Date.now() - precedent.debut <= FENETRE_TENTATIVES_MS) compteur = precedent;
+    }
+    compteur.n += 1;
+    await definirParametre(env, `tentatives:${ip}`, JSON.stringify(compteur));
+  } catch {
+    // Rien à faire de plus : l'échec de comptage ne doit pas casser la page.
+  }
+}
+
+async function oublierTentatives(env, ip) {
+  try {
+    await env.DB.prepare(`DELETE FROM parametres WHERE cle = ?`).bind(`tentatives:${ip}`).run();
+  } catch {
+    // Sans importance : le compteur expirera de lui-même.
+  }
 }
 
 // ─────────────────────────────── Paramètres ──────────────────────────────
@@ -223,8 +306,9 @@ async function pageAccueil(env) {
   const lignesDemandes = demandes
     .map(
       (d) => `<li style="margin-bottom:0.5rem">
-        <strong>${echapper(d.nom_boutique)}</strong> — ${d.jours_demandes} jours,
+        <strong>${echapper(d.nom_boutique)}</strong> — ${echapper(d.jours_demandes)} jours,
         payé au ${echapper(d.numero_paiement)}${d.telephone ? ` (tél. ${echapper(d.telephone)})` : ""}
+        <br><span style="font-size:0.75rem; color:#605e5c">Machine : <code>${echapper(d.machine_id)}</code></span>
         ${d.commentaire ? `<br><span style="font-size:0.8rem; color:#605e5c">${echapper(d.commentaire)}</span>` : ""}
         <br>
         <form method="POST" action="/demandes/${d.id}/confirmer" style="display:inline">
@@ -321,10 +405,10 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
         <p style="font-size:0.8rem; color:#605e5c; margin:0 0 0.4rem">Reçu le ${new Date(r.created_at).toLocaleDateString("fr-FR")}</p>
         <table>
           <tr><td>Version appli</td><td>${echapper(contenu.version)}</td></tr>
-          <tr><td>Licence</td><td>${echapper(contenu.statut_licence)} (${contenu.jours_restants} j restants)</td></tr>
+          <tr><td>Licence</td><td>${echapper(contenu.statut_licence)} (${echapper(contenu.jours_restants)} j restants)</td></tr>
           <tr><td>Dernière sauvegarde</td><td>${contenu.derniere_sauvegarde ? new Date(contenu.derniere_sauvegarde).toLocaleString("fr-FR") : "aucune"}</td></tr>
           <tr><td>Dernier fichier reçu</td><td>${contenu.dernier_fichier_recu ? new Date(contenu.dernier_fichier_recu).toLocaleString("fr-FR") : "aucun"}</td></tr>
-          <tr><td>Transactions au total</td><td>${contenu.nombre_transactions_total ?? "—"}</td></tr>
+          <tr><td>Transactions au total</td><td>${echapper(contenu.nombre_transactions_total ?? "—")}</td></tr>
           <tr><td>Taille de la base</td><td>${contenu.taille_base_octets ? Math.round(contenu.taille_base_octets / 1024) + " Ko" : "—"}</td></tr>
         </table>
       </div>`;
@@ -559,8 +643,42 @@ function pageTelecharger(disponible) {
 
 // ─────────────────────────────── Routage ────────────────────────────────
 
+/// Le tableau de bord n'utilise aucun JavaScript : on peut donc l'interdire
+/// complètement. Même si une valeur mal échappée se glissait dans une page,
+/// le navigateur refuserait d'exécuter quoi que ce soit.
+const EN_TETES_SECURITE = {
+  "content-security-policy":
+    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "x-frame-options": "DENY",
+};
+
+function avecEnTetesSecurite(reponse) {
+  const entetes = new Headers(reponse.headers);
+  for (const [nom, valeur] of Object.entries(EN_TETES_SECURITE)) entetes.set(nom, valeur);
+  return new Response(reponse.body, {
+    status: reponse.status,
+    statusText: reponse.statusText,
+    headers: entetes,
+  });
+}
+
+/// Bornes sur tout ce qu'un inconnu peut écrire dans la base depuis le
+/// formulaire public : sans elles, un seul envoi peut y déposer des
+/// mégaoctets de texte, autant de fois qu'il le souhaite.
+function borner(valeur, maximum = 200) {
+  return String(valeur ?? "").trim().slice(0, maximum);
+}
+
 export default {
   async fetch(request, env) {
+    return avecEnTetesSecurite(await router(request, env));
+  },
+};
+
+async function router(request, env) {
+  {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method;
@@ -570,13 +688,22 @@ export default {
         return new Response(await pageConnexion(), { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       if (pathname === "/connexion" && method === "POST") {
+        const ip = adresseAppelant(request);
+        if ((await tentativesRecentes(env, ip)) >= TENTATIVES_MAX) {
+          return new Response(
+            await pageConnexion("Trop d'essais. Réessayez dans un quart d'heure."),
+            { status: 429, headers: { "content-type": "text/html; charset=utf-8" } }
+          );
+        }
         const donnees = await request.formData();
-        if (donnees.get("mot_de_passe") !== env.ADMIN_PASSWORD) {
+        if (!(await motDePasseValide(env, donnees.get("mot_de_passe")))) {
+          await enregistrerEchec(env, ip);
           return new Response(await pageConnexion("Mot de passe incorrect."), {
             status: 401,
             headers: { "content-type": "text/html; charset=utf-8" },
           });
         }
+        await oublierTentatives(env, ip);
         const cookie = await creerCookieSession(env);
         return new Response(null, {
           status: 302,
@@ -599,10 +726,24 @@ export default {
         return new Response(await pageRenouveler(env), { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       if (pathname === "/renouveler" && method === "POST") {
+        // Formulaire ouvert à tous : sans limite, une seule personne peut
+        // remplir la base de fausses demandes et rendre le tableau de bord
+        // inutilisable.
+        const ip = adresseAppelant(request);
+        if ((await tentativesRecentes(env, `demande:${ip}`)) >= TENTATIVES_MAX) {
+          return new Response(
+            await pageRenouveler(env, {
+              erreur: "Trop de demandes envoyées. Réessayez dans un quart d'heure.",
+            }),
+            { status: 429, headers: { "content-type": "text/html; charset=utf-8" } }
+          );
+        }
+        await enregistrerEchec(env, `demande:${ip}`);
+
         const donnees = await request.formData();
-        const nomBoutique = (donnees.get("nom_boutique") || "").trim();
-        const machineId = (donnees.get("machine_id") || "").trim();
-        const numeroPaiement = (donnees.get("numero_paiement") || "").trim();
+        const nomBoutique = borner(donnees.get("nom_boutique"), 120);
+        const machineId = borner(donnees.get("machine_id"), 120);
+        const numeroPaiement = borner(donnees.get("numero_paiement"), 40);
         if (!nomBoutique || !machineId || !numeroPaiement) {
           return new Response(await pageRenouveler(env, { erreur: "Merci de remplir tous les champs obligatoires." }), {
             status: 400,
@@ -614,7 +755,14 @@ export default {
           `INSERT INTO demandes (machine_id, nom_boutique, telephone, numero_paiement, jours_demandes, commentaire)
            VALUES (?, ?, ?, ?, ?, ?)`
         )
-          .bind(machineId, nomBoutique, donnees.get("telephone") || null, numeroPaiement, jours, donnees.get("commentaire") || null)
+          .bind(
+            machineId,
+            nomBoutique,
+            borner(donnees.get("telephone"), 40) || null,
+            numeroPaiement,
+            jours,
+            borner(donnees.get("commentaire"), 500) || null
+          )
           .run();
         return new Response(await pageRenouveler(env, { envoye: true }), {
           headers: { "content-type": "text/html; charset=utf-8" },
@@ -709,7 +857,7 @@ export default {
       if (matchRapport && method === "POST") {
         const id = matchRapport[1];
         const donnees = await request.formData();
-        const contenuJson = (donnees.get("contenu_json") || "").trim();
+        const contenuJson = borner(donnees.get("contenu_json"), 20000);
         try {
           JSON.parse(contenuJson);
         } catch {
@@ -812,5 +960,5 @@ export default {
       console.error("Erreur non gérée:", err);
       return new Response("Erreur serveur.", { status: 500 });
     }
-  },
-};
+  }
+}
