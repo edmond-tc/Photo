@@ -215,8 +215,16 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
       }});
     }});
 
+    // Créé ici, pendant le clic (geste utilisateur) — les téléphones
+    // bloquent le son créé plus tard par du code, mais celui-ci reste
+    // utilisable pour le petit bip joué à la fin, une fois débloqué ainsi.
+    let audioClient = null;
+
     document.getElementById('form-envoi').addEventListener('submit', (e) => {{
       e.preventDefault();
+      try {{
+        audioClient = new (window.AudioContext || window.webkitAudioContext)();
+      }} catch {{}}
       const form = e.target;
       const donnees = new FormData();
       donnees.append('nom', form.nom.value);
@@ -275,6 +283,22 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     // parti), on regarde discrètement si le gérant a encaissé — pour lui
     // montrer un mot de remerciement en direct, sans imprimer de reçu ni
     // passer par internet.
+    function jouerSonClient() {{
+      try {{
+        const ctx = audioClient || new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      }} catch {{}}
+      if (navigator.vibrate) navigator.vibrate(200);
+    }}
+
     function surveillerStatut(ids) {{
       const statutEl = document.getElementById('statut-fidelite');
       let tentatives = 0;
@@ -292,6 +316,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
             if (data.paye && data.message) {{
               statutEl.textContent = data.message;
               statutEl.style.display = 'block';
+              jouerSonClient();
               clearInterval(minuteur);
               return;
             }}
@@ -534,6 +559,7 @@ async fn statut_fichier(State(app): State<AppHandle>, Path(id): Path<i64>) -> im
             )
             .unwrap_or(None);
 
+        let (seuil, remise_pourcent) = crate::gestion::parametres_fidelite(&conn);
         Some(match telephone.filter(|t| !t.is_empty()) {
             Some(tel) => {
                 let visites: i64 = conn
@@ -545,17 +571,18 @@ async fn statut_fichier(State(app): State<AppHandle>, Path(id): Path<i64>) -> im
                         |r| r.get(0),
                     )
                     .unwrap_or(1);
-                if visites >= crate::gestion::SEUIL_VISITES_FIDELITE {
+                if remise_pourcent > 0 && visites >= seuil {
                     format!(
-                        "🎉 Merci pour votre fidélité ! Une réduction de {}% a été appliquée.",
-                        crate::gestion::REMISE_FIDELITE_POURCENT
+                        "🎉 Merci pour votre fidélité ! Une réduction de {remise_pourcent}% a été appliquée."
                     )
-                } else {
-                    let restantes = crate::gestion::SEUIL_VISITES_FIDELITE - visites;
+                } else if remise_pourcent > 0 {
+                    let restantes = seuil - visites;
                     format!(
                         "✅ Commande traitée, merci ! C'est votre {visites}ᵉ commande chez nous — \
                          encore {restantes} avant votre réduction fidélité."
                     )
+                } else {
+                    format!("✅ Commande traitée, merci ! C'est votre {visites}ᵉ commande chez nous.")
                 }
             }
             None => "✅ Commande traitée, merci pour votre confiance !".to_string(),

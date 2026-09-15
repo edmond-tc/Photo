@@ -101,8 +101,21 @@ fn tarif_prix(conn: &rusqlite::Connection, service: &str) -> i64 {
     .unwrap_or(0)
 }
 
-pub(crate) const SEUIL_VISITES_FIDELITE: i64 = 5;
-pub(crate) const REMISE_FIDELITE_POURCENT: i64 = 10;
+const SEUIL_VISITES_FIDELITE_DEFAUT: i64 = 5;
+const REMISE_FIDELITE_POURCENT_DEFAUT: i64 = 10;
+
+/// Le seuil et le pourcentage de la réduction fidélité sont des choix du
+/// gérant (Réglages), pas des valeurs qu'on lui impose — un pourcentage à 0
+/// désactive simplement la réduction.
+pub(crate) fn parametres_fidelite(conn: &rusqlite::Connection) -> (i64, i64) {
+    let seuil = db::get_setting(conn, "fidelite_seuil_visites")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(SEUIL_VISITES_FIDELITE_DEFAUT);
+    let remise_pourcent = db::get_setting(conn, "fidelite_remise_pourcent")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(REMISE_FIDELITE_POURCENT_DEFAUT);
+    (seuil, remise_pourcent)
+}
 
 #[derive(serde::Serialize)]
 pub struct PrixCalcule {
@@ -148,19 +161,22 @@ pub fn calculer_prix(state: State<DbState>, id: i64) -> Result<PrixCalcule, Stri
     }
 
     let mut remise_appliquee = false;
-    if let Some(telephone) = client_telephone.filter(|t| !t.is_empty()) {
-        let visites_payees: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM transactions t
-                 JOIN files_queue f ON f.id = t.file_queue_id
-                 WHERE f.client_telephone = ?1 AND t.statut = 'paye'",
-                params![telephone],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
-        if visites_payees >= SEUIL_VISITES_FIDELITE {
-            total -= total * REMISE_FIDELITE_POURCENT / 100;
-            remise_appliquee = true;
+    let (seuil, remise_pourcent) = parametres_fidelite(&conn);
+    if remise_pourcent > 0 {
+        if let Some(telephone) = client_telephone.filter(|t| !t.is_empty()) {
+            let visites_payees: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM transactions t
+                     JOIN files_queue f ON f.id = t.file_queue_id
+                     WHERE f.client_telephone = ?1 AND t.statut = 'paye'",
+                    params![telephone],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if visites_payees >= seuil {
+                total -= total * remise_pourcent / 100;
+                remise_appliquee = true;
+            }
         }
     }
 

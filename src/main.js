@@ -885,6 +885,32 @@ async function rendreReglages(corps) {
   secWifi.appendChild(formWifi);
   corps.appendChild(secWifi);
 
+  // Fidélité — c'est au gérant de décider, pas à nous : seuil et
+  // pourcentage sont réglables ici, jamais imposés dans le code.
+  const secFidelite = document.createElement("section");
+  secFidelite.innerHTML = `
+    <h3>Fidélité client</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Une réduction automatique s'applique quand un client (identifié par
+      son numéro de téléphone) a déjà réglé plusieurs commandes. Mettez le
+      pourcentage à 0 pour désactiver complètement la réduction.
+    </p>
+  `;
+  const formFidelite = document.createElement("form");
+  formFidelite.innerHTML = `
+    <label>Nombre de visites payées avant réduction <input type="number" id="reg-fidelite-seuil" min="1" value="${echapperHtml(params.fidelite_seuil_visites || "5")}" /></label>
+    <label>Pourcentage de réduction <input type="number" id="reg-fidelite-pourcent" min="0" max="100" value="${echapperHtml(params.fidelite_remise_pourcent || "10")}" /></label>
+    <button type="submit" class="btn-secondaire">Enregistrer</button>
+  `;
+  formFidelite.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await invoke("set_boutique_setting", { cle: "fidelite_seuil_visites", valeur: document.querySelector("#reg-fidelite-seuil").value || "5" });
+    await invoke("set_boutique_setting", { cle: "fidelite_remise_pourcent", valeur: document.querySelector("#reg-fidelite-pourcent").value || "0" });
+    toast("✓ Réglages de fidélité enregistrés");
+  });
+  secFidelite.appendChild(formFidelite);
+  corps.appendChild(secFidelite);
+
   // Rapport de diagnostic pour le porteur du projet
   const secRapport = document.createElement("section");
   secRapport.innerHTML = `
