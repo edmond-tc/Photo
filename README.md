@@ -59,12 +59,19 @@ cargo fmt
 ## Générer une clé de licence (porteur du projet)
 
 Le gérant lit son identifiant machine dans Réglages > Licence et vous le
-communique. Vous générez ensuite sa clé :
+communique. Pour générer sa clé sur le terrain **sans recompiler** (rapide,
+comme pour récupérer le `.exe` principal) : onglet **Actions** du dépôt →
+dernier run de *Build Windows* → artifact `generer-licence-windows` →
+`generer-licence.exe`. À garder sur votre PC une fois téléchargé, réutilisable
+pour tous les gérants sans avoir à le retélécharger.
 
-```bash
-cd src-tauri
-cargo run --release --bin generer-licence -- <ID_MACHINE> [jours_valables=30]
 ```
+generer-licence.exe <ID_MACHINE> [jours_valables=30]
+```
+
+(Alternative pour du développement local : `cd src-tauri && cargo run
+--release --bin generer-licence -- <ID_MACHINE> [jours_valables=30]` — plus
+lent la première fois, le temps de compiler.)
 
 Le gérant colle la clé reçue dans Réglages > Licence pour activer ou
 renouveler son abonnement. Le secret de signature (constante `SECRET` dans
