@@ -165,15 +165,16 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
   <div class="carte">
     <h1>Envoyer un fichier à la boutique</h1>
     <form id="form-envoi">
-      <input type="text" name="nom" placeholder="Votre nom (optionnel)" />
-      <input type="tel" name="telephone" placeholder="Votre numéro (optionnel)" />
-      <p style="font-size:0.78rem; color:#605e5c; margin:-0.5rem 0 0.9rem">
-        Votre nom aide la boutique à savoir à qui appartient votre fichier
-        (surtout utile si plusieurs personnes envoient en même temps).
-        Votre numéro vous permet de profiter d'une réduction après
-        plusieurs commandes chez cette boutique — les deux restent
-        facultatifs.
+      <p style="font-size:0.78rem; color:#605e5c; margin:0 0 0.3rem">
+        Votre nom (facultatif) aide la boutique à savoir à qui appartient
+        votre fichier, surtout si plusieurs personnes envoient en même temps.
       </p>
+      <input type="text" name="nom" placeholder="Votre nom (optionnel)" />
+      <p style="font-size:0.78rem; color:#605e5c; margin:0.75rem 0 0.3rem">
+        Votre numéro (facultatif) vous permet de profiter d'une réduction
+        après plusieurs commandes chez cette boutique.
+      </p>
+      <input type="tel" name="telephone" placeholder="Votre numéro (optionnel)" />
       <input type="file" id="champ-fichiers" multiple required />
       <div id="liste-fichiers"></div>
       <div id="progression"><div></div></div>
