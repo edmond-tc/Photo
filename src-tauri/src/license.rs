@@ -1,11 +1,7 @@
 use crate::db::{self, DbState};
 use base32::Alphabet;
 use chrono::{Local, NaiveDate};
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use tauri::State;
-
-type HmacSha256 = Hmac<Sha256>;
 
 /// Clé PUBLIQUE de vérification des licences.
 ///
@@ -22,16 +18,6 @@ const CLE_PUBLIQUE: [u8; 32] = [
     45, 128, 43, 247, 147, 198, 43, 195, 181, 78, 252, 243, 244, 6, 244, 54, 167, 204, 112, 248,
     108, 15, 214, 235, 109, 226, 1, 168, 95, 187, 33, 144,
 ];
-
-/// Ancien secret symétrique, conservé le temps que les boutiques déjà
-/// équipées reçoivent une clé de nouvelle génération.
-///
-/// Il est présent dans les exes déjà distribués, donc à considérer comme
-/// connu : les clés qu'il valide ne sont plus acceptées au-delà de la date
-/// limite ci-dessous. Une fois cette date passée (ou toutes les boutiques
-/// migrées), ce bloc et `SECRET_HERITE` peuvent être supprimés d'un trait.
-const SECRET_HERITE: &[u8] = b"890e198971a7863481701131b3b36386156972a265bbaa2c61a78446efa0e328";
-const LIMITE_CLES_HERITEES: &str = "20261231";
 
 const DUREE_ESSAI_JOURS: i64 = 30;
 
@@ -62,36 +48,22 @@ pub fn generer_cle(
     )
 }
 
-fn signature_heritee(machine_id: &str, expiration_compacte: &str) -> String {
-    let mut mac = HmacSha256::new_from_slice(SECRET_HERITE)
-        .expect("HMAC accepte des clés de toute longueur");
-    mac.update(&message_a_signer(machine_id, expiration_compacte));
-    let resultat = mac.finalize().into_bytes();
-    base32::encode(Alphabet::Crockford, &resultat[..10])
-}
-
 fn signature_valide(machine_id: &str, expiration_compacte: &str, signature: &str) -> bool {
     use ed25519_dalek::{Signature, VerifyingKey};
 
     let message = message_a_signer(machine_id, expiration_compacte);
 
-    if let Some(octets) = base32::decode(Alphabet::Crockford, signature) {
-        if let Ok(octets) = <[u8; 64]>::try_from(octets.as_slice()) {
-            if let Ok(cle) = VerifyingKey::from_bytes(&CLE_PUBLIQUE) {
-                if cle
-                    .verify_strict(&message, &Signature::from_bytes(&octets))
-                    .is_ok()
-                {
-                    return true;
-                }
-            }
-        }
-    }
-
-    // Clé d'ancienne génération : acceptée seulement jusqu'à la date limite,
-    // pour ne pas couper une boutique déjà équipée du jour au lendemain.
-    expiration_compacte <= LIMITE_CLES_HERITEES
-        && signature == signature_heritee(machine_id, expiration_compacte)
+    let Some(octets) = base32::decode(Alphabet::Crockford, signature) else {
+        return false;
+    };
+    let Ok(octets) = <[u8; 64]>::try_from(octets.as_slice()) else {
+        return false;
+    };
+    let Ok(cle) = VerifyingKey::from_bytes(&CLE_PUBLIQUE) else {
+        return false;
+    };
+    cle.verify_strict(&message, &Signature::from_bytes(&octets))
+        .is_ok()
 }
 
 fn verifier_cle(machine_id: &str, cle: &str) -> Option<NaiveDate> {
@@ -300,12 +272,10 @@ mod tests {
     }
 
     #[test]
-    fn les_cles_heritees_ne_valent_plus_apres_la_date_limite() {
-        let apres = signature_heritee(ID, "20270101");
-        assert!(!signature_valide(ID, "20270101", &apres));
-
-        let avant = signature_heritee(ID, "20261001");
-        assert!(signature_valide(ID, "20261001", &avant));
+    fn refuse_une_cle_de_l_ancien_systeme() {
+        // L'ancien secret symétrique était livré dans chaque exe : n'importe
+        // qui pouvait l'en extraire. Plus aucune clé de ce type n'est admise.
+        assert!(!signature_valide(ID, "20261001", "ABCDEFGHJKMNPQRS"));
     }
 
 #[test]
