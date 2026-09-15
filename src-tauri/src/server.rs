@@ -113,13 +113,27 @@ pub fn est_actif(app: &AppHandle) -> bool {
     app.state::<EtatServeur>().0.load(Ordering::SeqCst)
 }
 
+/// Le nom Bluetooth est saisi par le gérant (Réglages) puis injecté tel
+/// quel dans la page HTML servie au client — sans échappement, un caractère
+/// comme `<` casserait la page, ou pire, permettrait d'y injecter du HTML.
+fn echapper_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
 async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
-    let whatsapp = {
+    let (whatsapp, bluetooth_nom) = {
         let state = app.state::<crate::db::DbState>();
         let Ok(conn) = state.0.lock() else {
             return Html("<p>Service temporairement indisponible, réessayez.</p>".to_string());
         };
-        crate::db::get_setting(&conn, "boutique_whatsapp")
+        (
+            crate::db::get_setting(&conn, "boutique_whatsapp"),
+            crate::db::get_setting(&conn, "bluetooth_nom"),
+        )
     };
 
     let lien_whatsapp = match whatsapp.as_deref().and_then(normalize_phone) {
@@ -127,6 +141,23 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
             r#"<a class="lien-secondaire" href="https://wa.me/{numero}" target="_blank">Envoyer par WhatsApp à la place</a>"#
         ),
         None => String::new(),
+    };
+
+    // Sans nom configuré, on reste sur une instruction générique plutôt que
+    // de dire au client de chercher un appareil "vide" — mieux vaut ne rien
+    // promettre de précis que d'induire en erreur.
+    let bloc_bluetooth = match bluetooth_nom.filter(|n| !n.trim().is_empty()) {
+        Some(nom) => format!(
+            r#"<p class="bluetooth-bloc">
+                <strong>Envoyer par Bluetooth :</strong><br />
+                1. Activez le Bluetooth sur votre téléphone.<br />
+                2. Sélectionnez votre/vos fichier(s) dans vos Photos ou Fichiers (plusieurs à la fois possible).<br />
+                3. Appuyez sur "Partager" puis choisissez "Bluetooth".<br />
+                4. Cherchez l'appareil nommé <strong>{nom}</strong> et sélectionnez-le.
+            </p>"#,
+            nom = echapper_html(&nom)
+        ),
+        None => r#"<p>Bluetooth : depuis votre téléphone, activez le Bluetooth et cherchez l'ordinateur de la boutique.</p>"#.to_string(),
     };
 
     Html(format!(
@@ -159,6 +190,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
   .fichier-options select, .fichier-options input[type=number], .fichier-options input[type=text] {{
     width: auto; flex:1; padding:0.35rem; margin:0; border:1px solid #d6d4d1; border-radius:4px;
   }}
+  .bluetooth-bloc {{ text-align:left; background:#f3f2f1; padding:0.75rem; border-radius:6px; line-height:1.6; }}
 </style>
 </head>
 <body>
@@ -185,7 +217,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     <p id="statut-fidelite"></p>
     <div class="liens-secondaires">
       {lien_whatsapp}
-      <p>Bluetooth : depuis votre téléphone, activez le Bluetooth et cherchez l'ordinateur de la boutique.</p>
+      {bloc_bluetooth}
     </div>
   </div>
   <script>

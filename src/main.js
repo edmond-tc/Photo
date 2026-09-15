@@ -893,6 +893,29 @@ async function rendreReglages(corps) {
   secWifi.appendChild(formWifi);
   corps.appendChild(secWifi);
 
+  const secBluetooth = document.createElement("section");
+  secBluetooth.innerHTML = `
+    <h3>Bluetooth (pour les clients sans Wi-Fi)</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Le nom que Windows affiche pour cet ordinateur quand on le cherche en
+      Bluetooth — trouvez-le (ou changez-le) dans Windows : Paramètres >
+      Bluetooth et appareils > Renommer cet appareil. Recopiez-le ici pour
+      que le client sache exactement quel appareil chercher.
+    </p>
+  `;
+  const formBluetooth = document.createElement("form");
+  formBluetooth.innerHTML = `
+    <label>Nom Bluetooth de cet ordinateur <input type="text" id="reg-bluetooth-nom" value="${echapperHtml(params.bluetooth_nom)}" placeholder="Ex: PC-Photocopie-Rapide" /></label>
+    <button type="submit" class="btn-secondaire">Enregistrer</button>
+  `;
+  formBluetooth.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await invoke("set_boutique_setting", { cle: "bluetooth_nom", valeur: document.querySelector("#reg-bluetooth-nom").value });
+    toast("✓ Nom Bluetooth enregistré — visible par vos clients dès maintenant");
+  });
+  secBluetooth.appendChild(formBluetooth);
+  corps.appendChild(secBluetooth);
+
   // Fidélité — c'est au gérant de décider, pas à nous : seuil et
   // pourcentage sont réglables ici, jamais imposés dans le code.
   const secFidelite = document.createElement("section");

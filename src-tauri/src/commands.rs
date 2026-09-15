@@ -198,6 +198,7 @@ pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value,
         "wifi_mot_de_passe": db::get_setting(&conn, "wifi_mot_de_passe"),
         "fidelite_seuil_visites": db::get_setting(&conn, "fidelite_seuil_visites"),
         "fidelite_remise_pourcent": db::get_setting(&conn, "fidelite_remise_pourcent"),
+        "bluetooth_nom": db::get_setting(&conn, "bluetooth_nom"),
     }))
 }
 
@@ -216,6 +217,7 @@ pub fn set_boutique_setting(
         "wifi_mot_de_passe",
         "fidelite_seuil_visites",
         "fidelite_remise_pourcent",
+        "bluetooth_nom",
     ];
     if !CLES_AUTORISEES.contains(&cle.as_str()) {
         return Err("réglage inconnu".to_string());
