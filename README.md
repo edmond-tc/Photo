@@ -67,10 +67,11 @@ cargo run --release --bin generer-licence -- <ID_MACHINE> [jours_valables=30]
 ```
 
 Le gérant colle la clé reçue dans Réglages > Licence pour activer ou
-renouveler son abonnement. **Important avant toute distribution réelle** :
-changez la constante `SECRET` dans `src-tauri/src/license.rs` (mécanisme
-léger décrit en section 7 du cahier des charges — pas une vérification
-serveur, mais empêche la génération de clés sans connaître ce secret).
+renouveler son abonnement. Le secret de signature (constante `SECRET` dans
+`src-tauri/src/license.rs`) a été changé pour une valeur aléatoire avant le
+début de la distribution réelle (mécanisme léger décrit en section 7 du
+cahier des charges — pas une vérification serveur, mais empêche la
+génération de clés sans connaître ce secret).
 
 ## État d'avancement
 
@@ -182,10 +183,12 @@ charges) ont une première implémentation :
   une fois connecté — la connexion Wi-Fi elle-même (la partie qui compte
   le plus) reste, elle, automatique dans tous les cas grâce au QR au format
   `WIFI:`.
-- **Secret de licence codé en dur** dans `license.rs` : le dépôt étant
-  privé, il n'est pas exposé publiquement, mais reste extractible du
-  binaire compilé par quelqu'un de déterminé. À changer avant une
-  distribution à grande échelle (voir plus haut).
+- **Secret de licence codé en dur** dans `license.rs` (désormais une valeur
+  aléatoire, plus le placeholder par défaut) : le dépôt étant privé, il
+  n'est pas exposé publiquement, mais reste extractible du binaire compilé
+  par quelqu'un de déterminé. Si le dépôt devient public un jour, le
+  déplacer vers un secret injecté à la compilation plutôt que le code
+  source.
 - **Anti-piratage renforcé mais pas absolu** : la date de début d'essai est
   écrite à la fois dans la base SQLite et le registre Windows (la plus
   ancienne des deux fait foi) — supprimer un seul des deux ne suffit plus à

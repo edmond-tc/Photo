@@ -7,13 +7,12 @@ use tauri::State;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Secret partagé entre l'application et l'outil de génération de clés du
-/// porteur du projet (`tools/generer-cle-licence.js`). Mécanisme léger tel
-/// que décrit au cahier des charges (section 7) : pas de vérification
-/// serveur, mais empêche la copie/modification triviale d'une clé.
-/// IMPORTANT : ce secret doit être identique ici et dans le script de
-/// génération, et changé avant toute distribution large (voir README).
-const SECRET: &[u8] = b"AtinzPhotocopieBenin-CleLicenceV1-A_CHANGER_AVANT_PROD";
+/// Secret utilisé pour signer les clés de licence, partagé avec l'outil de
+/// génération du porteur du projet (`src-tauri/src/bin/generer-licence.rs`,
+/// qui appelle ce même module). Mécanisme léger tel que décrit au cahier
+/// des charges (section 7) : pas de vérification serveur, mais empêche la
+/// génération de clés sans connaître ce secret.
+const SECRET: &[u8] = b"890e198971a7863481701131b3b36386156972a265bbaa2c61a78446efa0e328";
 const DUREE_ESSAI_JOURS: i64 = 30;
 
 pub fn machine_id() -> String {
