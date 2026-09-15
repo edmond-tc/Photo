@@ -833,6 +833,14 @@ async function rendreReglages(corps) {
   formBoutique.innerHTML = `
     <label>Nom de la boutique <input type="text" id="reg-nom" value="${echapperHtml(params.nom)}" /></label>
     <label>Numéro WhatsApp <input type="text" id="reg-whatsapp" value="${echapperHtml(params.whatsapp)}" /></label>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin:-0.5rem 0 0.75rem">
+      À quoi sert ce numéro : sur l'écran d'envoi (celui que le client voit en
+      scannant le QR), un bouton "Envoyer par WhatsApp à la place" apparaît
+      pour ceux qui préfèrent ou ne peuvent pas utiliser le Wi-Fi de la
+      boutique. Sans numéro renseigné ici, ce bouton n'apparaît tout
+      simplement pas — rien ne casse, mais vous perdez cette option pour vos
+      clients.
+    </p>
     <label>Dossier de sauvegarde <input type="text" id="reg-sauvegarde" value="${echapperHtml(params.dossier_sauvegarde)}" /></label>
     <label>URL de vérification des mises à jour <input type="text" id="reg-url-maj" value="${echapperHtml(params.url_verification_maj)}" /></label>
     <button type="submit" class="btn-secondaire">Enregistrer</button>
