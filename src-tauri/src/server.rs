@@ -148,13 +148,16 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     // promettre de précis que d'induire en erreur.
     let bloc_bluetooth = match bluetooth_nom.filter(|n| !n.trim().is_empty()) {
         Some(nom) => format!(
-            r#"<p class="bluetooth-bloc">
-                <strong>Envoyer par Bluetooth :</strong> activez le Bluetooth sur votre
-                téléphone, puis utilisez le bouton "Partager par Bluetooth" ci-dessus
-                si vous le voyez. Sinon : sélectionnez votre/vos fichier(s) dans vos
-                Photos ou Fichiers, appuyez sur "Partager", choisissez "Bluetooth", et
-                cherchez l'appareil nommé <strong>{nom}</strong>.
-            </p>"#,
+            r#"<div class="bluetooth-bloc">
+                <p style="margin:0 0 0.5rem">
+                    <strong>Envoyer par Bluetooth :</strong> activez le Bluetooth sur votre
+                    téléphone, puis utilisez le bouton "Partager par Bluetooth" ci-dessus
+                    si vous le voyez. Sinon : sélectionnez votre/vos fichier(s) dans vos
+                    Photos ou Fichiers, appuyez sur "Partager", puis "Bluetooth", et
+                    cherchez l'appareil ci-dessous.
+                </p>
+                <p class="bluetooth-nom-puce">📶 {nom}</p>
+            </div>"#,
             nom = echapper_html(&nom)
         ),
         None => r#"<p>Bluetooth : depuis votre téléphone, activez le Bluetooth et cherchez l'ordinateur de la boutique.</p>"#.to_string(),
@@ -191,7 +194,9 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     width: auto; flex:1; padding:0.35rem; margin:0; border:1px solid #d6d4d1; border-radius:4px;
   }}
   .bluetooth-bloc {{ text-align:left; background:#f3f2f1; padding:0.75rem; border-radius:6px; line-height:1.6; }}
+  .bluetooth-nom-puce {{ text-align:center; font-size:1.15rem; font-weight:700; color:#2b579a; background:#fff; border:2px dashed #2b579a; border-radius:6px; padding:0.6rem; margin:0; word-break:break-word; }}
   .btn-bluetooth {{ background:#fff; color:#2b579a; border:1px solid #2b579a; margin-bottom:1rem; }}
+  .note-prix {{ font-size:0.72rem; color:#8a8886; text-align:center; margin:-0.5rem 0 1rem; }}
 </style>
 </head>
 <body>
@@ -214,6 +219,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
       <div id="progression"><div></div></div>
       <p id="texte-progression"></p>
       <button type="submit">Envoyer à la boutique</button>
+      <p class="note-prix">Le prix est à régler directement avec le gérant, sur place.</p>
     </form>
     <p id="confirmation">Fichier(s) envoyé(s), merci ! Le gérant a été prévenu.</p>
     <p id="statut-fidelite"></p>
