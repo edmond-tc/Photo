@@ -244,6 +244,7 @@ async function pageAccueil(env) {
       <a class="btn" href="/boutiques/nouvelle">+ Ajouter une boutique</a>
       <a class="btn secondaire" href="/parametres">Paramètres</a>
       <a class="btn secondaire" href="/telecharger" target="_blank">Page de téléchargement ↗</a>
+      <a class="btn secondaire" href="/nouveautes">Nouveautés</a>
     </div>
     ${
       demandes.length
@@ -416,9 +417,27 @@ async function pageRenouveler(env, { envoye, erreur } = {}) {
   const contact = await obtenirParametre(env, "contact_whatsapp", "");
   const montant = await obtenirParametre(env, "montant_indicatif", "");
 
+  const { results: nouveautes } = await env.DB.prepare(
+    `SELECT * FROM nouveautes ORDER BY created_at DESC LIMIT 3`
+  ).all();
+  const blocNouveautes = nouveautes.length
+    ? `<div class="carte" style="border-left:4px solid #0e5c1f">
+        <h2>🎁 Ce que vous obtenez en renouvelant</h2>
+        ${nouveautes
+          .map(
+            (n) => `<div style="margin-bottom:0.75rem">
+              <strong>${echapper(n.titre)}</strong> <span style="font-size:0.75rem; color:#605e5c">(v${echapper(n.version)})</span>
+              ${n.description ? `<p style="font-size:0.85rem; margin:0.2rem 0 0">${echapper(n.description)}</p>` : ""}
+            </div>`
+          )
+          .join("")}
+      </div>`
+    : "";
+
   return page(
     "Renouveler mon abonnement",
-    `<div class="carte">
+    `${blocNouveautes}
+    <div class="carte">
       <h1>Renouveler l'abonnement</h1>
       ${
         envoye
@@ -448,6 +467,44 @@ async function pageRenouveler(env, { envoye, erreur } = {}) {
       }
     </div>`,
     { connecte: false }
+  );
+}
+
+async function pageNouveautes(env) {
+  const { results: nouveautes } = await env.DB.prepare(
+    `SELECT * FROM nouveautes ORDER BY created_at DESC`
+  ).all();
+  const lignes = nouveautes
+    .map(
+      (n) => `<div class="carte" style="padding:0.75rem">
+        <strong>${echapper(n.titre)}</strong> <span style="font-size:0.75rem; color:#605e5c">v${echapper(n.version)} — ${new Date(n.created_at).toLocaleDateString("fr-FR")}</span>
+        ${n.description ? `<p style="font-size:0.85rem; margin:0.3rem 0 0">${echapper(n.description)}</p>` : ""}
+        <form method="POST" action="/nouveautes/${n.id}/supprimer" style="margin-top:0.4rem">
+          <button type="submit" class="secondaire" style="font-size:0.8rem; padding:0.3rem 0.6rem">Supprimer</button>
+        </form>
+      </div>`
+    )
+    .join("");
+
+  return page(
+    "Nouveautés",
+    `<div class="carte">
+      <p><a href="/">&larr; Retour</a></p>
+      <h1>Nouveautés</h1>
+      <p style="font-size:0.85rem; color:#605e5c">
+        Affichées aux gérants sur la page de renouvellement, pour qu'ils
+        voient ce qu'ils gagnent en payant. Écris en langage simple, orienté
+        bénéfice ("vous pouvez maintenant...") plutôt que technique.
+        Seules les 3 plus récentes sont montrées.
+      </p>
+      <form method="POST" action="/nouveautes">
+        <label>Version (ex: 0.2.0) <input type="text" name="version" required /></label>
+        <label>Titre court <input type="text" name="titre" required placeholder="Ex: Aperçu avant impression" /></label>
+        <label>Description (optionnel) <textarea name="description" rows="2" placeholder="Ex: Vous voyez maintenant le document avant de l'imprimer, sans ouvrir un autre logiciel."></textarea></label>
+        <button type="submit">Ajouter</button>
+      </form>
+    </div>
+    ${lignes}`
   );
 }
 
@@ -677,6 +734,29 @@ export default {
           .bind(id)
           .run();
         return new Response(null, { status: 302, headers: { Location: `/boutiques/${id}` } });
+      }
+
+      if (pathname === "/nouveautes" && method === "GET") {
+        return new Response(await pageNouveautes(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      if (pathname === "/nouveautes" && method === "POST") {
+        const donnees = await request.formData();
+        const version = (donnees.get("version") || "").trim();
+        const titre = (donnees.get("titre") || "").trim();
+        if (!version || !titre) {
+          return new Response("Version et titre obligatoires.", { status: 400 });
+        }
+        await env.DB.prepare(
+          `INSERT INTO nouveautes (version, titre, description) VALUES (?, ?, ?)`
+        )
+          .bind(version, titre, (donnees.get("description") || "").trim() || null)
+          .run();
+        return new Response(null, { status: 302, headers: { Location: "/nouveautes" } });
+      }
+      const matchSupprimerNouveaute = pathname.match(/^\/nouveautes\/(\d+)\/supprimer$/);
+      if (matchSupprimerNouveaute && method === "POST") {
+        await env.DB.prepare(`DELETE FROM nouveautes WHERE id = ?`).bind(matchSupprimerNouveaute[1]).run();
+        return new Response(null, { status: 302, headers: { Location: "/nouveautes" } });
       }
 
       if (pathname === "/parametres" && method === "GET") {

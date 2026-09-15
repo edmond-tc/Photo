@@ -41,3 +41,11 @@ CREATE TABLE parametres (
   cle TEXT PRIMARY KEY,
   valeur TEXT
 );
+
+CREATE TABLE nouveautes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  version TEXT NOT NULL,
+  titre TEXT NOT NULL,
+  description TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
