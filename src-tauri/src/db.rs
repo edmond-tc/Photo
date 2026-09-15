@@ -116,9 +116,74 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
         ",
     )?;
 
+    appliquer_migrations(&conn)?;
     seed_defaults(&conn)?;
 
     Ok(conn)
+}
+
+/// Version du schéma attendue par cette version du logiciel.
+const VERSION_SCHEMA: i64 = 1;
+
+/// Les boutiques déjà installées ont une base créée par une version
+/// antérieure : les `CREATE TABLE IF NOT EXISTS` ci-dessus ne leur ajoutent
+/// aucune colonne nouvelle. Sans ce mécanisme, livrer une mise à jour qui
+/// touche au schéma casserait l'application chez tous les gérants qui ont
+/// déjà des données — c'est-à-dire exactement ceux qu'on ne peut pas se
+/// permettre de casser. Chaque migration est écrite pour pouvoir être
+/// rejouée sans dommage.
+fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+
+    if version < 1 {
+        // Date de règlement réelle d'une commande d'abord prise à crédit.
+        ajouter_colonne_si_absente(conn, "transactions", "regle_le", "TEXT")?;
+        // Jeton secret remis au client pour qu'il suive SA commande, sans
+        // pouvoir consulter celles des autres (voir server.rs).
+        ajouter_colonne_si_absente(conn, "files_queue", "jeton", "TEXT")?;
+
+        // Index sur les colonnes réellement interrogées : la page du client
+        // interroge son statut toutes les 4,5 secondes et le calcul de la
+        // remise fidélité compte les visites par numéro de téléphone — sans
+        // index, chaque appel relit toute la table.
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_transactions_file_queue_id
+                ON transactions(file_queue_id);
+             CREATE INDEX IF NOT EXISTS idx_transactions_created_at
+                ON transactions(created_at);
+             CREATE INDEX IF NOT EXISTS idx_transactions_statut
+                ON transactions(statut);
+             CREATE INDEX IF NOT EXISTS idx_files_queue_telephone
+                ON files_queue(client_telephone);
+             CREATE INDEX IF NOT EXISTS idx_files_queue_received_at
+                ON files_queue(received_at);
+             CREATE UNIQUE INDEX IF NOT EXISTS idx_files_queue_jeton
+                ON files_queue(jeton);",
+        )?;
+    }
+
+    conn.pragma_update(None, "user_version", VERSION_SCHEMA)?;
+    Ok(())
+}
+
+fn ajouter_colonne_si_absente(
+    conn: &Connection,
+    table: &str,
+    colonne: &str,
+    type_sql: &str,
+) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let existe = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .any(|nom| nom == colonne);
+    if !existe {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {colonne} {type_sql}"),
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 fn seed_defaults(conn: &Connection) -> rusqlite::Result<()> {

@@ -189,8 +189,20 @@ function creerLigne(item) {
     actions.appendChild(bouton("Encaisser", "btn-secondaire", () => ouvrirEncaissement(item)));
     actions.appendChild(bouton("Détails", "btn-discret", () => ouvrirOptions(item)));
   } else if (item.kind === "installateur") {
+    // Un exécutable ne peut arriver ici que par clé USB branchée sur le PC
+    // (voir watcher.rs). Une clé USB peut malgré tout être infectée : on ne
+    // lance jamais un exécutable sans que le gérant confirme qu'il vient
+    // bien de la personne qui lui fournit le logiciel.
     actions.appendChild(
-      bouton("Installer la mise à jour", "btn-primaire", () => ouvrir(item.id))
+      bouton("Installer la mise à jour", "btn-primaire", () => {
+        const ok = confirm(
+          `Installer "${item.original_name}" ?\n\n` +
+            "N'installez ce fichier QUE s'il vous a été remis en main propre par " +
+            "la personne qui vous fournit ce logiciel.\n\n" +
+            "Un fichier trouvé sur la clé USB d'un client peut contenir un virus."
+        );
+        if (ok) ouvrir(item.id);
+      })
     );
     actions.appendChild(bouton("Ignorer", "btn-discret", () => ignorer(item.id)));
   } else {
@@ -278,7 +290,7 @@ async function ouvrirApercu(item) {
       conteneur.appendChild(img);
     }
   } catch (e) {
-    conteneur.innerHTML = `<p class="avertissement">${e}</p>`;
+    conteneur.innerHTML = `<p class="avertissement">${echapperHtml(e)}</p>`;
   }
 }
 
@@ -493,11 +505,11 @@ async function afficherQr() {
         "Un seul geste : le client scanne, rejoint le Wi-Fi automatiquement, et la page d'envoi s'ouvre.";
     } else {
       urlEl.innerHTML =
-        `Wi-Fi non configuré — ce QR n'ouvre que la page (${info.url}), le client doit déjà être connecté. ` +
+        `Wi-Fi non configuré — ce QR n'ouvre que la page (${echapperHtml(info.url)}), le client doit déjà être connecté. ` +
         `Configurez le nom et le mot de passe du Wi-Fi dans Réglages pour un QR unique tout-en-un.`;
     }
   } catch (e) {
-    conteneur.innerHTML = `<p class="avertissement">${e}</p>`;
+    conteneur.innerHTML = `<p class="avertissement">${echapperHtml(e)}</p>`;
   }
   ouvrirModal("modal-qr");
 }
@@ -816,7 +828,7 @@ async function rendreReglages(corps) {
   // Dossier surveillé
   const dossier = await invoke("get_watched_folder");
   const secDossier = document.createElement("section");
-  secDossier.innerHTML = `<h3>Dossier surveillé</h3><p class="chemin-dossier">${dossier ?? "Aucun dossier configuré"}</p>`;
+  secDossier.innerHTML = `<h3>Dossier surveillé</h3><p class="chemin-dossier">${echapperHtml(dossier ?? "Aucun dossier configuré")}</p>`;
   secDossier.appendChild(
     bouton("Choisir un dossier…", "btn-secondaire", async () => {
       const nouveauDossier = await invoke("choose_watched_folder");

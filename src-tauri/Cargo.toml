@@ -31,7 +31,7 @@ sysinfo = "0.31"
 axum = { version = "0.7", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
 qrcode = "0.14"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
 local-ip-address = "0.6"
 machine-uid = "0.5"
 hmac = "0.12"

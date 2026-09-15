@@ -45,7 +45,7 @@ pub fn start(app: AppHandle) {
         let router = Router::new()
             .route("/", get(page_accueil))
             .route("/envoyer", post(recevoir_fichier))
-            .route("/statut/:id", get(statut_fichier))
+            .route("/statut/:jeton", get(statut_fichier))
             .layer(DefaultBodyLimit::max(TAILLE_MAX_ENVOI))
             .with_state(app);
 
@@ -103,8 +103,18 @@ fn demarrer_portail_captif() {
     });
 }
 
+/// L'adresse réelle du PC sur le réseau local, résolue à chaque requête : le
+/// partage de connexion Windows donne le plus souvent 192.168.137.1, mais pas
+/// toujours (PC branché sur la box du quartier, autre configuration...). Une
+/// adresse écrite en dur enverrait alors le client sur une page inexistante.
+fn adresse_locale() -> String {
+    local_ip_address::local_ip()
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|_| "192.168.137.1".to_string())
+}
+
 async fn rediriger_vers_accueil(_uri: Uri) -> impl IntoResponse {
-    Redirect::to(&format!("http://192.168.137.1:{PORT}/"))
+    Redirect::to(&format!("http://{}:{PORT}/", adresse_locale()))
 }
 
 /// Le serveur local a-t-il réussi à démarrer ? Utilisé avant d'afficher le
@@ -333,7 +343,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
           document.getElementById('confirmation').style.display = 'block';
           try {{
             const reponse = JSON.parse(xhr.responseText);
-            if (reponse.ids && reponse.ids.length) surveillerStatut(reponse.ids);
+            if (reponse.jetons && reponse.jetons.length) surveillerStatut(reponse.jetons);
           }} catch {{}}
         }} else {{
           bouton.disabled = false;
@@ -369,7 +379,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
       if (navigator.vibrate) navigator.vibrate(200);
     }}
 
-    function surveillerStatut(ids) {{
+    function surveillerStatut(jetons) {{
       const statutEl = document.getElementById('statut-fidelite');
       let tentatives = 0;
       const maxTentatives = 200; // ~15 minutes, le temps d'un passage en boutique
@@ -379,9 +389,9 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
           clearInterval(minuteur);
           return;
         }}
-        for (const id of ids) {{
+        for (const jeton of jetons) {{
           try {{
-            const r = await fetch(`/statut/${{id}}`);
+            const r = await fetch(`/statut/${{jeton}}`);
             const data = await r.json();
             if (data.paye && data.message) {{
               statutEl.textContent = data.message;
@@ -540,7 +550,7 @@ async fn recevoir_fichier(
 
     let nombre_recus = fichiers.len();
     let mut nombre_enregistres = 0usize;
-    let mut ids: Vec<i64> = Vec::new();
+    let mut jetons: Vec<String> = Vec::new();
     for (indice, fichier) in fichiers {
         let horodatage = chrono::Local::now().format("%Y%m%d-%H%M%S%3f");
         let nom_fichier_sur_disque = format!("{horodatage}_{}_{}", indice, fichier.original_name);
@@ -549,7 +559,7 @@ async fn recevoir_fichier(
             continue;
         }
         let opts = options.remove(&indice).unwrap_or_default();
-        if let Some(id) = enqueue_file_avec_options(
+        if let Some((_id, jeton)) = enqueue_file_avec_options(
             &app,
             &chemin,
             "qr",
@@ -558,7 +568,7 @@ async fn recevoir_fichier(
             opts,
         ) {
             nombre_enregistres += 1;
-            ids.push(id);
+            jetons.push(jeton);
         }
     }
 
@@ -574,12 +584,13 @@ async fn recevoir_fichier(
             .into_response();
     }
 
-    // Les identifiants permettent à la page du client de surveiller elle-même
-    // (en interrogeant /statut/:id) le moment où le gérant encaisse, pour
+    // Ces jetons permettent à la page du client de surveiller elle-même (en
+    // interrogeant /statut/:jeton) le moment où le gérant encaisse, pour
     // afficher un message de remerciement en direct sans jamais passer par
     // internet (SMS/WhatsApp) — le téléphone reste sur le Wi-Fi local tant
-    // que le client n'a pas quitté la boutique.
-    (StatusCode::OK, Json(serde_json::json!({ "ids": ids }))).into_response()
+    // que le client n'a pas quitté la boutique. Chaque jeton n'ouvre que sur
+    // la commande qu'il a lui-même envoyée.
+    (StatusCode::OK, Json(serde_json::json!({ "jetons": jetons }))).into_response()
 }
 
 #[derive(serde::Serialize)]
@@ -593,14 +604,31 @@ struct StatutFichier {
 /// encore sur le Wi-Fi de la boutique) pour savoir si sa commande a été
 /// encaissée — et dans ce cas, afficher un mot de remerciement avec son
 /// compteur de fidélité, en direct, sans rien devoir imprimer ni envoyer.
-async fn statut_fichier(State(app): State<AppHandle>, Path(id): Path<i64>) -> impl IntoResponse {
-    let state = app.state::<crate::db::DbState>();
-    let Ok(conn) = state.0.lock() else {
-        return Json(StatutFichier {
+async fn statut_fichier(
+    State(app): State<AppHandle>,
+    Path(jeton): Path<String>,
+) -> impl IntoResponse {
+    let inconnu = || {
+        Json(StatutFichier {
             traite: false,
             paye: false,
             message: None,
-        });
+        })
+    };
+
+    let state = app.state::<crate::db::DbState>();
+    let Ok(conn) = state.0.lock() else {
+        return inconnu();
+    };
+
+    // Le jeton, et lui seul, désigne la commande : impossible de consulter
+    // celle d'un autre client en faisant défiler des numéros.
+    let Ok(id) = conn.query_row(
+        "SELECT id FROM files_queue WHERE jeton = ?1",
+        rusqlite::params![jeton],
+        |r| r.get::<_, i64>(0),
+    ) else {
+        return inconnu();
     };
 
     let statut_transaction: Option<String> = conn
@@ -612,11 +640,7 @@ async fn statut_fichier(State(app): State<AppHandle>, Path(id): Path<i64>) -> im
         .ok();
 
     let Some(statut) = statut_transaction else {
-        return Json(StatutFichier {
-            traite: false,
-            paye: false,
-            message: None,
-        });
+        return inconnu();
     };
 
     let paye = statut == "paye";

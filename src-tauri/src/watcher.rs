@@ -78,8 +78,11 @@ pub fn enqueue_file(
         client_telephone,
         OptionsImpression::default(),
     )
+    .map(|(id, _jeton)| id)
 }
 
+/// Renvoie l'identifiant interne du fichier et le jeton secret à remettre au
+/// client pour qu'il puisse suivre l'avancement de sa seule commande.
 pub fn enqueue_file_avec_options(
     app: &AppHandle,
     path: &std::path::Path,
@@ -87,20 +90,22 @@ pub fn enqueue_file_avec_options(
     client_name: Option<&str>,
     client_telephone: Option<&str>,
     options: OptionsImpression,
-) -> Option<i64> {
+) -> Option<(i64, String)> {
     let original_name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "fichier".to_string());
     let kind = files::classify(path);
     // Un .exe/.msi classé "installateur" obtient un bouton "Installer la mise
-    // à jour" qui l'exécute en un clic (voir files::shell_open). Le canal QR
-    // est accessible à n'importe qui connecté au Wi-Fi de la boutique — sans
-    // ce garde-fou, un client malveillant pourrait faire exécuter un fichier
-    // exécutable arbitraire au gérant en le nommant "Mise_a_jour.exe". Seuls
-    // les canaux qui exigent un accès physique au PC (clé USB, dossier
-    // surveillé/Bluetooth) restent traités comme une vraie mise à jour.
-    let kind = if kind == "installateur" && source == "qr" {
+    // à jour" qui l'exécute en un clic (voir files::shell_open). Seule la clé
+    // USB, que le porteur du projet branche lui-même lors d'une visite, peut
+    // donc produire cette classification. Le QR et le dossier surveillé sont
+    // ouverts à n'importe quel client (Wi-Fi de la boutique, envoi Bluetooth
+    // que l'application invite elle-même à utiliser) : un exécutable arrivé
+    // par là serait un piège nommé "Mise_a_jour.exe", jamais une vraie mise
+    // à jour. Il retombe en "inconnu", qui affiche un avertissement explicite
+    // et n'offre aucun bouton pour l'exécuter.
+    let kind = if kind == "installateur" && source != "usb" {
         "inconnu"
     } else {
         kind
@@ -132,12 +137,19 @@ pub fn enqueue_file_avec_options(
         .clone()
         .unwrap_or_else(|| "A4".to_string());
 
+    // Jeton secret propre à ce document : c'est lui, et non l'identifiant
+    // (1, 2, 3...), que la page du client utilise pour suivre SA commande.
+    // Avec un simple numéro, n'importe quel téléphone connecté au Wi-Fi de
+    // la boutique pourrait consulter l'état des commandes des autres clients
+    // en essayant les numéros les uns après les autres.
+    let jeton = format!("{:032x}", rand::random::<u128>());
+
     let insert_result = conn.execute(
         "INSERT INTO files_queue
             (original_name, path, client_name, client_telephone, source, kind, status,
              received_at, taille_octets, protege, format_detecte, couleur, format_papier,
-             copies, plage_pages)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'en_attente', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             copies, plage_pages, jeton)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'en_attente', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             original_name,
             path.to_string_lossy(),
@@ -152,7 +164,8 @@ pub fn enqueue_file_avec_options(
             options.couleur,
             format_papier,
             copies,
-            options.plage_pages
+            options.plage_pages,
+            jeton
         ],
     );
 
@@ -187,5 +200,5 @@ pub fn enqueue_file_avec_options(
     };
 
     let _ = app.emit("nouveau-fichier", item);
-    Some(id)
+    Some((id, jeton))
 }

@@ -107,13 +107,18 @@ const REMISE_FIDELITE_POURCENT_DEFAUT: i64 = 10;
 /// Le seuil et le pourcentage de la réduction fidélité sont des choix du
 /// gérant (Réglages), pas des valeurs qu'on lui impose — un pourcentage à 0
 /// désactive simplement la réduction.
+/// Les valeurs sont bornées à la lecture, pas seulement à la saisie : une
+/// remise de 150% rendrait le prix négatif et bloquerait l'encaissement, et
+/// un seuil à 0 ferait afficher "encore -3 commandes avant votre réduction".
 pub(crate) fn parametres_fidelite(conn: &rusqlite::Connection) -> (i64, i64) {
     let seuil = db::get_setting(conn, "fidelite_seuil_visites")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(SEUIL_VISITES_FIDELITE_DEFAUT);
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(SEUIL_VISITES_FIDELITE_DEFAUT)
+        .clamp(1, 1000);
     let remise_pourcent = db::get_setting(conn, "fidelite_remise_pourcent")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(REMISE_FIDELITE_POURCENT_DEFAUT);
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(REMISE_FIDELITE_POURCENT_DEFAUT)
+        .clamp(0, 100);
     (seuil, remise_pourcent)
 }
 
@@ -263,11 +268,23 @@ pub fn finaliser_commande(
         )
         .map_err(|_| "Fichier introuvable".to_string())?;
 
-    conn.execute(
-        "UPDATE files_queue SET status='traite', prix=?1, employe=?2 WHERE id=?3",
-        params![montant, employe, id],
-    )
-    .map_err(|e| e.to_string())?;
+    // Condition `status='en_attente'` volontaire : sans elle, un double-clic
+    // (ou un encaissement relancé sur une commande déjà réglée) insérerait
+    // une deuxième transaction pour le même document et gonflerait la recette
+    // du jour sans que personne ne s'en aperçoive.
+    let lignes_modifiees = conn
+        .execute(
+            "UPDATE files_queue SET status='traite', prix=?1, employe=?2
+             WHERE id=?3 AND status='en_attente'",
+            params![montant, employe, id],
+        )
+        .map_err(|e| e.to_string())?;
+    if lignes_modifiees == 0 {
+        return Err(
+            "Cette commande a déjà été encaissée — elle n'est plus dans la file d'attente."
+                .to_string(),
+        );
+    }
 
     conn.execute(
         "INSERT INTO transactions
@@ -618,16 +635,21 @@ pub struct RapportJour {
 fn calculer_rapport(conn: &rusqlite::Connection, date: String) -> RapportJour {
     let motif = format!("{date}%");
 
+    // COALESCE(regle_le, created_at) = le jour où l'argent est réellement
+    // entré en caisse : la date de la vente pour un paiement immédiat, la
+    // date du règlement pour une dette soldée plus tard.
     let nombre_commandes: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM transactions WHERE created_at LIKE ?1 AND statut='paye'",
+            "SELECT COUNT(*) FROM transactions
+             WHERE COALESCE(regle_le, created_at) LIKE ?1 AND statut='paye'",
             params![motif],
             |r| r.get(0),
         )
         .unwrap_or(0);
     let total_encaisse: i64 = conn
         .query_row(
-            "SELECT COALESCE(SUM(montant), 0) FROM transactions WHERE created_at LIKE ?1 AND statut='paye'",
+            "SELECT COALESCE(SUM(montant), 0) FROM transactions
+             WHERE COALESCE(regle_le, created_at) LIKE ?1 AND statut='paye'",
             params![motif],
             |r| r.get(0),
         )
@@ -761,6 +783,30 @@ pub fn rapport_reconciliation(state: State<DbState>) -> Result<RapportReconcilia
     })
 }
 
+/// Prépare une valeur pour le CSV.
+///
+/// Deux pièges, tous deux déclenchables par un simple nom de fichier choisi
+/// par le client (la description d'une transaction est le nom du document
+/// qu'il a envoyé) :
+///   - un point-virgule, un guillemet ou un retour à la ligne casse la
+///     structure du fichier et décale toutes les colonnes suivantes ;
+///   - une valeur commençant par =, +, - ou @ est interprétée par Excel
+///     comme une FORMULE à exécuter à l'ouverture du fichier. Un client
+///     pourrait ainsi nommer son document `=cmd|'/c ...'!A1.pdf` et faire
+///     exécuter une commande sur le PC du gérant le jour où il exporte sa
+///     comptabilité.
+/// On met donc tout entre guillemets (en doublant les guillemets internes,
+/// comme le veut le format CSV) et on préfixe d'une apostrophe les valeurs
+/// qui seraient prises pour des formules.
+fn champ_csv(valeur: &str) -> String {
+    let neutralise = if valeur.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{valeur}")
+    } else {
+        valeur.to_string()
+    };
+    format!("\"{}\"", neutralise.replace('"', "\"\""))
+}
+
 #[tauri::command]
 pub fn exporter_transactions_csv(state: State<DbState>) -> Result<String, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
@@ -782,9 +828,13 @@ pub fn exporter_transactions_csv(state: State<DbState>) -> Result<String, String
             let statut: String = r.get(6)?;
             let employe: String = r.get(7)?;
             Ok(format!(
-                "{created_at};{};{montant_calcule};{montant};{};{moyen};{statut};{employe}",
-                description.replace(';', ","),
-                raison_ecart.replace(';', ",")
+                "{};{};{montant_calcule};{montant};{};{};{};{}",
+                champ_csv(&created_at),
+                champ_csv(&description),
+                champ_csv(&raison_ecart),
+                champ_csv(&moyen),
+                champ_csv(&statut),
+                champ_csv(&employe)
             ))
         })
         .map_err(|e| e.to_string())?;
@@ -848,11 +898,21 @@ pub fn list_impayes(state: State<DbState>) -> Result<Vec<Impaye>, String> {
 #[tauri::command]
 pub fn marquer_impaye_regle(state: State<DbState>, transaction_id: i64) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute(
-        "UPDATE transactions SET statut = 'paye' WHERE id = ?1",
-        params![transaction_id],
-    )
-    .map_err(|e| e.to_string())?;
+    // `regle_le` est indispensable : sans lui, l'argent d'une dette réglée
+    // aujourd'hui serait compté dans la recette du jour où la commande avait
+    // été prise (parfois des semaines plus tôt). La caisse du soir afficherait
+    // alors un excédent inexpliqué, et le rapport d'un jour déjà clôturé
+    // changerait après coup.
+    let lignes = conn
+        .execute(
+            "UPDATE transactions SET statut = 'paye', regle_le = ?2
+             WHERE id = ?1 AND statut = 'impaye'",
+            params![transaction_id, Local::now().to_rfc3339()],
+        )
+        .map_err(|e| e.to_string())?;
+    if lignes == 0 {
+        return Err("Cette dette a déjà été réglée.".to_string());
+    }
     Ok(())
 }
 
@@ -874,10 +934,17 @@ pub fn cloturer_caisse(state: State<DbState>, total_reel: i64) -> Result<Resulta
     let date = Local::now().format("%Y-%m-%d").to_string();
     let motif = format!("{date}%");
 
+    // Ce qui devrait être dans le tiroir ce soir : les ventes réglées en
+    // espèces aujourd'hui, plus les dettes soldées aujourd'hui (réglées en
+    // main propre dans l'immense majorité des cas). Les ignorer ferait
+    // apparaître un excédent inexpliqué chaque fois qu'un client vient payer
+    // une ancienne ardoise.
     let total_attendu: i64 = conn
         .query_row(
             "SELECT COALESCE(SUM(montant), 0) FROM transactions
-             WHERE created_at LIKE ?1 AND statut = 'paye' AND moyen_paiement = 'especes'",
+             WHERE statut = 'paye'
+               AND ( (regle_le IS NULL AND created_at LIKE ?1 AND moyen_paiement = 'especes')
+                  OR (regle_le IS NOT NULL AND regle_le LIKE ?1) )",
             params![motif],
             |r| r.get(0),
         )

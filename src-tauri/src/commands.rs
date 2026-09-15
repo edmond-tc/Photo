@@ -222,8 +222,32 @@ pub fn set_boutique_setting(
     if !CLES_AUTORISEES.contains(&cle.as_str()) {
         return Err("réglage inconnu".to_string());
     }
+
+    // Réglages chiffrés : refusés plutôt que corrigés en douce, pour que le
+    // gérant sache tout de suite que sa saisie n'a pas été prise en compte.
+    let valeur = valeur.trim();
+    match cle.as_str() {
+        "fidelite_seuil_visites" if !valeur.is_empty() => {
+            let n: i64 = valeur
+                .parse()
+                .map_err(|_| "Le nombre de commandes doit être un chiffre.".to_string())?;
+            if !(1..=1000).contains(&n) {
+                return Err("Le nombre de commandes doit être entre 1 et 1000.".to_string());
+            }
+        }
+        "fidelite_remise_pourcent" if !valeur.is_empty() => {
+            let n: i64 = valeur
+                .parse()
+                .map_err(|_| "La réduction doit être un chiffre.".to_string())?;
+            if !(0..=100).contains(&n) {
+                return Err("La réduction doit être entre 0 et 100 %.".to_string());
+            }
+        }
+        _ => {}
+    }
+
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    db::set_setting(&conn, &cle, &valeur).map_err(|e| e.to_string())
+    db::set_setting(&conn, &cle, valeur).map_err(|e| e.to_string())
 }
 
 /// Pour les messages d'accueil / résumé de fin de journée : ne les montrer
