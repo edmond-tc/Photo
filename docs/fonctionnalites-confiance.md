@@ -57,6 +57,18 @@ traçabilité totale, pas d'un mot de passe.
 - Vue "cette semaine / ce mois" dans Rapports, pas seulement "aujourd'hui".
 - Heures de pointe (nombre de clients par heure) — utile pour la
   planification du personnel, notamment en période d'examens.
+- **"Nouveautés de cette mise à jour"** : à chaque renouvellement mensuel,
+  montrer au gérant un résumé simple et concret de ce qui a changé/gagné
+  depuis sa version actuelle (langage bénéfice, pas jargon technique) —
+  façon "Quoi de neuf" de Word. But : que le renouvellement se ressente
+  comme un investissement compris, pas une dépense subie. S'appuie sur le
+  mécanisme déjà existant (fichier de mise à jour déposé dans le dossier
+  surveillé → apparaît comme "Installer la mise à jour" dans la file) —
+  il manque l'écran qui explique les nouveautés avant/pendant ce clic.
+  Techniquement : tenir un petit fichier de changelog (par version) que le
+  porteur du projet remplit à chaque envoi de mise à jour, affiché dans
+  l'appli au moment de l'installation et/ou sur la page `/renouveler` du
+  tableau de bord pour renforcer la valeur perçue avant paiement.
 
 ## Idées explorées puis écartées
 
