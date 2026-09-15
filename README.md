@@ -25,7 +25,27 @@ npm run tauri dev
 ```
 
 Prérequis Tauri (WebKitGTK sur Linux, etc.) : voir
-https://tauri.app/start/prerequisites/
+https://tauri.app/start/prerequisites/. Sur Ubuntu 22.04, `webkit2gtk-4.1`
+n'existe pas dans les dépôts officiels (limitation connue de Tauri v2) —
+voir la section GitHub Codespaces ci-dessous pour tester sans ce problème.
+
+### Tester dans le navigateur, sans rien installer (GitHub Codespaces)
+
+Le dépôt inclut une configuration `.devcontainer/` prête à l'emploi, avec
+un bureau graphique accessible dans un onglet du navigateur :
+
+1. Sur GitHub, page du dépôt → bouton **Code** → onglet **Codespaces** →
+   **Create codespace on main**.
+2. Une fois prêt, ouvrir l'onglet **Ports** en bas de l'éditeur, trouver le
+   port **6080** et cliquer sur l'icône du globe pour l'ouvrir dans un
+   nouvel onglet — un bureau Linux apparaît (mot de passe : `photocopie`).
+3. Dans le terminal du Codespace : `npm run tauri dev`.
+4. La fenêtre de l'application s'ouvre **dans l'onglet du bureau
+   graphique** (pas dans l'éditeur) — il faut y basculer pour la voir.
+
+Comme sur toute machine Linux, les boutons *Imprimer*/*Ouvrir* afficheront
+une erreur (spécifiques à Windows) — tout le reste est testable
+normalement.
 
 Vérifications rapides avant de pousser du code Rust :
 
