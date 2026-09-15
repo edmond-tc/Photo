@@ -81,11 +81,18 @@ tes numéros Mobile Money, un montant indicatif et ton contact WhatsApp —
 c'est ce que voient les gérants sur `/renouveler`. Tant que ce n'est pas
 rempli, la page de renouvellement s'affiche sans ces informations.
 
+## Rapports de visite
+
+Dans l'appli du gérant : **Réglages → Rapport pour le porteur du projet →
+Générer le rapport** produit un petit texte (JSON) résumant l'état de
+cette boutique (version, licence, dernière sauvegarde, dernière activité).
+Récupère-le (clé USB, ou WhatsApp si le gérant a du réseau) et colle-le
+dans la fiche de la boutique ici → "+ Importer un nouveau rapport". Ça
+construit un historique dans le temps, sans jamais exiger que le PC de la
+boutique soit connecté.
+
 ## Ce qui n'est pas encore fait
 
-- Import des "rapports de visite" (table `rapports` déjà créée, mais pas
-  encore de bouton "Exporter" côté appli du gérant, ni de page d'import
-  ici).
 - Page de téléchargement publique de l'appli (aujourd'hui, le `.exe` est
   uniquement récupérable via les artefacts GitHub Actions).
 - Écran technique caché dans l'appli du gérant pour le dépannage sur

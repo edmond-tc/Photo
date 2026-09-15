@@ -59,6 +59,7 @@ pub fn run() {
             commands::choisir_logo_boutique,
             commands::get_server_info,
             commands::ouvrir_parametres_partage_connexion,
+            commands::generer_rapport_diagnostic,
             gestion::list_tarifs,
             gestion::update_tarif,
             gestion::list_historique_tarifs,

@@ -54,6 +54,29 @@ fn sauvegarder_une_fois(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Date de la sauvegarde la plus récente, pour le rapport de diagnostic
+/// exportable — utile au porteur du projet pour vérifier lors d'une visite
+/// que la sauvegarde automatique fonctionne bien chez ce gérant.
+pub fn derniere_sauvegarde(app: &AppHandle) -> Option<String> {
+    let data_dir = app.path().app_data_dir().ok()?;
+    let dossier_sauvegarde = {
+        let state = app.state::<DbState>();
+        let conn = state.0.lock().ok()?;
+        db::get_setting(&conn, "dossier_sauvegarde")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| data_dir.join("sauvegardes"))
+    };
+    let plus_recent = std::fs::read_dir(&dossier_sauvegarde)
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "sqlite3"))
+        .max_by_key(|e| e.file_name())?;
+    let metadata = plus_recent.metadata().ok()?;
+    let modifie = metadata.modified().ok()?;
+    let datetime: chrono::DateTime<chrono::Local> = modifie.into();
+    Some(datetime.to_rfc3339())
+}
+
 fn nettoyer_anciennes_sauvegardes(dossier: &std::path::Path) {
     let Ok(entries) = std::fs::read_dir(dossier) else {
         return;

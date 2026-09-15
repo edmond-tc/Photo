@@ -300,6 +300,35 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
 
   const derniereExpiration = licences[0]?.date_expiration;
 
+  const { results: rapports } = await env.DB.prepare(
+    `SELECT * FROM rapports WHERE boutique_id = ? ORDER BY created_at DESC LIMIT 10`
+  )
+    .bind(id)
+    .all();
+
+  const blocsRapports = rapports
+    .map((r) => {
+      let contenu;
+      try {
+        contenu = JSON.parse(r.contenu_json);
+      } catch {
+        contenu = null;
+      }
+      if (!contenu) return `<div class="carte" style="padding:0.75rem"><p>Rapport illisible.</p></div>`;
+      return `<div class="carte" style="padding:0.75rem; margin-bottom:0.5rem">
+        <p style="font-size:0.8rem; color:#605e5c; margin:0 0 0.4rem">Reçu le ${new Date(r.created_at).toLocaleDateString("fr-FR")}</p>
+        <table>
+          <tr><td>Version appli</td><td>${echapper(contenu.version)}</td></tr>
+          <tr><td>Licence</td><td>${echapper(contenu.statut_licence)} (${contenu.jours_restants} j restants)</td></tr>
+          <tr><td>Dernière sauvegarde</td><td>${contenu.derniere_sauvegarde ? new Date(contenu.derniere_sauvegarde).toLocaleString("fr-FR") : "aucune"}</td></tr>
+          <tr><td>Dernier fichier reçu</td><td>${contenu.dernier_fichier_recu ? new Date(contenu.dernier_fichier_recu).toLocaleString("fr-FR") : "aucun"}</td></tr>
+          <tr><td>Transactions au total</td><td>${contenu.nombre_transactions_total ?? "—"}</td></tr>
+          <tr><td>Taille de la base</td><td>${contenu.taille_base_octets ? Math.round(contenu.taille_base_octets / 1024) + " Ko" : "—"}</td></tr>
+        </table>
+      </div>`;
+    })
+    .join("");
+
   const lignesLicences = licences
     .map(
       (l) => `<tr>
@@ -360,6 +389,23 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
         <thead><tr><th>Clé</th><th>Durée</th><th>Expire le</th></tr></thead>
         <tbody>${lignesLicences || `<tr><td colspan="3">Aucune clé générée pour l'instant.</td></tr>`}</tbody>
       </table>
+    </div>
+
+    <div class="carte">
+      <h2>Rapports de visite</h2>
+      ${blocsRapports || `<p style="font-size:0.85rem; color:#605e5c">Aucun rapport importé pour l'instant.</p>`}
+      <details>
+        <summary style="cursor:pointer; font-size:0.9rem">+ Importer un nouveau rapport</summary>
+        <p style="font-size:0.8rem; color:#605e5c">
+          Colle ici le texte généré par le bouton "Générer le rapport" dans
+          Réglages &gt; Rapport pour le porteur du projet, sur le PC de cette
+          boutique.
+        </p>
+        <form method="POST" action="/boutiques/${id}/rapport">
+          <textarea name="contenu_json" rows="6" placeholder='{"version": "0.1.0", ...}' required></textarea>
+          <button type="submit" class="secondaire">Importer</button>
+        </form>
+      </details>
     </div>`
   );
 }
@@ -552,6 +598,26 @@ export default {
           .run();
         const html = await pageBoutique(env, id, { cleGeneree: { cle, dateExpiration } });
         return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+
+      const matchRapport = pathname.match(/^\/boutiques\/(\d+)\/rapport$/);
+      if (matchRapport && method === "POST") {
+        const id = matchRapport[1];
+        const donnees = await request.formData();
+        const contenuJson = (donnees.get("contenu_json") || "").trim();
+        try {
+          JSON.parse(contenuJson);
+        } catch {
+          const html = await pageBoutique(env, id);
+          return new Response(html || "Boutique introuvable.", {
+            status: html ? 400 : 404,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+        await env.DB.prepare(`INSERT INTO rapports (boutique_id, contenu_json) VALUES (?, ?)`)
+          .bind(id, contenuJson)
+          .run();
+        return new Response(null, { status: 302, headers: { Location: `/boutiques/${id}` } });
       }
 
       const matchDesactiver = pathname.match(/^\/boutiques\/(\d+)\/desactiver$/);

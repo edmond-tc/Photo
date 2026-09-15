@@ -256,6 +256,70 @@ pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct RapportDiagnostic {
+    genere_le: String,
+    version: String,
+    machine_id: String,
+    boutique_nom: Option<String>,
+    statut_licence: String,
+    jours_restants: i64,
+    taille_base_octets: u64,
+    derniere_sauvegarde: Option<String>,
+    dernier_fichier_recu: Option<String>,
+    nombre_transactions_total: i64,
+}
+
+/// Rapport texte que le porteur du projet récupère lors d'une visite (clé
+/// USB, ou envoyé par le gérant s'il a du réseau sur son téléphone) pour
+/// suivre l'état des boutiques déployées sans que leur PC soit jamais
+/// connecté à internet — voir admin/README.md.
+#[tauri::command]
+pub fn generer_rapport_diagnostic(
+    app: AppHandle,
+    state: State<DbState>,
+) -> Result<RapportDiagnostic, String> {
+    let (boutique_nom, nombre_transactions_total, dernier_fichier_recu) = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        let boutique_nom = db::get_setting(&conn, "boutique_nom");
+        let nombre_transactions_total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
+            .unwrap_or(0);
+        let dernier_fichier_recu: Option<String> = conn
+            .query_row(
+                "SELECT received_at FROM files_queue ORDER BY received_at DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .ok();
+        (boutique_nom, nombre_transactions_total, dernier_fichier_recu)
+    };
+
+    let licence = crate::license::get_license_status(state)?;
+
+    let taille_base_octets = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("photocopie.sqlite3"))
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    Ok(RapportDiagnostic {
+        genere_le: chrono::Local::now().to_rfc3339(),
+        version: crate::updates::version_actuelle(),
+        machine_id: licence.machine_id,
+        boutique_nom,
+        statut_licence: licence.statut,
+        jours_restants: licence.jours_restants,
+        taille_base_octets,
+        derniere_sauvegarde: crate::backup::derniere_sauvegarde(&app),
+        dernier_fichier_recu,
+        nombre_transactions_total,
+    })
+}
+
 fn queue_item_path(state: &State<DbState>, id: i64) -> Result<PathBuf, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.query_row(

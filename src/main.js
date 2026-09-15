@@ -836,6 +836,48 @@ async function rendreReglages(corps) {
   secWifi.appendChild(formWifi);
   corps.appendChild(secWifi);
 
+  // Rapport de diagnostic pour le porteur du projet
+  const secRapport = document.createElement("section");
+  secRapport.innerHTML = `
+    <h3>Rapport pour le porteur du projet</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      À donner au porteur du projet lors d'une visite (clé USB, ou envoyé par
+      vous-même si vous avez du réseau) — il l'utilise pour suivre l'état de
+      votre licence et de votre sauvegarde, sans que ce PC soit connecté à
+      internet.
+    </p>
+  `;
+  secRapport.appendChild(
+    bouton("Générer le rapport", "btn-secondaire", async () => {
+      const rapport = await invoke("generer_rapport_diagnostic");
+      const texte = JSON.stringify(rapport, null, 2);
+      const zone = document.createElement("textarea");
+      zone.readOnly = true;
+      zone.rows = 10;
+      zone.style.fontFamily = "Consolas, monospace";
+      zone.style.fontSize = "0.8rem";
+      zone.value = texte;
+      const btnCopier = bouton("Copier", "btn-secondaire", async () => {
+        try {
+          await navigator.clipboard.writeText(texte);
+          alert("Rapport copié — colle-le dans un message au porteur du projet.");
+        } catch {
+          zone.select();
+          alert("Sélectionné — copie avec Ctrl+C, le copier automatique n'a pas fonctionné ici.");
+        }
+      });
+      const ancienResultat = document.querySelector("#rapport-resultat");
+      if (ancienResultat) ancienResultat.remove();
+      const conteneur = document.createElement("div");
+      conteneur.id = "rapport-resultat";
+      conteneur.style.marginTop = "0.5rem";
+      conteneur.appendChild(zone);
+      conteneur.appendChild(btnCopier);
+      secRapport.appendChild(conteneur);
+    })
+  );
+  corps.appendChild(secRapport);
+
   // Grille tarifaire
   const tarifs = await invoke("list_tarifs");
   const secTarifs = document.createElement("section");
