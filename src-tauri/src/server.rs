@@ -149,11 +149,11 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     let bloc_bluetooth = match bluetooth_nom.filter(|n| !n.trim().is_empty()) {
         Some(nom) => format!(
             r#"<p class="bluetooth-bloc">
-                <strong>Envoyer par Bluetooth :</strong><br />
-                1. Activez le Bluetooth sur votre téléphone.<br />
-                2. Sélectionnez votre/vos fichier(s) dans vos Photos ou Fichiers (plusieurs à la fois possible).<br />
-                3. Appuyez sur "Partager" puis choisissez "Bluetooth".<br />
-                4. Cherchez l'appareil nommé <strong>{nom}</strong> et sélectionnez-le.
+                <strong>Envoyer par Bluetooth :</strong> activez le Bluetooth sur votre
+                téléphone, puis utilisez le bouton "Partager par Bluetooth" ci-dessus
+                si vous le voyez. Sinon : sélectionnez votre/vos fichier(s) dans vos
+                Photos ou Fichiers, appuyez sur "Partager", choisissez "Bluetooth", et
+                cherchez l'appareil nommé <strong>{nom}</strong>.
             </p>"#,
             nom = echapper_html(&nom)
         ),
@@ -191,6 +191,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     width: auto; flex:1; padding:0.35rem; margin:0; border:1px solid #d6d4d1; border-radius:4px;
   }}
   .bluetooth-bloc {{ text-align:left; background:#f3f2f1; padding:0.75rem; border-radius:6px; line-height:1.6; }}
+  .btn-bluetooth {{ background:#fff; color:#2b579a; border:1px solid #2b579a; margin-bottom:1rem; }}
 </style>
 </head>
 <body>
@@ -209,6 +210,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
       <input type="tel" name="telephone" placeholder="Votre numéro (optionnel)" />
       <input type="file" id="champ-fichiers" multiple required />
       <div id="liste-fichiers"></div>
+      <button type="button" id="btn-partager-bluetooth" class="btn-bluetooth" hidden>📤 Partager par Bluetooth à la place</button>
       <div id="progression"><div></div></div>
       <p id="texte-progression"></p>
       <button type="submit">Envoyer à la boutique</button>
@@ -253,6 +255,28 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
         }});
         listeFichiers.appendChild(bloc);
       }});
+      majBoutonBluetooth();
+    }});
+
+    // Le bouton Bluetooth n'apparaît que si le téléphone sait le faire
+    // (surtout Android) et que des fichiers sont bien sélectionnés —
+    // sinon les instructions manuelles restent le seul recours.
+    const btnBluetooth = document.getElementById('btn-partager-bluetooth');
+    function majBoutonBluetooth() {{
+      const fichiers = [...champFichiers.files];
+      const peutPartager =
+        fichiers.length > 0 &&
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({{ files: fichiers }});
+      btnBluetooth.hidden = !peutPartager;
+    }}
+    btnBluetooth.addEventListener('click', async () => {{
+      try {{
+        await navigator.share({{ files: [...champFichiers.files] }});
+      }} catch {{
+        // Annulé par le client, ou échec — pas grave, il peut toujours
+        // utiliser "Envoyer à la boutique" ou les instructions manuelles.
+      }}
     }});
 
     // Créé ici, pendant le clic (geste utilisateur) — les téléphones
