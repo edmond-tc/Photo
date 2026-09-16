@@ -581,6 +581,11 @@ fieldset {
   font-weight: 600;
   color: var(--gris-texte);
 }
+.astuce-cle-usb {
+  font-size: 0.8rem;
+  color: var(--gris-texte-discret);
+  margin: 0.2rem 0 0.6rem;
+}
 #form-licence-blocage {
   display: flex;
   flex-direction: column;

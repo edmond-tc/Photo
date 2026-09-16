@@ -237,6 +237,39 @@ pub fn numero_support() -> String {
     NUMERO_SUPPORT.to_string()
 }
 
+/// Émis vers l'écran pour qu'il se rafraîchisse aussitôt, sans attendre le
+/// prochain contrôle périodique du blocage.
+#[derive(serde::Serialize, Clone)]
+pub struct ResultatActivationUsb {
+    pub reussi: bool,
+}
+
+/// Tente d'activer la licence à partir du contenu d'un fichier `licence.txt`
+/// trouvé sur une clé USB (voir usb.rs). Évite au gérant de retaper à la
+/// main une clé signée de plus de 100 caractères : la longueur protège
+/// contre la fabrication de fausses clés (section forgery), la clé USB
+/// évite qu'elle doive être saisie caractère par caractère.
+pub fn tenter_activation_depuis_usb(app: &tauri::AppHandle, contenu: &str) {
+    use tauri::{Emitter, Manager};
+
+    let Some(state) = app.try_state::<DbState>() else {
+        return;
+    };
+    let Ok(conn) = state.0.lock() else {
+        return;
+    };
+
+    let id = machine_id();
+    let reussi = verifier_cle(&id, contenu).is_some();
+    if reussi {
+        let cle_normalisee: String = contenu.chars().filter(|c| !c.is_whitespace()).collect();
+        let _ = db::set_setting(&conn, "cle_licence", &cle_normalisee.to_uppercase());
+    }
+    drop(conn);
+
+    let _ = app.emit("licence-usb", ResultatActivationUsb { reussi });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

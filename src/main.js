@@ -1520,4 +1520,17 @@ window.addEventListener("DOMContentLoaded", async () => {
     ajouterFichier(event.payload, true);
     jouerNotification();
   });
+
+  // Clé USB contenant un fichier "licence.txt" : évite au gérant de retaper
+  // à la main une clé signée de plus de 100 caractères.
+  await listen("licence-usb", async (event) => {
+    if (event.payload.reussi) {
+      toast("✓ Licence activée depuis la clé USB — merci !");
+      await verifierBlocageLicence();
+      await rafraichirBadgeAbonnement();
+      await afficherNouveautesSiBesoin();
+    } else {
+      toast("Le fichier licence.txt trouvé sur la clé USB n'est pas reconnu.", "attention");
+    }
+  });
 });

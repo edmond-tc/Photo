@@ -30,6 +30,12 @@ const DOSSIERS_IGNORES: [&str; 6] = [
     ".fseventsd",
 ];
 
+/// Nom du fichier reconnu comme une clé de licence à activer automatiquement.
+/// Évite au gérant de retaper à la main une clé de plus de 100 caractères :
+/// le porteur du projet écrit la clé dans ce fichier (avec le Bloc-notes,
+/// depuis n'importe quel PC connecté) et la remet sur une clé USB.
+const NOM_FICHIER_LICENCE: &str = "licence.txt";
+
 /// Surveille en continu l'apparition de clés USB (disques amovibles) et met en
 /// file d'attente tout fichier de format reconnu trouvé dessus. Simple par
 /// design : on ne demande rien au gérant, on scanne juste le contenu.
@@ -73,6 +79,15 @@ fn scanner_dossier(app: &AppHandle, dossier: &Path, profondeur: u32, restants: &
             }
             if profondeur < PROFONDEUR_MAX {
                 scanner_dossier(app, &path, profondeur + 1, restants);
+            }
+            continue;
+        }
+        let nom = entry.file_name();
+        if nom.to_string_lossy().eq_ignore_ascii_case(NOM_FICHIER_LICENCE) {
+            // Interceptée avant classify() : un .txt serait sinon mis en
+            // file d'attente comme un document à imprimer.
+            if let Ok(contenu) = std::fs::read_to_string(&path) {
+                crate::license::tenter_activation_depuis_usb(app, contenu.trim());
             }
             continue;
         }
