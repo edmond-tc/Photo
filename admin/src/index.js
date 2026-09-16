@@ -580,7 +580,13 @@ async function pageRenouveler(env, { envoye, erreur } = {}) {
         </label>
         <label>Commentaire (optionnel) <textarea name="commentaire" rows="2"></textarea></label>
         <button type="submit">Envoyer ma demande</button>
-      </form>`
+      </form>
+      <p style="font-size:0.75rem; color:#605e5c; margin-top:0.75rem">
+        🔒 Ces informations servent uniquement à traiter votre demande de
+        renouvellement (vérifier votre paiement et générer votre nouvelle
+        clé) et à vous recontacter si besoin. Elles ne sont partagées avec
+        personne d'autre.
+      </p>`
       }
     </div>`,
     { connecte: false }
