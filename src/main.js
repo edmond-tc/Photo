@@ -501,8 +501,15 @@ async function afficherQr() {
     img.height = 220;
     conteneur.appendChild(img);
     if (info.wifi_configure) {
-      urlEl.textContent =
-        "Un seul geste : le client scanne, rejoint le Wi-Fi automatiquement, et la page d'envoi s'ouvre.";
+      // L'ouverture automatique de la page après connexion au Wi-Fi dépend
+      // de la détection "portail captif" du téléphone du client — fiable
+      // sur beaucoup d'appareils, mais pas garantie sur tous. Sans cette
+      // adresse affichée en clair, le gérant n'aurait aucun moyen de guider
+      // un client bloqué après la connexion Wi-Fi.
+      urlEl.innerHTML =
+        `Le client scanne, rejoint le Wi-Fi automatiquement, et la page d'envoi s'ouvre — sur la plupart des téléphones. ` +
+        `Si rien ne s'ouvre après quelques secondes : dites-lui d'ouvrir son navigateur et de taper ` +
+        `<strong>${echapperHtml(info.url)}</strong>.`;
     } else {
       urlEl.innerHTML =
         `Wi-Fi non configuré — ce QR n'ouvre que la page (${echapperHtml(info.url)}), le client doit déjà être connecté. ` +
