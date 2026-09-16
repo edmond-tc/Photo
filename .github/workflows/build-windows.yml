@@ -65,6 +65,14 @@ jobs:
       # d'artefacts CI ci-dessous, qui alimente ce qu'Edmond télécharge sur
       # le terrain. Nom de fichier identique à CLE_INSTALLATEUR/CLE_EMPREINTE
       # dans admin/src/index.js : la page les cherche par ce nom exact.
+      # wrangler exige Node ≥22, alors que le reste de ce build utilise Node
+      # 20 (contrainte de la compilation Tauri) — sans ce changement de
+      # version juste avant cette étape, wrangler refuse de démarrer.
+      - name: Installer Node.js 22 (requis par wrangler)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Publier l'installateur sur le lien public de téléchargement
         shell: pwsh
         run: |
