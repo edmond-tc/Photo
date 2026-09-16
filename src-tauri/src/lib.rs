@@ -97,6 +97,7 @@ pub fn run() {
             updates::verifier_mise_a_jour,
             updates::version_actuelle,
             updates::recuperer_nouveautes_et_marquer_vues,
+            updates::marquer_version_actuelle_vue,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

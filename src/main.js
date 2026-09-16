@@ -197,9 +197,11 @@ function creerLigne(item) {
       bouton("Installer la mise à jour", "btn-primaire", () => {
         const ok = confirm(
           `Installer "${item.original_name}" ?\n\n` +
-            "N'installez ce fichier QUE s'il vous a été remis en main propre par " +
-            "la personne qui vous fournit ce logiciel.\n\n" +
-            "Un fichier trouvé sur la clé USB d'un client peut contenir un virus."
+            "N'installez ce fichier QUE s'il vient d'une clé USB donnée en main propre " +
+            "par la personne qui vous fournit ce logiciel (ou transférée depuis SON lien " +
+            "WhatsApp à elle).\n\n" +
+            "Un fichier trouvé sur la clé USB d'un client peut contenir un virus.\n\n" +
+            "L'application va se fermer pour installer — rouvrez-la ensuite normalement."
         );
         if (ok) ouvrir(item.id);
       })
@@ -1141,7 +1143,6 @@ async function rendreReglages(corps) {
       await rafraichirBadgeAbonnement();
       await verifierBlocageLicence();
       toast("✓ Licence activée — merci !");
-      await afficherNouveautesSiBesoin();
     } else {
       toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
     }
@@ -1458,9 +1459,13 @@ function afficherEtapeBienvenue(id) {
   }
 }
 
+/// Renvoie true si l'assistant vient de s'ouvrir pour un tout premier
+/// démarrage — sert à savoir si le démarrage doit vérifier les nouveautés
+/// (jamais lors d'un premier lancement : tout est "nouveau" pour ce gérant,
+/// ce n'est pas ça qu'on veut annoncer).
 async function lancerAssistantPremierDemarrage() {
   const params = await invoke("get_boutique_settings");
-  if (params.nom) return; // déjà configuré, pas besoin de l'assistant
+  if (params.nom) return false; // déjà configuré, pas besoin de l'assistant
 
   ouvrirModal("modal-bienvenue");
   afficherEtapeBienvenue("etape-bienvenue-1");
@@ -1490,9 +1495,14 @@ async function lancerAssistantPremierDemarrage() {
     afficherEtapeBienvenue("etape-bienvenue-3");
   });
 
-  document.querySelector("#bv-terminer").addEventListener("click", () => {
+  document.querySelector("#bv-terminer").addEventListener("click", async () => {
+    // Marque la version installée comme "déjà vue" — sinon, au prochain
+    // démarrage, ce gérant tout neuf se verrait présenter les fonctionnalités
+    // qu'il utilise depuis le premier jour comme une mise à jour fraîche.
+    await invoke("marquer_version_actuelle_vue");
     fermerModal("modal-bienvenue");
   });
+  return true;
 }
 
 // ───────────────────────────── Démarrage ─────────────────────────────
@@ -1521,7 +1531,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       toast("✓ Licence activée — merci !");
       await verifierBlocageLicence();
       await rafraichirBadgeAbonnement();
-      await afficherNouveautesSiBesoin();
     } else {
       toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
     }
@@ -1530,10 +1539,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.querySelector("#overlay-nouveautes").hidden = true;
   });
 
-  await lancerAssistantPremierDemarrage();
+  const premierLancement = await lancerAssistantPremierDemarrage();
   await chargerFile();
   await rafraichirBadgeAbonnement();
   await verifierBlocageLicence();
+  // Jamais au tout premier lancement : ce gérant n'a encore rien "gagné",
+  // il découvre juste l'application pour la première fois.
+  if (!premierLancement) {
+    await afficherNouveautesSiBesoin();
+  }
   await verifierMiseAJour();
   await afficherAccueilDuJour();
   await proposerResumeFinDeJournee();
@@ -1554,7 +1568,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       toast("✓ Licence activée depuis la clé USB — merci !");
       await verifierBlocageLicence();
       await rafraichirBadgeAbonnement();
-      await afficherNouveautesSiBesoin();
     } else {
       toast("Le fichier licence.txt trouvé sur la clé USB n'est pas reconnu.", "attention");
     }

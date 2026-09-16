@@ -273,13 +273,15 @@
       </div>
     </div>
 
-    <!-- Écran "Nouveautés" : affiché juste après une activation de licence
-         réussie, si des fonctionnalités sont sorties depuis la dernière fois. -->
+    <!-- Écran "Nouveautés" : affiché au démarrage quand le logiciel installé
+         sur CE PC est plus récent que la dernière fois que ce gérant l'a
+         ouvert — donc uniquement le jour où le porteur du projet vient
+         réinstaller une nouvelle version, jamais au renouvellement d'une
+         simple clé (qui ne change aucun fichier sur le disque). -->
     <div id="overlay-nouveautes" class="overlay-licence" hidden>
       <div class="carte-blocage carte-nouveautes">
-        <p class="pastille-blocage pastille-succes">🎉 Merci !</p>
-        <h2>Votre abonnement est actif</h2>
-        <p>Voici ce que vous avez gagné depuis votre dernière mise à jour :</p>
+        <p class="pastille-blocage pastille-succes">🎉 Mise à jour installée !</p>
+        <h2>Voici ce que vous venez de gagner</h2>
         <div id="liste-nouveautes"></div>
         <button type="button" id="btn-fermer-nouveautes">C'est compris, continuer</button>
       </div>

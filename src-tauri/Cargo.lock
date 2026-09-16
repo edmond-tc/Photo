@@ -3172,6 +3172,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tempfile",
  "tokio",
  "windows 0.58.0",
  "winreg 0.52.0",

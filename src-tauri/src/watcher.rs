@@ -129,6 +129,18 @@ pub fn enqueue_file_avec_options(
         return None;
     }
 
+    // Un installateur téléchargé deux fois sur le téléphone du gérant (par
+    // erreur, ou en pensant que ça n'avait pas marché) porte souvent un nom
+    // légèrement différent ("(1)") : le contrôle ci-dessus par chemin exact
+    // ne le détecte pas. On compare plutôt la taille — deux fichiers de
+    // taille identique déjà en attente, c'est le même installateur deux
+    // fois. On ne garde que celui déjà présent, jamais deux invitations à
+    // installer la même mise à jour.
+    if kind == "installateur" && installateur_deja_en_attente(&conn, taille_octets as i64) {
+        let _ = std::fs::remove_file(path);
+        return None;
+    }
+
     // Borné aussi ici (pas seulement côté serveur HTTP) : ce point d'entrée
     // sert à tous les canaux de réception, pas seulement le QR.
     let copies = options.copies.unwrap_or(1).clamp(1, 500);
@@ -202,4 +214,71 @@ pub fn enqueue_file_avec_options(
 
     let _ = app.emit("nouveau-fichier", item);
     Some((id, jeton))
+}
+
+/// Un installateur de même taille est-il déjà en file, en attente d'être
+/// installé ? Isolé de `enqueue_file_avec_options` (qui a besoin d'un vrai
+/// `AppHandle` Tauri) pour rester testable directement contre une base.
+fn installateur_deja_en_attente(conn: &rusqlite::Connection, taille_octets: i64) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM files_queue
+         WHERE kind = 'installateur' AND status = 'en_attente' AND taille_octets = ?1",
+        params![taille_octets],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::params;
+
+    fn base_de_test() -> (tempfile::TempDir, rusqlite::Connection) {
+        let dossier = tempfile::tempdir().expect("dossier temporaire");
+        let conn = crate::db::open(dossier.path()).expect("ouverture de la base de test");
+        (dossier, conn)
+    }
+
+    fn inserer_installateur(conn: &rusqlite::Connection, chemin: &str, statut: &str, taille: i64) {
+        conn.execute(
+            "INSERT INTO files_queue
+                (original_name, path, source, kind, status, received_at, taille_octets, jeton)
+             VALUES (?1, ?1, 'usb', 'installateur', ?2, '2026-01-01T00:00:00+01:00', ?3, ?4)",
+            params![chemin, statut, taille, chemin],
+        )
+        .expect("insertion de test");
+    }
+
+    #[test]
+    fn aucun_doublon_sur_base_vide() {
+        let (_dossier, conn) = base_de_test();
+        assert!(!installateur_deja_en_attente(&conn, 150_000_000));
+    }
+
+    #[test]
+    fn detecte_un_installateur_de_meme_taille_deja_en_attente() {
+        let (_dossier, conn) = base_de_test();
+        inserer_installateur(&conn, "E:\\Installateur.exe", "en_attente", 150_000_000);
+        assert!(installateur_deja_en_attente(&conn, 150_000_000));
+    }
+
+    #[test]
+    fn une_taille_differente_n_est_pas_un_doublon() {
+        let (_dossier, conn) = base_de_test();
+        inserer_installateur(&conn, "E:\\Installateur.exe", "en_attente", 150_000_000);
+        // Une VRAIE nouvelle version, compilée différemment, n'a presque
+        // aucune chance de faire exactement le même nombre d'octets.
+        assert!(!installateur_deja_en_attente(&conn, 150_312_009));
+    }
+
+    #[test]
+    fn un_installateur_deja_installe_ne_bloque_pas_le_suivant() {
+        let (_dossier, conn) = base_de_test();
+        // "installe" ou "ignore" : plus "en_attente", donc plus un doublon
+        // actif — sinon une VRAIE nouvelle mise à jour de même taille par
+        // hasard resterait bloquée pour toujours après la précédente.
+        inserer_installateur(&conn, "E:\\Ancien.exe", "traite", 150_000_000);
+        assert!(!installateur_deja_en_attente(&conn, 150_000_000));
+    }
 }

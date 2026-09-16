@@ -49,6 +49,16 @@ pub fn version_actuelle() -> String {
     VERSION_ACTUELLE.to_string()
 }
 
+/// Marque la version actuelle comme vue SANS renvoyer la liste des
+/// nouveautés — appelé à la fin de l'assistant de premier démarrage, pour
+/// qu'un gérant qui vient d'installer ne se voie jamais présenter ce qu'il
+/// utilise depuis le premier jour comme une nouveauté fraîche.
+#[tauri::command]
+pub fn marquer_version_actuelle_vue(state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::set_setting(&conn, "derniere_version_vue", VERSION_ACTUELLE).map_err(|e| e.to_string())
+}
+
 // ───────────────────────────── Nouveautés ─────────────────────────────
 // L'appli n'étant jamais connectée à internet, ce contenu doit être livré
 // avec le logiciel lui-même (pas de liste récupérée en ligne) : ajouter une
