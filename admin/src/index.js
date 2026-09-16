@@ -407,6 +407,35 @@ async function pageNouvelleBoutique(erreur) {
   );
 }
 
+/// Sans cette page, une seule faute de frappe sur l'identifiant machine — une
+/// longue suite de caractères recopiée à la main sur le terrain — condamnait
+/// la fiche pour toujours : toutes les clés générées étaient refusées par
+/// l'application du gérant, sans aucun moyen de corriger.
+async function pageModifierBoutique(boutique, erreur) {
+  return page(
+    "Modifier la boutique",
+    `<div class="carte">
+      <p><a href="/boutiques/${boutique.id}">&larr; Retour à la fiche</a></p>
+      <h1>Modifier ${echapper(boutique.nom)}</h1>
+      ${erreur ? `<p style="color:#a4262c">${echapper(erreur)}</p>` : ""}
+      <form method="POST" action="/boutiques/${boutique.id}/modifier">
+        <label>Nom de la boutique <input type="text" name="nom" value="${echapper(boutique.nom)}" required /></label>
+        <label>Nom du gérant <input type="text" name="gerant_nom" value="${echapper(boutique.gerant_nom)}" /></label>
+        <label>Téléphone <input type="tel" name="telephone" value="${echapper(boutique.telephone)}" /></label>
+        <label>Identifiant machine <input type="text" name="machine_id" value="${echapper(boutique.machine_id)}" required /></label>
+        <p style="font-size:0.78rem; color:#a4262c; margin:-0.5rem 0 0.75rem">
+          ⚠️ Si tu corriges l'identifiant machine, les clés déjà générées pour
+          cette boutique ne marcheront plus : elles étaient signées pour
+          l'ancien identifiant. Il faudra en générer une nouvelle.
+        </p>
+        <label>Notes <textarea name="notes" rows="2">${echapper(boutique.notes)}</textarea></label>
+        <button type="submit">Enregistrer</button>
+        <a class="btn secondaire" href="/boutiques/${boutique.id}">Annuler</a>
+      </form>
+    </div>`
+  );
+}
+
 async function pageBoutique(env, id, { cleGeneree } = {}) {
   const boutique = await env.DB.prepare(`SELECT * FROM boutiques WHERE id = ?`).bind(id).first();
   if (!boutique) return null;
@@ -417,7 +446,14 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
     .bind(id)
     .all();
 
-  const derniereExpiration = licences[0]?.date_expiration;
+  // La date qui compte est la plus lointaine, pas la dernière saisie : générer
+  // une clé courte pour dépanner après une clé longue ne doit pas faire croire
+  // que la boutique expire bientôt. C'est aussi la règle qu'applique la page
+  // d'accueil — sans ça, les deux pages affichent des statuts contradictoires.
+  const derniereExpiration = licences.reduce(
+    (max, l) => (!max || l.date_expiration > max ? l.date_expiration : max),
+    null
+  );
 
   const { results: rapports } = await env.DB.prepare(
     `SELECT * FROM rapports WHERE boutique_id = ? ORDER BY created_at DESC LIMIT 10`
@@ -469,6 +505,7 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
       </p>
       <p style="font-size:0.85rem"><strong>Identifiant machine :</strong> ${echapper(boutique.machine_id)}</p>
       ${boutique.notes ? `<p style="font-size:0.85rem">${echapper(boutique.notes)}</p>` : ""}
+      <a class="btn secondaire" href="/boutiques/${id}/modifier">Modifier</a>
       <form method="POST" action="/boutiques/${id}/desactiver" style="display:inline">
         <button type="submit" class="${boutique.abonnement_desactive ? "secondaire" : "danger"}">
           ${boutique.abonnement_desactive ? "Marquer comme actif (note)" : "Marquer comme désactivé (note)"}
@@ -487,7 +524,13 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
         cleGeneree
           ? `<p style="color:#0e5c1f">Clé générée, valable jusqu'au ${formatDateLisible(cleGeneree.dateExpiration)} :</p>
              <p class="cle-resultat">${echapper(cleGeneree.cle)}</p>
-             <p style="font-size:0.85rem">Copie-la et transmets-la au gérant (WhatsApp, SMS...) pour qu'il la colle dans Réglages &gt; Licence.</p>`
+             <a class="btn" href="/boutiques/${id}/licence.txt" style="display:block; margin-bottom:0.6rem">⬇️ Télécharger licence.txt</a>
+             <p style="font-size:0.85rem">
+               <strong>Le plus simple :</strong> télécharge le fichier ci-dessus, mets-le sur
+               une clé USB, le gérant la branche — l'activation se fait toute seule, sans
+               rien taper. Sinon, copie la clé et envoie-la par WhatsApp pour qu'il la colle
+               dans Réglages &gt; Licence.
+             </p>`
           : ""
       }
       <form method="POST" action="/boutiques/${id}/licence">
@@ -504,6 +547,11 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
 
     <div class="carte">
       <h2>Historique des clés</h2>
+      ${
+        licences.length
+          ? `<a class="btn secondaire" href="/boutiques/${id}/licence.txt" style="margin-bottom:0.6rem">⬇️ Retélécharger la dernière clé (licence.txt)</a>`
+          : ""
+      }
       <table>
         <thead><tr><th>Clé</th><th>Durée</th><th>Expire le</th></tr></thead>
         <tbody>${lignesLicences || `<tr><td colspan="3">Aucune clé générée pour l'instant.</td></tr>`}</tbody>
@@ -717,6 +765,11 @@ const EN_TETES_SECURITE = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
   "x-frame-options": "DENY",
+  // Sans cela, la liste des boutiques et surtout la page qui affiche une clé
+  // fraîchement générée restent dans la mémoire du navigateur : le bouton
+  // "précédent" les ramène telles quelles, sans repasser par le mot de passe.
+  // Rien ici ne gagne à être mis en cache, on désactive donc partout.
+  "cache-control": "no-store",
 };
 
 function avecEnTetesSecurite(reponse) {
@@ -903,8 +956,8 @@ async function router(request, env) {
       }
       if (pathname === "/boutiques/nouvelle" && method === "POST") {
         const donnees = await request.formData();
-        const nom = (donnees.get("nom") || "").trim();
-        const machineId = (donnees.get("machine_id") || "").trim();
+        const nom = borner(donnees.get("nom"), 120);
+        const machineId = borner(donnees.get("machine_id"), 120);
         if (!nom || !machineId) {
           return new Response(await pageNouvelleBoutique("Le nom et l'identifiant machine sont obligatoires."), {
             status: 400,
@@ -915,7 +968,13 @@ async function router(request, env) {
           const resultat = await env.DB.prepare(
             `INSERT INTO boutiques (nom, gerant_nom, telephone, machine_id, notes) VALUES (?, ?, ?, ?, ?)`
           )
-            .bind(nom, donnees.get("gerant_nom") || null, donnees.get("telephone") || null, machineId, donnees.get("notes") || null)
+            .bind(
+              nom,
+              borner(donnees.get("gerant_nom"), 120) || null,
+              borner(donnees.get("telephone"), 40) || null,
+              machineId,
+              borner(donnees.get("notes"), 1000) || null
+            )
             .run();
           return new Response(null, {
             status: 302,
@@ -934,6 +993,78 @@ async function router(request, env) {
         const html = await pageBoutique(env, matchBoutique[1]);
         if (!html) return new Response("Boutique introuvable.", { status: 404 });
         return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+
+      // La clé, servie en fichier texte prêt à poser sur une clé USB —
+      // l'application du gérant lit un "licence.txt" inséré et s'active seule.
+      // Évite de recopier à la main une clé de plus de cent caractères, et
+      // évite au porteur du projet de fabriquer ce fichier au Bloc-notes.
+      //
+      // La clé servie est la DERNIÈRE GÉNÉRÉE, pas celle qui expire le plus
+      // tard : c'est celle qu'on vient de fabriquer pour ce gérant et qu'on
+      // veut lui remettre, même si une clé plus longue traîne dans l'historique.
+      const matchLicenceFichier = pathname.match(/^\/boutiques\/(\d+)\/licence\.txt$/);
+      if (matchLicenceFichier && method === "GET") {
+        const ligne = await env.DB.prepare(
+          `SELECT cle FROM licences WHERE boutique_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`
+        )
+          .bind(matchLicenceFichier[1])
+          .first();
+        if (!ligne) return new Response("Aucune clé générée pour cette boutique.", { status: 404 });
+        return new Response(ligne.cle, {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "content-disposition": `attachment; filename="licence.txt"`,
+          },
+        });
+      }
+
+      const matchModifier = pathname.match(/^\/boutiques\/(\d+)\/modifier$/);
+      if (matchModifier && method === "GET") {
+        const boutique = await env.DB.prepare(`SELECT * FROM boutiques WHERE id = ?`)
+          .bind(matchModifier[1])
+          .first();
+        if (!boutique) return new Response("Boutique introuvable.", { status: 404 });
+        return new Response(await pageModifierBoutique(boutique), {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      if (matchModifier && method === "POST") {
+        const id = matchModifier[1];
+        const boutique = await env.DB.prepare(`SELECT * FROM boutiques WHERE id = ?`).bind(id).first();
+        if (!boutique) return new Response("Boutique introuvable.", { status: 404 });
+        const donnees = await request.formData();
+        const nom = borner(donnees.get("nom"), 120);
+        const machineId = borner(donnees.get("machine_id"), 120);
+        if (!nom || !machineId) {
+          return new Response(
+            await pageModifierBoutique(boutique, "Le nom et l'identifiant machine sont obligatoires."),
+            { status: 400, headers: { "content-type": "text/html; charset=utf-8" } }
+          );
+        }
+        try {
+          await env.DB.prepare(
+            `UPDATE boutiques SET nom = ?, gerant_nom = ?, telephone = ?, machine_id = ?, notes = ? WHERE id = ?`
+          )
+            .bind(
+              nom,
+              borner(donnees.get("gerant_nom"), 120) || null,
+              borner(donnees.get("telephone"), 40) || null,
+              machineId,
+              borner(donnees.get("notes"), 1000) || null,
+              id
+            )
+            .run();
+        } catch {
+          return new Response(
+            await pageModifierBoutique(
+              boutique,
+              "Cet identifiant machine est déjà enregistré pour une autre boutique."
+            ),
+            { status: 400, headers: { "content-type": "text/html; charset=utf-8" } }
+          );
+        }
+        return new Response(null, { status: 302, headers: { Location: `/boutiques/${id}` } });
       }
 
       const matchLicence = pathname.match(/^\/boutiques\/(\d+)\/licence$/);
