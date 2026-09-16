@@ -613,14 +613,46 @@ async function rendreHistorique(corps) {
     return;
   }
   for (const item of items) {
-    corps.appendChild(
-      ligneListe(
-        item.original_name,
-        [item.client_name, formatHeure(item.received_at), item.prix ? formatFcfa(item.prix) : null]
-          .filter(Boolean)
-          .join(" · ")
-      )
-    );
+    const ligne = document.createElement("div");
+    ligne.className = "ligne-liste";
+    const info = document.createElement("div");
+    info.textContent = item.original_name;
+    const sousTexte = document.createElement("div");
+    sousTexte.className = "meta-fichier";
+    sousTexte.textContent = [
+      item.client_name,
+      formatHeure(item.received_at),
+      item.prix ? formatFcfa(item.prix) : null,
+      item.document_supprime ? "🗑️ Document supprimé" : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    ligne.append(info, sousTexte);
+
+    // Le client peut demander la suppression de son document à tout
+    // moment après le passage en caisse — n'importe quel gérant doit
+    // pouvoir le faire lui-même, sans mot de passe technique (contrairement
+    // aux outils de dépannage réservés au porteur du projet).
+    if (!item.document_supprime) {
+      ligne.appendChild(
+        bouton("Supprimer le document", "btn-discret", async () => {
+          const ok = confirm(
+            `Supprimer définitivement "${item.original_name}" ?\n\n` +
+              "Le document sera effacé de cet ordinateur. La ligne de comptabilité " +
+              "(montant, date) reste, elle ne contient jamais le document lui-même."
+          );
+          if (!ok) return;
+          try {
+            await invoke("supprimer_document", { id: item.id });
+            toast("✓ Document supprimé");
+            await ouvrirSection("historique");
+          } catch (e) {
+            alert(`⚠️ La suppression a échoué.\n\nDétail : ${e}`);
+          }
+        })
+      );
+    }
+    corps.appendChild(ligne);
   }
 }
 

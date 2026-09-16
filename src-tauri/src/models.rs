@@ -20,6 +20,7 @@ pub struct QueueItem {
     pub prix: Option<i64>,
     pub employe: Option<String>,
     pub raison_ignore: Option<String>,
+    pub document_supprime: bool,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

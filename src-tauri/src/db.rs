@@ -123,7 +123,7 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// Version du schéma attendue par cette version du logiciel.
-const VERSION_SCHEMA: i64 = 1;
+const VERSION_SCHEMA: i64 = 2;
 
 /// Les boutiques déjà installées ont une base créée par une version
 /// antérieure : les `CREATE TABLE IF NOT EXISTS` ci-dessus ne leur ajoutent
@@ -160,6 +160,14 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
              CREATE UNIQUE INDEX IF NOT EXISTS idx_files_queue_jeton
                 ON files_queue(jeton);",
         )?;
+    }
+
+    if version < 2 {
+        // Permet au gérant de supprimer le document d'un client sur demande,
+        // sans passer par le mot de passe technique (réservé au porteur du
+        // projet) — voir gestion::supprimer_document. On garde une trace du
+        // fait que le document a été supprimé, jamais de la comptabilité.
+        ajouter_colonne_si_absente(conn, "files_queue", "document_supprime", "INTEGER NOT NULL DEFAULT 0")?;
     }
 
     conn.pragma_update(None, "user_version", VERSION_SCHEMA)?;

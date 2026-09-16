@@ -56,6 +56,7 @@ pub fn run() {
             commands::open_file,
             commands::print_file,
             commands::ignorer_fichier,
+            commands::supprimer_document,
             commands::get_boutique_settings,
             commands::set_boutique_setting,
             commands::choisir_logo_boutique,

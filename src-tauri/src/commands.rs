@@ -35,12 +35,13 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         prix: row.get(17)?,
         employe: row.get(18)?,
         raison_ignore: row.get(19)?,
+        document_supprime: row.get(20)?,
     })
 }
 
 const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telephone, source, kind,
      status, received_at, taille_octets, protege, format_detecte, copies, couleur, format_papier,
-     plage_pages, finitions, prix, employe, raison_ignore";
+     plage_pages, finitions, prix, employe, raison_ignore, document_supprime";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {
@@ -180,6 +181,48 @@ pub fn ignorer_fichier(state: State<DbState>, id: i64, raison: String) -> Result
     conn.execute(
         "UPDATE files_queue SET status = 'traite', raison_ignore = ?1 WHERE id = ?2",
         params![raison, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Supprime définitivement le document d'un client, à sa demande — utilisable
+/// par n'importe quel gérant, sans mot de passe technique (contrairement à
+/// `ouvrir_dossier_donnees`, réservé au porteur du projet). Seul le document
+/// disparaît : la ligne de comptabilité (montant, date) reste, elle ne
+/// contient jamais le contenu du fichier.
+///
+/// Réservé aux commandes déjà traitées : un document encore en attente n'a
+/// pas encore été servi, le supprimer perdrait la commande elle-même.
+#[tauri::command]
+pub fn supprimer_document(state: State<DbState>, id: i64) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+
+    let (chemin, statut): (String, String) = conn
+        .query_row(
+            "SELECT path, status FROM files_queue WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| "Document introuvable".to_string())?;
+
+    if statut != "traite" {
+        return Err(
+            "Cette commande n'a pas encore été traitée — on ne peut supprimer que le document d'une commande déjà servie.".to_string(),
+        );
+    }
+
+    // Le fichier peut déjà être absent (purge automatique, ou déjà
+    // supprimé) : ce n'est pas une erreur, l'objectif est déjà atteint.
+    if let Err(e) = std::fs::remove_file(&chemin) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            return Err(format!("Impossible de supprimer le fichier : {e}"));
+        }
+    }
+
+    conn.execute(
+        "UPDATE files_queue SET document_supprime = 1 WHERE id = ?1",
+        params![id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

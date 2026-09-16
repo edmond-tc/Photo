@@ -197,6 +197,7 @@ pub fn enqueue_file_avec_options(
         prix: None,
         employe: None,
         raison_ignore: None,
+        document_supprime: false,
     };
 
     let _ = app.emit("nouveau-fichier", item);
