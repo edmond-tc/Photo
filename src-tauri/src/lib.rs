@@ -94,7 +94,6 @@ pub fn run() {
             gestion::desactiver_mode_demo,
             license::get_license_status,
             license::set_license_key,
-            license::numero_support,
             updates::verifier_mise_a_jour,
             updates::version_actuelle,
             updates::recuperer_nouveautes_et_marquer_vues,

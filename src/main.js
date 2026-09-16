@@ -1285,11 +1285,40 @@ async function rafraichirBadgeAbonnement() {
 // formulaire d'activation reste accessible DANS ce même écran, pour ne
 // jamais enfermer le gérant sans porte de sortie une fois qu'il a sa
 // nouvelle clé.
+/// Nombre de jours pendant lesquels le gérant est prévenu, avant que le
+/// blocage ne tombe. Le blocage lui-même reste sec — c'est la découverte du
+/// blocage qui doit cesser d'être une surprise, pas le blocage.
+const JOURS_AVERTISSEMENT = 3;
+
+/// Avertissement des derniers jours : visible en permanence, impossible à
+/// fermer, mais ne gêne aucun geste de travail.
+function majBandeauGrace(licence) {
+  const bandeau = document.querySelector("#bandeau-grace");
+  const concerne = licence.statut === "essai" || licence.statut === "actif";
+  if (!concerne || licence.jours_restants > JOURS_AVERTISSEMENT) {
+    bandeau.hidden = true;
+    return;
+  }
+
+  const quoi = licence.statut === "essai" ? "Votre essai gratuit" : "Votre abonnement";
+  const quand =
+    licence.jours_restants <= 0
+      ? "se termine aujourd'hui"
+      : licence.jours_restants === 1
+        ? "se termine demain"
+        : `se termine dans ${licence.jours_restants} jours`;
+  document.querySelector("#bandeau-grace-titre").textContent =
+    `⚠️ ${quoi} ${quand} — ensuite, l'application ne pourra plus être utilisée.`;
+  document.querySelector("#machine-id-bandeau").textContent = licence.machine_id;
+  bandeau.hidden = false;
+}
+
 async function verifierBlocageLicence() {
   const overlay = document.querySelector("#overlay-licence");
   try {
     const licence = await invoke("get_license_status");
     const bloque = licence.statut === "expire" || licence.statut === "invalide";
+    majBandeauGrace(licence);
     if (!bloque) {
       overlay.hidden = true;
       return;
@@ -1302,8 +1331,10 @@ async function verifierBlocageLicence() {
     overlay.hidden = false;
   } catch {
     // Impossible de vérifier le statut : on ne bloque jamais sur un doute,
-    // seulement sur une expiration confirmée.
+    // seulement sur une expiration confirmée. Même raisonnement pour
+    // l'avertissement — pas d'alarme rouge sur une lecture ratée.
     overlay.hidden = true;
+    document.querySelector("#bandeau-grace").hidden = true;
   }
 }
 
@@ -1502,11 +1533,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   await lancerAssistantPremierDemarrage();
   await chargerFile();
   await rafraichirBadgeAbonnement();
-  try {
-    document.querySelector("#numero-support-blocage").textContent = await invoke("numero_support");
-  } catch {
-    // Pas grave si ça échoue : l'écran de blocage reste utilisable sans le numéro.
-  }
   await verifierBlocageLicence();
   await verifierMiseAJour();
   await afficherAccueilDuJour();

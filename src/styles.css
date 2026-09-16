@@ -498,6 +498,32 @@ fieldset {
   border-color: #f3d998;
 }
 
+/* ── Avertissement des 3 derniers jours ── */
+/* Dans le flux normal, pas en position fixe : il pousse la file vers le bas
+   au lieu de la recouvrir. Pendant ces trois jours le gérant doit pouvoir
+   travailler sans aucune gêne — c'est précisément ce qui distingue
+   l'avertissement du blocage qui suivra. */
+.bandeau-grace {
+  background: var(--rouge-alerte);
+  color: #fff;
+  padding: 0.7rem 1rem;
+}
+.bandeau-grace-titre {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.bandeau-grace-details {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  opacity: 0.95;
+}
+.bandeau-grace-details span {
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
 /* ── Blocage licence / Nouveautés ── */
 /* z-index au-dessus du panneau menu (10) et des modales (20) : ce blocage
    doit rester au-dessus de tout, sans exception, tant que l'abonnement

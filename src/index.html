@@ -20,6 +20,19 @@
       </div>
     </header>
 
+    <!-- Avertissement des 3 derniers jours. Impossible à fermer : le but est
+         qu'aucun gérant ne découvre le blocage le jour même, devant un client.
+         Il ne recouvre rien — il pousse simplement la file vers le bas, pour
+         que le travail continue normalement pendant ces trois jours. -->
+    <div id="bandeau-grace" class="bandeau-grace" role="alert" hidden>
+      <p class="bandeau-grace-titre" id="bandeau-grace-titre"></p>
+      <p class="bandeau-grace-details">
+        Pour continuer, appelez ou écrivez sur WhatsApp au
+        <strong>0151226741</strong> depuis <strong>votre</strong> téléphone.
+        Identifiant à donner : <span id="machine-id-bandeau"></span>
+      </p>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <!-- Assistant de premier lancement -->
@@ -237,7 +250,11 @@
         </p>
         <div class="bloc-numero-support">
           <p class="etiquette-numero">Depuis VOTRE téléphone, appelez ou écrivez sur WhatsApp :</p>
-          <p id="numero-support-blocage" class="numero-support"></p>
+          <!-- Écrit en clair plutôt que rempli par du code : c'est le seul
+               élément dont dépend entièrement la réactivation. S'il fallait
+               aller le chercher et que ça échouait, le gérant se retrouverait
+               bloqué devant un cadre vide, sans savoir qui appeler. -->
+          <p class="numero-support">0151226741</p>
         </div>
         <p class="identifiant-blocage">
           Donnez aussi cet identifiant : <span id="machine-id-blocage"></span>

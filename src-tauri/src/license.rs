@@ -220,23 +220,6 @@ pub fn set_license_key(state: State<DbState>, cle: String) -> Result<bool, Strin
     Ok(true)
 }
 
-/// Numéro du porteur du projet, à contacter pour renouveler un abonnement
-/// expiré. Le même pour toutes les boutiques (ce n'est pas un réglage par
-/// gérant) : écrit ici en clair plutôt que dans un fichier de configuration
-/// séparé qui pourrait être oublié vide à la compilation.
-///
-/// Affiché tel quel au gérant — jamais de lien cliquable "ouvrir WhatsApp" :
-/// le PC de la boutique n'a jamais internet, un tel lien échouerait
-/// silencieusement (ou pire, ouvrirait un navigateur sur une erreur) juste
-/// au moment où le gérant cherche à payer. C'est depuis SON PROPRE
-/// téléphone, celui qui a du réseau, qu'il appelle ou écrit ce numéro.
-const NUMERO_SUPPORT: &str = "0151226741";
-
-#[tauri::command]
-pub fn numero_support() -> String {
-    NUMERO_SUPPORT.to_string()
-}
-
 /// Émis vers l'écran pour qu'il se rafraîchisse aussitôt, sans attendre le
 /// prochain contrôle périodique du blocage.
 #[derive(serde::Serialize, Clone)]
