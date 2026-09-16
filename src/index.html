@@ -224,5 +224,42 @@
         <div class="actions-fichier"></div>
       </li>
     </template>
+
+    <!-- Écran de blocage : abonnement/essai terminé. Recouvre tout, aucune
+         autre partie de l'appli n'est cliquable derrière. -->
+    <div id="overlay-licence" class="overlay-licence" hidden>
+      <div class="carte-blocage">
+        <p class="pastille-blocage">⛔ Accès suspendu</p>
+        <h2 id="titre-blocage">Votre période d'essai est terminée</h2>
+        <p id="texte-blocage">
+          Pour continuer à utiliser Gestion Photocopie, contactez le porteur
+          du projet pour renouveler votre abonnement.
+        </p>
+        <button type="button" id="btn-whatsapp-blocage" class="btn-whatsapp">
+          📱 Contacter sur WhatsApp
+        </button>
+        <p class="identifiant-blocage">
+          Identifiant de cet ordinateur : <span id="machine-id-blocage"></span>
+        </p>
+        <hr />
+        <p class="sous-titre-blocage">Vous avez déjà reçu une nouvelle clé ?</p>
+        <form id="form-licence-blocage">
+          <input type="text" id="cle-licence-blocage" placeholder="Coller la clé de licence reçue" />
+          <button type="submit">Activer</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Écran "Nouveautés" : affiché juste après une activation de licence
+         réussie, si des fonctionnalités sont sorties depuis la dernière fois. -->
+    <div id="overlay-nouveautes" class="overlay-licence" hidden>
+      <div class="carte-blocage carte-nouveautes">
+        <p class="pastille-blocage pastille-succes">🎉 Merci !</p>
+        <h2>Votre abonnement est actif</h2>
+        <p>Voici ce que vous avez gagné depuis votre dernière mise à jour :</p>
+        <div id="liste-nouveautes"></div>
+        <button type="button" id="btn-fermer-nouveautes">C'est compris, continuer</button>
+      </div>
+    </div>
   </body>
 </html>

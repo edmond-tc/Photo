@@ -60,6 +60,9 @@ jobs:
           Set-Content -Path "src-tauri/target/release/bundle/nsis/empreinte-sha256.txt" -Value $empreinte -NoNewline
           Write-Host "SHA-256 de l'installateur : $empreinte"
 
+      # 14 jours : largement assez pour aller chercher la dernière version, et
+      # ça évite de saturer le quota de stockage GitHub (chaque build ~400 Mo)
+      # à force d'itérer, comme c'est arrivé un jour de terrain chargé.
       - name: Publier l'exécutable (.exe / installateurs)
         uses: actions/upload-artifact@v4
         with:
@@ -69,6 +72,7 @@ jobs:
             src-tauri/target/release/bundle/nsis/empreinte-sha256.txt
             src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
+          retention-days: 14
 
       - name: Publier l'outil de génération de licence
         uses: actions/upload-artifact@v4
@@ -76,3 +80,4 @@ jobs:
           name: generer-licence-windows
           path: src-tauri/target/release/generer-licence.exe
           if-no-files-found: error
+          retention-days: 14

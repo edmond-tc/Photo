@@ -498,6 +498,132 @@ fieldset {
   border-color: #f3d998;
 }
 
+/* ── Blocage licence / Nouveautés ── */
+/* z-index au-dessus du panneau menu (10) et des modales (20) : ce blocage
+   doit rester au-dessus de tout, sans exception, tant que l'abonnement
+   n'est pas renouvelé. */
+.overlay-licence {
+  position: fixed;
+  inset: 0;
+  background: var(--gris-texte);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 50;
+}
+.carte-blocage {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 1.75rem 1.5rem;
+  max-width: 420px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  text-align: center;
+}
+.pastille-blocage {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  background: #fde7e9;
+  color: var(--rouge-alerte);
+  margin: 0 0 0.75rem;
+}
+.pastille-blocage.pastille-succes {
+  background: var(--vert-succes-fond);
+  color: var(--vert-succes);
+}
+.carte-blocage h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.6rem;
+  color: var(--gris-texte);
+}
+.carte-blocage p {
+  font-size: 0.92rem;
+  color: var(--gris-texte-discret);
+  margin: 0 0 0.9rem;
+}
+.btn-whatsapp {
+  display: block;
+  width: 100%;
+  padding: 0.85rem;
+  background: #25d366;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+.identifiant-blocage {
+  font-size: 0.78rem;
+  background: var(--gris-clair);
+  border-radius: 4px;
+  padding: 0.5rem;
+}
+.sous-titre-blocage {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--gris-texte);
+}
+#form-licence-blocage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+#form-licence-blocage input {
+  padding: 0.6rem;
+  border: 1px solid var(--gris-bordure);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.carte-nouveautes {
+  max-width: 480px;
+  text-align: left;
+}
+.carte-nouveautes h2,
+.carte-nouveautes > p {
+  text-align: center;
+}
+.bloc-nouveaute {
+  border: 1px solid var(--gris-bordure);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.7rem;
+}
+.bloc-nouveaute h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.35rem;
+  color: var(--bleu-office);
+}
+.bloc-nouveaute p {
+  font-size: 0.85rem;
+  margin: 0 0 0.4rem;
+  text-align: left;
+}
+.bloc-nouveaute .ou-trouver {
+  font-size: 0.78rem;
+  color: var(--gris-texte-discret);
+  margin: 0;
+}
+#btn-fermer-nouveautes {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--bleu-office);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
 @media print {
   body > *:not(#modal-qr) {
     display: none !important;

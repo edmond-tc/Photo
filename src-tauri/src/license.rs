@@ -220,6 +220,48 @@ pub fn set_license_key(state: State<DbState>, cle: String) -> Result<bool, Strin
     Ok(true)
 }
 
+/// Numéro du porteur du projet, à contacter pour renouveler un abonnement
+/// expiré. Le même pour toutes les boutiques (ce n'est pas un réglage par
+/// gérant) : écrit ici en clair plutôt que dans un fichier de configuration
+/// séparé qui pourrait être oublié vide à la compilation.
+const NUMERO_WHATSAPP_SUPPORT: &str = "0151226741";
+
+/// Ouvre WhatsApp (dans le navigateur ou l'appli si installée) sur une
+/// conversation pré-remplie avec le porteur du projet, message d'ouverture
+/// et identifiant machine déjà écrits — pour qu'un gérant n'ait jamais à
+/// deviner quoi dire ni à retaper son identifiant à la main.
+#[tauri::command]
+pub fn contacter_support_whatsapp(machine_id: String) -> Result<(), String> {
+    let numero = crate::server::normalize_phone(NUMERO_WHATSAPP_SUPPORT)
+        .ok_or_else(|| "Numéro de support invalide".to_string())?;
+    let message = format!(
+        "Bonjour, mon abonnement Gestion Photocopie est terminé. \
+         Identifiant de ma machine : {machine_id}"
+    );
+    let url = format!(
+        "https://wa.me/{numero}?text={}",
+        urlencoding_simple(&message)
+    );
+    crate::files::shell_open(std::path::Path::new(&url), "open")
+}
+
+/// Encodage minimal pour un paramètre d'URL : suffisant pour un texte en
+/// français simple (espaces, ponctuation courante), sans dépendance
+/// supplémentaire pour un seul usage.
+fn urlencoding_simple(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+            ' ' => "%20".to_string(),
+            _ => c
+                .to_string()
+                .bytes()
+                .map(|b| format!("%{b:02X}"))
+                .collect::<String>(),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

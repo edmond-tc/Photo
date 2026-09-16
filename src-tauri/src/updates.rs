@@ -48,3 +48,101 @@ pub async fn verifier_mise_a_jour(state: State<'_, DbState>) -> Result<Option<St
 pub fn version_actuelle() -> String {
     VERSION_ACTUELLE.to_string()
 }
+
+// ───────────────────────────── Nouveautés ─────────────────────────────
+// L'appli n'étant jamais connectée à internet, ce contenu doit être livré
+// avec le logiciel lui-même (pas de liste récupérée en ligne) : ajouter une
+// entrée ici demande une nouvelle version, comme tout le reste.
+
+#[derive(serde::Serialize)]
+pub struct Nouveaute {
+    pub titre: String,
+    pub description: String,
+    pub ou_trouver: String,
+}
+
+/// (version, titre, description, où la trouver). La description explique
+/// ce que ça change concrètement pour le gérant — jamais le "comment" technique.
+const NOUVEAUTES: &[(&str, &str, &str, &str)] = &[
+    (
+        "0.2.0",
+        "Supprimer un document sur demande",
+        "Un client vous demande d'effacer son document ? Un seul bouton suffit, sans mot de passe technique.",
+        "Historique",
+    ),
+    (
+        "0.2.0",
+        "Conservation automatique des documents",
+        "Choisissez après combien de jours les documents de vos clients s'effacent tout seuls du disque.",
+        "Réglages → Conservation des documents clients",
+    ),
+    (
+        "0.2.0",
+        "Restaurer une sauvegarde",
+        "En cas de souci sur l'ordinateur, retrouvez vos données à un moment précis, sans aide extérieure.",
+        "Réglages → outils techniques",
+    ),
+    (
+        "0.2.0",
+        "Fidélité client réglable",
+        "Choisissez vous-même après combien de visites une réduction s'applique, et de combien — plus une valeur imposée.",
+        "Réglages → Fidélité client",
+    ),
+    (
+        "0.2.0",
+        "Message de fidélité en direct",
+        "Le client voit un mot de remerciement et son compteur de fidélité sur son propre téléphone, dès l'encaissement — sans imprimer de reçu.",
+        "Automatique, rien à faire",
+    ),
+    (
+        "0.2.0",
+        "Bluetooth pour les clients sans Wi-Fi",
+        "Vos clients peuvent maintenant envoyer leurs fichiers même sans réseau, directement en Bluetooth.",
+        "Réglages → Bluetooth",
+    ),
+    (
+        "0.2.0",
+        "Résumés du matin et du soir",
+        "Un petit mot d'accueil avec les chiffres d'hier, et un résumé encourageant en fin de journée bien remplie.",
+        "Automatique, rien à faire",
+    ),
+    (
+        "0.2.0",
+        "Sons et confirmations plus clairs",
+        "Un son différent pour chaque action (nouvelle commande, impression, encaissement), et des confirmations qui ne bloquent plus l'écran.",
+        "Automatique, rien à faire",
+    ),
+];
+
+fn parse_version(s: &str) -> Vec<u32> {
+    s.split('.').filter_map(|p| p.parse().ok()).collect()
+}
+
+/// Renvoie les nouveautés parues entre la dernière version vue par ce
+/// gérant et la version installée, puis marque la version actuelle comme
+/// vue — pour ne jamais montrer deux fois la même liste. Appelé juste après
+/// une activation de licence réussie (voir main.js).
+#[tauri::command]
+pub fn recuperer_nouveautes_et_marquer_vues(state: State<'_, DbState>) -> Result<Vec<Nouveaute>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+
+    let derniere_vue = db::get_setting(&conn, "derniere_version_vue").unwrap_or_else(|| "0.0.0".to_string());
+    let derniere_vue = parse_version(&derniere_vue);
+    let actuelle = parse_version(VERSION_ACTUELLE);
+
+    let nouveautes = NOUVEAUTES
+        .iter()
+        .filter(|(v, ..)| {
+            let v = parse_version(v);
+            v > derniere_vue && v <= actuelle
+        })
+        .map(|(_, titre, description, ou_trouver)| Nouveaute {
+            titre: titre.to_string(),
+            description: description.to_string(),
+            ou_trouver: ou_trouver.to_string(),
+        })
+        .collect();
+
+    db::set_setting(&conn, "derniere_version_vue", VERSION_ACTUELLE).map_err(|e| e.to_string())?;
+    Ok(nouveautes)
+}

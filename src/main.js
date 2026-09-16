@@ -1139,7 +1139,9 @@ async function rendreReglages(corps) {
     if (ok) {
       await ouvrirSection("reglages");
       await rafraichirBadgeAbonnement();
+      await verifierBlocageLicence();
       toast("✓ Licence activée — merci !");
+      await afficherNouveautesSiBesoin();
     } else {
       toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
     }
@@ -1276,6 +1278,60 @@ async function rafraichirBadgeAbonnement() {
   } catch {
     badge.hidden = true;
   }
+}
+
+// Blocage réel à expiration — pas un simple badge. Couvre tout l'écran, rien
+// n'est cliquable derrière tant que l'abonnement n'est pas renouvelé. Le
+// formulaire d'activation reste accessible DANS ce même écran, pour ne
+// jamais enfermer le gérant sans porte de sortie une fois qu'il a sa
+// nouvelle clé.
+async function verifierBlocageLicence() {
+  const overlay = document.querySelector("#overlay-licence");
+  try {
+    const licence = await invoke("get_license_status");
+    const bloque = licence.statut === "expire" || licence.statut === "invalide";
+    if (!bloque) {
+      overlay.hidden = true;
+      return;
+    }
+    document.querySelector("#titre-blocage").textContent =
+      licence.statut === "invalide"
+        ? "Votre clé de licence n'est plus valide"
+        : "Votre période d'essai ou votre abonnement est terminé";
+    document.querySelector("#machine-id-blocage").textContent = licence.machine_id;
+    overlay.hidden = false;
+  } catch {
+    // Impossible de vérifier le statut : on ne bloque jamais sur un doute,
+    // seulement sur une expiration confirmée.
+    overlay.hidden = true;
+  }
+}
+
+// Affichée une seule fois par nouvelle version, juste après une activation
+// de licence réussie — pour que le gérant voie concrètement ce qu'il gagne
+// à renouveler, pas seulement qu'il a payé.
+async function afficherNouveautesSiBesoin() {
+  let nouveautes = [];
+  try {
+    nouveautes = await invoke("recuperer_nouveautes_et_marquer_vues");
+  } catch {
+    return;
+  }
+  if (!nouveautes.length) return;
+
+  const liste = document.querySelector("#liste-nouveautes");
+  liste.innerHTML = "";
+  for (const n of nouveautes) {
+    const bloc = document.createElement("div");
+    bloc.className = "bloc-nouveaute";
+    bloc.innerHTML = `
+      <h3>${echapperHtml(n.titre)}</h3>
+      <p>${echapperHtml(n.description)}</p>
+      <p class="ou-trouver">📍 ${echapperHtml(n.ou_trouver)}</p>
+    `;
+    liste.appendChild(bloc);
+  }
+  document.querySelector("#overlay-nouveautes").hidden = false;
 }
 
 const SEUIL_OUBLI_MS = 30 * 60 * 1000; // 30 minutes
@@ -1426,13 +1482,43 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   document.querySelector("#btn-recevoir-qr").addEventListener("click", afficherQr);
 
+  document.querySelector("#btn-whatsapp-blocage").addEventListener("click", async () => {
+    const machineIdEl = document.querySelector("#machine-id-blocage");
+    try {
+      await invoke("contacter_support_whatsapp", { machineId: machineIdEl.textContent });
+    } catch (e) {
+      alert(`⚠️ Impossible d'ouvrir WhatsApp automatiquement.\n\nDétail : ${e}`);
+    }
+  });
+  document.querySelector("#form-licence-blocage").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const champ = document.querySelector("#cle-licence-blocage");
+    const ok = await invoke("set_license_key", { cle: champ.value });
+    if (ok) {
+      champ.value = "";
+      toast("✓ Licence activée — merci !");
+      await verifierBlocageLicence();
+      await rafraichirBadgeAbonnement();
+      await afficherNouveautesSiBesoin();
+    } else {
+      toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
+    }
+  });
+  document.querySelector("#btn-fermer-nouveautes").addEventListener("click", () => {
+    document.querySelector("#overlay-nouveautes").hidden = true;
+  });
+
   await lancerAssistantPremierDemarrage();
   await chargerFile();
   await rafraichirBadgeAbonnement();
+  await verifierBlocageLicence();
   await verifierMiseAJour();
   await afficherAccueilDuJour();
   await proposerResumeFinDeJournee();
   setInterval(mettreAJourBadgeOublies, 60000);
+  // Toutes les 10 minutes : si l'appli reste ouverte pendant que l'essai
+  // expire, le blocage doit apparaître sans attendre un redémarrage.
+  setInterval(verifierBlocageLicence, 10 * 60 * 1000);
 
   await listen("nouveau-fichier", (event) => {
     ajouterFichier(event.payload, true);
