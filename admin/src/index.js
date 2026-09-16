@@ -805,7 +805,13 @@ async function router(request, env) {
     // cryptique ("clé de longueur 0") qui ne dit pas du tout au porteur du
     // projet quoi faire. Un écran clair, tout de suite, vaut mieux qu'un
     // plantage — et évite d'avoir à deviner via une pile d'appel technique.
-    if (!env.ADMIN_PASSWORD) {
+    //
+    // Sauf pour les pages publiques (téléchargement, renouvellement) : un
+    // gérant sur le terrain n'a rien à voir avec le mot de passe du porteur
+    // du projet, et ne doit jamais se retrouver bloqué par un réglage qui ne
+    // le concerne pas.
+    const PAGES_PUBLIQUES_SANS_MOT_DE_PASSE = ["/telecharger", "/telecharger/exe", "/renouveler"];
+    if (!env.ADMIN_PASSWORD && !PAGES_PUBLIQUES_SANS_MOT_DE_PASSE.includes(pathname)) {
       return new Response(
         page(
           "Configuration incomplète",
