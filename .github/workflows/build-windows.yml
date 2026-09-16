@@ -60,11 +60,32 @@ jobs:
           Set-Content -Path "src-tauri/target/release/bundle/nsis/empreinte-sha256.txt" -Value $empreinte -NoNewline
           Write-Host "SHA-256 de l'installateur : $empreinte"
 
-      # 14 jours : largement assez pour aller chercher la dernière version, et
-      # ça évite de saturer le quota de stockage GitHub (chaque build ~400 Mo)
-      # à force d'itérer, comme c'est arrivé un jour de terrain chargé.
-      - name: Publier l'exécutable (.exe / installateurs)
+      # Le lien public /telecharger (page Cloudflare) sert le fichier depuis
+      # ce stockage R2, pas depuis GitHub — c'est donc lui, et pas le dépôt
+      # d'artefacts CI ci-dessous, qui alimente ce qu'Edmond télécharge sur
+      # le terrain. Nom de fichier identique à CLE_INSTALLATEUR/CLE_EMPREINTE
+      # dans admin/src/index.js : la page les cherche par ce nom exact.
+      - name: Publier l'installateur sur le lien public de téléchargement
+        shell: pwsh
+        run: |
+          $installateur = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
+          if (-not $installateur) { Write-Error "Installateur introuvable."; exit 1 }
+          Push-Location admin
+          npm ci
+          npx wrangler r2 object put "photocopie-telechargements/GestionPhotocopie-Installateur.exe" --file="$($installateur.FullName)" --remote
+          npx wrangler r2 object put "photocopie-telechargements/empreinte-sha256.txt" --file="../src-tauri/target/release/bundle/nsis/empreinte-sha256.txt" --remote
+          Pop-Location
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # 14 jours : largement assez pour aller chercher la dernière version en
+      # secours si besoin. Le quota de stockage GitHub (~400 Mo par build)
+      # sature parfois lors d'une journée de terrain chargée — ce n'est plus
+      # bloquant depuis que la publication ci-dessus ne dépend pas de lui.
+      - name: Publier aussi sur GitHub (secours, sans bloquer si le quota est plein)
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: photocopie-benin-windows
           path: |
@@ -74,8 +95,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publier l'outil de génération de licence
+      - name: Publier l'outil de génération de licence (secours)
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: generer-licence-windows
           path: src-tauri/target/release/generer-licence.exe
