@@ -201,7 +201,9 @@ function creerLigne(item) {
             "par la personne qui vous fournit ce logiciel (ou transférée depuis SON lien " +
             "WhatsApp à elle).\n\n" +
             "Un fichier trouvé sur la clé USB d'un client peut contenir un virus.\n\n" +
-            "L'application va se fermer pour installer — rouvrez-la ensuite normalement."
+            "L'installateur va s'ouvrir. Si Gestion Photocopie ne se ferme pas " +
+            "automatiquement, fermez-la vous-même (croix en haut), puis suivez " +
+            "les instructions à l'écran jusqu'au bout."
         );
         if (ok) ouvrir(item.id);
       })
