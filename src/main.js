@@ -1481,15 +1481,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     btn.addEventListener("click", () => fermerModal(btn.dataset.cible));
   });
   document.querySelector("#btn-recevoir-qr").addEventListener("click", afficherQr);
-
-  document.querySelector("#btn-whatsapp-blocage").addEventListener("click", async () => {
-    const machineIdEl = document.querySelector("#machine-id-blocage");
-    try {
-      await invoke("contacter_support_whatsapp", { machineId: machineIdEl.textContent });
-    } catch (e) {
-      alert(`⚠️ Impossible d'ouvrir WhatsApp automatiquement.\n\nDétail : ${e}`);
-    }
-  });
   document.querySelector("#form-licence-blocage").addEventListener("submit", async (e) => {
     e.preventDefault();
     const champ = document.querySelector("#cle-licence-blocage");
@@ -1511,6 +1502,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   await lancerAssistantPremierDemarrage();
   await chargerFile();
   await rafraichirBadgeAbonnement();
+  try {
+    document.querySelector("#numero-support-blocage").textContent = await invoke("numero_support");
+  } catch {
+    // Pas grave si ça échoue : l'écran de blocage reste utilisable sans le numéro.
+  }
   await verifierBlocageLicence();
   await verifierMiseAJour();
   await afficherAccueilDuJour();

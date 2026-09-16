@@ -224,42 +224,17 @@ pub fn set_license_key(state: State<DbState>, cle: String) -> Result<bool, Strin
 /// expiré. Le même pour toutes les boutiques (ce n'est pas un réglage par
 /// gérant) : écrit ici en clair plutôt que dans un fichier de configuration
 /// séparé qui pourrait être oublié vide à la compilation.
-const NUMERO_WHATSAPP_SUPPORT: &str = "0151226741";
+///
+/// Affiché tel quel au gérant — jamais de lien cliquable "ouvrir WhatsApp" :
+/// le PC de la boutique n'a jamais internet, un tel lien échouerait
+/// silencieusement (ou pire, ouvrirait un navigateur sur une erreur) juste
+/// au moment où le gérant cherche à payer. C'est depuis SON PROPRE
+/// téléphone, celui qui a du réseau, qu'il appelle ou écrit ce numéro.
+const NUMERO_SUPPORT: &str = "0151226741";
 
-/// Ouvre WhatsApp (dans le navigateur ou l'appli si installée) sur une
-/// conversation pré-remplie avec le porteur du projet, message d'ouverture
-/// et identifiant machine déjà écrits — pour qu'un gérant n'ait jamais à
-/// deviner quoi dire ni à retaper son identifiant à la main.
 #[tauri::command]
-pub fn contacter_support_whatsapp(machine_id: String) -> Result<(), String> {
-    let numero = crate::server::normalize_phone(NUMERO_WHATSAPP_SUPPORT)
-        .ok_or_else(|| "Numéro de support invalide".to_string())?;
-    let message = format!(
-        "Bonjour, mon abonnement Gestion Photocopie est terminé. \
-         Identifiant de ma machine : {machine_id}"
-    );
-    let url = format!(
-        "https://wa.me/{numero}?text={}",
-        urlencoding_simple(&message)
-    );
-    crate::files::shell_open(std::path::Path::new(&url), "open")
-}
-
-/// Encodage minimal pour un paramètre d'URL : suffisant pour un texte en
-/// français simple (espaces, ponctuation courante), sans dépendance
-/// supplémentaire pour un seul usage.
-fn urlencoding_simple(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-            ' ' => "%20".to_string(),
-            _ => c
-                .to_string()
-                .bytes()
-                .map(|b| format!("%{b:02X}"))
-                .collect::<String>(),
-        })
-        .collect()
+pub fn numero_support() -> String {
+    NUMERO_SUPPORT.to_string()
 }
 
 #[cfg(test)]
