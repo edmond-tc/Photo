@@ -742,6 +742,31 @@ async function router(request, env) {
     const { pathname } = url;
     const method = request.method;
 
+    // Sans ADMIN_PASSWORD, l'import de la clé HMAC échoue avec une erreur
+    // cryptique ("clé de longueur 0") qui ne dit pas du tout au porteur du
+    // projet quoi faire. Un écran clair, tout de suite, vaut mieux qu'un
+    // plantage — et évite d'avoir à deviner via une pile d'appel technique.
+    if (!env.ADMIN_PASSWORD) {
+      return new Response(
+        page(
+          "Configuration incomplète",
+          `<div class="carte" style="margin-top:3rem">
+            <h1>Dernière étape avant utilisation</h1>
+            <p>Le mot de passe administrateur n'est pas encore configuré sur ce Worker.</p>
+            <p style="font-size:0.9rem">Sur le tableau de bord Cloudflare :
+              <strong>Workers &amp; Pages → photocopie-admin → Settings →
+              Variables and Secrets → Add → Secret</strong>, nom
+              <code>ADMIN_PASSWORD</code>.</p>
+            <p style="font-size:0.9rem">Fais de même pour <code>CLE_PRIVEE_LICENCE</code>
+              si ce n'est pas déjà fait — sans elle, la génération de licences
+              ne fonctionnera pas.</p>
+          </div>`,
+          { connecte: false }
+        ),
+        { status: 503, headers: { "content-type": "text/html; charset=utf-8" } }
+      );
+    }
+
     try {
       if (pathname === "/connexion" && method === "GET") {
         return new Response(await pageConnexion(), { headers: { "content-type": "text/html; charset=utf-8" } });
@@ -1027,8 +1052,7 @@ async function router(request, env) {
       return new Response("Introuvable.", { status: 404 });
     } catch (err) {
       console.error("Erreur non gérée:", err);
-      // Diagnostic temporaire, à retirer une fois la cause identifiée.
-      return new Response("Erreur serveur : " + (err && err.stack ? err.stack : String(err)), { status: 500 });
+      return new Response("Erreur serveur.", { status: 500 });
     }
   }
 }
