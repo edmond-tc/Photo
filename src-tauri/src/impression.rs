@@ -398,7 +398,7 @@ mod windows_impl {
     /// Windows, pour permettre au gérant d'en choisir une autre que celle
     /// par défaut sans quitter l'application.
     pub fn lister_imprimantes() -> Vec<String> {
-        let flags = PRINTER_ENUM_LOCAL.0 | PRINTER_ENUM_CONNECTIONS.0;
+        let flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
         let mut octets_necessaires: u32 = 0;
         let mut nb_imprimantes: u32 = 0;
         unsafe {
