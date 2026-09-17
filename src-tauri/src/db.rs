@@ -123,7 +123,7 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// Version du schéma attendue par cette version du logiciel.
-const VERSION_SCHEMA: i64 = 3;
+const VERSION_SCHEMA: i64 = 4;
 
 /// Les boutiques déjà installées ont une base créée par une version
 /// antérieure : les `CREATE TABLE IF NOT EXISTS` ci-dessus ne leur ajoutent
@@ -178,6 +178,23 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         ajouter_colonne_si_absente(conn, "files_queue", "impression_confirmee", "INTEGER NOT NULL DEFAULT 0")?;
         ajouter_colonne_si_absente(conn, "files_queue", "pages_imprimees", "INTEGER")?;
         ajouter_colonne_si_absente(conn, "files_queue", "impression_erreur", "TEXT")?;
+    }
+
+    if version < 4 {
+        // Le recto-verso n'était jusqu'ici géré que par la boîte de dialogue
+        // Windows, jamais facturé — impossible de savoir si le client a payé
+        // le bon tarif. S'ajoute aux colonnes de la version précédente : le
+        // détail réel de ce que l'imprimante a reçu (couleur, recto-verso,
+        // format, poste, imprimante utilisée) et la comparaison avec ce qui
+        // a été facturé — voir impression.rs.
+        ajouter_colonne_si_absente(conn, "files_queue", "recto_verso", "INTEGER NOT NULL DEFAULT 0")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_couleur_reelle", "INTEGER")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_recto_verso_reelle", "INTEGER")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_format_reel", "TEXT")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_copies_reelles", "INTEGER")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_poste", "TEXT")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_imprimante_reelle", "TEXT")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_ecarts", "TEXT")?;
     }
 
     conn.pragma_update(None, "user_version", VERSION_SCHEMA)?;

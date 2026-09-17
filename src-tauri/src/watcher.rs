@@ -213,6 +213,13 @@ pub fn enqueue_file_avec_options(
         impression_confirmee: false,
         pages_imprimees: None,
         impression_erreur: None,
+        recto_verso: false,
+        impression_couleur_reelle: None,
+        impression_recto_verso_reelle: None,
+        impression_format_reel: None,
+        impression_poste: None,
+        impression_imprimante_reelle: None,
+        impression_ecarts: None,
     };
 
     let _ = app.emit("nouveau-fichier", item);

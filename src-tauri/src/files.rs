@@ -177,12 +177,31 @@ fn detecter_format_papier(contenu: &[u8]) -> Option<&'static str> {
 /// LibreOffice, etc. selon ce que le gérant a déjà installé).
 #[cfg(windows)]
 pub fn shell_open(path: &Path, verb: &str) -> Result<(), String> {
+    shell_executer(path, verb, None)
+}
+
+/// Envoie le fichier à l'impression sur UNE imprimante précise plutôt que
+/// celle par défaut — utilisé quand le gérant a choisi une imprimante dans
+/// la liste déroulante (voir `commands::print_file`). Le verbe "printto" du
+/// Shell Windows attend le nom de l'imprimante entre guillemets.
+#[cfg(windows)]
+pub fn shell_print_vers(path: &Path, imprimante: &str) -> Result<(), String> {
+    shell_executer(path, "printto", Some(&format!("\"{imprimante}\"")))
+}
+
+#[cfg(windows)]
+fn shell_executer(path: &Path, verb: &str, parametres: Option<&str>) -> Result<(), String> {
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::Shell::ShellExecuteW;
 
     let path_h = HSTRING::from(path.as_os_str());
     let verb_h = HSTRING::from(verb);
+    let parametres_h = parametres.map(HSTRING::from);
+    let parametres_ptr = parametres_h
+        .as_ref()
+        .map(|h| PCWSTR(h.as_ptr()))
+        .unwrap_or(PCWSTR::null());
 
     // SAFETY: appel FFI standard vers l'API Shell de Windows, aucune mémoire
     // n'est retenue au-delà de l'appel (les HSTRING restent en vie jusque-là).
@@ -191,7 +210,7 @@ pub fn shell_open(path: &Path, verb: &str) -> Result<(), String> {
             HWND(std::ptr::null_mut()),
             PCWSTR(verb_h.as_ptr()),
             PCWSTR(path_h.as_ptr()),
-            PCWSTR::null(),
+            parametres_ptr,
             PCWSTR::null(),
             windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
         )
@@ -213,6 +232,14 @@ pub fn shell_open(path: &Path, _verb: &str) -> Result<(), String> {
     // l'application cible exclusivement Windows en production, voir shell_open ci-dessus.
     Err(format!(
         "shell_open non supporté hors Windows (chemin: {})",
+        path.display()
+    ))
+}
+
+#[cfg(not(windows))]
+pub fn shell_print_vers(path: &Path, _imprimante: &str) -> Result<(), String> {
+    Err(format!(
+        "shell_print_vers non supporté hors Windows (chemin: {})",
         path.display()
     ))
 }

@@ -40,13 +40,22 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         impression_confirmee: row.get(21)?,
         pages_imprimees: row.get(22)?,
         impression_erreur: row.get(23)?,
+        recto_verso: row.get(24)?,
+        impression_couleur_reelle: row.get(25)?,
+        impression_recto_verso_reelle: row.get(26)?,
+        impression_format_reel: row.get(27)?,
+        impression_poste: row.get(28)?,
+        impression_imprimante_reelle: row.get(29)?,
+        impression_ecarts: row.get(30)?,
     })
 }
 
 const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telephone, source, kind,
      status, received_at, taille_octets, protege, format_detecte, copies, couleur, format_papier,
      plage_pages, finitions, prix, employe, raison_ignore, document_supprime,
-     impression_confirmee, pages_imprimees, impression_erreur";
+     impression_confirmee, pages_imprimees, impression_erreur,
+     recto_verso, impression_couleur_reelle, impression_recto_verso_reelle, impression_format_reel,
+     impression_poste, impression_imprimante_reelle, impression_ecarts";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {
@@ -164,8 +173,17 @@ pub fn open_file(state: State<DbState>, id: i64) -> Result<(), String> {
     files::shell_open(&path, "open")
 }
 
+/// `imprimante` : nom exact d'une imprimante choisie dans la liste
+/// déroulante (voir `lister_imprimantes`) — utile aux gérants qui changent
+/// d'imprimante en cours de journée. `None` : comportement inchangé,
+/// imprimante par défaut du PC.
 #[tauri::command]
-pub fn print_file(app: AppHandle, state: State<DbState>, id: i64) -> Result<(), String> {
+pub fn print_file(
+    app: AppHandle,
+    state: State<DbState>,
+    id: i64,
+    imprimante: Option<String>,
+) -> Result<(), String> {
     let path = queue_item_path(&state, id)?;
     let nom_original: String = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
@@ -176,14 +194,25 @@ pub fn print_file(app: AppHandle, state: State<DbState>, id: i64) -> Result<(), 
         )
         .map_err(|_| "Fichier introuvable dans la file d'attente".to_string())?
     };
-    files::shell_open(&path, "print")?;
+    match &imprimante {
+        Some(nom) => files::shell_print_vers(&path, nom)?,
+        None => files::shell_open(&path, "print")?,
+    }
     // Ne bloque jamais le clic "Imprimer" : la confirmation se fait en
     // arrière-plan et prévient l'écran quand elle est connue (voir
     // impression.rs). Si le fichier venait à être introuvable dans la file
     // (course improbable avec une suppression concurrente), la confirmation
     // n'aura simplement personne à mettre à jour.
-    impression::confirmer_en_arriere_plan(app, id, nom_original);
+    impression::confirmer_en_arriere_plan(app, id, nom_original, imprimante);
     Ok(())
+}
+
+/// Liste des imprimantes installées sur ce PC (locales et réseau), pour la
+/// liste déroulante à côté du bouton "Imprimer" — la même liste que celle
+/// des paramètres Windows, rien à configurer côté application.
+#[tauri::command]
+pub fn lister_imprimantes() -> Vec<String> {
+    impression::imprimantes_disponibles()
 }
 
 /// Retire un fichier de la file sans encaissement (ex: format non

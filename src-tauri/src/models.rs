@@ -24,6 +24,16 @@ pub struct QueueItem {
     pub impression_confirmee: bool,
     pub pages_imprimees: Option<i64>,
     pub impression_erreur: Option<String>,
+    pub recto_verso: bool,
+    pub impression_couleur_reelle: Option<bool>,
+    pub impression_recto_verso_reelle: Option<bool>,
+    pub impression_format_reel: Option<String>,
+    pub impression_poste: Option<String>,
+    pub impression_imprimante_reelle: Option<String>,
+    /// JSON déjà sérialisé (`Vec<impression::Ecart>`) — désérialisé côté
+    /// interface plutôt qu'ici, pour ne pas faire dépendre `models` du
+    /// module `impression`.
+    pub impression_ecarts: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

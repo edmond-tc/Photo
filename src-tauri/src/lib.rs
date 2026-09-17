@@ -56,6 +56,7 @@ pub fn run() {
             commands::choose_watched_folder,
             commands::open_file,
             commands::print_file,
+            commands::lister_imprimantes,
             commands::ignorer_fichier,
             commands::supprimer_document,
             commands::get_boutique_settings,
