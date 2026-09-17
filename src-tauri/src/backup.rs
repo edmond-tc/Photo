@@ -129,7 +129,7 @@ pub fn restaurer_sauvegarde(app: AppHandle, chemin: String) -> Result<String, St
     // On n'ouvre que des fichiers du dossier de sauvegarde : l'interface ne
     // propose rien d'autre, et une restauration depuis n'importe où serait un
     // moyen détourné de faire ouvrir un fichier arbitraire à l'application.
-    if !source.starts_with(&dossier) || source.extension().is_none_or(|e| e != "sqlite3") {
+    if !chemin_dans_le_dossier(&dossier, &source) || source.extension().is_none_or(|e| e != "sqlite3") {
         return Err("Ce fichier n'est pas une sauvegarde de l'application.".to_string());
     }
     if !source.is_file() {
@@ -186,6 +186,26 @@ fn dossier_sauvegarde(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         .unwrap_or_else(|| data_dir.join("sauvegardes")))
 }
 
+/// Le chemin désigne-t-il bien un fichier DU dossier de sauvegarde ?
+///
+/// `Path::starts_with` seul ne suffit pas : il compare les morceaux du
+/// chemin un à un, si bien que « sauvegardes/../autre chose » commence
+/// bel et bien par « sauvegardes » à ses yeux. On refuse donc tout chemin
+/// contenant « .. », qui ne peut de toute façon jamais venir de la liste
+/// proposée à l'écran.
+///
+/// On évite volontairement `canonicalize` ici : sur Windows il renvoie des
+/// chemins de forme `\\?\C:\…` qui ne correspondraient plus au dossier tel
+/// qu'on le connaît — la comparaison échouerait alors toujours, et plus
+/// aucune restauration ne serait possible. Un garde-fou qui casse la
+/// fonction qu'il protège serait pire que le trou qu'il bouche.
+fn chemin_dans_le_dossier(dossier: &std::path::Path, chemin: &std::path::Path) -> bool {
+    !chemin
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+        && chemin.starts_with(dossier)
+}
+
 /// Préfixe des sauvegardes automatiques — les seules que la rotation a le
 /// droit d'effacer.
 const PREFIXE_AUTOMATIQUE: &str = "photocopie-";
@@ -225,6 +245,35 @@ fn nettoyer_anciennes_sauvegardes(dossier: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepte_une_sauvegarde_du_bon_dossier() {
+        let dossier = std::path::Path::new("/donnees/sauvegardes");
+        assert!(chemin_dans_le_dossier(
+            dossier,
+            std::path::Path::new("/donnees/sauvegardes/photocopie-20260917-080000.sqlite3")
+        ));
+    }
+
+    #[test]
+    fn refuse_un_chemin_qui_ressort_du_dossier() {
+        // "sauvegardes/../autre/fichier" commence pourtant bien par
+        // "sauvegardes" pour Path::starts_with, pris isolément.
+        let dossier = std::path::Path::new("/donnees/sauvegardes");
+        assert!(!chemin_dans_le_dossier(
+            dossier,
+            std::path::Path::new("/donnees/sauvegardes/../autre/fichier.sqlite3")
+        ));
+    }
+
+    #[test]
+    fn refuse_un_chemin_d_un_autre_dossier() {
+        let dossier = std::path::Path::new("/donnees/sauvegardes");
+        assert!(!chemin_dans_le_dossier(
+            dossier,
+            std::path::Path::new("/ailleurs/fichier.sqlite3")
+        ));
+    }
 
     #[test]
     fn reconnait_une_sauvegarde_automatique() {
