@@ -77,6 +77,50 @@ body {
   margin: 0 auto;
 }
 
+.actions-rapport-imprimable {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.rapport-imprimable {
+  display: none;
+}
+
+.table-rapport-imprimable {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+.table-rapport-imprimable td,
+.table-rapport-imprimable th {
+  border: 1px solid #999;
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+}
+
+.pied-rapport-imprimable {
+  color: #555;
+  font-size: 0.8rem;
+  margin-top: 1rem;
+}
+
+/* Le rapport imprimable est le SEUL contenu visible au moment d'imprimer
+   (voir window.print() dans imprimerRapport, main.js) — tout le reste de
+   l'application (file d'attente, menus, modales) reste sur la carte
+   graphique mais jamais sur le papier ni dans le PDF généré. */
+@media print {
+  body > *:not(#rapport-imprimable) {
+    display: none !important;
+  }
+  .rapport-imprimable {
+    display: block !important;
+    color: #000;
+  }
+}
+
 .selecteur-imprimante {
   margin-bottom: 0.75rem;
   font-size: 0.9rem;

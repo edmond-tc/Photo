@@ -87,6 +87,7 @@ pub fn run() {
             gestion::list_transactions,
             gestion::rapport_du_jour,
             gestion::rapport_hier,
+            gestion::rapport_periode,
             gestion::rapport_reconciliation,
             gestion::exporter_transactions_csv,
             gestion::list_impayes,

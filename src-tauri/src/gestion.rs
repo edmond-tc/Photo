@@ -1,5 +1,6 @@
 use crate::db::{self, DbState};
 use crate::files;
+use crate::impression::Ecart;
 use crate::models::{Depense, Employe, StockItem, Tarif, Transaction};
 use chrono::Local;
 use rusqlite::params;
@@ -700,6 +701,134 @@ pub fn rapport_hier(state: State<DbState>) -> Result<RapportJour, String> {
 }
 
 #[derive(serde::Serialize)]
+pub struct StatEcart {
+    pub champ: String,
+    pub nombre: i64,
+}
+
+/// Rapport sur une période libre (jour, semaine, mois — au choix de
+/// l'interface), pour l'écran imprimable via l'impression native Windows
+/// ("Imprimer en PDF" ou sur papier). Complète `RapportJour` avec le suivi
+/// des impressions : combien ont été confirmées, et combien présentaient un
+/// écart avec ce qui a été facturé — pour que le propriétaire puisse voir
+/// d'un coup d'œil s'il y a un problème récurrent à éclaircir.
+#[derive(serde::Serialize)]
+pub struct RapportPeriode {
+    pub debut: String,
+    pub fin: String,
+    pub nombre_commandes: i64,
+    pub total_encaisse: i64,
+    pub total_impaye: i64,
+    pub total_depenses: i64,
+    pub benefice_net: i64,
+    pub documents_imprimes_confirmes: i64,
+    pub documents_avec_ecart: i64,
+    pub ecarts_par_champ: Vec<StatEcart>,
+}
+
+/// `debut`/`fin` : dates calendaires ("AAAA-MM-JJ"), toutes deux incluses —
+/// c'est l'appelant (voir `rapport_jour`/`rapport_semaine`/`rapport_mois`)
+/// qui décide de la période, cette fonction ne fait que l'appliquer.
+#[tauri::command]
+pub fn rapport_periode(state: State<DbState>, debut: String, fin: String) -> Result<RapportPeriode, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(calculer_rapport_periode(&conn, &debut, &fin))
+}
+
+fn calculer_rapport_periode(conn: &rusqlite::Connection, debut: &str, fin_incluse: &str) -> RapportPeriode {
+    // Comparaison lexicographique de chaînes ISO 8601 ("AAAA-MM-JJ..." ou
+    // juste "AAAA-MM-JJ") : trie correctement sans avoir à parser les dates,
+    // à condition de comparer une borne inférieure incluse à une borne
+    // supérieure EXCLUSIVE — d'où le "< fin_exclusive" plutôt que "<= fin".
+    let fin_exclusive = chrono::NaiveDate::parse_from_str(fin_incluse, "%Y-%m-%d")
+        .map(|d| (d + chrono::Duration::days(1)).format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|_| fin_incluse.to_string());
+
+    let nombre_commandes: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM transactions
+             WHERE COALESCE(regle_le, created_at) >= ?1 AND COALESCE(regle_le, created_at) < ?2 AND statut='paye'",
+            params![debut, fin_exclusive],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let total_encaisse: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(montant), 0) FROM transactions
+             WHERE COALESCE(regle_le, created_at) >= ?1 AND COALESCE(regle_le, created_at) < ?2 AND statut='paye'",
+            params![debut, fin_exclusive],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let total_impaye: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(montant), 0) FROM transactions
+             WHERE created_at >= ?1 AND created_at < ?2 AND statut='impaye'",
+            params![debut, fin_exclusive],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let total_depenses: i64 = conn
+        .query_row(
+            "SELECT COALESCE(SUM(montant), 0) FROM depenses WHERE created_at >= ?1 AND created_at < ?2",
+            params![debut, fin_exclusive],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    let documents_imprimes_confirmes: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM files_queue
+             WHERE received_at >= ?1 AND received_at < ?2 AND kind = 'imprimable' AND impression_confirmee = 1",
+            params![debut, fin_exclusive],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT impression_ecarts FROM files_queue
+             WHERE received_at >= ?1 AND received_at < ?2
+               AND impression_confirmee = 1 AND impression_ecarts IS NOT NULL",
+        )
+        .expect("requête écarts valide");
+    let jsons: Vec<String> = stmt
+        .query_map(params![debut, fin_exclusive], |r| r.get::<_, String>(0))
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default();
+
+    let mut documents_avec_ecart = 0i64;
+    let mut comptes: std::collections::BTreeMap<String, i64> = std::collections::BTreeMap::new();
+    for json in jsons {
+        let Ok(ecarts) = serde_json::from_str::<Vec<Ecart>>(&json) else { continue };
+        if ecarts.is_empty() {
+            continue;
+        }
+        documents_avec_ecart += 1;
+        for ecart in ecarts {
+            *comptes.entry(ecart.champ).or_insert(0) += 1;
+        }
+    }
+    let ecarts_par_champ = comptes
+        .into_iter()
+        .map(|(champ, nombre)| StatEcart { champ, nombre })
+        .collect();
+
+    RapportPeriode {
+        debut: debut.to_string(),
+        fin: fin_incluse.to_string(),
+        nombre_commandes,
+        total_encaisse,
+        total_impaye,
+        total_depenses,
+        benefice_net: total_encaisse - total_depenses,
+        documents_imprimes_confirmes,
+        documents_avec_ecart,
+        ecarts_par_champ,
+    }
+}
+
+#[derive(serde::Serialize)]
 pub struct RaisonCompte {
     pub raison: String,
     pub nombre: i64,
@@ -1013,4 +1142,98 @@ pub fn desactiver_mode_demo(state: State<DbState>) -> Result<(), String> {
     conn.execute("DELETE FROM files_queue WHERE source = 'demo'", [])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_de_test() -> (tempfile::TempDir, rusqlite::Connection) {
+        let dossier = tempfile::tempdir().expect("dossier temporaire");
+        let conn = crate::db::open(dossier.path()).expect("ouverture de la base de test");
+        (dossier, conn)
+    }
+
+    fn inserer_transaction(conn: &rusqlite::Connection, montant: i64, statut: &str, created_at: &str) {
+        conn.execute(
+            "INSERT INTO transactions (description, montant_calcule, montant, moyen_paiement, statut, created_at)
+             VALUES ('test', ?1, ?1, 'especes', ?2, ?3)",
+            params![montant, statut, created_at],
+        )
+        .expect("insertion de transaction de test");
+    }
+
+    fn inserer_document_imprime(conn: &rusqlite::Connection, received_at: &str, ecarts_json: Option<&str>) {
+        conn.execute(
+            "INSERT INTO files_queue
+                (original_name, path, source, kind, status, received_at, jeton,
+                 impression_confirmee, impression_ecarts)
+             VALUES ('test.pdf', 'C:\\test.pdf', 'usb', 'imprimable', 'traite', ?1, ?1, 1, ?2)",
+            params![received_at, ecarts_json],
+        )
+        .expect("insertion de document de test");
+    }
+
+    #[test]
+    fn periode_d_un_seul_jour_ne_compte_que_ce_jour() {
+        let (_d, conn) = base_de_test();
+        inserer_transaction(&conn, 100, "paye", "2026-03-10T09:00:00+01:00");
+        inserer_transaction(&conn, 200, "paye", "2026-03-11T09:00:00+01:00");
+        let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
+        assert_eq!(rapport.total_encaisse, 100);
+    }
+
+    #[test]
+    fn periode_incluse_des_deux_cotes() {
+        // Piège classique des bornes de date : la borne de fin ("fin
+        // incluse") doit vraiment inclure toute cette journée-là, pas
+        // s'arrêter à minuit pile.
+        let (_d, conn) = base_de_test();
+        inserer_transaction(&conn, 100, "paye", "2026-03-10T08:00:00+01:00");
+        inserer_transaction(&conn, 50, "paye", "2026-03-12T23:59:00+01:00");
+        inserer_transaction(&conn, 999, "paye", "2026-03-13T00:00:01+01:00");
+        let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-12");
+        assert_eq!(rapport.total_encaisse, 150);
+    }
+
+    #[test]
+    fn compte_les_documents_confirmes_sans_ecart() {
+        let (_d, conn) = base_de_test();
+        inserer_document_imprime(&conn, "2026-03-10T10:00:00+01:00", Some("[]"));
+        let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
+        assert_eq!(rapport.documents_imprimes_confirmes, 1);
+        assert_eq!(rapport.documents_avec_ecart, 0);
+        assert!(rapport.ecarts_par_champ.is_empty());
+    }
+
+    #[test]
+    fn compte_les_ecarts_par_champ_sur_la_periode() {
+        let (_d, conn) = base_de_test();
+        let ecart_couleur = r#"[{"champ":"couleur","facture":"Noir & Blanc","imprime":"Couleur"}]"#;
+        let ecart_double = r#"[{"champ":"couleur","facture":"Noir & Blanc","imprime":"Couleur"},{"champ":"feuilles","facture":"5","imprime":"3"}]"#;
+        inserer_document_imprime(&conn, "2026-03-10T08:00:00+01:00", Some(ecart_couleur));
+        inserer_document_imprime(&conn, "2026-03-10T09:00:00+01:00", Some(ecart_double));
+        inserer_document_imprime(&conn, "2026-03-10T10:00:00+01:00", Some("[]"));
+
+        let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
+        assert_eq!(rapport.documents_imprimes_confirmes, 3);
+        assert_eq!(rapport.documents_avec_ecart, 2);
+        let couleur = rapport.ecarts_par_champ.iter().find(|s| s.champ == "couleur").unwrap();
+        assert_eq!(couleur.nombre, 2);
+        let feuilles = rapport.ecarts_par_champ.iter().find(|s| s.champ == "feuilles").unwrap();
+        assert_eq!(feuilles.nombre, 1);
+    }
+
+    #[test]
+    fn ignore_les_documents_sans_confirmation_d_impression() {
+        let (_d, conn) = base_de_test();
+        conn.execute(
+            "INSERT INTO files_queue (original_name, path, source, kind, status, received_at, jeton)
+             VALUES ('test.pdf', 'C:\\test.pdf', 'usb', 'imprimable', 'en_attente', '2026-03-10T08:00:00+01:00', 'j')",
+            [],
+        )
+        .unwrap();
+        let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
+        assert_eq!(rapport.documents_imprimes_confirmes, 0);
+    }
 }

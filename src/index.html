@@ -35,6 +35,11 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+    <!-- Rempli et affiché uniquement au moment d'imprimer un rapport (voir
+         imprimerRapport dans main.js) — masqué à l'écran, visible seulement
+         dans la fenêtre d'impression Windows (voir @media print). -->
+    <div id="rapport-imprimable" class="rapport-imprimable"></div>
+
     <!-- Assistant de premier lancement -->
     <div id="modal-bienvenue" class="modal" hidden>
       <div class="modal-carte">

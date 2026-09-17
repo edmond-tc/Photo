@@ -836,6 +836,99 @@ async function rendreRecherche(corps) {
   });
 }
 
+// ───────────────────── Rapport imprimable (jour/semaine/mois) ─────────────────────
+// Utilise l'impression native de Windows (papier, ou "Microsoft Print to
+// PDF" comme n'importe quelle autre impression) plutôt qu'une bibliothèque
+// de génération PDF — cohérent avec le reste de l'application, qui délègue
+// déjà l'impression des documents clients à Windows.
+
+function dateIso(d) {
+  const annee = d.getFullYear();
+  const mois = String(d.getMonth() + 1).padStart(2, "0");
+  const jour = String(d.getDate()).padStart(2, "0");
+  return `${annee}-${mois}-${jour}`;
+}
+
+function debutDeSemaine(d) {
+  // getDay() : 0 = dimanche … 6 = samedi. La semaine commence le lundi.
+  const jourSemaine = d.getDay();
+  const decalage = jourSemaine === 0 ? 6 : jourSemaine - 1;
+  const lundi = new Date(d);
+  lundi.setDate(d.getDate() - decalage);
+  return lundi;
+}
+
+function periodeVersDates(periode) {
+  const aujourdhui = new Date();
+  const fin = dateIso(aujourdhui);
+  if (periode === "semaine") {
+    return { debut: dateIso(debutDeSemaine(aujourdhui)), fin };
+  }
+  if (periode === "mois") {
+    return { debut: dateIso(new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), 1)), fin };
+  }
+  return { debut: fin, fin }; // "jour"
+}
+
+const LIBELLES_PERIODE = { jour: "Aujourd'hui", semaine: "Cette semaine", mois: "Ce mois-ci" };
+
+async function imprimerRapport(periode) {
+  const { debut, fin } = periodeVersDates(periode);
+  const [rapport, boutique] = await Promise.all([
+    invoke("rapport_periode", { debut, fin }),
+    invoke("get_boutique_settings"),
+  ]);
+
+  const ecartsHtml = rapport.ecarts_par_champ.length
+    ? `<table class="table-rapport-imprimable">
+        <thead><tr><th>Écart constaté</th><th>Nombre de documents</th></tr></thead>
+        <tbody>${rapport.ecarts_par_champ
+          .map((e) => `<tr><td>${echapperHtml(LIBELLES_CHAMP_ECART[e.champ] ?? e.champ)}</td><td>${e.nombre}</td></tr>`)
+          .join("")}</tbody>
+      </table>`
+    : "<p>Aucun écart constaté entre facturation et impression réelle sur cette période.</p>";
+
+  document.querySelector("#rapport-imprimable").innerHTML = `
+    <h1>${echapperHtml(boutique.nom ?? "Gestion Photocopie")}</h1>
+    <h2>${LIBELLES_PERIODE[periode]} — du ${rapport.debut} au ${rapport.fin}</h2>
+    <table class="table-rapport-imprimable">
+      <tbody>
+        <tr><td>Commandes réglées</td><td>${rapport.nombre_commandes}</td></tr>
+        <tr><td>Total encaissé</td><td>${formatFcfa(rapport.total_encaisse)}</td></tr>
+        <tr><td>Impayés</td><td>${formatFcfa(rapport.total_impaye)}</td></tr>
+        <tr><td>Dépenses</td><td>${formatFcfa(rapport.total_depenses)}</td></tr>
+        <tr><td><strong>Bénéfice net</strong></td><td><strong>${formatFcfa(rapport.benefice_net)}</strong></td></tr>
+      </tbody>
+    </table>
+    <h3>Suivi des impressions</h3>
+    <p>${rapport.documents_imprimes_confirmes} document(s) imprimé(s) et confirmé(s) par l'imprimante ·
+       ${rapport.documents_avec_ecart} avec un écart par rapport à la facturation.</p>
+    ${ecartsHtml}
+    <p class="pied-rapport-imprimable">Généré le ${new Date().toLocaleString("fr-FR")}</p>
+  `;
+  // Le contenu n'est visible qu'en impression (voir styles.css, règle
+  // @media print) — un simple print() suffit, pas besoin d'une fenêtre à part.
+  window.print();
+}
+
+function carteRapportImprimable() {
+  const carte = document.createElement("div");
+  carte.className = "carte-rapport";
+  carte.innerHTML = `
+    <h3>🖨️ Rapport imprimable</h3>
+    <p style="font-size:0.85rem; color:var(--gris-texte-discret); margin-top:0">
+      Sur papier, ou en PDF via "Microsoft Print to PDF" dans la fenêtre d'impression de Windows.
+    </p>
+  `;
+  const actions = document.createElement("div");
+  actions.className = "actions-rapport-imprimable";
+  for (const periode of ["jour", "semaine", "mois"]) {
+    actions.appendChild(bouton(LIBELLES_PERIODE[periode], "btn-secondaire", () => imprimerRapport(periode)));
+  }
+  carte.appendChild(actions);
+  return carte;
+}
+
 async function rendreRapports(corps) {
   corps.innerHTML = "";
 
@@ -850,6 +943,7 @@ async function rendreRapports(corps) {
     <p>Bénéfice net : <strong>${formatFcfa(rapport.benefice_net)}</strong></p>
   `;
   corps.appendChild(resume);
+  corps.appendChild(carteRapportImprimable());
 
   const reconciliation = await invoke("rapport_reconciliation");
   const carteReconciliation = document.createElement("div");
