@@ -21,8 +21,167 @@ const CLE_PUBLIQUE: [u8; 32] = [
 
 const DUREE_ESSAI_JOURS: i64 = 30;
 
+/// Identifiant historique de la machine : le `MachineGuid` que Windows
+/// fabrique **à l'installation du système**. Toutes les licences déjà
+/// livrées sont signées pour cette valeur — elle ne doit donc jamais
+/// changer, sous peine de bloquer d'un coup toutes les boutiques déjà
+/// abonnées. Son défaut : réinstaller Windows en fabrique un nouveau, et
+/// la machine redevient inconnue.
 pub fn machine_id() -> String {
     machine_uid::get().unwrap_or_else(|_| "MACHINE-INCONNUE".to_string())
+}
+
+// ───────────────────── Empreinte matérielle de la machine ─────────────────────
+// Contrairement au MachineGuid ci-dessus, elle est calculée à partir de ce
+// que le PC dit de LUI-MÊME (fabricant, modèle, numéros de série de la carte
+// mère et du BIOS, écrits par le constructeur). Reformater le disque ou
+// réinstaller Windows ne la change pas.
+//
+// Ce que ça apporte concrètement : la licence payée d'un gérant continue de
+// fonctionner après une réinstallation de Windows, au lieu de devoir lui en
+// refabriquer une. Ce que ça n'apporte PAS : empêcher quelqu'un de relancer
+// un essai gratuit après un formatage complet — plus rien ne survit sur le
+// disque à ce moment-là, et l'application n'a aucun accès à internet pour
+// aller vérifier ailleurs. Cette limite est assumée, pas contournée.
+
+/// Valeurs que les constructeurs laissent en place faute de les renseigner.
+/// Les retenir reviendrait à donner la même empreinte à des milliers de PC
+/// différents — et donc à accepter la licence d'un autre.
+const VALEURS_BIDON: [&str; 12] = [
+    "to be filled by o.e.m.",
+    "default string",
+    "system serial number",
+    "system manufacturer",
+    "system product name",
+    "chassis serial number",
+    "not specified",
+    "not applicable",
+    "none",
+    "n/a",
+    "invalid",
+    "0",
+];
+
+/// Nombre minimal de valeurs matérielles exploitables. En dessous, on
+/// renonce : une empreinte fabriquée à partir d'une seule information
+/// générique (« le fabricant est HP ») serait commune à trop de machines.
+const VALEURS_MATERIELLES_MINIMUM: usize = 2;
+
+fn valeur_materielle_utilisable(valeur: &str) -> Option<String> {
+    let propre = valeur.trim();
+    if propre.is_empty() {
+        return None;
+    }
+    let comparaison = propre.to_lowercase();
+    if VALEURS_BIDON.contains(&comparaison.as_str()) {
+        return None;
+    }
+    // Suites de zéros, de « F » ou de tirets : un numéro de série vide
+    // déguisé, vu sur beaucoup de machines d'entrée de gamme.
+    if comparaison
+        .chars()
+        .all(|c| c == '0' || c == 'f' || c == '-' || c == ' ')
+    {
+        return None;
+    }
+    Some(propre.to_string())
+}
+
+/// Assemble les informations matérielles en un identifiant court, stable et
+/// lisible à voix haute au téléphone (c'est ainsi que le gérant le
+/// communique). Renvoie `None` si la machine n'en dit pas assez sur elle.
+pub fn composer_empreinte(valeurs: &[String]) -> Option<String> {
+    use sha2::{Digest, Sha256};
+
+    let utiles: Vec<String> = valeurs
+        .iter()
+        .filter_map(|v| valeur_materielle_utilisable(v))
+        .collect();
+    if utiles.len() < VALEURS_MATERIELLES_MINIMUM {
+        return None;
+    }
+
+    let empreinte = Sha256::digest(utiles.join("|").as_bytes());
+    let hexa: String = empreinte
+        .iter()
+        .take(10)
+        .map(|octet| format!("{octet:02X}"))
+        .collect();
+    // Groupes de 4 : « A1B2-C3D4-… » se dicte sans se perdre, contrairement
+    // à une suite de 20 caractères d'affilée.
+    let groupes: Vec<String> = hexa
+        .as_bytes()
+        .chunks(4)
+        .map(|c| String::from_utf8_lossy(c).to_string())
+        .collect();
+    Some(format!("MAT-{}", groupes.join("-")))
+}
+
+#[cfg(windows)]
+fn valeurs_materielles() -> Vec<String> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let mut valeurs = Vec::new();
+
+    // Écrit par le constructeur dans le BIOS, recopié par Windows au
+    // démarrage : survit à une réinstallation du système.
+    if let Ok(bios) = hklm.open_subkey(r"HARDWARE\DESCRIPTION\System\BIOS") {
+        for nom in [
+            "SystemManufacturer",
+            "SystemProductName",
+            "SystemSerialNumber",
+            "BaseBoardManufacturer",
+            "BaseBoardProduct",
+            "BaseBoardSerialNumber",
+        ] {
+            if let Ok(v) = bios.get_value::<String, _>(nom) {
+                valeurs.push(v);
+            }
+        }
+    }
+
+    // Identifiant matériel calculé par Windows lui-même à partir des mêmes
+    // informations — utile quand les valeurs ci-dessus sont vides.
+    if let Ok(infos) = hklm.open_subkey(r"SYSTEM\CurrentControlSet\Control\SystemInformation") {
+        if let Ok(v) = infos.get_value::<String, _>("ComputerHardwareId") {
+            valeurs.push(v);
+        }
+    }
+
+    valeurs
+}
+
+#[cfg(not(windows))]
+fn valeurs_materielles() -> Vec<String> {
+    Vec::new()
+}
+
+/// Empreinte matérielle de CE PC, ou `None` si elle n'est pas exploitable.
+pub fn empreinte_materielle() -> Option<String> {
+    composer_empreinte(&valeurs_materielles())
+}
+
+/// L'identifiant à montrer au gérant — celui qu'il dictera au téléphone
+/// pour obtenir sa clé.
+///
+/// Règle volontairement prudente : une machine qui tourne déjà avec une
+/// licence liée à l'ancien identifiant continue d'afficher CET
+/// identifiant-là. Sinon, le gérant lirait à l'écran un numéro différent de
+/// celui auquel sa licence est attachée, et le porteur du projet créerait
+/// une deuxième fiche pour une boutique qu'il a déjà. Les machines neuves,
+/// elles, prennent directement l'empreinte matérielle et n'auront plus
+/// jamais besoin d'une nouvelle clé après une réinstallation de Windows.
+pub fn identifiant_affiche(
+    id_herite: &str,
+    empreinte: Option<&str>,
+    licence_liee_a_l_id_herite: bool,
+) -> String {
+    match empreinte {
+        Some(e) if !licence_liee_a_l_id_herite => e.to_string(),
+        _ => id_herite.to_string(),
+    }
 }
 
 /// Ce qui est signé : l'identifiant de la machine et la date d'expiration.
@@ -80,6 +239,19 @@ fn verifier_cle(machine_id: &str, cle: &str) -> Option<NaiveDate> {
     } else {
         None
     }
+}
+
+/// Accepte une clé signée pour l'un OU l'autre des identifiants de cette
+/// machine. Indispensable pendant la transition : les licences déjà livrées
+/// sont liées au `MachineGuid`, les nouvelles le seront à l'empreinte
+/// matérielle. Aucune des deux ne doit cesser de fonctionner.
+///
+/// Ce n'est pas un affaiblissement : les deux identifiants désignent la même
+/// machine, et une clé signée pour une AUTRE machine reste refusée dans les
+/// deux cas — c'est la signature qui protège, pas le choix de l'identifiant.
+fn verifier_cle_sur_cette_machine(cle: &str) -> Option<NaiveDate> {
+    verifier_cle(&machine_id(), cle)
+        .or_else(|| empreinte_materielle().and_then(|e| verifier_cle(&e, cle)))
 }
 
 #[derive(serde::Serialize)]
@@ -147,30 +319,94 @@ fn date_de_reference(conn: &rusqlite::Connection) -> chrono::DateTime<Local> {
     }
 }
 
-pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
-    let depuis_db = db::get_setting(conn, "essai_debut");
-    let depuis_registre = registre::lire();
+/// Troisième trace du début d'essai, dans un dossier partagé de Windows
+/// (`ProgramData`) plutôt que dans les données de l'application.
+///
+/// Les deux premières (base SQLite, registre de l'utilisateur) partent
+/// ensemble si quelqu'un désinstalle l'application et efface son dossier de
+/// données pour repartir sur 30 jours gratuits. Celle-ci reste. Elle ne
+/// survit pas à un formatage complet — rien ne le peut sur une machine sans
+/// internet — mais elle ferme la porte la plus facile.
+mod marqueur_partage {
+    fn chemin() -> Option<std::path::PathBuf> {
+        let base = std::env::var_os("ProgramData")
+            .or_else(|| std::env::var_os("ALLUSERSPROFILE"))
+            .or_else(|| std::env::var_os("XDG_DATA_HOME"))?;
+        Some(
+            std::path::PathBuf::from(base)
+                .join("AtinzPhotocopie")
+                .join("inst.dat"),
+        )
+    }
 
-    let plus_ancienne = [depuis_db, depuis_registre]
-        .into_iter()
+    pub fn lire() -> Option<String> {
+        let contenu = std::fs::read_to_string(chemin()?).ok()?;
+        let contenu = contenu.trim();
+        if contenu.is_empty() {
+            None
+        } else {
+            Some(contenu.to_string())
+        }
+    }
+
+    /// Échoue en silence si le dossier n'est pas accessible en écriture :
+    /// une trace manquante ne doit jamais empêcher un gérant honnête de
+    /// travailler.
+    pub fn ecrire(valeur: &str) {
+        let Some(chemin) = chemin() else { return };
+        if let Some(dossier) = chemin.parent() {
+            let _ = std::fs::create_dir_all(dossier);
+        }
+        let _ = std::fs::write(chemin, valeur);
+    }
+}
+
+/// Retient la plus ANCIENNE date connue parmi toutes les traces : c'est
+/// celle qui fait foi. Effacer une seule trace ne rajeunit donc pas
+/// l'essai, il faut les effacer toutes — et la plus ancienne retrouvée
+/// écrase aussitôt les autres.
+pub fn debut_essai_le_plus_ancien(traces: &[Option<String>]) -> Option<String> {
+    traces
+        .iter()
         .flatten()
-        .filter_map(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+        .filter_map(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .min()
         .map(|d| d.to_rfc3339())
-        .unwrap_or_else(|| Local::now().to_rfc3339());
+}
+
+pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
+    let traces = [
+        db::get_setting(conn, "essai_debut"),
+        registre::lire(),
+        marqueur_partage::lire(),
+    ];
+
+    let plus_ancienne =
+        debut_essai_le_plus_ancien(&traces).unwrap_or_else(|| Local::now().to_rfc3339());
 
     let _ = db::set_setting(conn, "essai_debut", &plus_ancienne);
     registre::ecrire(&plus_ancienne);
+    marqueur_partage::ecrire(&plus_ancienne);
 }
 
 #[tauri::command]
 pub fn get_license_status(state: State<DbState>) -> Result<StatutLicence, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let id = machine_id();
+    let id_herite = machine_id();
+    let empreinte = empreinte_materielle();
     let maintenant = date_de_reference(&conn);
 
-    if let Some(cle) = db::get_setting(&conn, "cle_licence") {
-        return Ok(match verifier_cle(&id, &cle) {
+    let cle_enregistree = db::get_setting(&conn, "cle_licence");
+    // Une licence déjà liée à l'ancien identifiant fige l'affichage sur
+    // celui-ci : le gérant ne doit jamais lire à l'écran un numéro
+    // différent de celui auquel sa licence est attachée.
+    let licence_liee_a_l_id_herite = cle_enregistree
+        .as_deref()
+        .is_some_and(|cle| verifier_cle(&id_herite, cle).is_some());
+    let id = identifiant_affiche(&id_herite, empreinte.as_deref(), licence_liee_a_l_id_herite);
+
+    if let Some(cle) = cle_enregistree {
+        return Ok(match verifier_cle_sur_cette_machine(&cle) {
             Some(expiration) => {
                 let jours = (expiration - maintenant.date_naive()).num_days();
                 StatutLicence {
@@ -212,8 +448,7 @@ pub fn get_license_status(state: State<DbState>) -> Result<StatutLicence, String
 #[tauri::command]
 pub fn set_license_key(state: State<DbState>, cle: String) -> Result<bool, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let id = machine_id();
-    if verifier_cle(&id, &cle).is_none() {
+    if verifier_cle_sur_cette_machine(&cle).is_none() {
         return Ok(false);
     }
     db::set_setting(&conn, "cle_licence", &cle).map_err(|e| e.to_string())?;
@@ -242,8 +477,7 @@ pub fn tenter_activation_depuis_usb(app: &tauri::AppHandle, contenu: &str) {
         return;
     };
 
-    let id = machine_id();
-    let reussi = verifier_cle(&id, contenu).is_some();
+    let reussi = verifier_cle_sur_cette_machine(contenu).is_some();
     if reussi {
         let cle_normalisee: String = contenu.chars().filter(|c| !c.is_whitespace()).collect();
         let _ = db::set_setting(&conn, "cle_licence", &cle_normalisee.to_uppercase());
@@ -309,6 +543,114 @@ mod tests {
         // L'ancien secret symétrique était livré dans chaque exe : n'importe
         // qui pouvait l'en extraire. Plus aucune clé de ce type n'est admise.
         assert!(!signature_valide(ID, "20261001", "ABCDEFGHJKMNPQRS"));
+    }
+
+    // ───────────── Empreinte matérielle (survit au formatage) ─────────────
+
+    #[test]
+    fn compose_une_empreinte_stable_et_lisible() {
+        let valeurs = vec![
+            "LENOVO".to_string(),
+            "20HRS0PY00".to_string(),
+            "PF0ZABCD".to_string(),
+        ];
+        let a = composer_empreinte(&valeurs).expect("empreinte attendue");
+        let b = composer_empreinte(&valeurs).expect("empreinte attendue");
+        assert_eq!(a, b, "la même machine doit toujours donner la même empreinte");
+        assert!(a.starts_with("MAT-"));
+        // Dictable au téléphone : des groupes courts, pas une longue suite.
+        assert!(a.len() <= 30, "identifiant trop long à dicter : {a}");
+    }
+
+    #[test]
+    fn deux_machines_differentes_ont_des_empreintes_differentes() {
+        let a = composer_empreinte(&["LENOVO".to_string(), "PF0ZABCD".to_string()]);
+        let b = composer_empreinte(&["LENOVO".to_string(), "PF0ZABCE".to_string()]);
+        assert!(a.is_some() && b.is_some());
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn ignore_les_valeurs_bidon_des_constructeurs() {
+        // Ces valeurs se retrouvent à l'identique sur des milliers de PC :
+        // les garder reviendrait à accepter la licence d'une autre machine.
+        assert_eq!(
+            composer_empreinte(&[
+                "To Be Filled By O.E.M.".to_string(),
+                "Default string".to_string(),
+                "System Serial Number".to_string(),
+            ]),
+            None
+        );
+        assert_eq!(
+            composer_empreinte(&["00000000".to_string(), "FFFFFFFF".to_string(), "---".to_string()]),
+            None
+        );
+    }
+
+    #[test]
+    fn renonce_quand_la_machine_en_dit_trop_peu() {
+        // Une seule information générique ("le fabricant est HP") serait
+        // commune à trop de machines : mieux vaut pas d'empreinte du tout.
+        assert_eq!(composer_empreinte(&["HP".to_string()]), None);
+        assert_eq!(composer_empreinte(&[]), None);
+    }
+
+    #[test]
+    fn une_valeur_bidon_parmi_de_bonnes_ne_gene_pas() {
+        let empreinte = composer_empreinte(&[
+            "Default string".to_string(),
+            "LENOVO".to_string(),
+            "PF0ZABCD".to_string(),
+        ]);
+        assert!(empreinte.is_some());
+    }
+
+    // ───────────── Identifiant affiché au gérant ─────────────
+
+    #[test]
+    fn une_machine_deja_sous_licence_garde_son_ancien_identifiant() {
+        // Sinon le gérant lirait à l'écran un numéro différent de celui
+        // auquel sa licence payée est attachée.
+        assert_eq!(
+            identifiant_affiche("ANCIEN-ID", Some("MAT-1234-5678"), true),
+            "ANCIEN-ID"
+        );
+    }
+
+    #[test]
+    fn une_machine_neuve_prend_l_empreinte_materielle() {
+        assert_eq!(
+            identifiant_affiche("ANCIEN-ID", Some("MAT-1234-5678"), false),
+            "MAT-1234-5678"
+        );
+    }
+
+    #[test]
+    fn sans_empreinte_exploitable_on_garde_l_ancien_identifiant() {
+        assert_eq!(identifiant_affiche("ANCIEN-ID", None, false), "ANCIEN-ID");
+    }
+
+    // ───────────── Traces du début d'essai ─────────────
+
+    #[test]
+    fn retient_la_date_la_plus_ancienne_parmi_les_traces() {
+        // Effacer une seule trace ne doit pas rajeunir l'essai.
+        let traces = [
+            Some("2026-09-01T10:00:00+01:00".to_string()),
+            None,
+            Some("2026-06-15T08:00:00+01:00".to_string()),
+        ];
+        assert_eq!(
+            debut_essai_le_plus_ancien(&traces).as_deref(),
+            Some("2026-06-15T08:00:00+01:00")
+        );
+    }
+
+    #[test]
+    fn aucune_trace_lisible_ne_plante_pas() {
+        assert_eq!(debut_essai_le_plus_ancien(&[]), None);
+        assert_eq!(debut_essai_le_plus_ancien(&[None, Some("n'importe quoi".to_string())]), None);
     }
 
 #[test]

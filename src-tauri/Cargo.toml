@@ -36,6 +36,9 @@ local-ip-address = "0.6"
 machine-uid = "0.5"
 base64 = "0.22"
 base32 = "0.5"
+# Déjà présent dans l'arbre de dépendances via ed25519-dalek ; déclaré ici
+# pour l'empreinte matérielle de la machine (voir license.rs).
+sha2 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
