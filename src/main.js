@@ -145,6 +145,24 @@ function fermerModal(id) {
 // temps (nouveau fichier arrivé, changement de section...).
 const confirmationsImpression = new Map();
 
+// Libellés lisibles pour chaque champ pouvant différer entre ce qui a été
+// facturé et ce que l'imprimante a réellement reçu (voir
+// impression::comparer_a_la_facturation, côté Rust).
+const LIBELLES_CHAMP_ECART = {
+  feuilles: "nombre de feuilles",
+  couleur: "couleur",
+  recto_verso: "recto-verso",
+  format_papier: "format papier",
+};
+
+function texteEcarts(ecarts) {
+  if (!ecarts?.length) return null;
+  const detail = ecarts
+    .map((e) => `${LIBELLES_CHAMP_ECART[e.champ] ?? e.champ} : facturé ${e.facture}, imprimé ${e.imprime}`)
+    .join(" · ");
+  return `⚠️ Écart avec la facturation — ${detail}`;
+}
+
 function texteStatutImpression(payload) {
   if (payload.erreur) return `⚠️ Impression non confirmée : ${payload.erreur}`;
   if (payload.confirmee) {
@@ -156,12 +174,24 @@ function texteStatutImpression(payload) {
 
 function appliquerStatutImpression(id, payload) {
   const texte = texteStatutImpression(payload);
-  if (!texte) return;
-  document.querySelectorAll(`[data-id="${id}"] .statut-impression`).forEach((el) => {
-    el.textContent = texte;
-    el.hidden = false;
-    el.style.color = payload.erreur ? "var(--rouge-alerte)" : "var(--vert-succes)";
-  });
+  if (texte) {
+    document.querySelectorAll(`[data-id="${id}"] .statut-impression`).forEach((el) => {
+      el.textContent = texte;
+      el.hidden = false;
+      el.style.color = payload.erreur ? "var(--rouge-alerte)" : "var(--vert-succes)";
+    });
+  }
+
+  // Jamais bloquant, jamais mélangé avec le statut de réussite : un écart
+  // constaté après une impression confirmée reste une impression réussie,
+  // juste avec un détail à signaler au propriétaire.
+  const texteEcart = texteEcarts(payload.ecarts);
+  if (texteEcart) {
+    document.querySelectorAll(`[data-id="${id}"] .ecarts-impression`).forEach((el) => {
+      el.textContent = texteEcart;
+      el.hidden = false;
+    });
+  }
 }
 
 function creerLigne(item) {
@@ -175,6 +205,7 @@ function creerLigne(item) {
     formatHeure(item.received_at),
     LIBELLES_KIND[item.kind] ?? item.kind,
     item.couleur ? "Couleur" : null,
+    item.recto_verso ? "Recto-verso" : null,
     item.format_papier && item.format_papier !== "A4" ? item.format_papier : null,
     item.copies > 1 ? `${item.copies} copies` : null,
     item.plage_pages ? `pages ${item.plage_pages}` : null,
@@ -254,6 +285,13 @@ function creerLigne(item) {
     statutImpression.className = "meta-fichier statut-impression";
     statutImpression.hidden = true;
     noeud.querySelector(".info-fichier").appendChild(statutImpression);
+
+    const ecartsImpression = document.createElement("span");
+    ecartsImpression.className = "meta-fichier ecarts-impression";
+    ecartsImpression.style.color = "var(--jaune-alerte)";
+    ecartsImpression.hidden = true;
+    noeud.querySelector(".info-fichier").appendChild(ecartsImpression);
+
     if (confirmationsImpression.has(item.id)) {
       // Appliqué après l'insertion dans le document (voir ajouterFichier) :
       // querySelector sur `noeud`, un DocumentFragment, ne verrait pas ses
@@ -303,13 +341,47 @@ async function chargerFile() {
   mettreAJourBadgeOublies();
 }
 
+// Liste déroulante d'imprimante : "" veut dire "imprimante par défaut du
+// PC" (comportement inchangé) — voir chargerImprimantes().
+function imprimanteChoisie() {
+  const valeur = document.querySelector("#imprimante-choisie")?.value;
+  return valeur ? valeur : undefined;
+}
+
 async function imprimer(id) {
   try {
-    await invoke("print_file", { id });
+    await invoke("print_file", { id, imprimante: imprimanteChoisie() });
     jouerSonImpression();
   } catch (e) {
     alert(`⚠️ L'impression n'a pas pu démarrer. Vérifiez que l'imprimante est allumée et connectée, puis réessayez.\n\nDétail : ${e}`);
   }
+}
+
+// Rempli une seule fois au démarrage : la liste des imprimantes installées
+// ne change pas pendant qu'on utilise l'application. Masqué s'il n'y a
+// qu'une seule imprimante (ou aucune détectée) — rien à choisir.
+async function chargerImprimantes() {
+  let imprimantes = [];
+  try {
+    imprimantes = await invoke("lister_imprimantes");
+  } catch {
+    return;
+  }
+  if (imprimantes.length < 2) return;
+
+  const select = document.querySelector("#imprimante-choisie");
+  select.innerHTML = "";
+  const optionDefaut = document.createElement("option");
+  optionDefaut.value = "";
+  optionDefaut.textContent = "Imprimante par défaut";
+  select.appendChild(optionDefaut);
+  for (const nom of imprimantes) {
+    const option = document.createElement("option");
+    option.value = nom;
+    option.textContent = nom;
+    select.appendChild(option);
+  }
+  document.querySelector("#selecteur-imprimante").hidden = false;
 }
 
 let idApercuEnCours = null;
@@ -401,6 +473,7 @@ function ouvrirOptions(item) {
   document.querySelector("#opt-nb-copies").value = item.copies ?? 1;
   majTotalFeuilles();
   document.querySelector("#opt-couleur").checked = !!item.couleur;
+  document.querySelector("#opt-recto-verso").checked = !!item.recto_verso;
   document.querySelector("#opt-format").value = item.format_papier ?? "A4";
 
   const grille = document.querySelector("#opt-finitions");
@@ -433,6 +506,7 @@ document.querySelector("#form-options").addEventListener("submit", async (e) => 
       id: idOptionsEnCours,
       copies: pages * nbCopies,
       couleur: document.querySelector("#opt-couleur").checked,
+      rectoVerso: document.querySelector("#opt-recto-verso").checked,
       formatPapier: document.querySelector("#opt-format").value,
       finitions,
     });
@@ -687,12 +761,22 @@ async function rendreHistorique(corps) {
         confirmee: item.impression_confirmee,
         pages_imprimees: item.pages_imprimees,
         erreur: item.impression_erreur,
+        ecarts: item.impression_ecarts ? JSON.parse(item.impression_ecarts) : [],
       };
       const texte = texteStatutImpression(dejaConnu);
       if (texte) {
         statutImpression.textContent = texte;
         statutImpression.hidden = false;
         statutImpression.style.color = dejaConnu.erreur ? "var(--rouge-alerte)" : "var(--vert-succes)";
+      }
+
+      const texteEcart = texteEcarts(dejaConnu.ecarts);
+      if (texteEcart) {
+        const ecartsImpression = document.createElement("span");
+        ecartsImpression.className = "meta-fichier ecarts-impression";
+        ecartsImpression.style.color = "var(--jaune-alerte)";
+        ecartsImpression.textContent = texteEcart;
+        ligne.appendChild(ecartsImpression);
       }
     }
 
@@ -1606,6 +1690,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   const premierLancement = await lancerAssistantPremierDemarrage();
   await chargerFile();
+  await chargerImprimantes();
   await rafraichirBadgeAbonnement();
   await verifierBlocageLicence();
   // Jamais au tout premier lancement : ce gérant n'a encore rien "gagné",

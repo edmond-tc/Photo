@@ -68,6 +68,13 @@
     </div>
 
     <main class="file-queue">
+      <!-- Masqué s'il n'y a qu'une seule imprimante (ou aucune détectée) :
+           rien à choisir dans ce cas, pas la peine d'encombrer l'écran. -->
+      <div id="selecteur-imprimante" class="selecteur-imprimante" hidden>
+        <label>🖨️ Imprimer sur
+          <select id="imprimante-choisie"></select>
+        </label>
+      </div>
       <p id="etat-vide" class="etat-vide" hidden>
         Aucun fichier en attente. Les fichiers déposés dans le dossier surveillé,
         reçus par clé USB ou envoyés par QR apparaîtront ici automatiquement.
@@ -131,6 +138,9 @@
           <p id="opt-total-feuilles" class="chemin-dossier">= 1 feuille au total</p>
           <label class="champ-inline">
             <input type="checkbox" id="opt-couleur" /> Couleur (sinon Noir & Blanc)
+          </label>
+          <label class="champ-inline">
+            <input type="checkbox" id="opt-recto-verso" /> Recto-verso (sinon recto simple)
           </label>
           <label>Format papier
             <select id="opt-format">
