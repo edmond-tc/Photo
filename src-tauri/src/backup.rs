@@ -186,13 +186,32 @@ fn dossier_sauvegarde(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         .unwrap_or_else(|| data_dir.join("sauvegardes")))
 }
 
+/// Préfixe des sauvegardes automatiques — les seules que la rotation a le
+/// droit d'effacer.
+const PREFIXE_AUTOMATIQUE: &str = "photocopie-";
+
+/// Une copie de sécurité prise juste avant une restauration
+/// ("avant-restauration-…") n'est PAS une sauvegarde automatique : elle ne
+/// doit jamais entrer dans la rotation.
+///
+/// C'est exactement ce qui se passait : la rotation triait tous les
+/// `.sqlite3` par nom et effaçait les plus anciens. Or "avant-restauration"
+/// passe avant "photocopie" dans l'ordre alphabétique — la copie de secours
+/// était donc la PREMIÈRE effacée, au plus tard un quart d'heure après avoir
+/// été créée. Un gérant qui se trompait de sauvegarde n'avait alors plus
+/// aucun moyen de revenir en arrière, contrairement à ce que promet
+/// `restaurer_sauvegarde`.
+fn est_sauvegarde_automatique(nom: &str) -> bool {
+    nom.starts_with(PREFIXE_AUTOMATIQUE) && nom.ends_with(".sqlite3")
+}
+
 fn nettoyer_anciennes_sauvegardes(dossier: &std::path::Path) {
     let Ok(entries) = std::fs::read_dir(dossier) else {
         return;
     };
     let mut fichiers: Vec<_> = entries
         .flatten()
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "sqlite3"))
+        .filter(|e| est_sauvegarde_automatique(&e.file_name().to_string_lossy()))
         .collect();
     fichiers.sort_by_key(|e| e.file_name());
 
@@ -200,5 +219,55 @@ fn nettoyer_anciennes_sauvegardes(dossier: &std::path::Path) {
         for e in &fichiers[..fichiers.len() - SAUVEGARDES_A_CONSERVER] {
             let _ = std::fs::remove_file(e.path());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconnait_une_sauvegarde_automatique() {
+        assert!(est_sauvegarde_automatique("photocopie-20260917-081500.sqlite3"));
+    }
+
+    #[test]
+    fn la_copie_avant_restauration_echappe_a_la_rotation() {
+        // Le cas qui cassait la promesse de `restaurer_sauvegarde` : cette
+        // copie doit survivre, c'est le seul retour en arrière possible
+        // après une restauration malheureuse.
+        assert!(!est_sauvegarde_automatique("avant-restauration-20260917-081500.sqlite3"));
+    }
+
+    #[test]
+    fn ignore_ce_qui_n_est_pas_une_sauvegarde() {
+        assert!(!est_sauvegarde_automatique("photocopie-20260917.txt"));
+        assert!(!est_sauvegarde_automatique("notes.sqlite3"));
+        assert!(!est_sauvegarde_automatique(""));
+    }
+
+    #[test]
+    fn la_rotation_ne_touche_qu_aux_sauvegardes_automatiques() {
+        let dossier = tempfile::tempdir().expect("dossier temporaire");
+        // Plus que la limite, pour forcer la rotation.
+        for i in 0..(SAUVEGARDES_A_CONSERVER + 5) {
+            std::fs::write(
+                dossier.path().join(format!("photocopie-2026091{i:02}-080000.sqlite3")),
+                b"x",
+            )
+            .unwrap();
+        }
+        let secours = dossier.path().join("avant-restauration-20260101-000000.sqlite3");
+        std::fs::write(&secours, b"x").unwrap();
+
+        nettoyer_anciennes_sauvegardes(dossier.path());
+
+        assert!(secours.exists(), "la copie de secours a été effacée par la rotation");
+        let restantes = std::fs::read_dir(dossier.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| est_sauvegarde_automatique(&e.file_name().to_string_lossy()))
+            .count();
+        assert_eq!(restantes, SAUVEGARDES_A_CONSERVER);
     }
 }

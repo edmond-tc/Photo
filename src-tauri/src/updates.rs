@@ -75,6 +75,48 @@ pub struct Nouveaute {
 /// ce que ça change concrètement pour le gérant — jamais le "comment" technique.
 const NOUVEAUTES: &[(&str, &str, &str, &str)] = &[
     (
+        "0.3.0",
+        "L'imprimante confirme elle-même",
+        "Avant, « Imprimer » envoyait l'ordre sans jamais savoir si le papier était vraiment sorti. Maintenant l'application vous le dit — et vous prévient si l'imprimante bourre, n'a plus de papier ou n'est pas allumée.",
+        "Automatique, sous chaque commande",
+    ),
+    (
+        "0.3.0",
+        "Écart entre ce qui est facturé et ce qui est imprimé",
+        "Si une commande est facturée en noir & blanc mais sortie en couleur, l'écart s'affiche en clair. Rien n'est bloqué : c'est là pour être vu et éclairci.",
+        "Automatique, sous chaque commande",
+    ),
+    (
+        "0.3.0",
+        "Recto-verso à facturer",
+        "Une case en plus dans les détails de facturation : le recto-verso était géré par Windows à l'impression, mais n'était jamais suivi côté prix.",
+        "Bouton Détails d'une commande",
+    ),
+    (
+        "0.3.0",
+        "Choisir son imprimante sans quitter l'application",
+        "Pour les boutiques qui changent d'imprimante en cours de journée : une liste déroulante au-dessus des commandes, plutôt qu'un passage par les réglages de Windows.",
+        "En haut de l'écran principal",
+    ),
+    (
+        "0.3.0",
+        "Rapport imprimable du jour, de la semaine ou du mois",
+        "Les chiffres, et le détail de chaque impression réussie avec son heure et le temps d'attente du client. Sur papier, ou en PDF à garder.",
+        "Rapports",
+    ),
+    (
+        "0.3.0",
+        "Une aide sur chaque écran",
+        "Un bouton « ? » en haut explique à quoi sert chaque bouton de l'écran où vous êtes. Avec une visite guidée à revoir quand vous voulez, et un guide d'une page à imprimer et poser près du PC.",
+        "Bouton ? en haut de l'écran",
+    ),
+    (
+        "0.3.0",
+        "Votre licence survit à une réinstallation de Windows",
+        "Si l'ordinateur doit être reformaté, votre abonnement continue de fonctionner sans qu'on ait à vous refabriquer une clé.",
+        "Automatique, rien à faire",
+    ),
+    (
         "0.2.0",
         "Supprimer un document sur demande",
         "Un client vous demande d'effacer son document ? Un seul bouton suffit, sans mot de passe technique.",
