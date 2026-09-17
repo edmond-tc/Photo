@@ -315,6 +315,8 @@ pub fn enregistrer_resultat(
                 serde_json::to_string(&ecarts).unwrap_or_else(|_| "[]".to_string())
             });
 
+            let termine_le = chrono::Local::now().to_rfc3339();
+
             conn.execute(
                 "UPDATE files_queue SET
                     impression_confirmee = 1,
@@ -326,8 +328,9 @@ pub fn enregistrer_resultat(
                     impression_copies_reelles = ?5,
                     impression_poste = ?6,
                     impression_imprimante_reelle = ?7,
-                    impression_ecarts = ?8
-                 WHERE id = ?9",
+                    impression_ecarts = ?8,
+                    impression_confirmee_le = ?9
+                 WHERE id = ?10",
                 rusqlite::params![
                     pages,
                     details.couleur,
@@ -337,6 +340,7 @@ pub fn enregistrer_resultat(
                     poste_utilisateur,
                     imprimante,
                     ecarts_json,
+                    termine_le,
                     id_queue,
                 ],
             )
@@ -989,17 +993,18 @@ mod tests {
             },
         )
         .unwrap();
-        let (couleur, poste, imprimante): (Option<i64>, Option<String>, Option<String>) = conn
+        let (couleur, poste, imprimante, termine_le): (Option<i64>, Option<String>, Option<String>, Option<String>) = conn
             .query_row(
-                "SELECT impression_couleur_reelle, impression_poste, impression_imprimante_reelle
+                "SELECT impression_couleur_reelle, impression_poste, impression_imprimante_reelle, impression_confirmee_le
                  FROM files_queue WHERE id = 1",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .unwrap();
         assert_eq!(couleur, Some(1));
         assert_eq!(poste.as_deref(), Some("caisse-1"));
         assert_eq!(imprimante.as_deref(), Some("HP LaserJet"));
+        assert!(termine_le.is_some(), "l'heure de fin de traitement doit être enregistrée");
     }
 
     #[test]

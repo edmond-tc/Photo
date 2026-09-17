@@ -123,7 +123,7 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// Version du schéma attendue par cette version du logiciel.
-const VERSION_SCHEMA: i64 = 4;
+const VERSION_SCHEMA: i64 = 5;
 
 /// Les boutiques déjà installées ont une base créée par une version
 /// antérieure : les `CREATE TABLE IF NOT EXISTS` ci-dessus ne leur ajoutent
@@ -195,6 +195,17 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         ajouter_colonne_si_absente(conn, "files_queue", "impression_poste", "TEXT")?;
         ajouter_colonne_si_absente(conn, "files_queue", "impression_imprimante_reelle", "TEXT")?;
         ajouter_colonne_si_absente(conn, "files_queue", "impression_ecarts", "TEXT")?;
+    }
+
+    if version < 5 {
+        // Horodatage exact de la fin de traitement de l'impression — jusqu'ici
+        // seule `received_at` (l'arrivée du fichier) était connue. Nécessaire
+        // pour le détail chronologique du rapport imprimable (une ligne par
+        // impression réussie, triée par heure de fin) et pour calculer le
+        // temps d'attente du client. Les lignes déjà confirmées avant cette
+        // migration n'ont pas cette date : le rapport se rabat alors sur
+        // `received_at` (voir gestion::rapport_periode_impressions).
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_confirmee_le", "TEXT")?;
     }
 
     conn.pragma_update(None, "user_version", VERSION_SCHEMA)?;

@@ -706,12 +706,20 @@ pub struct StatEcart {
     pub nombre: i64,
 }
 
+#[derive(serde::Serialize)]
+pub struct StatImprimante {
+    pub imprimante: String,
+    pub nombre: i64,
+}
+
 /// Rapport sur une période libre (jour, semaine, mois — au choix de
 /// l'interface), pour l'écran imprimable via l'impression native Windows
 /// ("Imprimer en PDF" ou sur papier). Complète `RapportJour` avec le suivi
-/// des impressions : combien ont été confirmées, et combien présentaient un
-/// écart avec ce qui a été facturé — pour que le propriétaire puisse voir
-/// d'un coup d'œil s'il y a un problème récurrent à éclaircir.
+/// des impressions : combien ont été confirmées, combien présentaient un
+/// écart avec ce qui a été facturé, et leur répartition (couleur/N&B,
+/// recto-verso/simple, par imprimante) — pour que le propriétaire voie d'un
+/// coup d'œil la tendance générale, sans devoir ouvrir chaque commande.
+/// Le détail ligne par ligne est dans `rapport_periode_impressions`.
 #[derive(serde::Serialize)]
 pub struct RapportPeriode {
     pub debut: String,
@@ -724,6 +732,11 @@ pub struct RapportPeriode {
     pub documents_imprimes_confirmes: i64,
     pub documents_avec_ecart: i64,
     pub ecarts_par_champ: Vec<StatEcart>,
+    pub documents_couleur: i64,
+    pub documents_noir_et_blanc: i64,
+    pub documents_recto_verso: i64,
+    pub documents_recto_simple: i64,
+    pub repartition_imprimante: Vec<StatImprimante>,
 }
 
 /// `debut`/`fin` : dates calendaires ("AAAA-MM-JJ"), toutes deux incluses —
@@ -735,14 +748,18 @@ pub fn rapport_periode(state: State<DbState>, debut: String, fin: String) -> Res
     Ok(calculer_rapport_periode(&conn, &debut, &fin))
 }
 
-fn calculer_rapport_periode(conn: &rusqlite::Connection, debut: &str, fin_incluse: &str) -> RapportPeriode {
-    // Comparaison lexicographique de chaînes ISO 8601 ("AAAA-MM-JJ..." ou
-    // juste "AAAA-MM-JJ") : trie correctement sans avoir à parser les dates,
-    // à condition de comparer une borne inférieure incluse à une borne
-    // supérieure EXCLUSIVE — d'où le "< fin_exclusive" plutôt que "<= fin".
-    let fin_exclusive = chrono::NaiveDate::parse_from_str(fin_incluse, "%Y-%m-%d")
+/// Comparaison lexicographique de chaînes ISO 8601 ("AAAA-MM-JJ..." ou juste
+/// "AAAA-MM-JJ") : trie correctement sans avoir à parser les dates, à
+/// condition de comparer une borne inférieure incluse à une borne
+/// supérieure EXCLUSIVE — d'où cette fonction plutôt qu'un simple "<= fin".
+fn fin_exclusive_de(fin_incluse: &str) -> String {
+    chrono::NaiveDate::parse_from_str(fin_incluse, "%Y-%m-%d")
         .map(|d| (d + chrono::Duration::days(1)).format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|_| fin_incluse.to_string());
+        .unwrap_or_else(|_| fin_incluse.to_string())
+}
+
+fn calculer_rapport_periode(conn: &rusqlite::Connection, debut: &str, fin_incluse: &str) -> RapportPeriode {
+    let fin_exclusive = fin_exclusive_de(fin_incluse);
 
     let nombre_commandes: i64 = conn
         .query_row(
@@ -814,6 +831,42 @@ fn calculer_rapport_periode(conn: &rusqlite::Connection, debut: &str, fin_inclus
         .map(|(champ, nombre)| StatEcart { champ, nombre })
         .collect();
 
+    // Répartitions couleur/N&B et recto-verso/simple : NULL (pilote qui n'a
+    // pas renseigné l'info) n'est compté ni d'un côté ni de l'autre — les
+    // deux totaux ci-dessous peuvent donc être inférieurs à
+    // `documents_imprimes_confirmes`, volontairement.
+    let compter = |condition: &str| -> i64 {
+        conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM files_queue
+                 WHERE received_at >= ?1 AND received_at < ?2 AND impression_confirmee = 1 AND {condition}"
+            ),
+            params![debut, fin_exclusive],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    };
+    let documents_couleur = compter("impression_couleur_reelle = 1");
+    let documents_noir_et_blanc = compter("impression_couleur_reelle = 0");
+    let documents_recto_verso = compter("impression_recto_verso_reelle = 1");
+    let documents_recto_simple = compter("impression_recto_verso_reelle = 0");
+
+    let mut stmt_imprimantes = conn
+        .prepare(
+            "SELECT impression_imprimante_reelle, COUNT(*) FROM files_queue
+             WHERE received_at >= ?1 AND received_at < ?2
+               AND impression_confirmee = 1 AND impression_imprimante_reelle IS NOT NULL
+             GROUP BY impression_imprimante_reelle
+             ORDER BY COUNT(*) DESC",
+        )
+        .expect("requête répartition imprimantes valide");
+    let repartition_imprimante: Vec<StatImprimante> = stmt_imprimantes
+        .query_map(params![debut, fin_exclusive], |r| {
+            Ok(StatImprimante { imprimante: r.get(0)?, nombre: r.get(1)? })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default();
+
     RapportPeriode {
         debut: debut.to_string(),
         fin: fin_incluse.to_string(),
@@ -825,7 +878,103 @@ fn calculer_rapport_periode(conn: &rusqlite::Connection, debut: &str, fin_inclus
         documents_imprimes_confirmes,
         documents_avec_ecart,
         ecarts_par_champ,
+        documents_couleur,
+        documents_noir_et_blanc,
+        documents_recto_verso,
+        documents_recto_simple,
+        repartition_imprimante,
     }
+}
+
+/// Une ligne du détail chronologique du rapport imprimable — une impression
+/// réussie, avec toutes les infos utiles pour la retrouver et la comprendre.
+/// Les impressions en erreur (bourrage, imprimante hors ligne...) n'y
+/// figurent jamais : ce détail est un compte-rendu du travail réellement
+/// fait, pas un journal d'incidents (voir la conversation avec le porteur
+/// du projet — les erreurs restent visibles ailleurs, en direct, dans la
+/// file d'attente).
+#[derive(serde::Serialize)]
+pub struct LigneImpression {
+    pub id: i64,
+    pub termine_le: String,
+    pub original_name: String,
+    pub client_name: Option<String>,
+    pub source: String,
+    pub pages: i64,
+    pub couleur: Option<bool>,
+    pub recto_verso: Option<bool>,
+    pub format_papier: Option<String>,
+    pub poste_utilisateur: Option<String>,
+    pub imprimante: Option<String>,
+    /// Minutes entre la réception du fichier et la fin de son impression —
+    /// `None` si l'un des deux horodatages est illisible (ne devrait pas
+    /// arriver en pratique, mais on n'affiche jamais un chiffre inventé).
+    pub attente_minutes: Option<i64>,
+    pub ecarts: Vec<Ecart>,
+}
+
+fn minutes_entre(plus_tot: &str, plus_tard: &str) -> Option<i64> {
+    let d1 = chrono::DateTime::parse_from_rfc3339(plus_tot).ok()?;
+    let d2 = chrono::DateTime::parse_from_rfc3339(plus_tard).ok()?;
+    Some((d2 - d1).num_minutes().max(0))
+}
+
+/// Détail chronologique des impressions réussies sur la période — voir
+/// `LigneImpression`. `debut`/`fin` : mêmes conventions que `rapport_periode`.
+#[tauri::command]
+pub fn rapport_periode_impressions(
+    state: State<DbState>,
+    debut: String,
+    fin: String,
+) -> Result<Vec<LigneImpression>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    calculer_impressions_periode(&conn, &debut, &fin).map_err(|e| e.to_string())
+}
+
+fn calculer_impressions_periode(
+    conn: &rusqlite::Connection,
+    debut: &str,
+    fin_incluse: &str,
+) -> rusqlite::Result<Vec<LigneImpression>> {
+    let fin_exclusive = fin_exclusive_de(fin_incluse);
+
+    let mut stmt = conn.prepare(
+        "SELECT id, COALESCE(impression_confirmee_le, received_at) AS termine_le, received_at,
+                original_name, client_name, source, pages_imprimees,
+                impression_couleur_reelle, impression_recto_verso_reelle, impression_format_reel,
+                impression_poste, impression_imprimante_reelle, impression_ecarts
+         FROM files_queue
+         WHERE impression_confirmee = 1
+           AND COALESCE(impression_confirmee_le, received_at) >= ?1
+           AND COALESCE(impression_confirmee_le, received_at) < ?2
+         ORDER BY termine_le ASC",
+    )?;
+
+    let lignes = stmt.query_map(params![debut, fin_exclusive], |r| {
+        let termine_le: String = r.get(1)?;
+        let received_at: String = r.get(2)?;
+        let ecarts_json: Option<String> = r.get(12)?;
+        let ecarts = ecarts_json
+            .and_then(|j| serde_json::from_str::<Vec<Ecart>>(&j).ok())
+            .unwrap_or_default();
+        Ok(LigneImpression {
+            id: r.get(0)?,
+            attente_minutes: minutes_entre(&received_at, &termine_le),
+            termine_le,
+            original_name: r.get(3)?,
+            client_name: r.get(4)?,
+            source: r.get(5)?,
+            pages: r.get::<_, Option<i64>>(6)?.unwrap_or(0),
+            couleur: r.get(7)?,
+            recto_verso: r.get(8)?,
+            format_papier: r.get(9)?,
+            poste_utilisateur: r.get(10)?,
+            imprimante: r.get(11)?,
+            ecarts,
+        })
+    })?;
+
+    lignes.collect()
 }
 
 #[derive(serde::Serialize)]
@@ -1174,6 +1323,29 @@ mod tests {
         .expect("insertion de document de test");
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn inserer_document_imprime_detaille(
+        conn: &rusqlite::Connection,
+        id: i64,
+        nom: &str,
+        received_at: &str,
+        confirmee_le: &str,
+        couleur: Option<bool>,
+        recto_verso: Option<bool>,
+        imprimante: Option<&str>,
+        pages: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO files_queue
+                (id, original_name, path, client_name, source, kind, status, received_at, jeton,
+                 impression_confirmee, impression_confirmee_le, pages_imprimees,
+                 impression_couleur_reelle, impression_recto_verso_reelle, impression_imprimante_reelle)
+             VALUES (?1, ?2, ?2, 'Client Test', 'usb', 'imprimable', 'traite', ?3, ?2, 1, ?4, ?5, ?6, ?7, ?8)",
+            params![id, nom, received_at, confirmee_le, pages, couleur, recto_verso, imprimante],
+        )
+        .expect("insertion de document détaillé de test");
+    }
+
     #[test]
     fn periode_d_un_seul_jour_ne_compte_que_ce_jour() {
         let (_d, conn) = base_de_test();
@@ -1235,5 +1407,80 @@ mod tests {
         .unwrap();
         let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
         assert_eq!(rapport.documents_imprimes_confirmes, 0);
+    }
+
+    #[test]
+    fn repartit_par_couleur_et_recto_verso_sans_compter_les_inconnus() {
+        let (_d, conn) = base_de_test();
+        inserer_document_imprime_detaille(&conn, 1, "a.pdf", "2026-03-10T08:00:00+01:00", "2026-03-10T08:01:00+01:00", Some(true), Some(false), Some("HP"), 2);
+        inserer_document_imprime_detaille(&conn, 2, "b.pdf", "2026-03-10T09:00:00+01:00", "2026-03-10T09:01:00+01:00", Some(false), Some(true), Some("HP"), 3);
+        // Pilote qui n'a rien remonté : ne doit compter ni couleur ni N&B.
+        inserer_document_imprime_detaille(&conn, 3, "c.pdf", "2026-03-10T10:00:00+01:00", "2026-03-10T10:01:00+01:00", None, None, None, 1);
+
+        let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
+        assert_eq!(rapport.documents_couleur, 1);
+        assert_eq!(rapport.documents_noir_et_blanc, 1);
+        assert_eq!(rapport.documents_recto_verso, 1);
+        assert_eq!(rapport.documents_recto_simple, 1);
+    }
+
+    #[test]
+    fn repartit_par_imprimante_du_plus_utilise_au_moins_utilise() {
+        let (_d, conn) = base_de_test();
+        inserer_document_imprime_detaille(&conn, 1, "a.pdf", "2026-03-10T08:00:00+01:00", "2026-03-10T08:01:00+01:00", None, None, Some("HP LaserJet"), 1);
+        inserer_document_imprime_detaille(&conn, 2, "b.pdf", "2026-03-10T09:00:00+01:00", "2026-03-10T09:01:00+01:00", None, None, Some("HP LaserJet"), 1);
+        inserer_document_imprime_detaille(&conn, 3, "c.pdf", "2026-03-10T10:00:00+01:00", "2026-03-10T10:01:00+01:00", None, None, Some("Canon G3010"), 1);
+
+        let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
+        assert_eq!(rapport.repartition_imprimante.len(), 2);
+        assert_eq!(rapport.repartition_imprimante[0].imprimante, "HP LaserJet");
+        assert_eq!(rapport.repartition_imprimante[0].nombre, 2);
+        assert_eq!(rapport.repartition_imprimante[1].imprimante, "Canon G3010");
+        assert_eq!(rapport.repartition_imprimante[1].nombre, 1);
+    }
+
+    #[test]
+    fn detail_impressions_trie_par_heure_de_fin_et_calcule_l_attente() {
+        let (_d, conn) = base_de_test();
+        inserer_document_imprime_detaille(&conn, 1, "second.pdf", "2026-03-10T08:00:00+01:00", "2026-03-10T09:30:00+01:00", None, None, None, 1);
+        inserer_document_imprime_detaille(&conn, 2, "premier.pdf", "2026-03-10T07:50:00+01:00", "2026-03-10T08:00:00+01:00", None, None, None, 1);
+
+        let lignes = calculer_impressions_periode(&conn, "2026-03-10", "2026-03-10").unwrap();
+        assert_eq!(lignes.len(), 2);
+        assert_eq!(lignes[0].original_name, "premier.pdf", "trié par heure de FIN, pas de réception");
+        assert_eq!(lignes[0].attente_minutes, Some(10));
+        assert_eq!(lignes[1].original_name, "second.pdf");
+        assert_eq!(lignes[1].attente_minutes, Some(90));
+    }
+
+    #[test]
+    fn detail_impressions_exclut_les_commandes_non_confirmees() {
+        let (_d, conn) = base_de_test();
+        conn.execute(
+            "INSERT INTO files_queue (original_name, path, source, kind, status, received_at, jeton, impression_confirmee, impression_erreur)
+             VALUES ('bourrage.pdf', 'C:\\bourrage.pdf', 'usb', 'imprimable', 'traite', '2026-03-10T08:00:00+01:00', 'j-erreur', 0, 'Bourrage papier')",
+            [],
+        )
+        .unwrap();
+        let lignes = calculer_impressions_periode(&conn, "2026-03-10", "2026-03-10").unwrap();
+        assert!(lignes.is_empty(), "une impression en erreur ne doit jamais apparaître dans le détail du rapport");
+    }
+
+    #[test]
+    fn detail_impressions_transporte_les_ecarts() {
+        let (_d, conn) = base_de_test();
+        conn.execute(
+            "INSERT INTO files_queue
+                (id, original_name, path, source, kind, status, received_at, jeton,
+                 impression_confirmee, impression_confirmee_le, impression_ecarts)
+             VALUES (1, 'a.pdf', 'C:\\a.pdf', 'usb', 'imprimable', 'traite', '2026-03-10T08:00:00+01:00', 'j1',
+                     1, '2026-03-10T08:05:00+01:00', '[{\"champ\":\"couleur\",\"facture\":\"Noir & Blanc\",\"imprime\":\"Couleur\"}]')",
+            [],
+        )
+        .unwrap();
+        let lignes = calculer_impressions_periode(&conn, "2026-03-10", "2026-03-10").unwrap();
+        assert_eq!(lignes.len(), 1);
+        assert_eq!(lignes[0].ecarts.len(), 1);
+        assert_eq!(lignes[0].ecarts[0].champ, "couleur");
     }
 }

@@ -872,10 +872,42 @@ function periodeVersDates(periode) {
 
 const LIBELLES_PERIODE = { jour: "Aujourd'hui", semaine: "Cette semaine", mois: "Ce mois-ci" };
 
+const LIBELLES_SOURCE = {
+  dossier_surveille: "dossier surveillé",
+  usb: "clé USB",
+  qr: "QR client",
+};
+
+// Une ligne = une impression réussie ; les erreurs (bourrage, hors ligne...)
+// n'apparaissent jamais ici — décision explicite : ce rapport rend compte
+// du travail fait, les incidents restent visibles ailleurs, en direct.
+function detailsLigneImpression(ligne) {
+  return [
+    ligne.pages ? `${ligne.pages} page${ligne.pages > 1 ? "s" : ""}` : null,
+    ligne.couleur === true ? "Couleur" : ligne.couleur === false ? "Noir & Blanc" : null,
+    ligne.recto_verso === true ? "Recto-verso" : ligne.recto_verso === false ? "Recto simple" : null,
+    ligne.format_papier,
+    `reçu par ${LIBELLES_SOURCE[ligne.source] ?? ligne.source}${
+      ligne.attente_minutes != null ? `, attente ${ligne.attente_minutes} min` : ""
+    }`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function ligneEcartHtml(ecarts) {
+  if (!ecarts?.length) return "";
+  const detail = ecarts
+    .map((e) => `${LIBELLES_CHAMP_ECART[e.champ] ?? e.champ} : facturé ${e.facture}, imprimé ${e.imprime}`)
+    .join(" · ");
+  return `<span class="ecart-ligne">⚠️ Écart — ${echapperHtml(detail)}</span>`;
+}
+
 async function imprimerRapport(periode) {
   const { debut, fin } = periodeVersDates(periode);
-  const [rapport, boutique] = await Promise.all([
+  const [rapport, impressions, boutique] = await Promise.all([
     invoke("rapport_periode", { debut, fin }),
+    invoke("rapport_periode_impressions", { debut, fin }),
     invoke("get_boutique_settings"),
   ]);
 
@@ -887,6 +919,28 @@ async function imprimerRapport(periode) {
           .join("")}</tbody>
       </table>`
     : "<p>Aucun écart constaté entre facturation et impression réelle sur cette période.</p>";
+
+  const repartitionImprimanteTexte = rapport.repartition_imprimante.length
+    ? rapport.repartition_imprimante.map((s) => `${echapperHtml(s.imprimante)} : ${s.nombre}`).join(" · ")
+    : null;
+
+  const detailImpressionsHtml = impressions.length
+    ? `<table class="table-rapport-imprimable">
+        <thead><tr><th>Heure</th><th>Document</th><th>Détails</th><th>Poste → Imprimante</th></tr></thead>
+        <tbody>${impressions
+          .map(
+            (ligne) => `<tr>
+              <td class="col-heure">${formatHeure(ligne.termine_le)}</td>
+              <td>${echapperHtml(ligne.original_name)}${
+                ligne.client_name ? `<span class="nom-client">${echapperHtml(ligne.client_name)}</span>` : ""
+              }</td>
+              <td>${detailsLigneImpression(ligne)}${ligneEcartHtml(ligne.ecarts)}</td>
+              <td>${echapperHtml([ligne.poste_utilisateur, ligne.imprimante].filter(Boolean).join(" → ") || "—")}</td>
+            </tr>`
+          )
+          .join("")}</tbody>
+      </table>`
+    : "<p>Aucune impression confirmée sur cette période.</p>";
 
   document.querySelector("#rapport-imprimable").innerHTML = `
     <h1>${echapperHtml(boutique.nom ?? "Gestion Photocopie")}</h1>
@@ -900,10 +954,15 @@ async function imprimerRapport(periode) {
         <tr><td><strong>Bénéfice net</strong></td><td><strong>${formatFcfa(rapport.benefice_net)}</strong></td></tr>
       </tbody>
     </table>
-    <h3>Suivi des impressions</h3>
+    <h3>Résumé des impressions</h3>
     <p>${rapport.documents_imprimes_confirmes} document(s) imprimé(s) et confirmé(s) par l'imprimante ·
        ${rapport.documents_avec_ecart} avec un écart par rapport à la facturation.</p>
+    <p>Couleur : ${rapport.documents_couleur} · Noir & Blanc : ${rapport.documents_noir_et_blanc}</p>
+    <p>Recto-verso : ${rapport.documents_recto_verso} · Recto simple : ${rapport.documents_recto_simple}</p>
+    ${repartitionImprimanteTexte ? `<p>Par imprimante : ${repartitionImprimanteTexte}</p>` : ""}
     ${ecartsHtml}
+    <h3>Détail des impressions</h3>
+    ${detailImpressionsHtml}
     <p class="pied-rapport-imprimable">Généré le ${new Date().toLocaleString("fr-FR")}</p>
   `;
   // Le contenu n'est visible qu'en impression (voir styles.css, règle
