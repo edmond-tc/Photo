@@ -1016,7 +1016,10 @@ async function rendreHistorique(corps) {
             toast("✓ Document supprimé");
             await ouvrirSection("historique");
           } catch (e) {
-            alert(`⚠️ La suppression a échoué.\n\nDétail : ${e}`);
+            alert(
+              `⚠️ Le document n'a pas pu être supprimé — il est peut-être ouvert dans un autre ` +
+                `programme. Fermez-le, puis réessayez.\n\nDétail : ${e}`
+            );
           }
         })
       );
@@ -1764,7 +1767,15 @@ async function ouvrirEcranTechnique(corps) {
               alert("Sauvegarde restaurée. L'application va se recharger.");
               location.reload();
             } catch (err) {
-              alert(`⚠️ La restauration a échoué.\n\nDétail : ${err}`);
+              // Rassurer d'abord : une restauration qui échoue ne touche
+              // pas aux données en service (la sauvegarde est vérifiée
+              // avant, voir backup.rs). Sans cette phrase, un gérant croit
+              // qu'il vient de tout perdre.
+              alert(
+                `⚠️ La restauration n'a pas eu lieu — vos données actuelles sont intactes.\n\n` +
+                  `Essayez une sauvegarde plus ancienne dans la liste. Si aucune ne fonctionne, ` +
+                  `appelez le 0151226741 avant de toucher à autre chose.\n\nDétail : ${err}`
+              );
             }
           })
         );
@@ -2128,7 +2139,11 @@ window.addEventListener("DOMContentLoaded", async () => {
       await verifierBlocageLicence();
       await rafraichirBadgeAbonnement();
     } else {
-      toast("Le fichier licence.txt trouvé sur la clé USB n'est pas reconnu.", "attention");
+      toast(
+        "Le fichier licence.txt de cette clé USB ne correspond pas à cet ordinateur. " +
+          "Appelez le 0151226741 en donnant l'identifiant affiché à l'écran.",
+        "attention"
+      );
     }
   });
 });
