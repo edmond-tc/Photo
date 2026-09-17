@@ -14,6 +14,56 @@ const PORT_PORTAIL_CAPTIF: u16 = 80;
 /// proprement plutôt que de laisser le serveur consommer toute la mémoire).
 const TAILLE_MAX_ENVOI: usize = 200 * 1024 * 1024; // 200 Mo
 
+/// Envois traités en même temps. Chaque fichier est entièrement chargé en
+/// mémoire avant d'être écrit sur le disque : sans cette limite, quelques
+/// envois simultanés de 200 Mo suffisent à épuiser la mémoire d'un PC de
+/// boutique — et c'est alors Windows entier qui rame, pas seulement
+/// l'application. Les envois au-delà attendent leur tour (la connexion
+/// reste ouverte) au lieu d'être refusés : un client ne doit jamais voir
+/// "échec" simplement parce qu'un autre envoyait au même moment.
+const ENVOIS_SIMULTANES_MAX: usize = 3;
+
+static ENVOIS_EN_COURS: std::sync::LazyLock<tokio::sync::Semaphore> =
+    std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(ENVOIS_SIMULTANES_MAX));
+
+/// Au-delà, un envoi est abandonné. Large exprès (un gros PDF sur un Wi-Fi
+/// de téléphone peut être lent), mais borné : sans délai, trois connexions
+/// laissées ouvertes volontairement bloqueraient la réception pour tout le
+/// monde.
+const DELAI_MAX_ENVOI: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Nombre de documents acceptés en un seul envoi. Le formulaire n'en propose
+/// jamais autant ; la limite vise une requête forgée à la main qui
+/// contiendrait des milliers de fichiers minuscules — chacun crée une ligne
+/// en base, un fichier sur le disque et une notification à l'écran.
+const FICHIERS_MAX_PAR_ENVOI: usize = 20;
+
+const LONGUEUR_MAX_NOM: usize = 120;
+const LONGUEUR_MAX_TELEPHONE: usize = 30;
+const LONGUEUR_MAX_PLAGE_PAGES: usize = 60;
+
+/// Les seuls formats que la facturation sait traiter. Le menu déroulant de
+/// la page client ne propose que ceux-là, mais une requête forgée peut
+/// contenir n'importe quoi : ce qui n'est pas reconnu retombe sur A4 plutôt
+/// que d'entrer tel quel dans la base.
+const FORMATS_ACCEPTES: [&str; 3] = ["A4", "A3", "A5"];
+
+/// Tronque un texte envoyé par un client. Les champs du formulaire n'ont
+/// aucune limite côté navigateur : sans cela, un "nom" de plusieurs méga-
+/// octets se retrouverait tel quel en base et dans l'écran du gérant.
+fn borner_texte(valeur: &str, longueur_max: usize) -> String {
+    valeur.trim().chars().take(longueur_max).collect()
+}
+
+fn format_papier_valide(valeur: &str) -> String {
+    let valeur = valeur.trim().to_uppercase();
+    if FORMATS_ACCEPTES.contains(&valeur.as_str()) {
+        valeur
+    } else {
+        "A4".to_string()
+    }
+}
+
 /// Reflète si le serveur local a effectivement réussi à démarrer. Sans ça,
 /// on pourrait afficher un QR code qui pointe vers un serveur mort (ex: port
 /// déjà utilisé) sans jamais prévenir le gérant.
@@ -471,8 +521,58 @@ fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
 
 async fn recevoir_fichier(
     State(app): State<AppHandle>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> impl IntoResponse {
+    // Attend son tour si trois envois sont déjà en cours (voir
+    // ENVOIS_SIMULTANES_MAX) : le permis est pris AVANT de lire le corps de
+    // la requête, sinon la mémoire serait déjà consommée au moment où on
+    // voudrait la limiter.
+    let _permis = match ENVOIS_EN_COURS.acquire().await {
+        Ok(p) => p,
+        Err(_) => return (StatusCode::SERVICE_UNAVAILABLE, "erreur serveur").into_response(),
+    };
+
+    let data_dir = match app.path().app_data_dir() {
+        Ok(d) => d,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response(),
+    };
+
+    // Vérifié AVANT de charger le moindre octet en mémoire : inutile de
+    // recevoir 200 Mo pour découvrir ensuite qu'il n'y a plus la place de
+    // les écrire. La page d'envoi étant ouverte à tout le Wi-Fi de la
+    // boutique, quelqu'un peut sinon remplir le disque — et une fois le
+    // disque plein, c'est Windows entier qui devient inutilisable.
+    if espace_disque_insuffisant(&data_dir) {
+        return (
+            StatusCode::INSUFFICIENT_STORAGE,
+            "L'ordinateur de la boutique n'a plus assez d'espace. Prévenez le gérant.",
+        )
+            .into_response();
+    }
+
+    match tokio::time::timeout(DELAI_MAX_ENVOI, lire_envoi(multipart)).await {
+        Ok(Some(envoi)) => enregistrer_envoi(&app, &data_dir, envoi).await,
+        Ok(None) => (StatusCode::BAD_REQUEST, "aucun fichier reçu").into_response(),
+        Err(_) => (
+            StatusCode::REQUEST_TIMEOUT,
+            "L'envoi a pris trop de temps, réessayez.",
+        )
+            .into_response(),
+    }
+}
+
+struct EnvoiClient {
+    nom: Option<String>,
+    telephone: Option<String>,
+    fichiers: std::collections::HashMap<usize, FichierRecu>,
+    options: std::collections::HashMap<usize, OptionsImpression>,
+}
+
+/// Lit la requête du client. Renvoie `None` si elle ne contient aucun
+/// fichier exploitable. Tout ce qui vient d'ici est saisi par un inconnu
+/// connecté au Wi-Fi de la boutique : chaque champ est borné, jamais repris
+/// tel quel.
+async fn lire_envoi(mut multipart: Multipart) -> Option<EnvoiClient> {
     let mut nom: Option<String> = None;
     let mut telephone: Option<String> = None;
     let mut fichiers: std::collections::HashMap<usize, FichierRecu> =
@@ -485,15 +585,16 @@ async fn recevoir_fichier(
 
         if name == "nom" {
             if let Ok(v) = field.text().await {
-                if !v.trim().is_empty() {
-                    nom = Some(v.trim().to_string());
+                let v = borner_texte(&v, LONGUEUR_MAX_NOM);
+                if !v.is_empty() {
+                    nom = Some(v);
                 }
             }
             continue;
         }
         if name == "telephone" {
             if let Ok(v) = field.text().await {
-                telephone = normalize_phone(&v);
+                telephone = normalize_phone(&borner_texte(&v, LONGUEUR_MAX_TELEPHONE));
             }
             continue;
         }
@@ -511,6 +612,12 @@ async fn recevoir_fichier(
 
         match prefixe {
             "fichier" => {
+                // Au-delà de la limite, les fichiers suivants sont ignorés
+                // en silence plutôt que de faire échouer tout l'envoi : les
+                // premiers documents du client sont bien reçus.
+                if fichiers.len() >= FICHIERS_MAX_PAR_ENVOI {
+                    continue;
+                }
                 let original_name = field
                     .file_name()
                     .map(nom_fichier_sans_chemin)
@@ -534,9 +641,8 @@ async fn recevoir_fichier(
             }
             "format" => {
                 if let Ok(v) = field.text().await {
-                    if !v.is_empty() {
-                        options.entry(indice).or_default().format_papier = Some(v);
-                    }
+                    options.entry(indice).or_default().format_papier =
+                        Some(format_papier_valide(&v));
                 }
             }
             "copies" => {
@@ -551,8 +657,9 @@ async fn recevoir_fichier(
             }
             "pages" => {
                 if let Ok(v) = field.text().await {
-                    if !v.trim().is_empty() {
-                        options.entry(indice).or_default().plage_pages = Some(v.trim().to_string());
+                    let v = borner_texte(&v, LONGUEUR_MAX_PLAGE_PAGES);
+                    if !v.is_empty() {
+                        options.entry(indice).or_default().plage_pages = Some(v);
                     }
                 }
             }
@@ -561,28 +668,31 @@ async fn recevoir_fichier(
     }
 
     if fichiers.is_empty() {
-        return (StatusCode::BAD_REQUEST, "aucun fichier reçu").into_response();
+        return None;
     }
+    Some(EnvoiClient {
+        nom,
+        telephone,
+        fichiers,
+        options,
+    })
+}
 
-    let data_dir = match app.path().app_data_dir() {
-        Ok(d) => d,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response(),
-    };
+async fn enregistrer_envoi(
+    app: &AppHandle,
+    data_dir: &std::path::Path,
+    envoi: EnvoiClient,
+) -> axum::response::Response {
+    let EnvoiClient {
+        nom,
+        telephone,
+        fichiers,
+        mut options,
+    } = envoi;
+
     let recus_dir = data_dir.join("recus");
     if std::fs::create_dir_all(&recus_dir).is_err() {
         return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response();
-    }
-
-    // La page d'envoi est ouverte à tout le Wi-Fi de la boutique : sans cette
-    // vérification, quelqu'un peut envoyer des fichiers de 200 Mo jusqu'à
-    // remplir le disque — et une fois le disque plein, ce n'est pas seulement
-    // l'appli qui s'arrête, c'est Windows entier qui devient inutilisable.
-    if espace_disque_insuffisant(&data_dir) {
-        return (
-            StatusCode::INSUFFICIENT_STORAGE,
-            "L'ordinateur de la boutique n'a plus assez d'espace. Prévenez le gérant.",
-        )
-            .into_response();
     }
 
     let nombre_recus = fichiers.len();
@@ -727,4 +837,120 @@ async fn statut_fichier(
         paye,
         message,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Noms de fichiers : tout vient d'un inconnu sur le Wi-Fi ──
+
+    #[test]
+    fn retire_le_chemin_pour_empecher_d_ecrire_ailleurs() {
+        // Sans cela, un nom forgé écrirait hors du dossier de réception —
+        // par exemple dans le démarrage de Windows.
+        assert_eq!(
+            nom_fichier_sans_chemin(r"..\..\Windows\Start Menu\virus.exe"),
+            "virus.exe"
+        );
+        assert_eq!(nom_fichier_sans_chemin("../../etc/passwd"), "passwd");
+        assert_eq!(nom_fichier_sans_chemin("/absolu/document.pdf"), "document.pdf");
+    }
+
+    #[test]
+    fn refuse_les_noms_qui_ne_designent_aucun_fichier() {
+        assert_eq!(nom_fichier_sans_chemin(""), "fichier_recu");
+        assert_eq!(nom_fichier_sans_chemin("."), "fichier_recu");
+        assert_eq!(nom_fichier_sans_chemin(".."), "fichier_recu");
+        assert_eq!(nom_fichier_sans_chemin("   "), "fichier_recu");
+    }
+
+    #[test]
+    fn refuse_les_noms_reserves_de_windows() {
+        // "CON.pdf" ou "LPT1.txt" : Windows les traite comme des
+        // périphériques, l'écriture échouerait silencieusement.
+        assert_eq!(nom_fichier_sans_chemin("CON.pdf"), "fichier_recu");
+        assert_eq!(nom_fichier_sans_chemin("lpt1.txt"), "fichier_recu");
+        assert_eq!(nom_fichier_sans_chemin("nul"), "fichier_recu");
+    }
+
+    #[test]
+    fn nettoie_les_caracteres_interdits_sans_perdre_le_document() {
+        assert_eq!(nom_fichier_sans_chemin(r#"fac<ture>:"a|b?.pdf"#), "factureab.pdf");
+        assert_eq!(nom_fichier_sans_chemin("rapport\u{0}\u{7}.pdf"), "rapport.pdf");
+    }
+
+    #[test]
+    fn garde_un_nom_normal_intact() {
+        assert_eq!(nom_fichier_sans_chemin("Mémoire chapitre 3.pdf"), "Mémoire chapitre 3.pdf");
+    }
+
+    #[test]
+    fn borne_la_longueur_du_nom_de_fichier() {
+        let tres_long = format!("{}.pdf", "a".repeat(500));
+        assert!(nom_fichier_sans_chemin(&tres_long).chars().count() <= 150);
+    }
+
+    // ── Champs texte du formulaire : aucune limite côté navigateur ──
+
+    #[test]
+    fn borne_les_textes_envoyes_par_le_client() {
+        let enorme = "x".repeat(5_000_000);
+        assert_eq!(borner_texte(&enorme, LONGUEUR_MAX_NOM).chars().count(), LONGUEUR_MAX_NOM);
+    }
+
+    #[test]
+    fn borner_texte_enleve_les_espaces_inutiles() {
+        assert_eq!(borner_texte("  Fatou N.  ", LONGUEUR_MAX_NOM), "Fatou N.");
+        assert_eq!(borner_texte("   ", LONGUEUR_MAX_NOM), "");
+    }
+
+    #[test]
+    fn borner_texte_ne_coupe_pas_au_milieu_d_un_caractere_accentue() {
+        // Compte des caractères, pas des octets : couper des octets sur un
+        // "é" produirait une chaîne invalide.
+        let accents = "é".repeat(200);
+        let borne = borner_texte(&accents, 10);
+        assert_eq!(borne.chars().count(), 10);
+    }
+
+    // ── Format papier : le menu déroulant est contournable ──
+
+    #[test]
+    fn accepte_les_formats_connus_quelle_que_soit_la_casse() {
+        assert_eq!(format_papier_valide("A4"), "A4");
+        assert_eq!(format_papier_valide("a3"), "A3");
+        assert_eq!(format_papier_valide(" a5 "), "A5");
+    }
+
+    #[test]
+    fn un_format_inconnu_retombe_sur_a4_au_lieu_d_entrer_en_base() {
+        assert_eq!(format_papier_valide("A0"), "A4");
+        assert_eq!(format_papier_valide(""), "A4");
+        assert_eq!(format_papier_valide(&"x".repeat(100_000)), "A4");
+        assert_eq!(format_papier_valide("<script>alert(1)</script>"), "A4");
+    }
+
+    // ── Numéro de téléphone ──
+
+    #[test]
+    fn normalise_les_numeros_beninois() {
+        assert_eq!(normalize_phone("0197000000").as_deref(), Some("2290197000000"));
+        assert_eq!(normalize_phone("97000000").as_deref(), Some("2290197000000"));
+        assert_eq!(normalize_phone("+229 01 97 00 00 00").as_deref(), Some("2290197000000"));
+        assert_eq!(normalize_phone("pas de chiffres"), None);
+    }
+
+    // ── Échappement de la page servie au client ──
+
+    #[test]
+    fn echappe_le_nom_bluetooth_saisi_par_le_gerant() {
+        assert_eq!(
+            echapper_html(r#"<script>alert("x")</script>"#),
+            "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
+        );
+        // L'esperluette doit être traitée en premier, sinon les entités
+        // produites par les remplacements suivants seraient ré-échappées.
+        assert_eq!(echapper_html("Tom & Jerry"), "Tom &amp; Jerry");
+    }
 }
