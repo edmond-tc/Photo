@@ -3,6 +3,7 @@ pub mod commands;
 pub mod db;
 pub mod files;
 pub mod gestion;
+pub mod impression;
 pub mod license;
 pub mod models;
 pub mod qr;

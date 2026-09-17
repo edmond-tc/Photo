@@ -123,7 +123,7 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// Version du schéma attendue par cette version du logiciel.
-const VERSION_SCHEMA: i64 = 2;
+const VERSION_SCHEMA: i64 = 3;
 
 /// Les boutiques déjà installées ont une base créée par une version
 /// antérieure : les `CREATE TABLE IF NOT EXISTS` ci-dessus ne leur ajoutent
@@ -168,6 +168,16 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         // projet) — voir gestion::supprimer_document. On garde une trace du
         // fait que le document a été supprimé, jamais de la comptabilité.
         ajouter_colonne_si_absente(conn, "files_queue", "document_supprime", "INTEGER NOT NULL DEFAULT 0")?;
+    }
+
+    if version < 3 {
+        // Confirmation réelle de l'impression, lue dans le spouleur Windows —
+        // avant, "Imprimer" ne faisait que transmettre l'ordre à Windows,
+        // sans jamais savoir si le papier était vraiment sorti. Voir
+        // impression.rs.
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_confirmee", "INTEGER NOT NULL DEFAULT 0")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "pages_imprimees", "INTEGER")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_erreur", "TEXT")?;
     }
 
     conn.pragma_update(None, "user_version", VERSION_SCHEMA)?;

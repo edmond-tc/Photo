@@ -21,6 +21,9 @@ pub struct QueueItem {
     pub employe: Option<String>,
     pub raison_ignore: Option<String>,
     pub document_supprime: bool,
+    pub impression_confirmee: bool,
+    pub pages_imprimees: Option<i64>,
+    pub impression_erreur: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

@@ -1,5 +1,6 @@
 use crate::db::{self, DbState};
 use crate::files;
+use crate::impression;
 use crate::models::QueueItem;
 use crate::qr;
 use crate::watcher;
@@ -36,12 +37,16 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         employe: row.get(18)?,
         raison_ignore: row.get(19)?,
         document_supprime: row.get(20)?,
+        impression_confirmee: row.get(21)?,
+        pages_imprimees: row.get(22)?,
+        impression_erreur: row.get(23)?,
     })
 }
 
 const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telephone, source, kind,
      status, received_at, taille_octets, protege, format_detecte, copies, couleur, format_papier,
-     plage_pages, finitions, prix, employe, raison_ignore, document_supprime";
+     plage_pages, finitions, prix, employe, raison_ignore, document_supprime,
+     impression_confirmee, pages_imprimees, impression_erreur";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {
@@ -160,9 +165,25 @@ pub fn open_file(state: State<DbState>, id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn print_file(state: State<DbState>, id: i64) -> Result<(), String> {
+pub fn print_file(app: AppHandle, state: State<DbState>, id: i64) -> Result<(), String> {
     let path = queue_item_path(&state, id)?;
-    files::shell_open(&path, "print")
+    let nom_original: String = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT original_name FROM files_queue WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Fichier introuvable dans la file d'attente".to_string())?
+    };
+    files::shell_open(&path, "print")?;
+    // Ne bloque jamais le clic "Imprimer" : la confirmation se fait en
+    // arrière-plan et prévient l'écran quand elle est connue (voir
+    // impression.rs). Si le fichier venait à être introuvable dans la file
+    // (course improbable avec une suppression concurrente), la confirmation
+    // n'aura simplement personne à mettre à jour.
+    impression::confirmer_en_arriere_plan(app, id, nom_original);
+    Ok(())
 }
 
 /// Retire un fichier de la file sans encaissement (ex: format non

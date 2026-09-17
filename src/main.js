@@ -138,6 +138,32 @@ function fermerModal(id) {
 
 // ───────────────────────────── File d'attente ─────────────────────────────
 
+// Résultats de confirmation d'impression déjà reçus, par identifiant de
+// commande — le spouleur Windows peut mettre jusqu'à 45 secondes à
+// répondre (voir impression.rs), largement après le premier affichage de
+// la ligne. Permet de retrouver l'info si la ligne est reconstruite entre
+// temps (nouveau fichier arrivé, changement de section...).
+const confirmationsImpression = new Map();
+
+function texteStatutImpression(payload) {
+  if (payload.erreur) return `⚠️ Impression non confirmée : ${payload.erreur}`;
+  if (payload.confirmee) {
+    const pages = payload.pages_imprimees ?? payload.pages;
+    return pages ? `✓ Impression confirmée (${pages} page${pages > 1 ? "s" : ""})` : "✓ Impression confirmée";
+  }
+  return null;
+}
+
+function appliquerStatutImpression(id, payload) {
+  const texte = texteStatutImpression(payload);
+  if (!texte) return;
+  document.querySelectorAll(`[data-id="${id}"] .statut-impression`).forEach((el) => {
+    el.textContent = texte;
+    el.hidden = false;
+    el.style.color = payload.erreur ? "var(--rouge-alerte)" : "var(--vert-succes)";
+  });
+}
+
 function creerLigne(item) {
   const noeud = tplLigne.content.cloneNode(true);
   const li = noeud.querySelector(".ligne-fichier");
@@ -221,6 +247,20 @@ function creerLigne(item) {
   }
 
   if (item.kind === "imprimable") {
+    // Rempli plus tard, en arrière-plan, une fois que le spouleur Windows
+    // confirme (ou pas) que l'impression a vraiment eu lieu — voir
+    // impression.rs et l'écouteur "impression-confirmee" plus bas.
+    const statutImpression = document.createElement("span");
+    statutImpression.className = "meta-fichier statut-impression";
+    statutImpression.hidden = true;
+    noeud.querySelector(".info-fichier").appendChild(statutImpression);
+    if (confirmationsImpression.has(item.id)) {
+      // Appliqué après l'insertion dans le document (voir ajouterFichier) :
+      // querySelector sur `noeud`, un DocumentFragment, ne verrait pas ses
+      // propres enfants une fois déplacés dans le DOM.
+      queueMicrotask(() => appliquerStatutImpression(item.id, confirmationsImpression.get(item.id)));
+    }
+
     const img = noeud.querySelector(".vignette-fichier");
     invoke("get_thumbnail", { id: item.id }).then((dataUri) => {
       if (dataUri) {
@@ -619,6 +659,7 @@ async function rendreHistorique(corps) {
   for (const item of items) {
     const ligne = document.createElement("div");
     ligne.className = "ligne-liste";
+    ligne.dataset.id = item.id;
     const info = document.createElement("div");
     info.textContent = item.original_name;
     const sousTexte = document.createElement("div");
@@ -632,6 +673,28 @@ async function rendreHistorique(corps) {
       .filter(Boolean)
       .join(" · ");
     ligne.append(info, sousTexte);
+
+    // Confirmation d'impression : d'abord ce que la base sait déjà (un
+    // gérant qui rouvre l'historique plus tard), sinon un résultat reçu
+    // entre-temps pendant que cette commande était encore en attente.
+    if (item.kind === "imprimable") {
+      const statutImpression = document.createElement("span");
+      statutImpression.className = "meta-fichier statut-impression";
+      statutImpression.hidden = true;
+      ligne.appendChild(statutImpression);
+
+      const dejaConnu = confirmationsImpression.get(item.id) ?? {
+        confirmee: item.impression_confirmee,
+        pages_imprimees: item.pages_imprimees,
+        erreur: item.impression_erreur,
+      };
+      const texte = texteStatutImpression(dejaConnu);
+      if (texte) {
+        statutImpression.textContent = texte;
+        statutImpression.hidden = false;
+        statutImpression.style.color = dejaConnu.erreur ? "var(--rouge-alerte)" : "var(--vert-succes)";
+      }
+    }
 
     // Le client peut demander la suppression de son document à tout
     // moment après le passage en caisse — n'importe quel gérant doit
@@ -1561,6 +1624,15 @@ window.addEventListener("DOMContentLoaded", async () => {
   await listen("nouveau-fichier", (event) => {
     ajouterFichier(event.payload, true);
     jouerNotification();
+  });
+
+  // Confirmation d'impression, reçue en arrière-plan jusqu'à 45 secondes
+  // après le clic sur "Imprimer" (voir impression.rs). Peut arriver que la
+  // commande soit encore dans la file, ou déjà passée en caisse — on met
+  // donc à jour partout où sa ligne pourrait exister à cet instant.
+  await listen("impression-confirmee", (event) => {
+    confirmationsImpression.set(event.payload.id, event.payload);
+    appliquerStatutImpression(event.payload.id, event.payload);
   });
 
   // Clé USB contenant un fichier "licence.txt" : évite au gérant de retaper

@@ -210,6 +210,9 @@ pub fn enqueue_file_avec_options(
         employe: None,
         raison_ignore: None,
         document_supprime: false,
+        impression_confirmee: false,
+        pages_imprimees: None,
+        impression_erreur: None,
     };
 
     let _ = app.emit("nouveau-fichier", item);
