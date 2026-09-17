@@ -662,6 +662,7 @@ function ouvrirPanneauMenu() {
 }
 function fermerPanneauMenu() {
   document.querySelector("#panneau-menu").hidden = true;
+  sectionOuverte = null;
 }
 
 const TITRES_SECTION = {
@@ -672,12 +673,29 @@ const TITRES_SECTION = {
   reglages: "Réglages",
 };
 
+// Une phrase en haut de chaque écran : un gérant qui découvre l'application
+// ne doit jamais avoir à deviner à quoi sert l'onglet sur lequel il vient
+// de cliquer. Court exprès — le détail bouton par bouton est dans l'aide
+// (bouton "?" de la barre du haut).
+const AIDES_SECTION = {
+  commandes: "Les documents reçus qui attendent encore d'être servis. Même liste que l'écran principal, en plus court.",
+  historique: "Les commandes déjà servies et encaissées. C'est ici qu'on retrouve une commande d'hier, et qu'on supprime le document d'un client qui le demande.",
+  recherche: "Retrouver un document par nom de client, numéro de téléphone ou nom de fichier — même vieux de plusieurs semaines.",
+  rapports: "L'argent du jour, les impayés à relancer, le stock, et le rapport imprimable à garder ou à montrer au propriétaire.",
+  reglages: "Le nom de la boutique, le dossier surveillé, les tarifs, les employés et la sauvegarde. À régler une fois, rarement retouché ensuite.",
+};
+
+// Écran actuellement affiché, pour que le bouton "?" parle du bon écran.
+// `null` = l'écran principal (file d'attente), panneau fermé.
+let sectionOuverte = null;
+
 async function ouvrirSection(section) {
   document.querySelector("#panneau-nav").hidden = true;
   document.querySelector("#panneau-contenu").hidden = false;
   document.querySelector("#panneau-titre").textContent = TITRES_SECTION[section] ?? "Menu";
   const corps = document.querySelector("#section-corps");
   corps.innerHTML = "Chargement…";
+  sectionOuverte = section;
 
   const rendus = {
     commandes: rendreCommandesEnCours,
@@ -687,6 +705,206 @@ async function ouvrirSection(section) {
     reglages: rendreReglages,
   };
   await rendus[section]?.(corps);
+
+  // Ajouté APRÈS le rendu : chaque fonction de rendu commence par vider le
+  // corps, un bandeau posé avant serait effacé aussitôt.
+  const texteAide = AIDES_SECTION[section];
+  if (texteAide) {
+    const bandeau = document.createElement("p");
+    bandeau.className = "aide-section";
+    bandeau.textContent = texteAide;
+    corps.prepend(bandeau);
+  }
+}
+
+// ───────────────────────────── Aide intégrée ─────────────────────────────
+// Trois niveaux, du plus léger au plus complet : le bandeau d'une phrase en
+// haut de chaque onglet (ci-dessus), le bouton "?" qui détaille chaque
+// bouton de l'écran en cours, et la visite guidée du premier lancement —
+// rejouable, parce que le gérant qui ouvre l'application le premier jour
+// n'est pas toujours celui qui s'en servira tous les jours.
+
+const AIDES_ECRAN = {
+  accueil: {
+    titre: "L'écran principal",
+    intro: "C'est l'écran de travail de la journée : les documents des clients arrivent ici tout seuls, du haut vers le bas.",
+    boutons: [
+      ["Aperçu", "Regarder le document avant de l'imprimer, sans ouvrir un autre programme."],
+      ["Imprimer", "Envoie le document à l'imprimante. Windows ouvre sa fenêtre d'impression habituelle."],
+      ["Encaisser", "Enregistre le paiement du client et retire la commande de la liste."],
+      ["Détails", "Ce qu'on facture : nombre de pages, couleur, recto-verso, format, finitions."],
+      ["Imprimer sur", "Change d'imprimante sans passer par les réglages de Windows. N'apparaît que si le PC en a plusieurs."],
+      ["📶 en haut", "Affiche le QR code que le client scanne pour envoyer son document depuis son téléphone."],
+      ["⋮ en haut", "Le menu : historique, recherche, rapports et réglages."],
+    ],
+  },
+  commandes: {
+    titre: "Commandes en cours",
+    intro: "La même liste que l'écran principal, en version courte — pratique pour compter ce qui reste à faire.",
+    boutons: [],
+  },
+  historique: {
+    titre: "Historique",
+    intro: "Les commandes déjà servies, de la plus récente à la plus ancienne.",
+    boutons: [
+      ["✓ Impression confirmée", "L'imprimante a confirmé elle-même que le papier est sorti. Sans cette mention, on ne sait pas."],
+      ["⚠️ Écart", "Ce qui a été facturé ne correspond pas à ce que l'imprimante a reçu (couleur, recto-verso, format...). À vérifier, jamais bloquant."],
+      ["Supprimer le document", "Efface le fichier du client à sa demande. La ligne de comptabilité reste, le document disparaît."],
+    ],
+  },
+  recherche: {
+    titre: "Recherche",
+    intro: "Tapez au moins 2 lettres : nom du client, numéro de téléphone ou nom de fichier.",
+    boutons: [],
+  },
+  rapports: {
+    titre: "Rapports",
+    intro: "L'état de la journée, et le rapport à imprimer pour le propriétaire.",
+    boutons: [
+      ["Réconciliation", "Vérifie qu'aucun fichier reçu n'a disparu sans explication : reçus = payés + ignorés + en attente."],
+      ["Impayés à relancer", "Les commandes prises à crédit. « Marquer réglé » quand le client a payé."],
+      ["Rapport imprimable", "Sur papier, ou en PDF avec « Microsoft Print to PDF » dans la fenêtre d'impression."],
+      ["Stock", "Papier et encre restants. Chiffres à corriger à la main quand vous rachetez."],
+    ],
+  },
+  reglages: {
+    titre: "Réglages",
+    intro: "À régler une fois à l'installation, rarement retouché ensuite.",
+    boutons: [
+      ["Dossier surveillé", "Tout fichier déposé dans ce dossier entre automatiquement dans la file d'attente."],
+      ["Tarifs", "Le prix de la page noir & blanc, de la couleur, des finitions. Sert à calculer le prix proposé."],
+      ["Employés", "Qui a encaissé quoi. Utile dès qu'une deuxième personne tient la caisse."],
+      ["Sauvegarde", "Copie de sécurité de toute la comptabilité, automatique toutes les 15 minutes."],
+    ],
+  },
+};
+
+function ouvrirAide() {
+  const aide = AIDES_ECRAN[sectionOuverte] ?? AIDES_ECRAN.accueil;
+  document.querySelector("#aide-titre").textContent = `Aide — ${aide.titre}`;
+  document.querySelector("#aide-intro").textContent = aide.intro;
+
+  const contenu = document.querySelector("#aide-contenu");
+  contenu.innerHTML = "";
+  for (const [nom, explication] of aide.boutons) {
+    const terme = document.createElement("dt");
+    terme.textContent = nom;
+    const definition = document.createElement("dd");
+    definition.textContent = explication;
+    contenu.append(terme, definition);
+  }
+
+  ouvrirModal("modal-aide");
+}
+
+// ───────────────────────────── Visite guidée ─────────────────────────────
+
+const ETAPES_VISITE = [
+  {
+    titre: "Bienvenue",
+    texte:
+      "En trois minutes, voici comment se passe une journée normale. Vous pouvez arrêter à tout moment — et revoir cette visite plus tard avec le bouton « ? » en haut de l'écran.",
+  },
+  {
+    titre: "1. Le document arrive tout seul",
+    texte:
+      "Trois façons : le client scanne le QR code (bouton 📶) et envoie depuis son téléphone ; vous branchez sa clé USB ; ou vous déposez le fichier dans le dossier surveillé. Dans les trois cas, il apparaît dans la liste sans rien faire de plus.",
+  },
+  {
+    titre: "2. Vous imprimez",
+    texte:
+      "« Aperçu » pour vérifier le document, puis « Imprimer ». L'application surveille ensuite l'imprimante et affiche « ✓ Impression confirmée » quand le papier est vraiment sorti — ou l'erreur si l'imprimante bourre ou n'a plus de papier.",
+  },
+  {
+    titre: "3. Vous encaissez",
+    texte:
+      "« Détails » pour dire ce qu'on facture (pages, couleur, recto-verso), puis « Encaisser ». Le prix est calculé tout seul à partir de vos tarifs ; vous pouvez toujours le modifier, en disant pourquoi.",
+  },
+  {
+    titre: "4. Le soir",
+    texte:
+      "Menu ⋮ → Rapports : ce que vous avez encaissé, les impayés à relancer, et le rapport imprimable à garder. Rien ne se perd : chaque fichier reçu est compté dès son arrivée.",
+  },
+  {
+    titre: "Une dernière chose",
+    texte:
+      "Le bouton « ? » en haut à droite explique les boutons de l'écran sur lequel vous êtes, à tout moment. Vous ne pouvez rien casser en cliquant dessus. Bonne journée de travail.",
+  },
+];
+
+let etapeVisite = 0;
+
+function afficherEtapeVisite() {
+  const etape = ETAPES_VISITE[etapeVisite];
+  document.querySelector("#visite-titre").textContent = etape.titre;
+  document.querySelector("#visite-compteur").textContent = `Étape ${etapeVisite + 1} sur ${ETAPES_VISITE.length}`;
+  document.querySelector("#visite-texte").textContent = etape.texte;
+  document.querySelector("#btn-visite-suivant").textContent =
+    etapeVisite === ETAPES_VISITE.length - 1 ? "Terminer" : "Suivant";
+}
+
+function demarrerVisite() {
+  etapeVisite = 0;
+  afficherEtapeVisite();
+  ouvrirModal("modal-visite");
+}
+
+async function terminerVisite() {
+  fermerModal("modal-visite");
+  // Enregistré une fois pour toutes : un gérant qui a déjà vu la visite ne
+  // doit pas la revoir à chaque démarrage. Le bouton "?" permet de la
+  // relancer quand il le décide.
+  try {
+    await invoke("set_boutique_setting", { cle: "visite_guidee_vue", valeur: "oui" });
+  } catch {
+    // Sans importance : au pire la visite se reproposera au prochain
+    // démarrage, ce qui n'empêche personne de travailler.
+  }
+}
+
+// ──────────────────── Guide du gérant, imprimable ────────────────────
+// Réutilise le même mécanisme que le rapport (voir imprimerRapport) : une
+// page dédiée, puis l'impression native de Windows. Pensé pour être
+// affiché à côté du PC, pour la personne qui tient la caisse.
+
+function imprimerGuideGerant() {
+  document.querySelector("#rapport-imprimable").innerHTML = `
+    <h1>Guide du gérant — Gestion Photocopie</h1>
+    <h2>À garder près de l'ordinateur</h2>
+
+    <h3>Une journée normale, en 3 gestes</h3>
+    <table class="table-rapport-imprimable">
+      <tbody>
+        <tr><td><strong>1. Le document arrive</strong></td><td>Le client scanne le QR code (bouton 📶) et envoie depuis son téléphone,
+          ou vous branchez sa clé USB, ou vous déposez le fichier dans le dossier surveillé.
+          Il apparaît tout seul dans la liste.</td></tr>
+        <tr><td><strong>2. Vous imprimez</strong></td><td>« Aperçu » pour vérifier, puis « Imprimer ».
+          L'application affiche « ✓ Impression confirmée » quand le papier est vraiment sorti.</td></tr>
+        <tr><td><strong>3. Vous encaissez</strong></td><td>« Détails » pour dire ce qu'on facture, puis « Encaisser ».
+          Le prix est calculé tout seul ; il reste modifiable en disant pourquoi.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Quand ça ne va pas</h3>
+    <table class="table-rapport-imprimable">
+      <tbody>
+        <tr><td>Le document du client n'apparaît pas</td><td>Vérifiez que son téléphone est bien connecté au Wi-Fi de la boutique,
+          puis faites-lui rescanner le QR code.</td></tr>
+        <tr><td>« Impression non confirmée »</td><td>Regardez l'imprimante : papier, bourrage, câble, allumée ou non.
+          Le message dit lequel de ces problèmes Windows a signalé.</td></tr>
+        <tr><td>« PDF protégé par mot de passe »</td><td>Demandez le mot de passe au client : sans lui, personne ne peut imprimer le fichier.</td></tr>
+        <tr><td>Un fichier ne doit pas être servi</td><td>« Ignorer », puis choisissez la raison. Rien ne disparaît sans explication.</td></tr>
+        <tr><td>L'écran demande une clé d'abonnement</td><td>Appelez le <strong>0151226741</strong> depuis votre téléphone,
+          et donnez l'identifiant affiché à l'écran.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>À faire une fois par semaine</h3>
+    <p>Menu ⋮ → Rapports : vérifier les impayés à relancer, et le stock de papier et d'encre.</p>
+
+    <p class="pied-rapport-imprimable">Le bouton « ? » en haut de l'application explique les boutons de chaque écran.</p>
+  `;
+  window.print();
 }
 
 function ligneListe(texte, sousTexte) {
@@ -1803,6 +2021,9 @@ async function lancerAssistantPremierDemarrage() {
     // qu'il utilise depuis le premier jour comme une mise à jour fraîche.
     await invoke("marquer_version_actuelle_vue");
     fermerModal("modal-bienvenue");
+    // Enchaîne sur la visite guidée : la configuration est faite, le gérant
+    // a maintenant besoin de savoir comment travailler avec.
+    demarrerVisite();
   });
   return true;
 }
@@ -1812,7 +2033,27 @@ async function lancerAssistantPremierDemarrage() {
 window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#btn-menu").addEventListener("click", ouvrirPanneauMenu);
   document.querySelector("#btn-fermer-menu").addEventListener("click", fermerPanneauMenu);
+  document.querySelector("#btn-aide").addEventListener("click", ouvrirAide);
+  document.querySelector("#btn-revoir-visite").addEventListener("click", () => {
+    fermerModal("modal-aide");
+    demarrerVisite();
+  });
+  document.querySelector("#btn-imprimer-guide").addEventListener("click", () => {
+    fermerModal("modal-aide");
+    imprimerGuideGerant();
+  });
+  document.querySelector("#btn-visite-passer").addEventListener("click", terminerVisite);
+  document.querySelector("#btn-visite-suivant").addEventListener("click", () => {
+    if (etapeVisite >= ETAPES_VISITE.length - 1) {
+      terminerVisite();
+      return;
+    }
+    etapeVisite++;
+    afficherEtapeVisite();
+  });
+
   document.querySelector("#btn-retour-nav").addEventListener("click", () => {
+    sectionOuverte = null;
     document.querySelector("#panneau-nav").hidden = false;
     document.querySelector("#panneau-contenu").hidden = true;
     document.querySelector("#panneau-titre").textContent = "Menu";
@@ -1850,6 +2091,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   // il découvre juste l'application pour la première fois.
   if (!premierLancement) {
     await afficherNouveautesSiBesoin();
+    // Les boutiques déjà installées avant l'arrivée de la visite guidée ne
+    // l'ont jamais vue : on la propose une fois, puis plus jamais.
+    const params = await invoke("get_boutique_settings");
+    if (!params.visite_guidee_vue) {
+      demarrerVisite();
+    }
   }
   await verifierMiseAJour();
   await afficherAccueilDuJour();

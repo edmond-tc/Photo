@@ -293,6 +293,7 @@ pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value,
         "fidelite_remise_pourcent": db::get_setting(&conn, "fidelite_remise_pourcent"),
         "bluetooth_nom": db::get_setting(&conn, "bluetooth_nom"),
         "retention_jours": db::get_setting(&conn, "retention_jours"),
+        "visite_guidee_vue": db::get_setting(&conn, "visite_guidee_vue"),
     }))
 }
 
@@ -313,6 +314,9 @@ pub fn set_boutique_setting(
         "fidelite_remise_pourcent",
         "bluetooth_nom",
         "retention_jours",
+        // Visite guidée déjà suivie : évite de la reproposer à chaque
+        // démarrage (voir demarrerVisite, côté interface).
+        "visite_guidee_vue",
     ];
     if !CLES_AUTORISEES.contains(&cle.as_str()) {
         return Err("réglage inconnu".to_string());

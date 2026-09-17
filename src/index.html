@@ -16,6 +16,7 @@
         <span id="badge-abonnement" class="badge-abonnement" hidden></span>
         <span id="badge-maj" class="badge-maj" hidden></span>
         <button id="btn-recevoir-qr" class="btn-icon" title="Recevoir un fichier par QR">📶</button>
+        <button id="btn-aide" class="btn-icon" title="Aide — à quoi sert cet écran" aria-label="Aide">?</button>
         <button id="btn-menu" class="btn-icon" title="Menu" aria-label="Ouvrir le menu">⋮</button>
       </div>
     </header>
@@ -107,6 +108,42 @@
         <button id="btn-imprimer-qr" class="btn-secondaire">
           Imprimer ce QR (à coller à l'entrée)
         </button>
+      </div>
+    </div>
+
+    <!-- Aide de l'écran en cours (bouton "?" de la barre du haut) : liste
+         chaque bouton visible et ce qu'il fait, en langage simple. Une
+         fenêtre plutôt que des bulles flottantes — même mécanique que les
+         autres fenêtres de l'application, donc aucun risque d'affichage
+         coupé sur un petit écran. -->
+    <div id="modal-aide" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2 id="aide-titre">Aide</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-aide" aria-label="Fermer">✕</button>
+        </div>
+        <p id="aide-intro" class="chemin-dossier"></p>
+        <dl id="aide-contenu" class="liste-aide"></dl>
+        <div class="aide-actions">
+          <button id="btn-revoir-visite" class="btn-secondaire">Revoir la visite guidée</button>
+          <button id="btn-imprimer-guide" class="btn-secondaire">Imprimer le guide du gérant</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visite guidée du premier lancement, rejouable depuis l'aide. -->
+    <div id="modal-visite" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2 id="visite-titre">Visite guidée</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-visite" aria-label="Fermer">✕</button>
+        </div>
+        <p id="visite-compteur" class="chemin-dossier"></p>
+        <p id="visite-texte"></p>
+        <div class="visite-actions">
+          <button id="btn-visite-passer" class="btn-discret">Passer</button>
+          <button id="btn-visite-suivant" class="btn-primaire">Suivant</button>
+        </div>
       </div>
     </div>
 

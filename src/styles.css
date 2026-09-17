@@ -77,6 +77,48 @@ body {
   margin: 0 auto;
 }
 
+/* Bandeau d'une phrase en haut de chaque onglet : présent en permanence,
+   discret, jamais à fermer — un gérant qui découvre l'écran comprend à quoi
+   il sert sans cliquer nulle part. */
+.aide-section {
+  background: var(--gris-clair);
+  border-left: 3px solid var(--bleu-office);
+  padding: 0.6rem 0.75rem;
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--gris-texte);
+  border-radius: 0 4px 4px 0;
+}
+
+.liste-aide {
+  margin: 0.75rem 0 0;
+}
+
+.liste-aide dt {
+  font-weight: 600;
+  margin-top: 0.75rem;
+}
+
+.liste-aide dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--gris-texte-discret);
+}
+
+.aide-actions,
+.visite-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+}
+
+.visite-actions {
+  justify-content: space-between;
+}
+
 .actions-rapport-imprimable {
   display: flex;
   gap: 0.5rem;
