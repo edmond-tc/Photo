@@ -220,6 +220,10 @@ pub fn enqueue_file_avec_options(
         impression_poste: None,
         impression_imprimante_reelle: None,
         impression_ecarts: None,
+        // Un fichier qui arrive n'a pas encore été détaillé par le gérant :
+        // le total de feuilles vaut le nombre d'exemplaires demandé, pour
+        // un document dont on ne connaît pas encore le nombre de pages.
+        pages_document: 1,
     };
 
     let _ = app.emit("nouveau-fichier", item);

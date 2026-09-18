@@ -34,6 +34,10 @@ pub struct QueueItem {
     /// interface plutôt qu'ici, pour ne pas faire dépendre `models` du
     /// module `impression`.
     pub impression_ecarts: Option<String>,
+    /// Pages du document, distinct de `copies` qui porte le total de feuilles
+    /// (pages × exemplaires) servant au prix et au stock. Permet de rouvrir
+    /// « Détails » avec les chiffres réellement saisis.
+    pub pages_document: i64,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

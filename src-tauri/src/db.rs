@@ -123,7 +123,7 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// Version du schéma attendue par cette version du logiciel.
-const VERSION_SCHEMA: i64 = 5;
+const VERSION_SCHEMA: i64 = 6;
 
 /// Les boutiques déjà installées ont une base créée par une version
 /// antérieure : les `CREATE TABLE IF NOT EXISTS` ci-dessus ne leur ajoutent
@@ -206,6 +206,22 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         // migration n'ont pas cette date : le rapport se rabat alors sur
         // `received_at` (voir gestion::rapport_periode_impressions).
         ajouter_colonne_si_absente(conn, "files_queue", "impression_confirmee_le", "TEXT")?;
+    }
+
+    if version < 6 {
+        // Nombre de pages du document, mémorisé séparément du nombre total de
+        // feuilles (`copies`, = pages × exemplaires, qui reste la base du
+        // calcul du prix et du stock).
+        //
+        // Sans cette colonne, rouvrir « Détails » réaffichait 1 page ×
+        // N feuilles pour une commande saisie en N pages × M exemplaires :
+        // un gérant qui rétablissait le vrai nombre de pages multipliait
+        // aussitôt le total par ce nombre (10 pages × 2 exemplaires
+        // rouverts, corrigés, puis enregistrés = 200 feuilles facturées au
+        // lieu de 20). Les lignes antérieures valent 1, ce qui reproduit
+        // exactement l'affichage d'avant : aucune commande existante ne
+        // change de prix.
+        ajouter_colonne_si_absente(conn, "files_queue", "pages_document", "INTEGER NOT NULL DEFAULT 1")?;
     }
 
     conn.pragma_update(None, "user_version", VERSION_SCHEMA)?;

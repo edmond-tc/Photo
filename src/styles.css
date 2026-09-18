@@ -152,12 +152,18 @@ body {
 /* Le rapport imprimable est le SEUL contenu visible au moment d'imprimer
    (voir window.print() dans imprimerRapport, main.js) — tout le reste de
    l'application (file d'attente, menus, modales) reste sur la carte
-   graphique mais jamais sur le papier ni dans le PDF généré. */
+   graphique mais jamais sur le papier ni dans le PDF généré.
+
+   Conditionné à une classe posée sur <body> juste avant l'impression : deux
+   choses différentes s'impriment depuis cette application (ce rapport, et
+   l'affiche QR plus bas). Sans cette classe, les deux règles « tout cacher
+   sauf X » s'appliquaient en même temps et ne laissaient RIEN de visible —
+   toutes les impressions sortaient blanches. */
 @media print {
-  body > *:not(#rapport-imprimable) {
+  body.impression-rapport > *:not(#rapport-imprimable) {
     display: none !important;
   }
-  .rapport-imprimable {
+  body.impression-rapport #rapport-imprimable {
     display: block !important;
     color: #000;
   }
@@ -768,29 +774,33 @@ fieldset {
   margin-top: 0.5rem;
 }
 
+/* Affiche QR à coller à l'entrée de la boutique. Même mécanique que le
+   rapport ci-dessus : c'est la classe posée sur <body> qui décide laquelle
+   des deux impressions est en cours. */
 @media print {
-  body > *:not(#modal-qr) {
+  body.impression-qr > *:not(#modal-qr) {
     display: none !important;
   }
-  #modal-qr {
+  body.impression-qr #modal-qr {
+    display: block !important;
     position: static;
     background: none;
   }
-  #modal-qr .modal-entete,
-  #modal-qr #btn-parametres-partage,
-  #modal-qr #btn-imprimer-qr,
-  #modal-qr #qr-url {
+  body.impression-qr #modal-qr .modal-entete,
+  body.impression-qr #modal-qr #btn-parametres-partage,
+  body.impression-qr #modal-qr #btn-imprimer-qr,
+  body.impression-qr #modal-qr #qr-url {
     display: none !important;
   }
-  #modal-qr .modal-carte {
+  body.impression-qr #modal-qr .modal-carte {
     box-shadow: none;
     max-width: none;
   }
-  #qr-conteneur img {
+  body.impression-qr #qr-conteneur img {
     width: 320px;
     height: 320px;
   }
-  #qr-intro {
+  body.impression-qr #qr-intro {
     text-align: center;
     font-size: 1.1rem;
   }

@@ -204,6 +204,7 @@ pub fn calculer_prix(state: State<DbState>, id: i64) -> Result<PrixCalcule, Stri
 pub fn set_print_options(
     state: State<DbState>,
     id: i64,
+    pages_document: i64,
     copies: i64,
     couleur: bool,
     recto_verso: bool,
@@ -213,9 +214,18 @@ pub fn set_print_options(
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let finitions_json = serde_json::to_string(&finitions).map_err(|e| e.to_string())?;
     conn.execute(
-        "UPDATE files_queue SET copies=?1, couleur=?2, recto_verso=?3, format_papier=?4, finitions=?5
-         WHERE id = ?6",
-        params![copies.max(1), couleur, recto_verso, format_papier, finitions_json, id],
+        "UPDATE files_queue
+            SET copies=?1, pages_document=?2, couleur=?3, recto_verso=?4, format_papier=?5, finitions=?6
+          WHERE id = ?7",
+        params![
+            copies.max(1),
+            pages_document.max(1),
+            couleur,
+            recto_verso,
+            format_papier,
+            finitions_json,
+            id
+        ],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -1482,5 +1492,72 @@ mod tests {
         assert_eq!(lignes.len(), 1);
         assert_eq!(lignes[0].ecarts.len(), 1);
         assert_eq!(lignes[0].ecarts[0].champ, "couleur");
+    }
+
+    /// Une commande rouverte doit se relire telle qu'elle a été saisie.
+    ///
+    /// Avant la colonne `pages_document`, seul le total de feuilles était
+    /// gardé : 10 pages × 2 exemplaires se rouvraient en « 1 page ×
+    /// 20 exemplaires ». Le gérant qui rétablissait le vrai nombre de pages
+    /// enregistrait alors 10 × 20 = 200 feuilles, et facturait dix fois le
+    /// prix à un client présent au comptoir.
+    #[test]
+    fn detail_facturation_se_relit_tel_qu_il_a_ete_saisi() {
+        let (_d, conn) = base_de_test();
+        conn.execute(
+            "INSERT INTO files_queue (id, original_name, path, source, kind, status, received_at, jeton)
+             VALUES (1, 'devoir.pdf', 'C:\\devoir.pdf', 'usb', 'imprimable', 'en_attente',
+                     '2026-03-10T08:00:00+01:00', 'j1')",
+            [],
+        )
+        .unwrap();
+
+        // Ce que fait set_print_options pour 10 pages × 2 exemplaires.
+        conn.execute(
+            "UPDATE files_queue SET copies = ?1, pages_document = ?2 WHERE id = 1",
+            params![10 * 2, 10],
+        )
+        .unwrap();
+
+        let (total, pages): (i64, i64) = conn
+            .query_row(
+                "SELECT copies, pages_document FROM files_queue WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(total, 20, "le prix reste calculé sur le total de feuilles");
+        assert_eq!(pages, 10, "le nombre de pages saisi doit être retrouvé tel quel");
+        assert_eq!(
+            total / pages,
+            2,
+            "l'écran doit pouvoir réafficher 2 exemplaires, pas 20"
+        );
+    }
+
+    /// Les commandes créées avant cette colonne valent 1 page : elles se
+    /// rouvrent donc exactement comme avant (1 × total), sans changer de prix.
+    #[test]
+    fn commande_anterieure_garde_son_total_et_vaut_une_page() {
+        let (_d, conn) = base_de_test();
+        conn.execute(
+            "INSERT INTO files_queue (id, original_name, path, source, kind, status, received_at, jeton, copies)
+             VALUES (1, 'ancien.pdf', 'C:\\ancien.pdf', 'usb', 'imprimable', 'en_attente',
+                     '2026-03-10T08:00:00+01:00', 'j1', 7)",
+            [],
+        )
+        .unwrap();
+
+        let (total, pages): (i64, i64) = conn
+            .query_row(
+                "SELECT copies, pages_document FROM files_queue WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(total, 7);
+        assert_eq!(pages, 1, "valeur par défaut de la migration");
     }
 }

@@ -136,6 +136,24 @@ function fermerModal(id) {
   document.querySelector(`#${id}`).hidden = true;
 }
 
+// Deux choses différentes s'impriment depuis cette application : le rapport
+// (ou le guide) et l'affiche QR. La classe posée ici dit à la feuille de
+// style laquelle des deux part sur le papier — sans elle, les deux règles
+// « tout cacher sauf X » s'annulaient et la page sortait blanche.
+function imprimerPage(classe) {
+  document.body.classList.add(classe);
+  const nettoyer = () => document.body.classList.remove(classe);
+  window.addEventListener("afterprint", nettoyer, { once: true });
+  try {
+    window.print();
+  } finally {
+    // Filet de sécurité : certaines fenêtres n'émettent jamais "afterprint"
+    // (impression annulée, moteur embarqué). La classe ne doit jamais rester
+    // collée au <body>, sinon l'impression suivante sortirait la mauvaise page.
+    setTimeout(nettoyer, 1000);
+  }
+}
+
 // ───────────────────────────── File d'attente ─────────────────────────────
 
 // Résultats de confirmation d'impression déjà reçus, par identifiant de
@@ -411,7 +429,12 @@ async function ouvrirApercu(item) {
 }
 
 document.querySelector("#btn-imprimer-depuis-apercu").addEventListener("click", () => {
-  if (idApercuEnCours != null) imprimer(idApercuEnCours);
+  if (idApercuEnCours == null) return;
+  // Refermé avant d'imprimer : sinon l'aperçu reste ouvert par-dessus la file
+  // une fois la fenêtre d'impression de Windows passée, et le gérant croit
+  // que l'application est figée.
+  fermerModal("modal-apercu");
+  imprimer(idApercuEnCours);
 });
 
 async function ouvrir(id) {
@@ -467,10 +490,15 @@ document.querySelector("#opt-nb-copies").addEventListener("input", majTotalFeuil
 
 function ouvrirOptions(item) {
   idOptionsEnCours = item.id;
-  // On ne connaît que le total de feuilles déjà enregistré (pas le détail
-  // pages × copies) : on repart d'une copie pour ce total, modifiable.
-  document.querySelector("#opt-pages").value = 1;
-  document.querySelector("#opt-nb-copies").value = item.copies ?? 1;
+  // Les deux chiffres réellement saisis sont relus tels quels : le nombre de
+  // pages est mémorisé à part (pages_document), le total de feuilles restant
+  // dans `copies`. Rouvrir cette fenêtre réaffiche donc exactement ce que le
+  // gérant avait entré — sinon, corriger le nombre de pages remultipliait le
+  // total déjà multiplié.
+  const pages = Math.max(1, item.pages_document ?? 1);
+  const total = Math.max(1, item.copies ?? 1);
+  document.querySelector("#opt-pages").value = pages;
+  document.querySelector("#opt-nb-copies").value = Math.max(1, Math.round(total / pages));
   majTotalFeuilles();
   document.querySelector("#opt-couleur").checked = !!item.couleur;
   document.querySelector("#opt-recto-verso").checked = !!item.recto_verso;
@@ -504,6 +532,7 @@ document.querySelector("#form-options").addEventListener("submit", async (e) => 
   try {
     await invoke("set_print_options", {
       id: idOptionsEnCours,
+      pagesDocument: pages,
       copies: pages * nbCopies,
       couleur: document.querySelector("#opt-couleur").checked,
       rectoVerso: document.querySelector("#opt-recto-verso").checked,
@@ -547,17 +576,28 @@ async function ouvrirEncaissement(item) {
     if (resultat.remise_fidelite_appliquee) {
       indiceFidelite.hidden = false;
     }
-  } catch {
-    montantCalculeEnCours = 0;
-    document.querySelector("#enc-montant-calcule").textContent = formatFcfa(0);
-    document.querySelector("#enc-montant").value = 0;
+  } catch (e) {
+    // Le prix n'a pas pu être calculé (tarif manquant, base occupée...) :
+    // on le dit. Sans ce message, l'écran affichait « 0 FCFA » comme si
+    // c'était le vrai prix, puis réclamait au gérant de justifier un
+    // « écart » par rapport à ce zéro dès qu'il tapait le montant réel.
+    montantCalculeEnCours = null;
+    document.querySelector("#enc-montant-calcule").textContent = "à saisir à la main";
+    document.querySelector("#enc-montant").value = "";
+    toast(
+      `Le prix n'a pas pu être calculé automatiquement (${e}) — saisissez le montant vous-même.`,
+      "attention",
+      6000
+    );
   }
   await remplirEmployes(document.querySelector("#enc-employe"));
   ouvrirModal("modal-encaissement");
 }
 
 document.querySelector("#enc-montant").addEventListener("input", (e) => {
-  const diffère = Number(e.target.value) !== montantCalculeEnCours;
+  // `null` = aucun prix n'a pu être calculé : il n'y a alors pas d'écart
+  // possible, donc rien à justifier.
+  const diffère = montantCalculeEnCours != null && Number(e.target.value) !== montantCalculeEnCours;
   document.querySelector("#enc-raison-champ").hidden = !diffère;
 });
 
@@ -566,14 +606,17 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
   const moyen = document.querySelector("#enc-moyen").value;
   const montant = Number(document.querySelector("#enc-montant").value) || 0;
   const raisonEcart = document.querySelector("#enc-raison-ecart").value.trim() || null;
-  if (montant !== montantCalculeEnCours && !raisonEcart) {
+  if (montantCalculeEnCours != null && montant !== montantCalculeEnCours && !raisonEcart) {
     toast("Le montant diffère du prix calculé — précisez la raison pour continuer.", "attention");
     return;
   }
   try {
     const resultat = await invoke("finaliser_commande", {
       id: idEncaissementEnCours,
-      montantCalcule: montantCalculeEnCours,
+      // Prix non calculable : le montant saisi fait foi, et la comptabilité
+      // n'enregistre pas un écart imaginaire contre un prix qui n'a jamais
+      // existé.
+      montantCalcule: montantCalculeEnCours ?? montant,
       montant,
       raisonEcart,
       moyenPaiement: moyen,
@@ -648,7 +691,7 @@ document.querySelector("#btn-parametres-partage").addEventListener("click", asyn
 });
 
 document.querySelector("#btn-imprimer-qr").addEventListener("click", () => {
-  window.print();
+  imprimerPage("impression-qr");
 });
 
 // ───────────────────────────── Panneau latéral ─────────────────────────────
@@ -904,7 +947,7 @@ function imprimerGuideGerant() {
 
     <p class="pied-rapport-imprimable">Le bouton « ? » en haut de l'application explique les boutons de chaque écran.</p>
   `;
-  window.print();
+  imprimerPage("impression-rapport");
 }
 
 function ligneListe(texte, sousTexte) {
@@ -1187,8 +1230,8 @@ async function imprimerRapport(periode) {
     <p class="pied-rapport-imprimable">Généré le ${new Date().toLocaleString("fr-FR")}</p>
   `;
   // Le contenu n'est visible qu'en impression (voir styles.css, règle
-  // @media print) — un simple print() suffit, pas besoin d'une fenêtre à part.
-  window.print();
+  // @media print) — pas besoin d'une fenêtre à part.
+  imprimerPage("impression-rapport");
 }
 
 function carteRapportImprimable() {
@@ -1264,8 +1307,21 @@ async function rendreRapports(corps) {
       ligne.append(info, sousTexte);
       ligne.appendChild(
         bouton("Marquer réglé", "btn-discret", async () => {
-          await invoke("marquer_impaye_regle", { transactionId: imp.transaction_id });
-          await ouvrirSection("rapports");
+          // Une dette effacée par erreur ne se retrouve plus dans cette
+          // liste : on demande confirmation, avec le nom et le montant sous
+          // les yeux.
+          const ok = confirm(
+            `Confirmer que ${imp.client_name ?? "ce client"} a bien payé ${formatFcfa(imp.montant)} ?\n\n` +
+              "La commande quittera la liste des impayés à relancer."
+          );
+          if (!ok) return;
+          try {
+            await invoke("marquer_impaye_regle", { transactionId: imp.transaction_id });
+            toast("✓ Impayé marqué comme réglé");
+            await ouvrirSection("rapports");
+          } catch (err) {
+            toast(`Cet impayé n'a pas pu être mis à jour : ${err}`, "attention", 6000);
+          }
         })
       );
       sectionImpayes.appendChild(ligne);
@@ -1283,9 +1339,14 @@ async function rendreRapports(corps) {
     input.type = "number";
     input.value = s.quantite;
     input.step = "0.1";
-    input.addEventListener("change", () =>
-      invoke("ajuster_stock", { item: s.item, quantite: Number(input.value) })
-    );
+    input.addEventListener("change", async () => {
+      try {
+        await invoke("ajuster_stock", { item: s.item, quantite: Number(input.value) });
+        toast(`✓ ${s.libelle} : ${input.value} ${s.unite}`);
+      } catch (err) {
+        toast(`Ce stock n'a pas été enregistré : ${err}`, "attention", 6000);
+      }
+    });
     ligne.append(`${s.libelle} (${s.unite}) : `, input);
     if (s.alerte) ligne.append(" ⚠ stock bas");
     sectionStock.appendChild(ligne);
@@ -1308,12 +1369,17 @@ async function rendreRapports(corps) {
   `;
   formDepense.addEventListener("submit", async (e) => {
     e.preventDefault();
-    await invoke("ajouter_depense", {
-      description: document.querySelector("#dep-description").value,
-      montant: Number(document.querySelector("#dep-montant").value) || 0,
-      categorie: document.querySelector("#dep-categorie").value,
-    });
-    await ouvrirSection("rapports");
+    try {
+      await invoke("ajouter_depense", {
+        description: document.querySelector("#dep-description").value,
+        montant: Number(document.querySelector("#dep-montant").value) || 0,
+        categorie: document.querySelector("#dep-categorie").value,
+      });
+      toast("✓ Dépense enregistrée");
+      await ouvrirSection("rapports");
+    } catch (err) {
+      toast(`Cette dépense n'a pas été enregistrée : ${err}`, "attention", 6000);
+    }
   });
   sectionDepense.appendChild(formDepense);
   corps.appendChild(sectionDepense);
@@ -1348,11 +1414,15 @@ async function rendreRapports(corps) {
   formCloture.addEventListener("submit", async (e) => {
     e.preventDefault();
     const totalReel = Number(document.querySelector("#clot-reel").value) || 0;
-    const r = await invoke("cloturer_caisse", { totalReel });
-    resultatCloture.textContent =
-      r.ecart === 0
-        ? `Tout correspond : ${formatFcfa(r.total_attendu)}.`
-        : `Attendu ${formatFcfa(r.total_attendu)}, compté ${formatFcfa(r.total_reel)} — écart de ${formatFcfa(r.ecart)}.`;
+    try {
+      const r = await invoke("cloturer_caisse", { totalReel });
+      resultatCloture.textContent =
+        r.ecart === 0
+          ? `Tout correspond : ${formatFcfa(r.total_attendu)}.`
+          : `Attendu ${formatFcfa(r.total_attendu)}, compté ${formatFcfa(r.total_reel)} — écart de ${formatFcfa(r.ecart)}.`;
+    } catch (err) {
+      resultatCloture.textContent = `La clôture n'a pas pu être enregistrée : ${err}`;
+    }
   });
   sectionCloture.appendChild(formCloture);
   sectionCloture.appendChild(resultatCloture);
@@ -1372,15 +1442,28 @@ async function rendreRapports(corps) {
   sectionDemo.innerHTML = "<h3>Démonstration</h3><p style=\"font-size:0.8rem; color:var(--gris-texte-discret)\">Pour montrer le logiciel sans client réel présent.</p>";
   sectionDemo.appendChild(
     bouton("Ajouter des exemples de démonstration", "btn-secondaire", async () => {
-      await invoke("activer_mode_demo");
-      toast("✓ Exemples ajoutés à la file d'attente");
+      try {
+        await invoke("activer_mode_demo");
+        // Sans ce rechargement, les exemples n'étaient visibles qu'après un
+        // redémarrage : on annonçait « ✓ Exemples ajoutés » devant une file
+        // restée vide — exactement au moment d'une démonstration.
+        await chargerFile();
+        fermerPanneauMenu();
+        toast("✓ Exemples ajoutés à la file d'attente");
+      } catch (e) {
+        toast(`Les exemples n'ont pas pu être ajoutés : ${e}`, "attention");
+      }
     })
   );
   sectionDemo.appendChild(
     bouton("Retirer les exemples de démonstration", "btn-discret", async () => {
-      await invoke("desactiver_mode_demo");
-      await chargerFile();
-      toast("✓ Exemples retirés");
+      try {
+        await invoke("desactiver_mode_demo");
+        await chargerFile();
+        toast("✓ Exemples retirés");
+      } catch (e) {
+        toast(`Les exemples n'ont pas pu être retirés : ${e}`, "attention");
+      }
     })
   );
   corps.appendChild(sectionDemo);
@@ -1600,9 +1683,17 @@ async function rendreReglages(corps) {
     const input = document.createElement("input");
     input.type = "number";
     input.value = t.prix_unitaire;
-    input.addEventListener("change", () =>
-      invoke("update_tarif", { id: t.id, prixUnitaire: Number(input.value) })
-    );
+    // Confirmation visible : un tarif s'applique ensuite à TOUS les clients.
+    // Sans retour à l'écran, le gérant ne savait pas si son nouveau prix
+    // était pris en compte — et pouvait facturer une journée à l'ancien.
+    input.addEventListener("change", async () => {
+      try {
+        await invoke("update_tarif", { id: t.id, prixUnitaire: Number(input.value) });
+        toast(`✓ ${t.libelle} : ${formatFcfa(Number(input.value))}`);
+      } catch (err) {
+        toast(`Ce tarif n'a pas été enregistré : ${err}`, "attention", 6000);
+      }
+    });
     ligne.append(`${t.libelle} (par ${t.unite}) : `, input);
     secTarifs.appendChild(ligne);
   }
@@ -1660,14 +1751,21 @@ async function rendreReglages(corps) {
   formLicence.innerHTML = `<input type="text" id="cle-licence" placeholder="Coller la clé de licence reçue" /><button type="submit" class="btn-secondaire">Activer</button>`;
   formLicence.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const ok = await invoke("set_license_key", { cle: document.querySelector("#cle-licence").value });
-    if (ok) {
-      await ouvrirSection("reglages");
-      await rafraichirBadgeAbonnement();
-      await verifierBlocageLicence();
-      toast("✓ Licence activée — merci !");
-    } else {
-      toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
+    try {
+      const ok = await invoke("set_license_key", { cle: document.querySelector("#cle-licence").value });
+      if (ok) {
+        await ouvrirSection("reglages");
+        await rafraichirBadgeAbonnement();
+        await verifierBlocageLicence();
+        toast("✓ Licence activée — merci !");
+      } else {
+        toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
+      }
+    } catch (err) {
+      // Sans ce filet, une erreur d'enregistrement ne provoquait AUCUNE
+      // réaction à l'écran : le gérant cliquait « Activer » et ne voyait
+      // rien du tout — au moment précis où il vient de payer.
+      toast(`La clé n'a pas pu être enregistrée : ${err}`, "attention", 6000);
     }
   });
   secLicence.appendChild(formLicence);
@@ -2079,14 +2177,25 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#form-licence-blocage").addEventListener("submit", async (e) => {
     e.preventDefault();
     const champ = document.querySelector("#cle-licence-blocage");
-    const ok = await invoke("set_license_key", { cle: champ.value });
-    if (ok) {
-      champ.value = "";
-      toast("✓ Licence activée — merci !");
-      await verifierBlocageLicence();
-      await rafraichirBadgeAbonnement();
-    } else {
-      toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
+    try {
+      const ok = await invoke("set_license_key", { cle: champ.value });
+      if (ok) {
+        champ.value = "";
+        toast("✓ Licence activée — merci !");
+        await verifierBlocageLicence();
+        await rafraichirBadgeAbonnement();
+      } else {
+        toast("Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.", "attention");
+      }
+    } catch (err) {
+      // Écran de blocage : c'est le seul endroit où le gérant peut encore
+      // agir. Une erreur silencieuse ici le laisse devant un bouton qui ne
+      // répond pas, sans savoir s'il doit rappeler ou réessayer.
+      toast(
+        `La clé n'a pas pu être enregistrée (${err}). Réessayez, puis appelez le 0151226741 si cela persiste.`,
+        "attention",
+        7000
+      );
     }
   });
   document.querySelector("#btn-fermer-nouveautes").addEventListener("click", () => {
