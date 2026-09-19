@@ -290,6 +290,34 @@
       </li>
     </template>
 
+    <!-- Écran de blocage du tout premier lancement : rien d'autre ne
+         s'affiche tant qu'un code d'installation valide (fabriqué par le
+         porteur du projet, APRÈS avoir été prévenu de cette installation
+         précise) n'a pas été saisi. Ne redemande plus jamais rien une fois
+         validé sur cette machine — voir license.rs. -->
+    <div id="overlay-installation" class="overlay-licence" hidden>
+      <div class="carte-blocage">
+        <p class="pastille-blocage">🔒 Installation à valider</p>
+        <h2>Avant de commencer</h2>
+        <p>
+          Cette installation doit d'abord être validée par le porteur du
+          projet, pour qu'il en garde la trace.
+        </p>
+        <div class="bloc-numero-support">
+          <p class="etiquette-numero">Depuis VOTRE téléphone, appelez ou écrivez sur WhatsApp :</p>
+          <p class="numero-support">0151226741</p>
+        </div>
+        <p class="identifiant-blocage">
+          Donnez-lui cet identifiant, il vous communiquera un code
+          d'installation à saisir ici : <span id="machine-id-installation"></span>
+        </p>
+        <form id="form-code-installation">
+          <input type="text" id="code-installation" placeholder="Coller ici le code d'installation reçu" />
+          <button type="submit">Valider</button>
+        </form>
+      </div>
+    </div>
+
     <!-- Écran de blocage : abonnement/essai terminé. Recouvre tout, aucune
          autre partie de l'appli n'est cliquable derrière. -->
     <div id="overlay-licence" class="overlay-licence" hidden>

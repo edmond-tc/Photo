@@ -2139,6 +2139,66 @@ async function lancerAssistantPremierDemarrage() {
 
 // ───────────────────────────── Démarrage ─────────────────────────────
 
+/// Tout ce qui suppose une installation déjà validée (voir
+/// #overlay-installation) : charger la file, proposer l'assistant, écouter
+/// les événements... Regroupé pour ne s'exécuter ni avant la validation du
+/// code d'installation, ni deux fois si un premier essai avait échoué.
+async function demarrerApplication() {
+  const premierLancement = await lancerAssistantPremierDemarrage();
+  await chargerFile();
+  await chargerImprimantes();
+  await rafraichirBadgeAbonnement();
+  await verifierBlocageLicence();
+  // Jamais au tout premier lancement : ce gérant n'a encore rien "gagné",
+  // il découvre juste l'application pour la première fois.
+  if (!premierLancement) {
+    await afficherNouveautesSiBesoin();
+    // Les boutiques déjà installées avant l'arrivée de la visite guidée ne
+    // l'ont jamais vue : on la propose une fois, puis plus jamais.
+    const params = await invoke("get_boutique_settings");
+    if (!params.visite_guidee_vue) {
+      demarrerVisite();
+    }
+  }
+  await verifierMiseAJour();
+  await afficherAccueilDuJour();
+  await proposerResumeFinDeJournee();
+  setInterval(mettreAJourBadgeOublies, 60000);
+  // Toutes les 10 minutes : si l'appli reste ouverte pendant que l'essai
+  // expire, le blocage doit apparaître sans attendre un redémarrage.
+  setInterval(verifierBlocageLicence, 10 * 60 * 1000);
+
+  await listen("nouveau-fichier", (event) => {
+    ajouterFichier(event.payload, true);
+    jouerNotification();
+  });
+
+  // Confirmation d'impression, reçue en arrière-plan jusqu'à 45 secondes
+  // après le clic sur "Imprimer" (voir impression.rs). Peut arriver que la
+  // commande soit encore dans la file, ou déjà passée en caisse — on met
+  // donc à jour partout où sa ligne pourrait exister à cet instant.
+  await listen("impression-confirmee", (event) => {
+    confirmationsImpression.set(event.payload.id, event.payload);
+    appliquerStatutImpression(event.payload.id, event.payload);
+  });
+
+  // Clé USB contenant un fichier "licence.txt" : évite au gérant de retaper
+  // à la main une clé signée de plus de 100 caractères.
+  await listen("licence-usb", async (event) => {
+    if (event.payload.reussi) {
+      toast("✓ Licence activée depuis la clé USB — merci !");
+      await verifierBlocageLicence();
+      await rafraichirBadgeAbonnement();
+    } else {
+      toast(
+        "Le fichier licence.txt de cette clé USB ne correspond pas à cet ordinateur. " +
+          "Appelez le 0151226741 en donnant l'identifiant affiché à l'écran.",
+        "attention"
+      );
+    }
+  });
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#btn-menu").addEventListener("click", ouvrirPanneauMenu);
   document.querySelector("#btn-fermer-menu").addEventListener("click", fermerPanneauMenu);
@@ -2202,57 +2262,39 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.querySelector("#overlay-nouveautes").hidden = true;
   });
 
-  const premierLancement = await lancerAssistantPremierDemarrage();
-  await chargerFile();
-  await chargerImprimantes();
-  await rafraichirBadgeAbonnement();
-  await verifierBlocageLicence();
-  // Jamais au tout premier lancement : ce gérant n'a encore rien "gagné",
-  // il découvre juste l'application pour la première fois.
-  if (!premierLancement) {
-    await afficherNouveautesSiBesoin();
-    // Les boutiques déjà installées avant l'arrivée de la visite guidée ne
-    // l'ont jamais vue : on la propose une fois, puis plus jamais.
-    const params = await invoke("get_boutique_settings");
-    if (!params.visite_guidee_vue) {
-      demarrerVisite();
-    }
-  }
-  await verifierMiseAJour();
-  await afficherAccueilDuJour();
-  await proposerResumeFinDeJournee();
-  setInterval(mettreAJourBadgeOublies, 60000);
-  // Toutes les 10 minutes : si l'appli reste ouverte pendant que l'essai
-  // expire, le blocage doit apparaître sans attendre un redémarrage.
-  setInterval(verifierBlocageLicence, 10 * 60 * 1000);
-
-  await listen("nouveau-fichier", (event) => {
-    ajouterFichier(event.payload, true);
-    jouerNotification();
-  });
-
-  // Confirmation d'impression, reçue en arrière-plan jusqu'à 45 secondes
-  // après le clic sur "Imprimer" (voir impression.rs). Peut arriver que la
-  // commande soit encore dans la file, ou déjà passée en caisse — on met
-  // donc à jour partout où sa ligne pourrait exister à cet instant.
-  await listen("impression-confirmee", (event) => {
-    confirmationsImpression.set(event.payload.id, event.payload);
-    appliquerStatutImpression(event.payload.id, event.payload);
-  });
-
-  // Clé USB contenant un fichier "licence.txt" : évite au gérant de retaper
-  // à la main une clé signée de plus de 100 caractères.
-  await listen("licence-usb", async (event) => {
-    if (event.payload.reussi) {
-      toast("✓ Licence activée depuis la clé USB — merci !");
-      await verifierBlocageLicence();
-      await rafraichirBadgeAbonnement();
-    } else {
+  // Tout premier lancement : rien d'autre ne démarre tant que ce code n'est
+  // pas validé (voir license.rs) — c'est ce qui garantit que le porteur du
+  // projet est au courant de CETTE installation avant qu'elle serve.
+  document.querySelector("#form-code-installation").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const champ = document.querySelector("#code-installation");
+    try {
+      const ok = await invoke("valider_code_installation", { code: champ.value });
+      if (ok) {
+        document.querySelector("#overlay-installation").hidden = true;
+        toast("✓ Installation validée — merci !");
+        await demarrerApplication();
+      } else {
+        toast(
+          "Ce code n'est pas reconnu. Vérifiez qu'il est copié en entier, sans espace avant ni après.",
+          "attention"
+        );
+      }
+    } catch (err) {
+      // Écran de blocage : c'est le seul endroit où l'on peut encore agir.
       toast(
-        "Le fichier licence.txt de cette clé USB ne correspond pas à cet ordinateur. " +
-          "Appelez le 0151226741 en donnant l'identifiant affiché à l'écran.",
-        "attention"
+        `Le code n'a pas pu être vérifié (${err}). Réessayez, puis appelez le 0151226741 si cela persiste.`,
+        "attention",
+        7000
       );
     }
   });
+
+  if (await invoke("code_installation_deja_valide")) {
+    await demarrerApplication();
+  } else {
+    const licence = await invoke("get_license_status");
+    document.querySelector("#machine-id-installation").textContent = licence.machine_id;
+    document.querySelector("#overlay-installation").hidden = false;
+  }
 });

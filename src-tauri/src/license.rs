@@ -207,10 +207,15 @@ pub fn generer_cle(
     )
 }
 
-fn signature_valide(machine_id: &str, expiration_compacte: &str, signature: &str) -> bool {
-    use ed25519_dalek::{Signature, VerifyingKey};
-
-    let message = message_a_signer(machine_id, expiration_compacte);
+/// Décode une signature encodée (Crockford base32) et la vérifie contre un
+/// message et une clé publique donnés. Partagé entre les clés de licence et
+/// les codes d'installation, qui ne diffèrent que par le message signé.
+fn decoder_et_verifier_signature(
+    message: &[u8],
+    signature: &str,
+    cle_publique: &ed25519_dalek::VerifyingKey,
+) -> bool {
+    use ed25519_dalek::Signature;
 
     let Some(octets) = base32::decode(Alphabet::Crockford, signature) else {
         return false;
@@ -218,11 +223,18 @@ fn signature_valide(machine_id: &str, expiration_compacte: &str, signature: &str
     let Ok(octets) = <[u8; 64]>::try_from(octets.as_slice()) else {
         return false;
     };
+    cle_publique
+        .verify_strict(message, &Signature::from_bytes(&octets))
+        .is_ok()
+}
+
+fn signature_valide(machine_id: &str, expiration_compacte: &str, signature: &str) -> bool {
+    use ed25519_dalek::VerifyingKey;
+
     let Ok(cle) = VerifyingKey::from_bytes(&CLE_PUBLIQUE) else {
         return false;
     };
-    cle.verify_strict(&message, &Signature::from_bytes(&octets))
-        .is_ok()
+    decoder_et_verifier_signature(&message_a_signer(machine_id, expiration_compacte), signature, &cle)
 }
 
 fn verifier_cle(machine_id: &str, cle: &str) -> Option<NaiveDate> {
@@ -254,6 +266,82 @@ fn verifier_cle_sur_cette_machine(cle: &str) -> Option<NaiveDate> {
         .or_else(|| empreinte_materielle().and_then(|e| verifier_cle(&e, cle)))
 }
 
+// ───────────────────── Code d'installation ─────────────────────
+// Distinct de la licence : une licence dit "cette machine a payé jusqu'à
+// telle date", un code d'installation dit juste "le porteur du projet a été
+// prévenu AVANT que cette machine précise soit installée". Indispensable
+// quand quelqu'un d'autre que le porteur du projet (un maintenancier sur le
+// terrain, par exemple) installe le logiciel : sans ce verrou, il pourrait
+// démarcher et installer des boutiques entières sans jamais en informer
+// personne, l'essai gratuit de 30 jours démarrant tout seul.
+//
+// Signé avec la même paire de clés Ed25519 que les licences (le porteur du
+// projet est le seul à pouvoir en fabriquer un, depuis son tableau de bord),
+// mais avec un message et un préfixe différents ("INSTALL|" / "INST-") pour
+// qu'un code d'installation ne puisse jamais être confondu avec — ni recyclé
+// comme — une clé de licence, ou l'inverse.
+
+fn message_a_signer_installation(id: &str) -> Vec<u8> {
+    format!("INSTALL|{id}").into_bytes()
+}
+
+fn code_installation_valide_pour(id: &str, code: &str) -> bool {
+    use ed25519_dalek::VerifyingKey;
+
+    let code: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+    let code = code.to_uppercase();
+    let Some(signature) = code.strip_prefix("INST-") else {
+        return false;
+    };
+    let Ok(cle) = VerifyingKey::from_bytes(&CLE_PUBLIQUE) else {
+        return false;
+    };
+    decoder_et_verifier_signature(&message_a_signer_installation(id), signature, &cle)
+}
+
+/// Accepte un code signé pour l'un OU l'autre des identifiants de cette
+/// machine — même raison que `verifier_cle_sur_cette_machine` : l'identifiant
+/// affiché au tout premier lancement peut être le `MachineGuid` hérité ou
+/// l'empreinte matérielle, selon ce que cette machine sait dire d'elle-même.
+fn code_installation_valide_sur_cette_machine(code: &str) -> bool {
+    code_installation_valide_pour(&machine_id(), code)
+        || empreinte_materielle().is_some_and(|e| code_installation_valide_pour(&e, code))
+}
+
+/// A-t-on déjà validé un code d'installation sur cette machine ?
+///
+/// On revérifie la SIGNATURE du code stocké contre l'identifiant de la
+/// machine ACTUELLE à chaque appel — on ne se contente pas d'un simple
+/// drapeau "1" enregistré une fois. Sans ça, copier le dossier de données de
+/// l'application (le fichier SQLite) d'un PC déjà validé vers un tout autre
+/// PC aurait suffi à déverrouiller ce second PC sans jamais obtenir de code
+/// pour lui — exactement le contournement que ce verrou doit empêcher.
+/// Même principe que la licence (`cle_licence`, jamais un simple booléen).
+///
+/// Le registre Windows sert de secours si la base SQLite a été supprimée
+/// (désinstallation, réinstallation après un souci antivirus) : sans lui, un
+/// gérant honnête qui réinstalle devrait rappeler inutilement pour un code
+/// qu'il possède déjà.
+#[tauri::command]
+pub fn code_installation_deja_valide(state: State<DbState>) -> Result<bool, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let code = db::get_setting(&conn, "code_installation").or_else(|| registre::lire("CodeInstallation"));
+    Ok(code.is_some_and(|code| code_installation_valide_sur_cette_machine(&code)))
+}
+
+#[tauri::command]
+pub fn valider_code_installation(state: State<DbState>, code: String) -> Result<bool, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if !code_installation_valide_sur_cette_machine(&code) {
+        return Ok(false);
+    }
+    let code_normalise: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+    let code_normalise = code_normalise.to_uppercase();
+    db::set_setting(&conn, "code_installation", &code_normalise).map_err(|e| e.to_string())?;
+    registre::ecrire("CodeInstallation", &code_normalise);
+    Ok(true)
+}
+
 #[derive(serde::Serialize)]
 pub struct StatutLicence {
     pub statut: String, // 'essai' | 'actif' | 'expire' | 'invalide'
@@ -262,38 +350,41 @@ pub struct StatutLicence {
     pub date_expiration: Option<String>,
 }
 
-/// Clé de registre miroir de `essai_debut` (Windows uniquement). Le fichier
-/// SQLite de l'app est facile à supprimer pour relancer un essai gratuit —
-/// ce second emplacement, moins évident, relève le niveau sans prétendre à
-/// une protection absolue (mécanisme "léger" assumé, cf. section 7).
+/// Miroir dans le registre Windows de certaines valeurs par ailleurs
+/// stockées dans la base SQLite de l'app — laquelle est facile à supprimer
+/// (désinstallation, réinstallation après un souci antivirus...). Ce second
+/// emplacement, moins évident, relève le niveau sans prétendre à une
+/// protection absolue (mécanisme "léger" assumé, cf. section 7). Un seul
+/// module paramétré par nom de valeur : `EssaiDebut` (date de début
+/// d'essai) et `CodeInstallation` (code d'installation déjà validé) s'y
+/// stockent côte à côte, sous la même clé.
 #[cfg(windows)]
 mod registre {
     use winreg::enums::*;
     use winreg::RegKey;
 
     const CHEMIN: &str = r"Software\AtinzPhotocopieBenin";
-    const VALEUR: &str = "EssaiDebut";
 
-    pub fn lire() -> Option<String> {
+    pub fn lire(valeur: &str) -> Option<String> {
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         let cle = hkcu.open_subkey(CHEMIN).ok()?;
-        cle.get_value(VALEUR).ok()
+        cle.get_value(valeur).ok()
     }
 
-    pub fn ecrire(valeur: &str) {
+    pub fn ecrire(valeur: &str, contenu: &str) {
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         if let Ok((cle, _)) = hkcu.create_subkey(CHEMIN) {
-            let _ = cle.set_value(VALEUR, &valeur);
+            let _ = cle.set_value(valeur, &contenu);
         }
     }
 }
 
 #[cfg(not(windows))]
 mod registre {
-    pub fn lire() -> Option<String> {
+    pub fn lire(_valeur: &str) -> Option<String> {
         None
     }
-    pub fn ecrire(_valeur: &str) {}
+    pub fn ecrire(_valeur: &str, _contenu: &str) {}
 }
 
 /// Date la plus avancée jamais observée sur cette machine.
@@ -377,7 +468,7 @@ pub fn debut_essai_le_plus_ancien(traces: &[Option<String>]) -> Option<String> {
 pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
     let traces = [
         db::get_setting(conn, "essai_debut"),
-        registre::lire(),
+        registre::lire("EssaiDebut"),
         marqueur_partage::lire(),
     ];
 
@@ -385,7 +476,7 @@ pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
         debut_essai_le_plus_ancien(&traces).unwrap_or_else(|| Local::now().to_rfc3339());
 
     let _ = db::set_setting(conn, "essai_debut", &plus_ancienne);
-    registre::ecrire(&plus_ancienne);
+    registre::ecrire("EssaiDebut", &plus_ancienne);
     marqueur_partage::ecrire(&plus_ancienne);
 }
 
@@ -660,5 +751,85 @@ fn cle_generee_par_le_worker_reel_est_acceptee() {
     let cle = "YXZJGFCYSJ4S6HAQCYEKSBF69R1JVCKH0QPGFVJ1FZ34W4AS2A85XEHZTW8AK0ZEZWN72QJ04HJ1AN8KB4MXF2JR2RFGP0475GDK838-20261015";
     assert!(super::verifier_cle("MACHINE-DE-TEST-1234", cle).is_some());
     assert!(super::verifier_cle("AUTRE-MACHINE", cle).is_none());
+}
+
+// ───────────── Code d'installation ─────────────
+// Utilise une paire de clés jetable générée sur place (pas le vrai secret du
+// Worker, inconnu ici) : on vérifie la mécanique de `decoder_et_verifier_signature`
+// et du préfixe "INST-", indépendamment de la vraie clé publique embarquée.
+
+fn fabriquer_code_de_test(cle_privee: &ed25519_dalek::SigningKey, id: &str) -> String {
+    use ed25519_dalek::Signer;
+    let signature = cle_privee.sign(&message_a_signer_installation(id));
+    format!("INST-{}", base32::encode(Alphabet::Crockford, &signature.to_bytes()))
+}
+
+#[test]
+fn accepte_un_code_signe_pour_cette_machine() {
+    use ed25519_dalek::SigningKey;
+    let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
+    let cle_publique = cle_privee.verifying_key();
+    let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
+    let message = message_a_signer_installation("MACHINE-1");
+    let signature = code.strip_prefix("INST-").unwrap();
+    assert!(super::decoder_et_verifier_signature(&message, signature, &cle_publique));
+}
+
+#[test]
+fn refuse_un_code_sans_le_prefixe_inst() {
+    assert!(!code_installation_valide_pour("MACHINE-1", "ABCDEFGH"));
+}
+
+#[test]
+fn refuse_un_code_signe_pour_une_autre_machine() {
+    use ed25519_dalek::SigningKey;
+    let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
+    let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
+    let message_autre_machine = message_a_signer_installation("MACHINE-2");
+    let signature = code.strip_prefix("INST-").unwrap();
+    assert!(!super::decoder_et_verifier_signature(
+        &message_autre_machine,
+        signature,
+        &cle_privee.verifying_key()
+    ));
+}
+
+#[test]
+fn refuse_un_code_dont_la_signature_est_modifiee() {
+    use ed25519_dalek::SigningKey;
+    let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
+    let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
+    // Jamais le tout dernier caractère : en base32 (512 bits de signature
+    // sur 103 caractères), il ne porte que 2 bits utiles sur 5 — certaines
+    // paires de caractères n'y diffèrent que sur un bit de bourrage ignoré
+    // au décodage, ce qui rendrait ce test bogué (pas seulement rare).
+    let mut caracteres: Vec<char> = code.chars().collect();
+    let position = caracteres.len() / 2;
+    caracteres[position] = if caracteres[position] == 'A' { 'B' } else { 'A' };
+    let code: String = caracteres.into_iter().collect();
+    let message = message_a_signer_installation("MACHINE-1");
+    let signature = code.strip_prefix("INST-").unwrap();
+    assert!(!super::decoder_et_verifier_signature(
+        &message,
+        signature,
+        &cle_privee.verifying_key()
+    ));
+}
+
+#[test]
+fn accepte_un_code_colle_avec_espaces_et_en_minuscules() {
+    use ed25519_dalek::SigningKey;
+    let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
+    let cle_publique = cle_privee.verifying_key();
+    let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
+    let collee = format!("  {}\n", code.to_lowercase());
+    let normalisee: String = collee.chars().filter(|c| !c.is_whitespace()).collect();
+    let normalisee = normalisee.to_uppercase();
+    let signature = normalisee.strip_prefix("INST-").unwrap();
+    assert!(super::decoder_et_verifier_signature(
+        &message_a_signer_installation("MACHINE-1"),
+        signature,
+        &cle_publique
+    ));
 }
 }

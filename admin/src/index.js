@@ -90,6 +90,17 @@ async function genererCle(env, machineId, jours) {
   };
 }
 
+// ─────────────────── Code d'installation (src-tauri/src/license.rs) ──────
+// Signé avec la même paire de clés que les licences, mais un message et un
+// préfixe différents ("INSTALL|" / "INST-") : un code d'installation atteste
+// juste que le porteur du projet a été prévenu AVANT qu'une machine précise
+// soit installée — il ne porte aucune durée, contrairement à une licence, et
+// ne peut donc jamais être confondu avec — ni recyclé comme — une clé.
+async function genererCodeInstallation(env, machineId) {
+  const signature = await signerEd25519(env.CLE_PRIVEE_LICENCE, `INSTALL|${machineId}`);
+  return `INST-${crockfordBase32(signature)}`;
+}
+
 // ───────────────────────────── Session admin ─────────────────────────────
 // Pas de table de sessions : le cookie porte lui-même sa date d'expiration
 // et un numéro tiré au hasard, le tout signé avec le mot de passe admin.
@@ -359,6 +370,7 @@ async function pageAccueil(env) {
     `<div class="carte">
       <h1>Boutiques (${boutiques.length})</h1>
       <a class="btn" href="/boutiques/nouvelle">+ Ajouter une boutique</a>
+      <a class="btn secondaire" href="/installations">🔒 Installations</a>
       <a class="btn secondaire" href="/parametres">Paramètres</a>
       <a class="btn secondaire" href="/telecharger" target="_blank">Page de téléchargement ↗</a>
       <a class="btn secondaire" href="/nouveautes">Nouveautés</a>
@@ -383,6 +395,58 @@ async function pageAccueil(env) {
       <table>
         <thead><tr><th>Boutique</th><th>Statut</th><th>Expire le</th></tr></thead>
         <tbody>${lignesBoutiques || `<tr><td colspan="3">Aucune boutique enregistrée pour l'instant.</td></tr>`}</tbody>
+      </table>
+    </div>`
+  );
+}
+
+async function pageInstallations(env, { codeGenere, erreur } = {}) {
+  const { results: codes } = await env.DB.prepare(
+    `SELECT * FROM codes_installation ORDER BY created_at DESC LIMIT 200`
+  ).all();
+
+  const lignes = codes
+    .map(
+      (c) => `<tr>
+        <td>${new Date(c.created_at).toLocaleString("fr-FR")}</td>
+        <td style="font-size:0.8rem">${echapper(c.machine_id)}</td>
+        <td>${echapper(c.note) || "—"}</td>
+      </tr>`
+    )
+    .join("");
+
+  return page(
+    "Installations",
+    `<div class="carte">
+      <p><a href="/">&larr; Retour</a></p>
+      <h1>Valider une installation</h1>
+      <p style="font-size:0.85rem; color:#605e5c">
+        À faire AVANT qu'un agent ou un maintenancier n'installe réellement
+        chez un gérant : demande-lui l'identifiant machine affiché à l'écran
+        de blocage, génère le code ci-dessous, et donne-le-lui par téléphone
+        ou WhatsApp. Sans ce code, le logiciel refuse de démarrer chez le
+        gérant — même en essai gratuit — donc chaque installation passe
+        forcément par ici.
+      </p>
+      ${erreur ? `<p style="color:#a4262c">${echapper(erreur)}</p>` : ""}
+      ${
+        codeGenere
+          ? `<p style="color:#0e5c1f">Code généré pour <code>${echapper(codeGenere.machineId)}</code> :</p>
+             <p class="cle-resultat">${echapper(codeGenere.code)}</p>`
+          : ""
+      }
+      <form method="POST" action="/installations">
+        <label>Identifiant machine (dicté par la personne sur place) <input type="text" name="machine_id" required /></label>
+        <label>Note — qui installe, où (optionnel) <input type="text" name="note" placeholder="Ex : maintenancier Parakou, boutique X" /></label>
+        <button type="submit">Générer le code</button>
+      </form>
+    </div>
+
+    <div class="carte">
+      <h2>Historique des installations validées (${codes.length})</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Identifiant machine</th><th>Note</th></tr></thead>
+        <tbody>${lignes || `<tr><td colspan="3">Aucune installation validée pour l'instant.</td></tr>`}</tbody>
       </table>
     </div>`
   );
@@ -955,6 +1019,30 @@ async function router(request, env) {
 
       if (pathname === "/" && method === "GET") {
         return new Response(await pageAccueil(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+
+      if (pathname === "/installations" && method === "GET") {
+        return new Response(await pageInstallations(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      if (pathname === "/installations" && method === "POST") {
+        const donnees = await request.formData();
+        const machineId = borner(donnees.get("machine_id"), 120);
+        if (!machineId) {
+          return new Response(
+            await pageInstallations(env, { erreur: "L'identifiant machine est obligatoire." }),
+            { status: 400, headers: { "content-type": "text/html; charset=utf-8" } }
+          );
+        }
+        const note = borner(donnees.get("note"), 300) || null;
+        const code = await genererCodeInstallation(env, machineId);
+        await env.DB.prepare(
+          `INSERT INTO codes_installation (machine_id, code, note) VALUES (?, ?, ?)`
+        )
+          .bind(machineId, code, note)
+          .run();
+        return new Response(await pageInstallations(env, { codeGenere: { machineId, code } }), {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
       }
 
       if (pathname === "/boutiques/nouvelle" && method === "GET") {

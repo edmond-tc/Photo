@@ -6,6 +6,11 @@ connecté. Sert à :
 
 - garder la liste des boutiques déployées (nom, gérant, téléphone,
   identifiant machine) ;
+- valider chaque installation AVANT qu'elle n'ait lieu, via un code signé
+  que toi seul peux générer (page `/installations`) — indispensable dès
+  qu'une installation est faite par quelqu'un d'autre que toi (agent,
+  maintenancier) : sans ce code, le logiciel refuse de démarrer, même en
+  essai gratuit, donc tu es forcément mis au courant ;
 - générer les clés de licence (remplace `generer-licence.exe` — même
   algorithme, même résultat, vérifié) avec un historique automatique,
   sans rien à noter à la main ;
@@ -19,8 +24,11 @@ connecté. Sert à :
   la boutique est créée automatiquement si c'est un nouveau gérant.
 
 La base D1 `photocopie-admin-db` (id `ca1a0e15-7e38-4eee-afb6-a44b5f6b4418`)
-est déjà créée et migrée en prod (5 tables : `boutiques`, `licences`,
-`rapports`, `demandes`, `parametres`). `wrangler.toml` pointe déjà dessus.
+est déjà créée et migrée en prod (6 tables : `boutiques`, `licences`,
+`rapports`, `demandes`, `parametres`, `codes_installation`). `wrangler.toml`
+pointe déjà dessus. Chaque déploiement (workflow `Deploy Admin`) rejoue tous
+les fichiers de `migrations/` : rien à faire à la main pour une base déjà en
+place, une nouvelle table apparaît toute seule au prochain déploiement.
 
 ## Déploiement — sans terminal, GitHub s'en charge
 
@@ -121,6 +129,28 @@ Va dans **Paramètres** (lien en haut de la page d'accueil) pour renseigner
 tes numéros Mobile Money, un montant indicatif et ton contact WhatsApp —
 c'est ce que voient les gérants sur `/renouveler`. Tant que ce n'est pas
 rempli, la page de renouvellement s'affiche sans ces informations.
+
+## Code d'installation — savoir chaque installation faite
+
+Distinct de la licence : une licence dit "cette machine a payé jusqu'à telle
+date", un code d'installation dit juste "le porteur du projet a été prévenu
+AVANT que cette machine précise soit installée". Utile dès qu'une
+installation est faite par quelqu'un d'autre que toi (agent, maintenancier
+sur le terrain) : sans code valide, le logiciel refuse de démarrer chez le
+gérant — même en essai gratuit de 30 jours — donc chaque installation passe
+forcément par toi, avant même de savoir si elle deviendra payante.
+
+Signé avec la même paire de clés Ed25519 que les licences (même
+`CLE_PRIVEE_LICENCE`), mais un message et un préfixe différents ("INSTALL|"
+côté signature, "INST-" au début du code) : un code d'installation ne peut
+donc jamais être confondu avec — ni recyclé comme — une clé de licence, dans
+un sens ou dans l'autre.
+
+Utilisation : page **Installations** (lien en haut de la page d'accueil) →
+coller l'identifiant machine dicté par la personne sur place, une note
+optionnelle (qui installe, où), "Générer le code" → le code s'affiche et
+part par WhatsApp. Chaque code généré reste dans l'historique de cette page,
+consultable à tout moment.
 
 ## Rapports de visite
 

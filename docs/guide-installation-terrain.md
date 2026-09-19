@@ -1,5 +1,21 @@
 # Guide d'installation terrain (pour l'agent)
 
+## Avant même de brancher quoi que ce soit : le code d'installation
+Depuis la version 0.4.0, le logiciel refuse de démarrer — même en essai
+gratuit — tant qu'un **code d'installation** n'a pas été saisi. Ce code n'est
+fabriqué que par le porteur du projet, depuis son tableau de bord
+(`/installations`), pour que CHAQUE installation lui soit connue avant
+d'avoir lieu (pas seulement celles qui deviennent payantes).
+
+1. Brancher la clé USB, lancer l'installeur, jusqu'au premier démarrage.
+2. Un écran de blocage affiche un identifiant machine : le lire (ou le
+   photographier) et l'envoyer par WhatsApp au porteur du projet.
+3. Il génère le code correspondant depuis `/installations` et vous le
+   renvoie.
+4. Le coller dans l'écran de blocage → le logiciel démarre normalement,
+   l'assistant de bienvenue s'ouvre, et plus rien ne sera jamais redemandé
+   sur cette machine.
+
 ## Avant de partir
 - Copier le fichier `.exe` (récupéré depuis GitHub Actions, voir README) sur
   une clé USB.

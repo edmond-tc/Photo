@@ -98,6 +98,8 @@ pub fn run() {
             gestion::desactiver_mode_demo,
             license::get_license_status,
             license::set_license_key,
+            license::code_installation_deja_valide,
+            license::valider_code_installation,
             updates::verifier_mise_a_jour,
             updates::version_actuelle,
             updates::recuperer_nouveautes_et_marquer_vues,
