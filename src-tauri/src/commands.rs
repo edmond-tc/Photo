@@ -496,7 +496,11 @@ pub async fn activer_point_acces_local(
     .map_err(|e| e.to_string())??;
 
     let mut nouvelles_taches = Vec::new();
-    let mut avertissements = Vec::new();
+    // Les méthodes qui ont échoué AVANT celle qui a réussi comptent comme
+    // des avertissements : sur un PC dont le pilote ne convient qu'à la
+    // méthode 1, une "réussite" de la méthode 2 peut n'être qu'apparente,
+    // et c'est l'échec de la méthode 1 qui contient la vraie information.
+    let mut avertissements = activation.echecs_precedents.clone();
 
     match crate::dhcp::demarrer(activation.adresse).await {
         Ok(tache) => nouvelles_taches.push(tache),

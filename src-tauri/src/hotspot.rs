@@ -572,6 +572,46 @@ pub struct Activation {
     /// Adresse du PC sur ce réseau — pas la même selon la méthode, et c'est
     /// elle que les serveurs DHCP/DNS et le QR code doivent annoncer.
     pub adresse: Ipv4Addr,
+    /// Les méthodes essayées AVANT celle qui a réussi, et pourquoi elles ont
+    /// échoué.
+    ///
+    /// Trouvé sur le terrain : jusqu'ici, dès qu'une méthode réussissait,
+    /// l'échec des précédentes était jeté. Or c'est exactement l'inverse
+    /// qu'il faut : sur ce PC, la méthode 1 (réseau hébergé) est la SEULE
+    /// adaptée à son pilote Wi-Fi de 2011 — la méthode 2 y est officiellement
+    /// dépréciée. Elle "réussissait" donc en apparence tout en ne marchant
+    /// jamais vraiment, pendant que la vraie erreur, celle qui aurait permis
+    /// de réparer, restait invisible.
+    pub echecs_precedents: Vec<String>,
+}
+
+/// Traduit l'erreur brute de `netsh wlan start hostednetwork` en une phrase
+/// avec la manipulation qui la règle.
+///
+/// "Le groupe ou la ressource n'est pas dans l'état approprié" est de loin
+/// la panne la plus fréquente de cette méthode, et elle a une cause unique
+/// et une solution en trente secondes : la carte virtuelle que Windows crée
+/// pour le réseau hébergé est désactivée dans le Gestionnaire de
+/// périphériques. Laisser passer le message d'origine, incompréhensible,
+/// revenait à condamner un PC parfaitement capable.
+fn expliquer_echec_reseau_heberge(erreur: &str) -> String {
+    let normalise = normaliser(erreur);
+    let ressource_mal_en_point = normalise.contains("tat appropri")
+        || normalise.contains("not in the correct state")
+        || normalise.contains("group or resource");
+
+    if ressource_mal_en_point {
+        return format!(
+            "{erreur}\n\n➜ Cette erreur précise a presque toujours la même cause : la carte \
+             virtuelle du réseau hébergé est DÉSACTIVÉE sur ce PC. Pour la réactiver : clic \
+             droit sur le menu Démarrer → « Gestionnaire de périphériques » → menu « Affichage » \
+             → « Afficher les périphériques cachés » → ouvrir « Cartes réseau » → clic droit sur \
+             « Microsoft Hosted Network Virtual Adapter » (ou « Carte virtuelle hébergée ») → \
+             « Activer ». Puis réessayez d'activer le Wi-Fi local."
+        );
+    }
+
+    erreur.to_string()
 }
 
 /// Essaie TOUTES les façons connues de créer un Wi-Fi depuis ce PC, dans
@@ -609,9 +649,13 @@ pub fn activer_par_tous_les_moyens(
                 return Ok(Activation {
                     methode: "réseau hébergé",
                     adresse: ADRESSE_POINT_ACCES,
+                    echecs_precedents: echecs,
                 });
             }
-            Err(e) => echecs.push(format!("Méthode 1 (réseau hébergé) : {e}")),
+            Err(e) => echecs.push(format!(
+                "Méthode 1 (réseau hébergé) : {}",
+                expliquer_echec_reseau_heberge(&e)
+            )),
         }
     }
 
@@ -631,6 +675,7 @@ pub fn activer_par_tous_les_moyens(
                 return Ok(Activation {
                     methode: "Wi-Fi Direct",
                     adresse,
+                    echecs_precedents: echecs,
                 });
             }
             Err(e) => echecs.push(format!("Méthode 2 (Wi-Fi Direct) : {e}")),
@@ -862,6 +907,33 @@ mod tests {
         // `Get-NetRoute` peut renvoyer 0.0.0.0 pour une route sans
         // passerelle réelle (interface locale) : ça ne compte pas non plus.
         assert!(!a_une_passerelle_valide("0.0.0.0"));
+    }
+
+    /// L'erreur la plus fréquente du réseau hébergé, dans les deux langues
+    /// de Windows : le message brut ne dit rien au gérant, alors que la
+    /// cause est connue et la solution tient en une manipulation.
+    #[test]
+    fn explique_la_carte_virtuelle_desactivee() {
+        let francais = "Le groupe ou la ressource n'est pas dans l'état approprié pour \
+                        exécuter l'opération demandée.";
+        let explique = expliquer_echec_reseau_heberge(francais);
+        assert!(explique.contains("Gestionnaire de périphériques"));
+        assert!(
+            explique.contains(francais),
+            "le message d'origine doit rester visible pour le support"
+        );
+
+        let anglais = "The group or resource is not in the correct state to perform the \
+                       requested operation.";
+        assert!(expliquer_echec_reseau_heberge(anglais).contains("Gestionnaire de périphériques"));
+    }
+
+    #[test]
+    fn ne_deforme_pas_une_erreur_qu_on_ne_sait_pas_expliquer() {
+        // Inventer une explication pour une panne inconnue enverrait le
+        // gérant sur une fausse piste : mieux vaut transmettre tel quel.
+        let inconnue = "Erreur inattendue du pilote Wi-Fi (code 0x8007139F).";
+        assert_eq!(expliquer_echec_reseau_heberge(inconnue), inconnue);
     }
 
     #[test]
