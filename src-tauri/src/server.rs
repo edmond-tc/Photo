@@ -524,7 +524,13 @@ fn espace_disque_insuffisant(data_dir: &std::path::Path) -> bool {
 /// Ne garde que le nom de fichier, sans le chemin — un client malveillant
 /// pourrait sinon envoyer un nom du type "../../Windows/Startup/x.exe" pour
 /// écrire en dehors du dossier de réception (faille de traversée de chemin).
-fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
+///
+/// Publique parce que TOUS les canaux d'arrivée doivent s'en servir, pas
+/// seulement l'envoi par le Wi-Fi : la réception Bluetooth (voir `obex.rs`)
+/// reçoit elle aussi un nom choisi par l'appareil d'en face. Deux fonctions
+/// séparées finiraient par diverger, et la protection la plus faible
+/// deviendrait la porte d'entrée.
+pub fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
     let nom = nom_brut.rsplit(['/', '\\']).next().unwrap_or(nom_brut).trim();
     // Retire aussi les caractères interdits dans un nom de fichier Windows et
     // les caractères de contrôle, sinon std::fs::write échoue silencieusement

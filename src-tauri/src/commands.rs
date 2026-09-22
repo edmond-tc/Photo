@@ -512,6 +512,12 @@ pub struct RapportDiagnostic {
     derniere_sauvegarde: Option<String>,
     dernier_fichier_recu: Option<String>,
     nombre_transactions_total: i64,
+    /// Cette version exige-t-elle un code d'installation au premier
+    /// lancement ? Mis en pause pendant les tests du porteur du projet, il
+    /// doit être réactivé avant de confier les installations à des agents —
+    /// d'où sa présence ici : c'est le moyen de vérifier, sur une machine
+    /// déjà installée, laquelle des deux versions y a été posée.
+    code_installation_exige: bool,
 }
 
 /// Rapport texte que le porteur du projet récupère lors d'une visite (clé
@@ -561,6 +567,7 @@ pub fn generer_rapport_diagnostic(
         derniere_sauvegarde: crate::backup::derniere_sauvegarde(&app),
         dernier_fichier_recu,
         nombre_transactions_total,
+        code_installation_exige: crate::license::code_installation_exige(),
     })
 }
 

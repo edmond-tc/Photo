@@ -170,33 +170,17 @@ fn decoder_texte_utf16(octets: &[u8]) -> Option<String> {
 /// Ramène le nom envoyé par le téléphone à un simple nom de fichier.
 ///
 /// Rien n'empêche un téléphone — ou quelqu'un qui en imite un — d'annoncer
-/// un nom comme `..\..\Windows\System32\quelquechose.exe`. Écrit tel quel,
-/// il sortirait du dossier surveillé et écraserait un fichier du système.
-/// On ne garde donc que le dernier segment, débarrassé de tout ce qui
-/// pourrait servir à remonter dans l'arborescence.
+/// un nom comme `..\..\Windows\System32\quelquechose.exe`, qui sortirait du
+/// dossier surveillé, ou `CON.pdf`, un nom de périphérique réservé sur
+/// lequel l'écriture échoue en silence et fait disparaître le document du
+/// client sans que personne ne s'en aperçoive.
+///
+/// On réutilise volontairement la protection déjà écrite et éprouvée pour
+/// les envois par le Wi-Fi (`server::nom_fichier_sans_chemin`) : en écrire
+/// une seconde ici, c'était garantir qu'elles divergent, et que le canal le
+/// moins bien protégé devienne la porte d'entrée.
 pub fn nom_de_fichier_sur(nom: Option<&str>) -> String {
-    let brut = nom.unwrap_or("").trim();
-
-    let dernier_segment = brut
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or("")
-        .trim_matches(['.', ' '].as_ref());
-
-    let nettoye: String = dernier_segment
-        .chars()
-        .filter(|c| !matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control())
-        .take(120)
-        .collect();
-
-    if nettoye.is_empty() {
-        format!(
-            "bluetooth-{}",
-            chrono::Local::now().format("%Y%m%d-%H%M%S")
-        )
-    } else {
-        nettoye
-    }
+    crate::server::nom_fichier_sans_chemin(nom.unwrap_or(""))
 }
 
 /// Réponse à CONNECT : accepte la connexion et annonce la taille de paquet.
@@ -349,9 +333,20 @@ mod tests {
     fn invente_un_nom_quand_le_telephone_n_en_donne_pas() {
         // Certains téléphones envoient sans nom : un fichier sans nom ne
         // doit pas faire échouer la réception.
-        assert!(nom_de_fichier_sur(None).starts_with("bluetooth-"));
-        assert!(nom_de_fichier_sur(Some("   ")).starts_with("bluetooth-"));
-        assert!(nom_de_fichier_sur(Some("..")).starts_with("bluetooth-"));
+        assert_eq!(nom_de_fichier_sur(None), "fichier_recu");
+        assert_eq!(nom_de_fichier_sur(Some("   ")), "fichier_recu");
+        assert_eq!(nom_de_fichier_sur(Some("..")), "fichier_recu");
+    }
+
+    #[test]
+    fn le_bluetooth_est_protege_des_noms_reserves_de_windows() {
+        // Trouvé à l'audit : cette protection existait pour les envois par
+        // le Wi-Fi mais pas pour le Bluetooth. Écrire dans "CON.pdf" ou
+        // "nul" échoue en silence sous Windows — le document du client
+        // disparaîtrait sans message d'erreur.
+        assert_eq!(nom_de_fichier_sur(Some("CON.pdf")), "fichier_recu");
+        assert_eq!(nom_de_fichier_sur(Some("nul")), "fichier_recu");
+        assert_eq!(nom_de_fichier_sur(Some("lpt1.txt")), "fichier_recu");
     }
 
     #[test]

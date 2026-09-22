@@ -21,6 +21,30 @@ const CLE_PUBLIQUE: [u8; 32] = [
 
 const DUREE_ESSAI_JOURS: i64 = 30;
 
+/// Le code d'installation est-il exigé au tout premier lancement, avant de
+/// pouvoir entrer dans l'application ?
+///
+/// **Mis en pause (`false`) pendant les tests sur le terrain.** Le porteur du
+/// projet installe lui-même sur les postes qu'il visite : lui demander de
+/// générer puis saisir un code à chaque poste lui ferait perdre du temps
+/// devant le client, sans rien protéger — puisque c'est lui qui installe.
+///
+/// **À remettre à `true` avant de confier les installations à des agents.**
+/// C'est ce verrou qui garantit qu'aucune installation ne démarre sans que
+/// le porteur du projet en soit informé. Une seule ligne à changer : la
+/// vérification cryptographique et l'écran de saisie restent en place et
+/// fonctionnels, ils ne sont que court-circuités.
+///
+/// L'essai gratuit de 30 jours, lui, continue de courir normalement : ce
+/// n'est pas la même chose et il n'est pas touché.
+const CODE_INSTALLATION_EXIGE: bool = false;
+
+/// Permet au rapport de diagnostic de dire, depuis une machine déjà
+/// installée, si la version qui y tourne exige le code d'installation.
+pub fn code_installation_exige() -> bool {
+    CODE_INSTALLATION_EXIGE
+}
+
 /// Identifiant historique de la machine : le `MachineGuid` que Windows
 /// fabrique **à l'installation du système**. Toutes les licences déjà
 /// livrées sont signées pour cette valeur — elle ne doit donc jamais
@@ -324,6 +348,9 @@ fn code_installation_valide_sur_cette_machine(code: &str) -> bool {
 /// qu'il possède déjà.
 #[tauri::command]
 pub fn code_installation_deja_valide(state: State<DbState>) -> Result<bool, String> {
+    if !CODE_INSTALLATION_EXIGE {
+        return Ok(true);
+    }
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let code = db::get_setting(&conn, "code_installation").or_else(|| registre::lire("CodeInstallation"));
     Ok(code.is_some_and(|code| code_installation_valide_sur_cette_machine(&code)))

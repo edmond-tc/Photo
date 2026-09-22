@@ -22,7 +22,17 @@ const PORT_DNS: u16 = 53;
 /// Tourne indéfiniment (jusqu'à ce que le point d'accès soit désactivé, qui
 /// annule cette tâche — voir `hotspot::desactiver`).
 pub async fn demarrer(adresse: Ipv4Addr) {
-    let socket = match UdpSocket::bind(format!("0.0.0.0:{PORT_DNS}")).await {
+    // On écoute UNIQUEMENT sur l'adresse du point d'accès, jamais sur toutes
+    // les cartes réseau.
+    //
+    // Ce serveur répond à n'importe quelle question par notre propre adresse
+    // — c'est son rôle pour le portail captif. Mais si le PC est en même
+    // temps branché au réseau de la boutique (câble vers la box), écouter
+    // partout reviendrait à répondre aussi aux autres appareils de ce
+    // réseau, et donc à leur couper internet en détournant tous leurs noms
+    // de domaine vers ce PC. Se limiter à l'adresse du point d'accès confine
+    // l'effet aux seuls téléphones qui l'ont rejoint.
+    let socket = match UdpSocket::bind(format!("{adresse}:{PORT_DNS}")).await {
         Ok(s) => s,
         Err(e) => {
             eprintln!(
