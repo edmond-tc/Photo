@@ -492,6 +492,22 @@ pub fn activer_par_tous_les_moyens(
     ))
 }
 
+/// Un réseau créé par l'application est-il en train de tourner ? Sert à
+/// choisir le bon QR code : proposer de rejoindre un réseau qui n'existe pas
+/// enverrait le client dans le vide.
+pub fn point_acces_actif() -> bool {
+    if crate::wifi_direct::est_actif() {
+        return true;
+    }
+    local_ip_address::list_afinet_netifas()
+        .map(|interfaces| {
+            interfaces
+                .iter()
+                .any(|(_, ip)| *ip == std::net::IpAddr::V4(ADRESSE_POINT_ACCES))
+        })
+        .unwrap_or(false)
+}
+
 /// Contrairement au réseau hébergé, c'est Windows qui choisit l'adresse de
 /// l'interface Wi-Fi Direct — historiquement dans 192.168.137.0/24. On la
 /// retrouve donc au lieu de l'imposer.

@@ -661,20 +661,26 @@ async function afficherQr() {
     img.width = 220;
     img.height = 220;
     conteneur.appendChild(img);
-    if (info.wifi_configure) {
-      // L'ouverture automatique de la page après connexion au Wi-Fi dépend
-      // de la détection "portail captif" du téléphone du client — fiable
-      // sur beaucoup d'appareils, mais pas garantie sur tous. Sans cette
-      // adresse affichée en clair, le gérant n'aurait aucun moyen de guider
-      // un client bloqué après la connexion Wi-Fi.
+    // Chaque installation appelle une consigne différente : dire au gérant
+    // une phrase qui ne correspond pas à son poste le laisserait sans réponse
+    // devant un client bloqué.
+    if (info.mode === "point_acces_actif") {
+      // Sur iPhone la page s'ouvre seule ; sur Android le système affiche
+      // une notification à toucher. L'adresse reste affichée pour que le
+      // gérant puisse guider un client dont le téléphone ne réagit pas.
       urlEl.innerHTML =
-        `Le client scanne, rejoint le Wi-Fi automatiquement, et la page d'envoi s'ouvre — sur la plupart des téléphones. ` +
-        `Si rien ne s'ouvre après quelques secondes : dites-lui d'ouvrir son navigateur et de taper ` +
-        `<strong>${echapperHtml(info.url)}</strong>.`;
+        `Le client scanne et rejoint le Wi-Fi. Sur iPhone la page d'envoi s'ouvre toute seule ; ` +
+        `sur Android, une notification « Se connecter au réseau Wi-Fi » apparaît — il la touche et la page s'ouvre. ` +
+        `Si rien n'apparaît : <strong>${echapperHtml(info.url)}</strong>.`;
+    } else if (info.mode === "point_acces_inactif") {
+      urlEl.innerHTML =
+        `⚠️ Ce QR fait rejoindre le Wi-Fi <strong>${echapperHtml(info.url)}</strong>… mais le Wi-Fi local n'est pas allumé. ` +
+        `Appuyez d'abord sur « 📶 Activer le Wi-Fi local de la boutique », sinon le client se connectera à un réseau qui n'existe pas.`;
     } else {
       urlEl.innerHTML =
-        `Wi-Fi non configuré — ce QR n'ouvre que la page (${echapperHtml(info.url)}), le client doit déjà être connecté. ` +
-        `Configurez le nom et le mot de passe du Wi-Fi dans Réglages pour un QR unique tout-en-un.`;
+        `Ce QR ouvre directement la page d'envoi (${echapperHtml(info.url)}) dans le navigateur du client. ` +
+        `Il faut que son téléphone soit sur le même réseau que ce PC — c'est le cas s'il est connecté au Wi-Fi de la box ou du routeur de la boutique. ` +
+        `C'est le parcours le plus simple : un seul scan, rien à taper.`;
     }
   } catch (e) {
     conteneur.innerHTML = `<p class="avertissement">${echapperHtml(e)}</p>`;

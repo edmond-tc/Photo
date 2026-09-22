@@ -5,52 +5,67 @@ use image::{ImageBuffer, Luma};
 use qrcode::QrCode;
 use std::io::Cursor;
 
+/// Le QR ne veut pas dire la même chose selon l'installation de la boutique,
+/// et l'interface doit dire au gérant la phrase qui correspond à SA
+/// situation — pas une phrase qui suppose un matériel qu'il n'a pas.
+pub const MODE_POINT_ACCES_ACTIF: &str = "point_acces_actif";
+pub const MODE_POINT_ACCES_INACTIF: &str = "point_acces_inactif";
+pub const MODE_RESEAU_PARTAGE: &str = "reseau_partage";
+
 #[derive(serde::Serialize)]
 pub struct ServerInfo {
     pub url: String,
-    /// QR unique à afficher/imprimer : rejoint le Wi-Fi automatiquement.
-    /// La page d'envoi s'ouvre ensuite toute seule sur le plus de téléphones
-    /// possible (redirection "portail captif" sur le port 80), et au pire le
-    /// client n'a qu'à ouvrir son navigateur une fois connecté.
+    /// QR unique à afficher/imprimer. Selon le mode : soit il fait rejoindre
+    /// le Wi-Fi de la boutique, soit il ouvre directement la page d'envoi.
     pub qr_data_uri: String,
-    pub wifi_configure: bool,
+    pub mode: &'static str,
 }
 
-/// Construit le QR Wi-Fi (SSID + mot de passe configurés dans Réglages) et
-/// l'URL de secours de la page d'envoi, à afficher/imprimer pour les
-/// clients. Un seul QR : on privilégie la connexion automatique au Wi-Fi
-/// plutôt qu'un deuxième code pour l'URL (retour du porteur du projet).
+/// Construit le QR à montrer aux clients, en fonction de ce qui tourne
+/// vraiment sur ce PC.
+///
+/// Deux installations coexistent sur le terrain, et elles n'appellent pas le
+/// même QR :
+///
+/// - Le PC crée lui-même le Wi-Fi de la boutique (voir `hotspot.rs`) : le
+///   client doit d'abord rejoindre ce réseau, donc le QR porte le SSID et le
+///   mot de passe, et la page s'ouvre ensuite via le portail captif.
+/// - Le PC n'a pas de carte Wi-Fi — fréquent sur les tours de bureau — et
+///   il est branché en Ethernet à la box ou au routeur déjà présent dans la
+///   boutique. Le téléphone est alors DÉJÀ sur le même réseau : le QR doit
+///   porter l'adresse de la page, qui s'ouvre d'un seul scan, dans le vrai
+///   navigateur. C'est le parcours le plus simple des deux, pas un repli
+///   dégradé.
 pub fn build_server_info(
     wifi_ssid: Option<String>,
     wifi_mot_de_passe: Option<String>,
 ) -> Result<ServerInfo, String> {
-    // Même logique que le serveur HTTP lui-même (voir `server::adresse_locale`
-    // pour pourquoi une carte 169.254.x.x est préférée) : la page servie doit
-    // être joignable à l'adresse annoncée dans le QR, pas à une autre carte.
+    // Même logique que le serveur HTTP lui-même (voir `server::adresse_locale`) :
+    // la page servie doit être joignable à l'adresse annoncée dans le QR.
     let url = format!("http://{}:{PORT}/", crate::server::adresse_locale());
 
-    match wifi_ssid.filter(|s| !s.is_empty()) {
-        Some(ssid) => {
-            let qr_data_uri =
-                build_qr_data_uri(&wifi_qr_payload(&ssid, wifi_mot_de_passe.as_deref()))?;
-            Ok(ServerInfo {
-                url,
-                qr_data_uri,
-                wifi_configure: true,
-            })
-        }
-        None => {
-            // Pas encore configuré : on retombe sur un QR classique (ouvre
-            // la page) en attendant que le gérant renseigne le Wi-Fi dans
-            // Réglages > Wi-Fi local.
-            let qr_data_uri = build_qr_data_uri(&url)?;
-            Ok(ServerInfo {
-                url,
-                qr_data_uri,
-                wifi_configure: false,
-            })
-        }
-    }
+    let Some(ssid) = wifi_ssid.filter(|s| !s.is_empty()) else {
+        return Ok(ServerInfo {
+            qr_data_uri: build_qr_data_uri(&url)?,
+            url,
+            mode: MODE_RESEAU_PARTAGE,
+        });
+    };
+
+    // Proposer de rejoindre un réseau qui n'est pas allumé enverrait le
+    // client dans le vide : le mode le signale pour que l'interface rappelle
+    // d'abord d'activer le Wi-Fi local.
+    let mode = if crate::hotspot::point_acces_actif() {
+        MODE_POINT_ACCES_ACTIF
+    } else {
+        MODE_POINT_ACCES_INACTIF
+    };
+
+    Ok(ServerInfo {
+        qr_data_uri: build_qr_data_uri(&wifi_qr_payload(&ssid, wifi_mot_de_passe.as_deref()))?,
+        url,
+        mode,
+    })
 }
 
 /// Format standard "WIFI:" reconnu nativement par les appareils photo
