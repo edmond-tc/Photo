@@ -178,21 +178,49 @@ fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
     Some(true)
 }
 
-/// Ce PC est-il déjà sur un réseau que le téléphone d'un client pourrait
-/// rejoindre ?
+/// L'ancienne détection se contentait de regarder si UNE adresse IP
+/// "ressemblait" à un réseau (ni boucle locale, ni 169.254.x.x, ni notre
+/// propre point d'accès). Trouvé sur le terrain : ça s'est trompé sur un PC
+/// sans aucun routeur ni box branché — le diagnostic a dit "ce PC est déjà
+/// sur un réseau" alors que rien n'était branché, très probablement à cause
+/// d'un adaptateur fantôme (VPN, machine virtuelle, commutateur virtuel)
+/// dont l'adresse ressemble à un vrai réseau sans jamais mener nulle part.
 ///
-/// On écarte trois familles d'adresses qui ressemblent à un réseau sans en
-/// être un : la boucle locale (le PC qui se parle à lui-même), les adresses
-/// 169.254.x.x que Windows s'attribue justement quand AUCUN réseau n'a
-/// répondu, et l'adresse de notre propre point d'accès — sinon un PC ne
-/// serait jamais que "déjà en réseau avec lui-même".
-fn reseau_utilisable(adresses: &[Ipv4Addr]) -> bool {
-    adresses.iter().any(|adresse| {
-        !adresse.is_loopback()
-            && !adresse.is_link_local()
-            && *adresse != ADRESSE_POINT_ACCES
-            && !adresse.is_unspecified()
+/// Le bon signal, c'est la présence d'une PASSERELLE PAR DÉFAUT : un vrai
+/// routeur ou une vraie box en annonce toujours une (c'est elle qui rend
+/// le réseau "utilisable" au sens où un appareil peut en sortir), alors
+/// qu'un adaptateur fantôme n'en a généralement aucune.
+fn a_une_passerelle_valide(sortie: &str) -> bool {
+    sortie.lines().any(|ligne| {
+        ligne
+            .trim()
+            .parse::<Ipv4Addr>()
+            .is_ok_and(|ip| !ip.is_unspecified())
     })
+}
+
+/// Ce PC est-il déjà sur un réseau que le téléphone d'un client pourrait
+/// rejoindre ? Voir `a_une_passerelle_valide` pour le signal utilisé.
+#[cfg(windows)]
+fn reseau_utilisable() -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue).NextHop",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|sortie| a_une_passerelle_valide(&String::from_utf8_lossy(&sortie.stdout)))
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn reseau_utilisable() -> bool {
+    false
 }
 
 /// Traduit les capacités constatées en une consigne que le gérant peut
@@ -270,21 +298,6 @@ fn executer_netsh(arguments: &[&str]) -> String {
         .unwrap_or_default()
 }
 
-/// Adresses IPv4 réellement portées par les cartes de ce PC.
-fn adresses_locales() -> Vec<Ipv4Addr> {
-    local_ip_address::list_afinet_netifas()
-        .map(|interfaces| {
-            interfaces
-                .into_iter()
-                .filter_map(|(_, ip)| match ip {
-                    std::net::IpAddr::V4(v4) => Some(v4),
-                    _ => None,
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 /// Présence d'une radio Bluetooth. `None` si Windows ne sait pas répondre,
 /// ce qui ne vaut pas "absente".
 #[cfg(windows)]
@@ -317,7 +330,7 @@ pub fn diagnostiquer() -> DiagnosticPoste {
     let reseau_heberge_supporte = lire_prise_en_charge_reseau_heberge(&pilotes);
     let wifi_direct_go_supporte = lire_prise_en_charge_wifi_direct_go(&capacites);
     let bluetooth_present = bluetooth_present();
-    let reseau_utilisable = reseau_utilisable(&adresses_locales());
+    let reseau_utilisable = reseau_utilisable();
 
     DiagnosticPoste {
         carte_wifi_presente,
@@ -839,20 +852,24 @@ mod tests {
     }
 
     #[test]
-    fn ne_prend_pas_une_absence_de_reseau_pour_un_reseau() {
-        // 169.254.x.x est précisément ce que Windows s'attribue quand AUCUN
-        // réseau n'a répondu : le confondre avec un vrai réseau ferait dire
-        // au gérant "montrez le QR" alors que rien ne fonctionnerait.
-        assert!(!reseau_utilisable(&[Ipv4Addr::new(169, 254, 12, 34)]));
-        assert!(!reseau_utilisable(&[Ipv4Addr::new(127, 0, 0, 1)]));
-        assert!(!reseau_utilisable(&[ADRESSE_POINT_ACCES]));
-        assert!(!reseau_utilisable(&[]));
+    fn ne_prend_pas_une_absence_de_passerelle_pour_un_reseau() {
+        // Le bug exact trouvé sur le terrain : un PC sans routeur ni box
+        // branché, où le diagnostic a quand même affirmé "ce PC est déjà
+        // sur un réseau" — la sortie vide de `Get-NetRoute` (aucune
+        // passerelle par défaut) doit donner `false`, pas `true`.
+        assert!(!a_une_passerelle_valide(""));
+        assert!(!a_une_passerelle_valide("\n\n"));
+        // `Get-NetRoute` peut renvoyer 0.0.0.0 pour une route sans
+        // passerelle réelle (interface locale) : ça ne compte pas non plus.
+        assert!(!a_une_passerelle_valide("0.0.0.0"));
+    }
 
-        assert!(reseau_utilisable(&[Ipv4Addr::new(192, 168, 1, 25)]));
-        assert!(reseau_utilisable(&[
-            Ipv4Addr::new(127, 0, 0, 1),
-            Ipv4Addr::new(10, 0, 0, 7)
-        ]));
+    #[test]
+    fn reconnait_une_vraie_passerelle() {
+        assert!(a_une_passerelle_valide("192.168.1.1"));
+        // Plusieurs cartes réseau peuvent chacune annoncer une route par
+        // défaut : une seule vraie passerelle suffit.
+        assert!(a_une_passerelle_valide("0.0.0.0\n192.168.137.1\n"));
     }
 
     /// Un cas par ligne du tableau des situations rencontrées en boutique.
