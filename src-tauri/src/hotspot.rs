@@ -36,6 +36,29 @@ pub const ADRESSE_POINT_ACCES: Ipv4Addr = Ipv4Addr::new(192, 168, 73, 1);
 #[derive(Default)]
 pub struct EtatPointAcces(pub Mutex<Option<(JoinHandle<()>, JoinHandle<()>)>>);
 
+/// L'adresse EFFECTIVEMENT en service, quand un point d'accès tourne.
+///
+/// Trouvé sur le terrain : `adresse_locale()` (server.rs) et le choix de
+/// l'adresse Wi-Fi Direct devinaient chacun de leur côté, par des chemins
+/// différents, quelle adresse utiliser — sur un PC réel, la première a
+/// renvoyé `10.10.10.1` (une carte VPN ou virtuelle sans rapport) pendant
+/// que le vrai réseau Wi-Fi Direct tournait ailleurs. Le QR affichait une
+/// adresse à laquelle aucun téléphone ne pouvait jamais arriver.
+///
+/// Cette variable est désormais la SEULE source : elle est écrite une fois,
+/// au moment où `activer_par_tous_les_moyens` détermine l'adresse réelle du
+/// réseau qu'il vient de créer, et relue partout ailleurs (QR, redirection
+/// du portail captif, statut affiché) — plutôt que d'avoir plusieurs
+/// tentatives de deviner qui peuvent se contredire.
+static ADRESSE_ACTIVE: Mutex<Option<Ipv4Addr>> = Mutex::new(None);
+
+/// L'adresse du point d'accès actuellement actif, ou `None` si aucun des
+/// deux n'a été activé par l'application (PC directement sur le réseau de
+/// la boutique, ou Wi-Fi non configuré).
+pub fn adresse_point_acces_active() -> Option<Ipv4Addr> {
+    ADRESSE_ACTIVE.lock().ok().and_then(|garde| *garde)
+}
+
 /// Ce que ce PC-ci sait faire, tel que Windows le déclare. Établi SANS
 /// demander les droits administrateur et sans rien activer : le gérant (ou
 /// le revendeur, avant même une vente) peut donc le lancer sur n'importe
@@ -552,10 +575,13 @@ pub fn activer_par_tous_les_moyens(
     } else {
         match activer(ssid, mot_de_passe) {
             Ok(()) => {
+                if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
+                    *garde = Some(ADRESSE_POINT_ACCES);
+                }
                 return Ok(Activation {
                     methode: "réseau hébergé",
                     adresse: ADRESSE_POINT_ACCES,
-                })
+                });
             }
             Err(e) => echecs.push(format!("Méthode 1 (réseau hébergé) : {e}")),
         }
@@ -570,10 +596,14 @@ pub fn activer_par_tous_les_moyens(
     } else {
         match crate::wifi_direct::activer(ssid, mot_de_passe) {
             Ok(()) => {
+                let adresse = adresse_adaptateur_wifi_direct().unwrap_or(Ipv4Addr::new(192, 168, 137, 1));
+                if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
+                    *garde = Some(adresse);
+                }
                 return Ok(Activation {
                     methode: "Wi-Fi Direct",
-                    adresse: adresse_wifi_direct(),
-                })
+                    adresse,
+                });
             }
             Err(e) => echecs.push(format!("Méthode 2 (Wi-Fi Direct) : {e}")),
         }
@@ -589,37 +619,71 @@ pub fn activer_par_tous_les_moyens(
 /// choisir le bon QR code : proposer de rejoindre un réseau qui n'existe pas
 /// enverrait le client dans le vide.
 pub fn point_acces_actif() -> bool {
-    if crate::wifi_direct::est_actif() {
-        return true;
-    }
-    local_ip_address::list_afinet_netifas()
-        .map(|interfaces| {
-            interfaces
-                .iter()
-                .any(|(_, ip)| *ip == std::net::IpAddr::V4(ADRESSE_POINT_ACCES))
-        })
-        .unwrap_or(false)
+    adresse_point_acces_active().is_some()
 }
 
-/// Contrairement au réseau hébergé, c'est Windows qui choisit l'adresse de
-/// l'interface Wi-Fi Direct — historiquement dans 192.168.137.0/24. On la
-/// retrouve donc au lieu de l'imposer.
-fn adresse_wifi_direct() -> Ipv4Addr {
-    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
-        for (_, ip) in interfaces {
-            if let std::net::IpAddr::V4(v4) = ip {
-                let octets = v4.octets();
-                if octets[0] == 192 && octets[1] == 168 && octets[2] == 137 {
-                    return v4;
-                }
-            }
+/// Retrouve l'adresse IPv4 RÉELLEMENT assignée à l'adaptateur Wi-Fi Direct.
+///
+/// Windows choisit cette adresse lui-même, et PAS forcément dans
+/// 192.168.137.0/24 comme on pourrait s'y attendre — vérifié sur le terrain
+/// où un PC l'a attribuée en 10.10.10.0/24 (une carte VPN installée sur la
+/// machine, sans rapport, utilisait déjà cette plage classique). Deviner un
+/// préfixe fixe était donc voué à se tromper sur certains PC.
+///
+/// On retrouve la bonne adresse en identifiant l'adaptateur par son NOM —
+/// "Microsoft Wi-Fi Direct Virtual Adapter", stable et non localisé, comme
+/// pour l'adaptateur du réseau hébergé (voir `script_activation`) — plutôt
+/// que par une plage d'adresses supposée. Aucune élévation nécessaire :
+/// lire l'adresse d'une carte réseau ne demande pas les droits
+/// administrateur, contrairement à créer le réseau lui-même.
+///
+/// L'attribution par Windows n'est pas instantanée après le démarrage du
+/// point d'accès : quelques tentatives espacées laissent le temps à l'IP
+/// d'apparaître avant de renoncer.
+#[cfg(windows)]
+fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const TENTATIVES: u32 = 10;
+    const DELAI_ENTRE_TENTATIVES: std::time::Duration = std::time::Duration::from_millis(500);
+
+    for tentative in 0..TENTATIVES {
+        if tentative > 0 {
+            std::thread::sleep(DELAI_ENTRE_TENTATIVES);
+        }
+
+        let sortie = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "(Get-NetAdapter | Where-Object { $_.InterfaceDescription -like \
+                 '*Wi-Fi Direct Virtual Adapter*' } | Get-NetIPAddress -AddressFamily IPv4 \
+                 -ErrorAction SilentlyContinue).IPAddress",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        let Ok(sortie) = sortie else { continue };
+        let trouvee = String::from_utf8_lossy(&sortie.stdout)
+            .lines()
+            .find_map(|ligne| ligne.trim().parse::<Ipv4Addr>().ok());
+        if trouvee.is_some() {
+            return trouvee;
         }
     }
-    Ipv4Addr::new(192, 168, 137, 1)
+    None
+}
+
+#[cfg(not(windows))]
+fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
+    None
 }
 
 /// Coupe le réseau quelle que soit la méthode qui l'a créé.
 pub fn desactiver_par_tous_les_moyens() -> Result<(), String> {
+    if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
+        *garde = None;
+    }
     let arret_wifi_direct = crate::wifi_direct::desactiver();
     let arret_reseau_heberge = desactiver();
     // Sur un PC donné, une seule des deux était active : l'échec de l'autre
@@ -639,6 +703,38 @@ pub fn desactiver() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reproduit le bug exact trouvé sur le terrain : avant ce correctif,
+    /// `adresse_locale()` (server.rs) et le choix de l'adresse Wi-Fi Direct
+    /// devinaient chacune séparément, et pouvaient se contredire — un QR
+    /// affichant une adresse que le point d'accès réel n'utilisait pas.
+    /// Ici, on vérifie que la source unique (`ADRESSE_ACTIVE`) est bien ce
+    /// que `point_acces_actif` et `adresse_point_acces_active` relisent, et
+    /// que la désactivation l'efface bien — sinon un ancien point d'accès
+    /// coupé continuerait d'apparaître comme actif.
+    #[test]
+    fn point_acces_actif_reflete_uniquement_la_source_unique() {
+        assert!(!point_acces_actif(), "rien d'activé au départ");
+        assert_eq!(adresse_point_acces_active(), None);
+
+        {
+            let mut garde = ADRESSE_ACTIVE.lock().unwrap();
+            *garde = Some(Ipv4Addr::new(10, 10, 10, 1));
+        }
+        assert!(point_acces_actif());
+        assert_eq!(
+            adresse_point_acces_active(),
+            Some(Ipv4Addr::new(10, 10, 10, 1))
+        );
+
+        let _ = desactiver_par_tous_les_moyens();
+        assert!(
+            !point_acces_actif(),
+            "la désactivation doit effacer la source unique, pas seulement tenter d'arrêter \
+             les deux méthodes"
+        );
+        assert_eq!(adresse_point_acces_active(), None);
+    }
 
     /// La console Windows française ne parle pas UTF-8 : les accents
     /// arrivent ici en caractères de remplacement. Le diagnostic doit rester

@@ -168,26 +168,26 @@ fn demarrer_portail_captif(app: AppHandle) {
 
 /// L'adresse réelle du PC sur le réseau local, résolue à chaque requête.
 ///
-/// `local_ip_address::local_ip()` détermine l'adresse en regardant par quelle
-/// carte partirait une connexion vers internet — sur un PC de boutique qui
-/// n'a justement AUCUN internet, ce détour ne mène nulle part de fiable, et
-/// peut renvoyer l'adresse d'une carte qu'aucun client ne peut joindre.
+/// Trouvé sur le terrain : cette fonction devinait autrefois l'adresse de
+/// son côté (via `local_ip_address::local_ip()`, qui regarde par quelle
+/// carte partirait une connexion vers internet), tandis que `hotspot.rs`
+/// déterminait la sienne séparément pour configurer le point d'accès — deux
+/// suppositions indépendantes, capables de se contredire. Sur un PC réel
+/// équipé d'une carte VPN ou virtuelle, elles se sont effectivement
+/// contredites : le QR affichait une adresse à laquelle aucun téléphone ne
+/// pouvait jamais arriver, alors que le Wi-Fi Direct venait de démarrer sans
+/// problème sur une tout autre adresse.
 ///
-/// Si le point d'accès Wi-Fi local de l'application (`hotspot::activer`) est
-/// actif, son adresse est FIXE et déjà connue (`hotspot::ADRESSE_POINT_ACCES`)
-/// — pas besoin de la deviner, et c'est elle, précisément, que les serveurs
-/// DHCP/DNS locaux annoncent aux téléphones. On ne retombe sur la détection
-/// générique que si ce point d'accès n'est pas utilisé (gérant resté sur le
-/// "Point d'accès mobile" classique de Windows, ou vrai réseau de la
+/// Il n'y a plus qu'une seule vérité : si l'application a activé un point
+/// d'accès (réseau hébergé ou Wi-Fi Direct), on relit l'adresse qu'elle a
+/// elle-même constatée et retenue (`hotspot::adresse_point_acces_active`) —
+/// c'est exactement celle que les serveurs DHCP/DNS locaux annoncent aux
+/// téléphones. On ne retombe sur la détection générique que si aucun point
+/// d'accès de l'application ne tourne (PC directement sur le réseau de la
 /// boutique).
 pub fn adresse_locale() -> String {
-    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
-        if interfaces
-            .iter()
-            .any(|(_, ip)| *ip == std::net::IpAddr::V4(crate::hotspot::ADRESSE_POINT_ACCES))
-        {
-            return crate::hotspot::ADRESSE_POINT_ACCES.to_string();
-        }
+    if let Some(adresse) = crate::hotspot::adresse_point_acces_active() {
+        return adresse.to_string();
     }
     local_ip_address::local_ip()
         .map(|ip| ip.to_string())
