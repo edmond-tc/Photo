@@ -48,6 +48,11 @@ pub struct DiagnosticWifi {
     /// méthode qu'utilise `activer`. `None` = Windows ne l'indique pas (les
     /// versions récentes ont retiré cette ligne).
     pub reseau_heberge_supporte: Option<bool>,
+    /// Support du rôle "propriétaire de groupe" Wi-Fi Direct, celui qui crée
+    /// le point d'accès dans la méthode 2 (voir `wifi_direct.rs`). C'est la
+    /// capacité que l'exemple officiel Microsoft dit de vérifier avant
+    /// d'utiliser cette API.
+    pub wifi_direct_go_supporte: Option<bool>,
     /// Phrase directement affichable au gérant.
     pub verdict: String,
     /// Sortie brute de Windows, à copier/transmettre au support : c'est elle
@@ -85,6 +90,26 @@ fn lire_prise_en_charge_reseau_heberge(sortie: &str) -> Option<bool> {
     }
 }
 
+/// Lit la ligne "Wi-Fi Direct GO / GO Wi-Fi Direct" de
+/// `netsh wlan show wirelesscapabilities`.
+fn lire_prise_en_charge_wifi_direct_go(sortie: &str) -> Option<bool> {
+    let normalisee = normaliser(sortie);
+    let ligne = normalisee
+        .lines()
+        .find(|ligne| ligne.contains("wi-fi direct go") || ligne.contains("go wi-fi direct"))?;
+    let valeur = ligne.rsplit(':').next()?.trim();
+    // "not supported" contient "supported", et "non pris en charge" contient
+    // "pris en charge" : la négation doit donc être testée en premier, sans
+    // quoi tout PC incapable serait déclaré capable.
+    if valeur.contains("not supported") || valeur.contains("non pris en charge") {
+        Some(false)
+    } else if valeur.contains("supported") || valeur.contains("pris en charge") {
+        Some(true)
+    } else {
+        None
+    }
+}
+
 /// `netsh wlan show interfaces` annonce explicitement l'absence de carte
 /// sans fil ; toute autre réponse non vide signifie qu'il y en a une.
 fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
@@ -100,27 +125,40 @@ fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
     Some(true)
 }
 
+/// Le verdict tient compte des DEUX méthodes : une seule suffit à créer le
+/// réseau, donc ce PC n'est vraiment incompatible que si les deux sont
+/// explicitement refusées.
 fn composer_verdict(
     carte_wifi_presente: Option<bool>,
     reseau_heberge_supporte: Option<bool>,
+    wifi_direct_go_supporte: Option<bool>,
 ) -> String {
-    match (carte_wifi_presente, reseau_heberge_supporte) {
-        (Some(false), _) => "Ce PC n'a aucune carte Wi-Fi : il ne pourra jamais créer de \
-             réseau Wi-Fi lui-même. Il faut une clé Wi-Fi USB."
+    if carte_wifi_presente == Some(false) {
+        return "Ce PC n'a aucune carte Wi-Fi : il ne pourra jamais créer de réseau Wi-Fi \
+                lui-même. Il faut une clé Wi-Fi USB (quelques milliers de francs), ou brancher \
+                le PC au réseau Wi-Fi existant de la boutique s'il y en a un."
+            .to_string();
+    }
+
+    match (reseau_heberge_supporte, wifi_direct_go_supporte) {
+        (Some(true), _) | (_, Some(true)) => {
+            let methodes = match (reseau_heberge_supporte, wifi_direct_go_supporte) {
+                (Some(true), Some(true)) => "les deux méthodes",
+                (Some(true), _) => "la méthode 1 (réseau hébergé)",
+                _ => "la méthode 2 (Wi-Fi Direct)",
+            };
+            format!(
+                "Compatible : ce PC sait créer le réseau Wi-Fi de la boutique sans internet, \
+                 via {methodes}."
+            )
+        }
+        (Some(false), Some(false)) => "Incompatible : la carte Wi-Fi de ce PC refuse les deux \
+             méthodes de création de réseau. Il faut une clé Wi-Fi USB, ou brancher le PC au \
+             réseau Wi-Fi existant de la boutique s'il y en a un."
             .to_string(),
-        (_, Some(true)) => "Compatible : ce PC sait créer le réseau Wi-Fi de la boutique \
-             sans internet."
-            .to_string(),
-        (_, Some(false)) => "Incompatible : la carte Wi-Fi de ce PC refuse de créer un réseau \
-             autonome (pilote trop récent ou limité). Il faut une clé Wi-Fi USB qui, elle, \
-             le supporte."
-            .to_string(),
-        (None, None) => "Impossible de vérifier : Windows n'a pas répondu. Transmettez le \
-             rapport technique ci-dessous."
-            .to_string(),
-        (Some(true), None) => "Indéterminé : ce PC a bien une carte Wi-Fi, mais Windows \
-             n'indique pas si elle sait créer un réseau autonome. Il faut faire l'essai réel, \
-             ou transmettre le rapport technique ci-dessous."
+        _ => "Indéterminé : Windows n'annonce pas clairement ce que cette carte Wi-Fi sait \
+              faire. L'application essaiera quand même les deux méthodes ; en cas d'échec, \
+              transmettez le rapport technique ci-dessous."
             .to_string(),
     }
 }
@@ -150,18 +188,27 @@ fn executer_netsh(arguments: &[&str]) -> String {
 pub fn diagnostiquer() -> DiagnosticWifi {
     let pilotes = executer_netsh(&["wlan", "show", "drivers"]);
     let interfaces = executer_netsh(&["wlan", "show", "interfaces"]);
+    let capacites = executer_netsh(&["wlan", "show", "wirelesscapabilities"]);
 
     let carte_wifi_presente = lire_presence_carte_wifi(&interfaces);
     let reseau_heberge_supporte = lire_prise_en_charge_reseau_heberge(&pilotes);
+    let wifi_direct_go_supporte = lire_prise_en_charge_wifi_direct_go(&capacites);
 
     DiagnosticWifi {
         carte_wifi_presente,
         reseau_heberge_supporte,
-        verdict: composer_verdict(carte_wifi_presente, reseau_heberge_supporte),
+        wifi_direct_go_supporte,
+        verdict: composer_verdict(
+            carte_wifi_presente,
+            reseau_heberge_supporte,
+            wifi_direct_go_supporte,
+        ),
         details_bruts: format!(
-            "--- netsh wlan show interfaces ---\n{}\n--- netsh wlan show drivers ---\n{}",
+            "--- netsh wlan show interfaces ---\n{}\n--- netsh wlan show drivers ---\n{}\
+             \n--- netsh wlan show wirelesscapabilities ---\n{}",
             interfaces.trim(),
-            pilotes.trim()
+            pilotes.trim(),
+            capacites.trim()
         ),
     }
 }
@@ -171,6 +218,7 @@ pub fn diagnostiquer() -> DiagnosticWifi {
     DiagnosticWifi {
         carte_wifi_presente: None,
         reseau_heberge_supporte: None,
+        wifi_direct_go_supporte: None,
         verdict: "Diagnostic disponible uniquement sur Windows.".to_string(),
         details_bruts: String::new(),
     }
@@ -420,19 +468,28 @@ pub fn activer_par_tous_les_moyens(
         }
     }
 
-    match crate::wifi_direct::activer(ssid, mot_de_passe) {
-        Ok(()) => Ok(Activation {
-            methode: "Wi-Fi Direct",
-            adresse: adresse_wifi_direct(),
-        }),
-        Err(e) => {
-            echecs.push(format!("Méthode 2 (Wi-Fi Direct) : {e}"));
-            Err(format!(
-                "Aucune des méthodes disponibles n'a pu créer le réseau Wi-Fi sur ce PC.\n\n{}",
-                echecs.join("\n")
-            ))
+    if diagnostic.wifi_direct_go_supporte == Some(false) {
+        echecs.push(
+            "Méthode 2 (Wi-Fi Direct) : la carte Wi-Fi de ce PC déclare ne pas savoir créer de \
+             groupe Wi-Fi Direct."
+                .to_string(),
+        );
+    } else {
+        match crate::wifi_direct::activer(ssid, mot_de_passe) {
+            Ok(()) => {
+                return Ok(Activation {
+                    methode: "Wi-Fi Direct",
+                    adresse: adresse_wifi_direct(),
+                })
+            }
+            Err(e) => echecs.push(format!("Méthode 2 (Wi-Fi Direct) : {e}")),
         }
     }
+
+    Err(format!(
+        "Aucune des méthodes disponibles n'a pu créer le réseau Wi-Fi sur ce PC.\n\n{}",
+        echecs.join("\n")
+    ))
 }
 
 /// Contrairement au réseau hébergé, c'est Windows qui choisit l'adresse de
@@ -522,12 +579,44 @@ mod tests {
     }
 
     #[test]
+    fn lit_la_capacite_wifi_direct_sans_confondre_supported_et_not_supported() {
+        // "not supported" contient "supported" : c'est le piège exact que
+        // cette lecture doit éviter, sous peine de déclarer capable un PC
+        // qui ne l'est pas.
+        assert_eq!(
+            lire_prise_en_charge_wifi_direct_go("    Wi-Fi Direct GO         : Not supported"),
+            Some(false)
+        );
+        assert_eq!(
+            lire_prise_en_charge_wifi_direct_go("    Wi-Fi Direct GO         : Supported"),
+            Some(true)
+        );
+        assert_eq!(
+            lire_prise_en_charge_wifi_direct_go("    GO Wi-Fi Direct : Non pris en charge"),
+            Some(false)
+        );
+        assert_eq!(
+            lire_prise_en_charge_wifi_direct_go("Nombre d'antennes connectées : 1"),
+            None
+        );
+    }
+
+    #[test]
+    fn une_seule_methode_supportee_suffit_a_declarer_le_pc_compatible() {
+        assert!(composer_verdict(Some(true), Some(false), Some(true)).contains("Compatible"));
+        assert!(composer_verdict(Some(true), Some(true), Some(false)).contains("Compatible"));
+        assert!(
+            composer_verdict(Some(true), Some(false), Some(false)).contains("Incompatible"),
+            "les deux méthodes refusées : c'est le seul vrai cas d'incompatibilité"
+        );
+    }
+
+    #[test]
     fn le_verdict_est_explicite_dans_chaque_cas() {
-        assert!(composer_verdict(Some(false), None).contains("clé Wi-Fi USB"));
-        assert!(composer_verdict(Some(true), Some(true)).contains("Compatible"));
-        assert!(composer_verdict(Some(true), Some(false)).contains("clé Wi-Fi USB"));
-        assert!(composer_verdict(Some(true), None).contains("Indéterminé"));
-        assert!(composer_verdict(None, None).contains("Impossible de vérifier"));
+        assert!(composer_verdict(Some(false), None, None).contains("clé Wi-Fi USB"));
+        assert!(composer_verdict(Some(true), Some(true), Some(true)).contains("Compatible"));
+        assert!(composer_verdict(Some(true), None, None).contains("Indéterminé"));
+        assert!(composer_verdict(None, None, None).contains("Indéterminé"));
     }
 
     #[test]

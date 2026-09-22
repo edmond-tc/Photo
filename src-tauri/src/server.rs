@@ -2,7 +2,7 @@ use crate::watcher::{enqueue_file_avec_options, OptionsImpression};
 use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
 use axum::http::{StatusCode, Uri};
 use axum::response::{Html, IntoResponse, Redirect};
-use axum::routing::{any, get, post};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager};
@@ -90,14 +90,11 @@ pub fn normalize_phone(raw: &str) -> Option<String> {
 /// Démarre le serveur HTTP local (page de réception QR) dans une tâche
 /// asynchrone. Sert la boutique en Wi-Fi local, sans passer par internet.
 pub fn start(app: AppHandle) {
+    demarrer_portail_captif(app.clone());
+
     tauri::async_runtime::spawn(async move {
         let app_pour_etat = app.clone();
-        let router = Router::new()
-            .route("/", get(page_accueil))
-            .route("/envoyer", post(recevoir_fichier))
-            .route("/statut/:jeton", get(statut_fichier))
-            .layer(DefaultBodyLimit::max(TAILLE_MAX_ENVOI))
-            .with_state(app);
+        let router = construire_router(app);
 
         let addr = format!("0.0.0.0:{PORT}");
         match tokio::net::TcpListener::bind(&addr).await {
@@ -123,21 +120,37 @@ pub fn start(app: AppHandle) {
             }
         }
     });
-
-    demarrer_portail_captif();
 }
 
-/// Tentative "portail captif" façon Wi-Fi d'hôtel/café : une fois le client
-/// connecté au Wi-Fi local, on essaie de faire en sorte que son téléphone
-/// ouvre automatiquement la page d'envoi, sans qu'il ait à toucher son
-/// navigateur. Fonctionne sur une partie des téléphones seulement (dépend
-/// de la détection de portail captif du système, non testable ici sans une
-/// vraie machine Windows) — best-effort, jamais bloquant si ça échoue.
-fn demarrer_portail_captif() {
+fn construire_router(app: AppHandle) -> Router {
+    Router::new()
+        .route("/", get(page_accueil))
+        .route("/envoyer", post(recevoir_fichier))
+        .route("/statut/:jeton", get(statut_fichier))
+        .layer(DefaultBodyLimit::max(TAILLE_MAX_ENVOI))
+        .with_state(app)
+}
+
+/// Portail captif, façon Wi-Fi d'hôtel : le téléphone qui rejoint un réseau
+/// interroge tout seul une adresse de contrôle connue (Apple pour iPhone,
+/// Google pour Android) pour savoir s'il a vraiment internet. Le serveur DNS
+/// local (voir `dns.rs`) dirige cette question vers ce PC, et c'est ce
+/// serveur-ci qui répond.
+///
+/// Ce qui compte, c'est de répondre AUTRE CHOSE que la réponse attendue :
+/// iOS attend une page contenant "Success" et Android un code 204 vide ;
+/// recevoir la page d'envoi à la place est précisément ce qui leur fait
+/// conclure "ce réseau demande une connexion" et ouvrir un navigateur.
+///
+/// On sert donc ici la VRAIE page d'envoi, et non une redirection vers le
+/// port {PORT} comme auparavant : la fenêtre qu'ouvre l'iPhone est un
+/// navigateur réduit et cloisonné, où une redirection vers un port
+/// inhabituel est un risque inutile. Servir directement la page supprime ce
+/// détour. Elle pèse ~19 Ko, bien en dessous des ~128 Ko au-delà desquels
+/// iOS refuse d'afficher un portail.
+fn demarrer_portail_captif(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let router = Router::new()
-            .route("/*chemin", any(rediriger_vers_accueil))
-            .route("/", any(rediriger_vers_accueil));
+        let router = construire_router(app).fallback(rediriger_vers_accueil);
         let addr = format!("0.0.0.0:{PORT_PORTAIL_CAPTIF}");
         match tokio::net::TcpListener::bind(&addr).await {
             Ok(listener) => {
