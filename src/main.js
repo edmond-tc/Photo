@@ -655,12 +655,39 @@ async function afficherQr() {
   try {
     const info = await invoke("get_server_info");
     conteneur.innerHTML = "";
-    const img = document.createElement("img");
-    img.src = info.qr_data_uri;
-    img.alt = "QR code de réception";
-    img.width = 220;
-    img.height = 220;
-    conteneur.appendChild(img);
+    conteneur.classList.toggle("deux-qr", Boolean(info.qr_page_data_uri));
+
+    // Cette phrase part à l'impression sur l'affiche collée à l'entrée :
+    // c'est souvent la seule consigne que le client lira.
+    document.querySelector("#qr-intro").textContent = info.qr_page_data_uri
+      ? "Scannez le code 1, puis le code 2, avec l'appareil photo de votre téléphone"
+      : "Scannez ce code avec l'appli Scanner de votre téléphone";
+
+    // Un QR seul quand il ouvre directement la page ; deux QR numérotés
+    // quand il faut d'abord rejoindre un Wi-Fi. Le second existe pour que le
+    // client n'ait JAMAIS à taper l'adresse quand l'ouverture automatique ne
+    // se déclenche pas (voir `qr.rs`).
+    const ajouterQr = (source, numero, legende) => {
+      const bloc = document.createElement("figure");
+      bloc.className = "qr-bloc";
+      const img = document.createElement("img");
+      img.src = source;
+      img.alt = legende;
+      img.width = info.qr_page_data_uri ? 180 : 220;
+      img.height = info.qr_page_data_uri ? 180 : 220;
+      bloc.appendChild(img);
+      const texte = document.createElement("figcaption");
+      texte.textContent = numero ? `${numero} — ${legende}` : legende;
+      bloc.appendChild(texte);
+      conteneur.appendChild(bloc);
+    };
+
+    if (info.qr_page_data_uri) {
+      ajouterQr(info.qr_data_uri, "1", "Rejoindre le Wi-Fi de la boutique");
+      ajouterQr(info.qr_page_data_uri, "2", "Ouvrir la page pour envoyer ses documents");
+    } else {
+      ajouterQr(info.qr_data_uri, null, "Ouvrir la page pour envoyer ses documents");
+    }
     // Chaque installation appelle une consigne différente : dire au gérant
     // une phrase qui ne correspond pas à son poste le laisserait sans réponse
     // devant un client bloqué.
@@ -669,9 +696,10 @@ async function afficherQr() {
       // une notification à toucher. L'adresse reste affichée pour que le
       // gérant puisse guider un client dont le téléphone ne réagit pas.
       urlEl.innerHTML =
-        `Le client scanne et rejoint le Wi-Fi. Sur iPhone la page d'envoi s'ouvre toute seule ; ` +
-        `sur Android, une notification « Se connecter au réseau Wi-Fi » apparaît — il la touche et la page s'ouvre. ` +
-        `Si rien n'apparaît : <strong>${echapperHtml(info.url)}</strong>.`;
+        `Le client scanne le <strong>QR 1</strong> et rejoint le Wi-Fi. La page d'envoi s'ouvre souvent toute seule ` +
+        `(iPhone) ou après avoir touché une notification (Android). ` +
+        `Si elle ne s'ouvre pas, il scanne le <strong>QR 2</strong> : rien à taper, jamais. ` +
+        `Dès la deuxième visite, son téléphone retient le Wi-Fi — un seul scan suffit.`;
     } else if (info.mode === "point_acces_inactif") {
       urlEl.innerHTML =
         `⚠️ Ce QR fait rejoindre le Wi-Fi <strong>${echapperHtml(info.url)}</strong>… mais le Wi-Fi local n'est pas allumé. ` +
@@ -681,14 +709,15 @@ async function afficherQr() {
       // l'application — donc pas d'avertissement "réseau éteint" ici : ce
       // mode signifie seulement que l'ouverture automatique fonctionne.
       urlEl.innerHTML =
-        `Le client scanne et rejoint le Wi-Fi du routeur. Sur iPhone la page d'envoi s'ouvre toute seule ; ` +
-        `sur Android, une notification « Se connecter au réseau Wi-Fi » apparaît — il la touche et la page s'ouvre. ` +
-        `Si rien n'apparaît : <strong>${echapperHtml(info.url)}</strong>.`;
+        `Le client scanne le <strong>QR 1</strong> pour rejoindre le Wi-Fi, puis le <strong>QR 2</strong> ` +
+        `pour ouvrir la page d'envoi — sauf si elle s'est déjà ouverte toute seule. Rien à taper, jamais. ` +
+        `Dès la deuxième visite, son téléphone retient le Wi-Fi.`;
     } else if (info.mode === "routeur_inactif") {
       urlEl.innerHTML =
-        `Ce QR fait rejoindre le Wi-Fi du routeur — ça fonctionne déjà, le routeur n'a pas besoin de cette application. ` +
-        `Mais l'ouverture AUTOMATIQUE de la page n'est pas encore prête : appuyez sur « 📶 Activer le Wi-Fi local de la boutique » ` +
-        `une fois, sinon le client devra ouvrir son navigateur lui-même et taper <strong>${echapperHtml(info.url)}</strong>.`;
+        `Le <strong>QR 1</strong> fait rejoindre le Wi-Fi, le <strong>QR 2</strong> ouvre la page d'envoi : ` +
+        `les deux fonctionnent déjà, le client n'a rien à taper. ` +
+        `L'ouverture AUTOMATIQUE de la page, elle, n'est pas activée : appuyez une fois sur ` +
+        `« 📶 Activer le Wi-Fi local de la boutique » si vous voulez que la page s'ouvre sans le second scan.`;
     } else {
       urlEl.innerHTML =
         `Ce QR ouvre directement la page d'envoi (${echapperHtml(info.url)}) dans le navigateur du client. ` +
@@ -1631,17 +1660,35 @@ async function rendreReglages(corps) {
 
   const secWifi = document.createElement("section");
   secWifi.innerHTML = `
-    <h3>Wi-Fi local (pour le QR unique)</h3>
+    <h3>Wi-Fi local (pour le QR)</h3>
     <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
-      Deux installations possibles. <strong>Ce PC crée le réseau</strong> :
-      recopiez le nom et le mot de passe affichés sur l'écran des paramètres
-      Windows (bouton "Ouvrir le partage de connexion" dans la fenêtre QR).
-      <strong>Routeur externe</strong> (recommandé si ce PC n'a pas de carte
-      Wi-Fi ou si la première méthode échoue) : un petit routeur dédié crée
-      le réseau à la place du PC — aucun abonnement ni accès internet requis,
-      juste du courant. Réglez alors son propre nom/mot de passe ici, et
-      dans les réglages du routeur, désignez l'adresse de ce PC comme
-      serveur DNS distribué (sinon la page ne s'ouvrira pas toute seule).
+      Deux installations possibles.
+    </p>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      <strong>1. Ce PC crée le réseau.</strong> Le plus simple quand ça
+      marche : appuyez sur « 📶 Activer le Wi-Fi local de la boutique » dans
+      la fenêtre du QR. Mais toutes les cartes Wi-Fi n'en sont pas capables —
+      « Vérifier ce PC », plus bas, le dit en une phrase.
+    </p>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      <strong>2. Le réseau vient d'ailleurs.</strong> Une box, un routeur —
+      ou, sans rien acheter, <strong>le partage de connexion d'un
+      téléphone</strong> : celui du gérant, laissé allumé et en charge sous
+      le comptoir. Ça marche sur n'importe quel PC ayant une carte Wi-Fi,
+      même très ancienne, parce que REJOINDRE un réseau est à la portée de
+      toutes les cartes — c'est en CRÉER un qui ne l'est pas. Aucune donnée
+      mobile n'est nécessaire : le partage crée le réseau même sans internet.
+      <br />
+      À faire une seule fois : allumez le partage de connexion du téléphone
+      et donnez-lui un nom et un mot de passe simples ; connectez ce PC à ce
+      réseau (en cochant « se connecter automatiquement ») ; recopiez ce nom
+      et ce mot de passe ci-dessous. Le client scanne alors le QR 1 pour
+      rejoindre le réseau, puis le QR 2 pour ouvrir la page — sans jamais
+      rien taper, et un seul scan dès sa deuxième visite.
+      <br />
+      Si vous imprimez l'affiche : réimprimez-la si un jour la page cesse de
+      s'ouvrir, car l'adresse du PC sur ce réseau peut changer. Rouvrez la
+      fenêtre du QR pour voir l'affiche à jour.
     </p>
   `;
   const formWifi = document.createElement("form");
@@ -1649,7 +1696,7 @@ async function rendreReglages(corps) {
     <label>Type de réseau
       <select id="reg-wifi-type">
         <option value="pc" ${params.wifi_type_reseau === "routeur_externe" ? "" : "selected"}>Ce PC crée le réseau</option>
-        <option value="routeur_externe" ${params.wifi_type_reseau === "routeur_externe" ? "selected" : ""}>Routeur externe dédié</option>
+        <option value="routeur_externe" ${params.wifi_type_reseau === "routeur_externe" ? "selected" : ""}>Le réseau vient d'ailleurs (box, routeur, ou partage de connexion d'un téléphone)</option>
       </select>
     </label>
     <label>Nom du réseau (SSID) <input type="text" id="reg-wifi-ssid" value="${echapperHtml(params.wifi_ssid)}" /></label>

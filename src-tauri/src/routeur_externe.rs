@@ -26,6 +26,13 @@ use std::net::Ipv4Addr;
 /// repérer, et se trompe), un routeur présente ici une vraie passerelle :
 /// `local_ip_address::local_ip()` la retrouve correctement.
 pub fn adresse_sur_le_routeur() -> Option<Ipv4Addr> {
+    // Même détection que pour le QR (voir `server::adresse_du_reseau_connecte`) :
+    // les deux DOIVENT désigner la même carte, sinon le QR annonce une
+    // adresse pendant que le serveur DNS en sert une autre — une variante du
+    // bug d'adresses contradictoires déjà corrigé côté point d'accès.
+    if let Some(adresse) = crate::server::adresse_du_reseau_connecte() {
+        return Some(adresse);
+    }
     match local_ip_address::local_ip() {
         Ok(std::net::IpAddr::V4(v4)) => Some(v4),
         _ => None,

@@ -788,6 +788,8 @@ fieldset {
   }
   body.impression-qr #modal-qr .modal-entete,
   body.impression-qr #modal-qr #btn-parametres-partage,
+  body.impression-qr #modal-qr #btn-activer-wifi-local,
+  body.impression-qr #modal-qr #wifi-compte-rendu,
   body.impression-qr #modal-qr #btn-imprimer-qr,
   body.impression-qr #modal-qr #qr-url {
     display: none !important;
@@ -800,8 +802,40 @@ fieldset {
     width: 320px;
     height: 320px;
   }
+  /* Deux QR sur la même affiche : plus petits, côte à côte, chacun sous son
+     numéro — c'est l'ordre 1 puis 2 qui doit sauter aux yeux du client. */
+  body.impression-qr #qr-conteneur.deux-qr img {
+    width: 260px;
+    height: 260px;
+  }
   body.impression-qr #qr-intro {
     text-align: center;
     font-size: 1.1rem;
   }
+}
+
+
+/* Affiche de réception : un ou deux QR, chacun avec sa légende numérotée.
+   Le client lit "1" puis "2" sans avoir besoin qu'on lui explique. */
+.qr-conteneur.deux-qr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.qr-bloc {
+  margin: 0;
+  text-align: center;
+}
+
+.qr-bloc figcaption {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  max-width: 18ch;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.3;
 }

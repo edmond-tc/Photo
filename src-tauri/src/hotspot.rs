@@ -401,8 +401,10 @@ pub fn diagnostiquer() -> DiagnosticPoste {
             reseau_utilisable,
         ),
         details_bruts: format!(
-            "--- netsh wlan show interfaces ---\n{}\n--- netsh wlan show drivers ---\n{}\
+            "--- pare-feu Windows ---\nRègles de réception en place : {}\
+             \n--- netsh wlan show interfaces ---\n{}\n--- netsh wlan show drivers ---\n{}\
              \n--- netsh wlan show wirelesscapabilities ---\n{}",
+            if crate::pare_feu::regles_presentes() { "oui" } else { "non (créées à l'activation)" },
             interfaces.trim(),
             pilotes.trim(),
             capacites.trim()
@@ -437,7 +439,7 @@ fn echapper_powershell(valeur: &str) -> String {
 }
 
 #[cfg(windows)]
-fn executer_script_eleve(script: &str) -> Result<String, String> {
+pub fn executer_script_eleve(script: &str) -> Result<String, String> {
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{WaitForSingleObject, INFINITE};
@@ -571,6 +573,11 @@ try {{
     $sortie += (netsh wlan start hostednetwork 2>&1 | Out-String)
     $sortie += "{marqueur_fin}"
 
+    # 5. Ouvrir le pare-feu Windows. Greffé ici plutôt que dans sa propre
+    #    fenêtre d'autorisation : un seul "Oui" du gérant pour tout.
+    $sortie += "===PARE_FEU==="
+{pare_feu}
+
     $adaptateur = Get-NetAdapter | Where-Object {{ $_.InterfaceDescription -like '*Hosted Network Virtual Adapter*' }} | Select-Object -First 1
     if ($adaptateur) {{
         Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
@@ -589,6 +596,7 @@ $sortie -join "`n" | Out-File -FilePath "{res}" -Encoding utf8
         ip = ip,
         marqueur_debut = MARQUEUR_DEBUT_DEMARRAGE,
         marqueur_fin = MARQUEUR_FIN_DEMARRAGE,
+        pare_feu = crate::pare_feu::commandes_powershell(),
         res = resultat.display(),
     )
 }
@@ -708,8 +716,9 @@ pub struct Activation {
     /// Adresse du PC sur ce réseau — pas la même selon la méthode, et c'est
     /// elle que les serveurs DHCP/DNS et le QR code doivent annoncer.
     pub adresse: Ipv4Addr,
-    /// Les méthodes essayées AVANT celle qui a réussi, et pourquoi elles ont
-    /// échoué.
+    /// Tout ce que le gérant doit savoir malgré la réussite : les méthodes
+    /// essayées avant celle qui a marché et pourquoi elles ont échoué, et
+    /// les réglages système qui n'ont pas pu être appliqués (pare-feu).
     ///
     /// Trouvé sur le terrain : jusqu'ici, dès qu'une méthode réussissait,
     /// l'échec des précédentes était jeté. Or c'est exactement l'inverse
@@ -718,7 +727,7 @@ pub struct Activation {
     /// dépréciée. Elle "réussissait" donc en apparence tout en ne marchant
     /// jamais vraiment, pendant que la vraie erreur, celle qui aurait permis
     /// de réparer, restait invisible.
-    pub echecs_precedents: Vec<String>,
+    pub avertissements: Vec<String>,
 }
 
 /// Traduit l'erreur brute de `netsh wlan start hostednetwork` en une phrase
@@ -795,6 +804,38 @@ pub fn activer_par_tous_les_moyens(
     ssid: &str,
     mot_de_passe: &str,
 ) -> Result<Activation, String> {
+    let mut activation = tenter_toutes_les_methodes(ssid, mot_de_passe)?;
+    if let Err(e) = garantir_pare_feu() {
+        activation.avertissements.push(e);
+    }
+    Ok(activation)
+}
+
+/// Le réseau peut exister et rester parfaitement injoignable : sur un réseau
+/// que Windows classe "public" — ce que sont tous les nôtres — le pare-feu
+/// bloque par défaut tout ce qui arrive de l'extérieur. Voir `pare_feu.rs`.
+///
+/// Quand la méthode 1 a tourné, ses règles ont déjà été créées dans le même
+/// script élevé : la vérification passe et le gérant n'a rien de plus à
+/// accepter. Sinon seulement, une autorisation est demandée.
+fn garantir_pare_feu() -> Result<(), String> {
+    if crate::pare_feu::regles_presentes() {
+        return Ok(());
+    }
+    crate::pare_feu::autoriser().map_err(|e| {
+        format!(
+            "Le pare-feu Windows n'a pas pu être ouvert ({e}). Le Wi-Fi fonctionne, mais \
+             Windows risque de bloquer les téléphones avant qu'ils n'atteignent la page \
+             d'envoi. Réessayez d'activer le Wi-Fi local et acceptez la fenêtre \
+             d'autorisation Windows."
+        )
+    })
+}
+
+fn tenter_toutes_les_methodes(
+    ssid: &str,
+    mot_de_passe: &str,
+) -> Result<Activation, String> {
     let diagnostic = diagnostiquer();
     if diagnostic.carte_wifi_presente == Some(false) {
         return Err(diagnostic.verdict);
@@ -818,7 +859,7 @@ pub fn activer_par_tous_les_moyens(
                 return Ok(Activation {
                     methode: "réseau hébergé",
                     adresse: ADRESSE_POINT_ACCES,
-                    echecs_precedents: echecs,
+                    avertissements: echecs,
                 });
             }
             Err(e) => echecs.push(format!(
@@ -847,7 +888,7 @@ pub fn activer_par_tous_les_moyens(
                     return Ok(Activation {
                         methode: "Wi-Fi Direct",
                         adresse,
-                        echecs_precedents: echecs,
+                        avertissements: echecs,
                     });
                 }
                 None => {

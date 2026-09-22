@@ -4,6 +4,7 @@ use axum::http::{StatusCode, Uri};
 use axum::response::{Html, IntoResponse, Redirect};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager};
 
@@ -189,9 +190,64 @@ pub fn adresse_locale() -> String {
     if let Some(adresse) = crate::hotspot::adresse_point_acces_active() {
         return adresse.to_string();
     }
+    if let Some(adresse) = adresse_du_reseau_connecte() {
+        return adresse.to_string();
+    }
     local_ip_address::local_ip()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|_| "192.168.137.1".to_string())
+}
+
+/// L'adresse de ce PC sur le réseau auquel il est RÉELLEMENT relié.
+///
+/// `local_ip_address::local_ip()` rend la première adresse non-boucle qu'il
+/// trouve, sans se demander si elle mène quelque part. Constaté sur le
+/// terrain : sur un PC portant une carte VPN ou de machine virtuelle
+/// laissée par un ancien logiciel, il a rendu `10.10.10.1` — une adresse
+/// que le téléphone du client ne peut évidemment jamais joindre. Le QR
+/// annonçait donc une page inaccessible, sans que rien ne le signale.
+///
+/// On demande plutôt à Windows quelle carte porte une vraie passerelle ET
+/// est réellement en service : c'est celle par laquelle le téléphone du
+/// client arrivera, que le réseau vienne d'une box, d'un routeur ou du
+/// partage de connexion d'un téléphone.
+#[cfg(windows)]
+pub fn adresse_du_reseau_connecte() -> Option<Ipv4Addr> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let sortie = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { \
+              $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } | \
+              Select-Object -First 1).IPv4Address.IPAddress",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+
+    premiere_adresse_utilisable(&String::from_utf8_lossy(&sortie.stdout))
+}
+
+#[cfg(not(windows))]
+pub fn adresse_du_reseau_connecte() -> Option<Ipv4Addr> {
+    None
+}
+
+/// Première adresse IPv4 exploitable d'une sortie PowerShell. Écarte ce qui
+/// ne désigne aucun réseau joignable par un téléphone : la boucle locale
+/// (127.x), l'absence d'adresse (0.0.0.0) et les adresses d'auto-attribution
+/// (169.254.x) que Windows donne à une carte branchée sur rien.
+fn premiere_adresse_utilisable(sortie: &str) -> Option<Ipv4Addr> {
+    sortie.lines().find_map(|ligne| {
+        ligne
+            .trim()
+            .parse::<Ipv4Addr>()
+            .ok()
+            .filter(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_link_local())
+    })
 }
 
 async fn rediriger_vers_accueil(_uri: Uri) -> impl IntoResponse {
@@ -878,6 +934,33 @@ async fn statut_fichier(
 
 #[cfg(test)]
 mod tests {
+    /// Le bug exact venu du terrain : une carte VPN ou de machine virtuelle
+    /// laissée par un ancien logiciel portait `10.10.10.1`, et le QR
+    /// annonçait cette adresse au client — qui ne pouvait évidemment rien
+    /// y joindre. On ne retient donc que ce qui désigne un réseau réel.
+    #[test]
+    fn ne_retient_que_les_adresses_joignables_par_un_telephone() {
+        use super::premiere_adresse_utilisable;
+        use std::net::Ipv4Addr;
+
+        assert_eq!(
+            premiere_adresse_utilisable("192.168.43.137\n"),
+            Some(Ipv4Addr::new(192, 168, 43, 137))
+        );
+        // Carte branchée sur rien : Windows lui donne une adresse
+        // d'auto-attribution qui ne mène nulle part.
+        assert_eq!(premiere_adresse_utilisable("169.254.12.9"), None);
+        assert_eq!(premiere_adresse_utilisable("127.0.0.1"), None);
+        assert_eq!(premiere_adresse_utilisable("0.0.0.0"), None);
+        // Sortie vide (PowerShell absent, aucune carte connectée).
+        assert_eq!(premiere_adresse_utilisable(""), None);
+        // La première ligne inutilisable ne doit pas masquer la bonne.
+        assert_eq!(
+            premiere_adresse_utilisable("169.254.1.1\n192.168.1.20"),
+            Some(Ipv4Addr::new(192, 168, 1, 20))
+        );
+    }
+
     use super::*;
 
     // ── Noms de fichiers : tout vient d'un inconnu sur le Wi-Fi ──

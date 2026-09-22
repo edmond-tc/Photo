@@ -473,6 +473,23 @@ pub async fn activer_point_acces_local(
         let (adresse, tache_dns) = crate::routeur_externe::activer().await?;
         crate::hotspot::definir_adresse_active(Some(adresse));
 
+        // Le réseau vient d'ailleurs, mais le pare-feu de CE PC bloque tout
+        // autant : sans ces règles, le téléphone rejoint bien le réseau et
+        // n'atteint jamais la page (voir `pare_feu.rs`).
+        let mut avertissements = Vec::new();
+        if !crate::pare_feu::regles_presentes() {
+            if let Err(e) = tauri::async_runtime::spawn_blocking(crate::pare_feu::autoriser)
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                avertissements.push(format!(
+                    "Le pare-feu Windows n'a pas pu être ouvert ({e}). Les téléphones \
+                     risquent de ne pas atteindre la page d'envoi. Réessayez et acceptez \
+                     la fenêtre d'autorisation Windows."
+                ));
+            }
+        }
+
         let anciennes = std::mem::replace(
             &mut *etat_point_acces.0.lock().map_err(|e| e.to_string())?,
             vec![tache_dns],
@@ -482,8 +499,8 @@ pub async fn activer_point_acces_local(
         }
 
         return Ok(ResultatActivationWifi {
-            methode: "routeur externe".to_string(),
-            avertissements: Vec::new(),
+            methode: "réseau externe".to_string(),
+            avertissements,
         });
     }
 
@@ -500,7 +517,7 @@ pub async fn activer_point_acces_local(
     // des avertissements : sur un PC dont le pilote ne convient qu'à la
     // méthode 1, une "réussite" de la méthode 2 peut n'être qu'apparente,
     // et c'est l'échec de la méthode 1 qui contient la vraie information.
-    let mut avertissements = activation.echecs_precedents.clone();
+    let mut avertissements = activation.avertissements.clone();
 
     match crate::dhcp::demarrer(activation.adresse).await {
         Ok(tache) => nouvelles_taches.push(tache),

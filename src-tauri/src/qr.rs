@@ -21,9 +21,24 @@ pub const MODE_ROUTEUR_INACTIF: &str = "routeur_inactif";
 #[derive(serde::Serialize)]
 pub struct ServerInfo {
     pub url: String,
-    /// QR unique à afficher/imprimer. Selon le mode : soit il fait rejoindre
-    /// le Wi-Fi de la boutique, soit il ouvre directement la page d'envoi.
+    /// Premier QR. Selon le mode : soit il fait rejoindre le Wi-Fi de la
+    /// boutique, soit il ouvre directement la page d'envoi.
     pub qr_data_uri: String,
+    /// Second QR, présent UNIQUEMENT quand le premier sert à rejoindre un
+    /// Wi-Fi : celui-ci ouvre la page d'envoi.
+    ///
+    /// Ajouté parce que l'ouverture automatique de la page (le portail
+    /// captif, voir `dns.rs`) ne peut PAS être garantie partout : Android se
+    /// contente d'une notification que le client peut manquer, et sur un
+    /// réseau que nous ne fabriquons pas — partage de connexion d'un
+    /// téléphone, routeur mal réglé — c'est ce réseau, pas nous, qui répond
+    /// aux questions DNS : l'ouverture automatique n'a alors aucune chance.
+    ///
+    /// Sans ce second QR, il ne restait qu'une issue dans ces cas : faire
+    /// TAPER l'adresse au client. C'est exactement la promesse qu'on refuse
+    /// de casser. Deux scans, zéro saisie — et un seul scan dès la
+    /// deuxième visite, puisque le téléphone retient le Wi-Fi.
+    pub qr_page_data_uri: Option<String>,
     pub mode: &'static str,
 }
 
@@ -54,6 +69,8 @@ pub fn build_server_info(
     let Some(ssid) = wifi_ssid.filter(|s| !s.is_empty()) else {
         return Ok(ServerInfo {
             qr_data_uri: build_qr_data_uri(&url)?,
+            // Ce QR ouvre DÉJÀ la page : un second n'aurait rien à ajouter.
+            qr_page_data_uri: None,
             url,
             mode: MODE_RESEAU_PARTAGE,
         });
@@ -66,6 +83,7 @@ pub fn build_server_info(
 
     Ok(ServerInfo {
         qr_data_uri: build_qr_data_uri(&wifi_qr_payload(&ssid, wifi_mot_de_passe.as_deref()))?,
+        qr_page_data_uri: Some(build_qr_data_uri(&url)?),
         url,
         mode,
     })

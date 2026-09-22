@@ -11,6 +11,7 @@ pub mod impression;
 pub mod license;
 pub mod models;
 pub mod obex;
+pub mod pare_feu;
 pub mod qr;
 pub mod retention;
 pub mod routeur_externe;
