@@ -36,6 +36,146 @@ pub const ADRESSE_POINT_ACCES: Ipv4Addr = Ipv4Addr::new(192, 168, 73, 1);
 #[derive(Default)]
 pub struct EtatPointAcces(pub Mutex<Option<(JoinHandle<()>, JoinHandle<()>)>>);
 
+/// Ce que ce PC-ci sait faire, tel que Windows le déclare. Établi SANS
+/// demander les droits administrateur et sans rien activer : le gérant (ou
+/// le revendeur, avant même une vente) peut donc le lancer sur n'importe
+/// quel PC en quelques secondes.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+pub struct DiagnosticWifi {
+    /// `None` quand Windows n'a pas répondu du tout (netsh absent, bloqué…).
+    pub carte_wifi_presente: Option<bool>,
+    /// Support du point d'accès autonome (`netsh wlan hostednetwork`), la
+    /// méthode qu'utilise `activer`. `None` = Windows ne l'indique pas (les
+    /// versions récentes ont retiré cette ligne).
+    pub reseau_heberge_supporte: Option<bool>,
+    /// Phrase directement affichable au gérant.
+    pub verdict: String,
+    /// Sortie brute de Windows, à copier/transmettre au support : c'est elle
+    /// qui fait foi quand l'analyse automatique ci-dessus reste indécise.
+    pub details_bruts: String,
+}
+
+/// Rend une sortie de `netsh` comparable quelle que soit la langue ET
+/// l'encodage de Windows : la console française renvoie du CP850, pas de
+/// l'UTF-8, donc les accents arrivent ici en caractères de remplacement.
+/// En ne gardant que l'ASCII, "réseau hébergé" et "r?seau h?berg?" se
+/// réduisent tous deux à "rseau hberg", sur quoi on peut chercher.
+fn normaliser(sortie: &str) -> String {
+    sortie
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii())
+        .collect()
+}
+
+/// Cherche la ligne "Prise en charge du réseau hébergé / Hosted network
+/// supported" et en lit la valeur (Oui/Non/Yes/No).
+fn lire_prise_en_charge_reseau_heberge(sortie: &str) -> Option<bool> {
+    let normalisee = normaliser(sortie);
+    let ligne = normalisee.lines().find(|ligne| {
+        ligne.contains("hosted network") || ligne.contains("rseau hberg")
+    })?;
+    let valeur = ligne.rsplit(':').next()?.trim();
+    if valeur.contains("oui") || valeur.contains("yes") {
+        Some(true)
+    } else if valeur.contains("non") || valeur.contains("no") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// `netsh wlan show interfaces` annonce explicitement l'absence de carte
+/// sans fil ; toute autre réponse non vide signifie qu'il y en a une.
+fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
+    let normalisee = normaliser(sortie);
+    if normalisee.trim().is_empty() {
+        return None;
+    }
+    if normalisee.contains("no wireless interface")
+        || normalisee.contains("aucune interface sans fil")
+    {
+        return Some(false);
+    }
+    Some(true)
+}
+
+fn composer_verdict(
+    carte_wifi_presente: Option<bool>,
+    reseau_heberge_supporte: Option<bool>,
+) -> String {
+    match (carte_wifi_presente, reseau_heberge_supporte) {
+        (Some(false), _) => "Ce PC n'a aucune carte Wi-Fi : il ne pourra jamais créer de \
+             réseau Wi-Fi lui-même. Il faut une clé Wi-Fi USB."
+            .to_string(),
+        (_, Some(true)) => "Compatible : ce PC sait créer le réseau Wi-Fi de la boutique \
+             sans internet."
+            .to_string(),
+        (_, Some(false)) => "Incompatible : la carte Wi-Fi de ce PC refuse de créer un réseau \
+             autonome (pilote trop récent ou limité). Il faut une clé Wi-Fi USB qui, elle, \
+             le supporte."
+            .to_string(),
+        (None, None) => "Impossible de vérifier : Windows n'a pas répondu. Transmettez le \
+             rapport technique ci-dessous."
+            .to_string(),
+        (Some(true), None) => "Indéterminé : ce PC a bien une carte Wi-Fi, mais Windows \
+             n'indique pas si elle sait créer un réseau autonome. Il faut faire l'essai réel, \
+             ou transmettre le rapport technique ci-dessous."
+            .to_string(),
+    }
+}
+
+#[cfg(windows)]
+fn executer_netsh(arguments: &[&str]) -> String {
+    use std::os::windows::process::CommandExt;
+    // Sans ce drapeau, chaque appel fait clignoter une fenêtre noire de
+    // console devant le gérant.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    std::process::Command::new("netsh")
+        .args(arguments)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|sortie| {
+            let mut texte = String::from_utf8_lossy(&sortie.stdout).into_owned();
+            texte.push_str(&String::from_utf8_lossy(&sortie.stderr));
+            texte
+        })
+        .unwrap_or_default()
+}
+
+/// Interroge Windows sur les capacités Wi-Fi de CE PC. Aucun droit
+/// administrateur, aucune activation, aucun effet de bord.
+#[cfg(windows)]
+pub fn diagnostiquer() -> DiagnosticWifi {
+    let pilotes = executer_netsh(&["wlan", "show", "drivers"]);
+    let interfaces = executer_netsh(&["wlan", "show", "interfaces"]);
+
+    let carte_wifi_presente = lire_presence_carte_wifi(&interfaces);
+    let reseau_heberge_supporte = lire_prise_en_charge_reseau_heberge(&pilotes);
+
+    DiagnosticWifi {
+        carte_wifi_presente,
+        reseau_heberge_supporte,
+        verdict: composer_verdict(carte_wifi_presente, reseau_heberge_supporte),
+        details_bruts: format!(
+            "--- netsh wlan show interfaces ---\n{}\n--- netsh wlan show drivers ---\n{}",
+            interfaces.trim(),
+            pilotes.trim()
+        ),
+    }
+}
+
+#[cfg(not(windows))]
+pub fn diagnostiquer() -> DiagnosticWifi {
+    DiagnosticWifi {
+        carte_wifi_presente: None,
+        reseau_heberge_supporte: None,
+        verdict: "Diagnostic disponible uniquement sur Windows.".to_string(),
+        details_bruts: String::new(),
+    }
+}
+
 #[cfg(windows)]
 fn echapper_powershell(valeur: &str) -> String {
     // Dans une chaîne PowerShell entre guillemets doubles, ces trois
@@ -231,6 +371,100 @@ pub fn activer(_ssid: &str, _mot_de_passe: &str) -> Result<(), String> {
     Err("Disponible uniquement sur Windows".to_string())
 }
 
+/// Ce qui a effectivement marché, une fois le réseau créé.
+pub struct Activation {
+    /// Nom de la méthode, repris tel quel dans l'interface : sur le terrain,
+    /// savoir laquelle des deux a fonctionné est la première information
+    /// utile quand quelque chose cloche ensuite.
+    pub methode: &'static str,
+    /// Adresse du PC sur ce réseau — pas la même selon la méthode, et c'est
+    /// elle que les serveurs DHCP/DNS et le QR code doivent annoncer.
+    pub adresse: Ipv4Addr,
+}
+
+/// Essaie TOUTES les façons connues de créer un Wi-Fi depuis ce PC, dans
+/// l'ordre de ce qui a le plus de chances de marcher, et ne renonce qu'après
+/// les avoir toutes épuisées.
+///
+/// Les deux méthodes ne couvrent pas le même parc : `hostednetwork` marche
+/// sur les PC plus anciens, Wi-Fi Direct sur les plus récents. Les essayer
+/// l'une après l'autre couvre donc bien plus de machines que n'importe
+/// laquelle seule — et le gérant, lui, ne voit qu'un seul bouton.
+pub fn activer_par_tous_les_moyens(
+    ssid: &str,
+    mot_de_passe: &str,
+) -> Result<Activation, String> {
+    let diagnostic = diagnostiquer();
+    if diagnostic.carte_wifi_presente == Some(false) {
+        return Err(diagnostic.verdict);
+    }
+
+    let mut echecs = Vec::new();
+
+    // Méthode 1 : sautée seulement quand Windows affirme qu'elle est
+    // impossible — en cas de doute (`None`), on essaie quand même.
+    if diagnostic.reseau_heberge_supporte == Some(false) {
+        echecs.push(
+            "Méthode 1 (réseau hébergé) : la carte Wi-Fi de ce PC déclare ne pas la supporter."
+                .to_string(),
+        );
+    } else {
+        match activer(ssid, mot_de_passe) {
+            Ok(()) => {
+                return Ok(Activation {
+                    methode: "réseau hébergé",
+                    adresse: ADRESSE_POINT_ACCES,
+                })
+            }
+            Err(e) => echecs.push(format!("Méthode 1 (réseau hébergé) : {e}")),
+        }
+    }
+
+    match crate::wifi_direct::activer(ssid, mot_de_passe) {
+        Ok(()) => Ok(Activation {
+            methode: "Wi-Fi Direct",
+            adresse: adresse_wifi_direct(),
+        }),
+        Err(e) => {
+            echecs.push(format!("Méthode 2 (Wi-Fi Direct) : {e}"));
+            Err(format!(
+                "Aucune des méthodes disponibles n'a pu créer le réseau Wi-Fi sur ce PC.\n\n{}",
+                echecs.join("\n")
+            ))
+        }
+    }
+}
+
+/// Contrairement au réseau hébergé, c'est Windows qui choisit l'adresse de
+/// l'interface Wi-Fi Direct — historiquement dans 192.168.137.0/24. On la
+/// retrouve donc au lieu de l'imposer.
+fn adresse_wifi_direct() -> Ipv4Addr {
+    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
+        for (_, ip) in interfaces {
+            if let std::net::IpAddr::V4(v4) = ip {
+                let octets = v4.octets();
+                if octets[0] == 192 && octets[1] == 168 && octets[2] == 137 {
+                    return v4;
+                }
+            }
+        }
+    }
+    Ipv4Addr::new(192, 168, 137, 1)
+}
+
+/// Coupe le réseau quelle que soit la méthode qui l'a créé.
+pub fn desactiver_par_tous_les_moyens() -> Result<(), String> {
+    let arret_wifi_direct = crate::wifi_direct::desactiver();
+    let arret_reseau_heberge = desactiver();
+    // Sur un PC donné, une seule des deux était active : l'échec de l'autre
+    // est normal et ne doit pas être remonté comme une erreur.
+    if arret_reseau_heberge.is_ok() || arret_wifi_direct.is_ok() {
+        Ok(())
+    } else {
+        arret_reseau_heberge
+    }
+}
+
 #[cfg(not(windows))]
 pub fn desactiver() -> Result<(), String> {
     Err("Disponible uniquement sur Windows".to_string())
@@ -239,6 +473,62 @@ pub fn desactiver() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// La console Windows française ne parle pas UTF-8 : les accents
+    /// arrivent ici en caractères de remplacement. Le diagnostic doit rester
+    /// juste dans ce cas, sinon il déclarerait "indéterminé" sur tous les
+    /// Windows français — c'est-à-dire sur presque tous les PC visés.
+    #[test]
+    fn lit_la_prise_en_charge_meme_avec_les_accents_abimes() {
+        let francais_abime = "Prise en charge du r\u{FFFD}seau h\u{FFFD}berg\u{FFFD} : Non";
+        assert_eq!(
+            lire_prise_en_charge_reseau_heberge(francais_abime),
+            Some(false)
+        );
+
+        let francais_propre = "Prise en charge du réseau hébergé : Oui";
+        assert_eq!(
+            lire_prise_en_charge_reseau_heberge(francais_propre),
+            Some(true)
+        );
+
+        let anglais = "    Hosted network supported  : Yes";
+        assert_eq!(lire_prise_en_charge_reseau_heberge(anglais), Some(true));
+    }
+
+    #[test]
+    fn ne_devine_pas_quand_windows_ne_dit_rien() {
+        assert_eq!(
+            lire_prise_en_charge_reseau_heberge("Interface name: Wi-Fi\nDriver: Intel"),
+            None
+        );
+        assert_eq!(lire_presence_carte_wifi(""), None);
+    }
+
+    #[test]
+    fn detecte_l_absence_de_carte_wifi_dans_les_deux_langues() {
+        assert_eq!(
+            lire_presence_carte_wifi("There is no wireless interface on the system."),
+            Some(false)
+        );
+        assert_eq!(
+            lire_presence_carte_wifi("Il n'y a aucune interface sans fil sur le système."),
+            Some(false)
+        );
+        assert_eq!(
+            lire_presence_carte_wifi("Nom : Wi-Fi\n    État : connecté"),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn le_verdict_est_explicite_dans_chaque_cas() {
+        assert!(composer_verdict(Some(false), None).contains("clé Wi-Fi USB"));
+        assert!(composer_verdict(Some(true), Some(true)).contains("Compatible"));
+        assert!(composer_verdict(Some(true), Some(false)).contains("clé Wi-Fi USB"));
+        assert!(composer_verdict(Some(true), None).contains("Indéterminé"));
+        assert!(composer_verdict(None, None).contains("Impossible de vérifier"));
+    }
 
     #[test]
     fn reconnait_la_confirmation_en_francais_et_en_anglais() {

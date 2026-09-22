@@ -429,7 +429,7 @@ pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
 pub async fn activer_point_acces_local(
     state: State<'_, DbState>,
     etat_point_acces: State<'_, crate::hotspot::EtatPointAcces>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let ssid = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         db::get_setting(&conn, "wifi_ssid").filter(|s| !s.trim().is_empty())
@@ -447,16 +447,14 @@ pub async fn activer_point_acces_local(
 
     // Bloquant (attend la fenêtre d'autorisation Windows) : sur un thread
     // dédié, pour ne jamais geler les autres commandes pendant ce temps.
-    tauri::async_runtime::spawn_blocking(move || crate::hotspot::activer(&ssid, &mot_de_passe))
-        .await
-        .map_err(|e| e.to_string())??;
+    let activation = tauri::async_runtime::spawn_blocking(move || {
+        crate::hotspot::activer_par_tous_les_moyens(&ssid, &mot_de_passe)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
-    let tache_dhcp = tauri::async_runtime::spawn(crate::dhcp::demarrer(
-        crate::hotspot::ADRESSE_POINT_ACCES,
-    ));
-    let tache_dns = tauri::async_runtime::spawn(crate::dns::demarrer(
-        crate::hotspot::ADRESSE_POINT_ACCES,
-    ));
+    let tache_dhcp = tauri::async_runtime::spawn(crate::dhcp::demarrer(activation.adresse));
+    let tache_dns = tauri::async_runtime::spawn(crate::dns::demarrer(activation.adresse));
     // Une activation précédente laissée en cours (le gérant a cliqué deux
     // fois) ne doit pas faire tourner deux serveurs DHCP/DNS en même temps
     // sur les mêmes ports.
@@ -470,7 +468,7 @@ pub async fn activer_point_acces_local(
         ancien_dns.abort();
     }
 
-    Ok(())
+    Ok(activation.methode.to_string())
 }
 
 /// Coupe le point d'accès Wi-Fi local activé par `activer_point_acces_local`,
@@ -488,9 +486,17 @@ pub async fn desactiver_point_acces_local(
         tache_dhcp.abort();
         tache_dns.abort();
     }
-    tauri::async_runtime::spawn_blocking(crate::hotspot::desactiver)
+    tauri::async_runtime::spawn_blocking(crate::hotspot::desactiver_par_tous_les_moyens)
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Rapport de compatibilité Wi-Fi de CE PC, sans rien activer ni demander
+/// les droits administrateur : ce que Windows déclare savoir faire, plus la
+/// sortie brute à transmettre au support quand le verdict reste indécis.
+#[tauri::command]
+pub fn diagnostiquer_wifi() -> crate::hotspot::DiagnosticWifi {
+    crate::hotspot::diagnostiquer()
 }
 
 #[derive(serde::Serialize)]

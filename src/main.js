@@ -692,8 +692,8 @@ document.querySelector("#btn-activer-wifi-local").addEventListener("click", asyn
   const texteInitial = bouton.textContent;
   bouton.textContent = "Activation en cours… (une fenêtre Windows va demander une autorisation)";
   try {
-    await invoke("activer_point_acces_local");
-    toast("✓ Wi-Fi local activé — rafraîchissement du QR…");
+    const methode = await invoke("activer_point_acces_local");
+    toast(`✓ Wi-Fi local activé (${methode}) — rafraîchissement du QR…`);
     await afficherQr();
   } catch (err) {
     alert(

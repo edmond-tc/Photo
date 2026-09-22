@@ -15,6 +15,7 @@ pub mod server;
 pub mod updates;
 pub mod usb;
 pub mod watcher;
+pub mod wifi_direct;
 
 use db::DbState;
 use std::path::PathBuf;
@@ -70,6 +71,7 @@ pub fn run() {
             commands::ouvrir_parametres_partage_connexion,
             commands::activer_point_acces_local,
             commands::desactiver_point_acces_local,
+            commands::diagnostiquer_wifi,
             commands::generer_rapport_diagnostic,
             commands::sauvegarder_maintenant,
             backup::lister_sauvegardes,
