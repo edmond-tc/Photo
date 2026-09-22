@@ -96,6 +96,18 @@ pub struct DiagnosticPoste {
     /// capacité que l'exemple officiel Microsoft dit de vérifier avant
     /// d'utiliser cette API.
     pub wifi_direct_go_supporte: Option<bool>,
+    /// Le pilote Wi-Fi expose-t-il l'interface WDI ? C'est le modèle de
+    /// pilote que Microsoft a imposé à partir de Windows 10 et sur lequel
+    /// reposent les API Wi-Fi Direct modernes (méthode 2, voir
+    /// `wifi_direct.rs`). Un pilote plus ancien (constaté sur le terrain :
+    /// Broadcom 802.11n daté de 2011) répond ici "interface WDI non prise en
+    /// charge" : ses seules capacités réellement utilisables sont les
+    /// anciennes, donc le réseau hébergé — la méthode 1.
+    ///
+    /// Compte double ici : ce même défaut explique pourquoi les lignes
+    /// "Wi-Fi Direct : pris en charge" de `wirelesscapabilities` peuvent
+    /// annoncer des capacités que le pilote ne tient pas.
+    pub wdi_supporte: Option<bool>,
     /// Ce PC a-t-il une radio Bluetooth ? Wi-Fi et Bluetooth partageant la
     /// même puce sur l'immense majorité des machines, un PC sans Wi-Fi n'en
     /// a presque jamais — c'est justement ce qu'il faut vérifier plutôt que
@@ -163,6 +175,30 @@ fn lire_prise_en_charge_wifi_direct_go(sortie: &str) -> Option<bool> {
     }
 }
 
+/// Lit la ligne "Version WDI (fabricant de matériel)" / "WDI Version (IHV)"
+/// de `netsh wlan show wirelesscapabilities`.
+///
+/// Windows y écrit soit un numéro de version (pilote WDI moderne), soit
+/// "interface WDI non prise en charge" / "WDI not supported" (pilote
+/// ancien). Cette ligne est la plus fiable des trois : contrairement aux
+/// lignes "Wi-Fi Direct ... : pris en charge", elle décrit le pilote
+/// lui-même et non des capacités annoncées.
+fn lire_prise_en_charge_wdi(sortie: &str) -> Option<bool> {
+    let normalisee = normaliser(sortie);
+    let ligne = normalisee.lines().find(|ligne| ligne.contains("wdi"))?;
+    let valeur = ligne.rsplit(':').next()?.trim().to_string();
+    // La négation d'abord : "non prise en charge" contient "pris en charge",
+    // et "not supported" contient "supported".
+    if valeur.contains("non pris") || valeur.contains("not supported") {
+        Some(false)
+    } else if valeur.chars().any(|c| c.is_ascii_digit()) {
+        // Un numéro de version : le pilote expose bien l'interface WDI.
+        Some(true)
+    } else {
+        None
+    }
+}
+
 /// `netsh wlan show interfaces` annonce explicitement l'absence de carte
 /// sans fil ; toute autre réponse non vide signifie qu'il y en a une.
 fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
@@ -190,6 +226,12 @@ fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
 /// routeur ou une vraie box en annonce toujours une (c'est elle qui rend
 /// le réseau "utilisable" au sens où un appareil peut en sortir), alors
 /// qu'un adaptateur fantôme n'en a généralement aucune.
+///
+/// Renforcé après un second faux positif signalé sur le terrain : certains
+/// adaptateurs fantômes (VPN, machine virtuelle) conservent bel et bien une
+/// passerelle mémorisée. On n'accepte donc désormais que les passerelles
+/// portées par une carte dont Windows dit qu'un câble ou un Wi-Fi est
+/// RÉELLEMENT branché dessus (`MediaConnectionState = Connected`).
 fn a_une_passerelle_valide(sortie: &str) -> bool {
     sortie.lines().any(|ligne| {
         ligne
@@ -210,7 +252,9 @@ fn reseau_utilisable() -> bool {
         .args([
             "-NoProfile",
             "-Command",
-            "(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue).NextHop",
+            "(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | \
+              Where-Object { (Get-NetAdapter -InterfaceIndex $_.InterfaceIndex \
+              -ErrorAction SilentlyContinue).MediaConnectionState -eq 'Connected' }).NextHop",
         ])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
@@ -236,13 +280,21 @@ fn composer_verdict(
     carte_wifi_presente: Option<bool>,
     reseau_heberge_supporte: Option<bool>,
     wifi_direct_go_supporte: Option<bool>,
+    wdi_supporte: Option<bool>,
     bluetooth_present: Option<bool>,
     reseau_utilisable: bool,
 ) -> String {
+    // La méthode 2 passe par les API Wi-Fi Direct de Windows, qui s'appuient
+    // sur le modèle de pilote WDI : un pilote qui ne l'expose pas a beau
+    // annoncer "Wi-Fi Direct : pris en charge", il ne tiendra pas la
+    // promesse. Ne pas en tenir compte ici reviendrait à promettre au gérant
+    // un Wi-Fi que ce PC ne créera jamais par cette voie.
+    let wifi_direct_utilisable =
+        wifi_direct_go_supporte != Some(false) && wdi_supporte != Some(false);
     // Une seule des deux méthodes suffit à créer le réseau : exiger les deux
     // déclarerait incapable un PC parfaitement capable.
     let sait_creer_un_wifi = carte_wifi_presente != Some(false)
-        && (reseau_heberge_supporte != Some(false) || wifi_direct_go_supporte != Some(false));
+        && (reseau_heberge_supporte != Some(false) || wifi_direct_utilisable);
 
     if reseau_utilisable {
         let complement = if sait_creer_un_wifi {
@@ -329,6 +381,7 @@ pub fn diagnostiquer() -> DiagnosticPoste {
     let carte_wifi_presente = lire_presence_carte_wifi(&interfaces);
     let reseau_heberge_supporte = lire_prise_en_charge_reseau_heberge(&pilotes);
     let wifi_direct_go_supporte = lire_prise_en_charge_wifi_direct_go(&capacites);
+    let wdi_supporte = lire_prise_en_charge_wdi(&capacites);
     let bluetooth_present = bluetooth_present();
     let reseau_utilisable = reseau_utilisable();
 
@@ -336,12 +389,14 @@ pub fn diagnostiquer() -> DiagnosticPoste {
         carte_wifi_presente,
         reseau_heberge_supporte,
         wifi_direct_go_supporte,
+        wdi_supporte,
         bluetooth_present,
         reseau_utilisable,
         verdict: composer_verdict(
             carte_wifi_presente,
             reseau_heberge_supporte,
             wifi_direct_go_supporte,
+            wdi_supporte,
             bluetooth_present,
             reseau_utilisable,
         ),
@@ -361,6 +416,7 @@ pub fn diagnostiquer() -> DiagnosticPoste {
         carte_wifi_presente: None,
         reseau_heberge_supporte: None,
         wifi_direct_go_supporte: None,
+        wdi_supporte: None,
         bluetooth_present: None,
         reseau_utilisable: false,
         verdict: "Diagnostic disponible uniquement sur Windows.".to_string(),
@@ -393,7 +449,14 @@ fn executer_script_eleve(script: &str) -> Result<String, String> {
     let fichier_resultat = dossier_temp.join("photocopie-benin-hotspot-resultat.txt");
     let _ = std::fs::remove_file(&fichier_resultat);
 
-    std::fs::write(&fichier_script, script)
+    // PowerShell 5.1 (celui de Windows 10) lit un .ps1 SANS marque d'ordre
+    // des octets comme de l'ANSI, pas de l'UTF-8 : un SSID ou un mot de
+    // passe accentué y arriverait déformé, et le Wi-Fi créé porterait un
+    // autre nom que celui affiché dans le QR. La marque (BOM) lève
+    // l'ambiguïté.
+    let mut contenu = String::from("\u{FEFF}");
+    contenu.push_str(script);
+    std::fs::write(&fichier_script, contenu)
         .map_err(|e| format!("Impossible de préparer la commande ({e})."))?;
 
     let parametres = format!(
@@ -440,11 +503,47 @@ fn executer_script_eleve(script: &str) -> Result<String, String> {
     Ok(resultat)
 }
 
+/// Délimitent, dans la sortie du script élevé, la réponse de la SEULE
+/// commande qui dise si le réseau existe vraiment (`netsh wlan start
+/// hostednetwork`). Le script en exécute désormais plusieurs autres avant
+/// elle (arrêt, remise à zéro, réactivation de la carte virtuelle) : sans
+/// ces marqueurs, leurs messages se mélangeraient au sien, et c'est
+/// justement le sien qu'il faut lire mot pour mot pour réparer.
+const MARQUEUR_DEBUT_DEMARRAGE: &str = "===DEBUT_DEMARRAGE===";
+const MARQUEUR_FIN_DEMARRAGE: &str = "===FIN_DEMARRAGE===";
+
+/// Isole ce qui se trouve entre deux marqueurs. Un script interrompu en
+/// plein milieu n'écrit pas le marqueur de fin : on rend alors tout ce qui
+/// suit le début, plutôt que rien — c'est précisément dans ce cas que le
+/// message manquant compte le plus.
+fn extraire_section<'a>(sortie: &'a str, debut: &str, fin: &str) -> Option<&'a str> {
+    let apres = sortie.split_once(debut)?.1;
+    Some(match apres.split_once(fin) {
+        Some((interieur, _)) => interieur,
+        None => apres,
+    })
+}
+
 /// Script complet : crée le point d'accès Wi-Fi, PUIS retrouve la carte
 /// virtuelle que Windows vient de créer pour lui assigner une adresse fixe
 /// et connue (`ADRESSE_POINT_ACCES`) — sans quoi le serveur DHCP (voir
 /// `dhcp.rs`) annoncerait une adresse que la carte n'a pas vraiment, et
 /// aucun téléphone ne pourrait jamais la joindre.
+///
+/// Ne se contente plus de lancer la commande : il remet d'abord le réseau
+/// hébergé à zéro et répare ce qui peut l'être, parce que ces trois pannes
+/// sont les plus fréquentes et qu'aucune ne devrait obliger le gérant à
+/// ouvrir le Gestionnaire de périphériques en pleine boutique :
+///
+/// 1. Un réseau resté ouvert par un essai précédent occupe la carte Wi-Fi
+///    et fait échouer le démarrage suivant → on arrête d'abord.
+/// 2. La carte virtuelle du réseau hébergé est dans un état bancal →
+///    `mode=disallow` puis `mode=allow` force Windows à la refaire. C'est la
+///    manipulation qui règle l'erreur "le groupe ou la ressource n'est pas
+///    dans l'état approprié".
+/// 3. Cette même carte est simplement DÉSACTIVÉE (elle est cachée, donc
+///    invisible sans l'option "Afficher les périphériques cachés") → ce
+///    script tourne déjà en administrateur, il la réactive lui-même.
 #[cfg(windows)]
 fn script_activation(ssid: &str, mot_de_passe: &str, resultat: &std::path::Path) -> String {
     let ssid = echapper_powershell(ssid);
@@ -455,8 +554,22 @@ fn script_activation(ssid: &str, mot_de_passe: &str, resultat: &std::path::Path)
 $ErrorActionPreference = 'Continue'
 $sortie = @()
 try {{
+    $sortie += (netsh wlan stop hostednetwork 2>&1 | Out-String)
+    $sortie += (netsh wlan set hostednetwork mode=disallow 2>&1 | Out-String)
     $sortie += (netsh wlan set hostednetwork mode=allow ssid="{ssid}" key="{mot_de_passe}" 2>&1 | Out-String)
+
+    $sortie += "===CARTES_VIRTUELLES==="
+    $cartes = @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Where-Object {{ $_.InterfaceDescription -like '*Hosted Network Virtual Adapter*' }})
+    foreach ($carte in $cartes) {{
+        $sortie += ("carte: " + $carte.Name + " / " + $carte.Status)
+        if ($carte.Status -ne 'Up') {{
+            $sortie += (Enable-NetAdapter -Name $carte.Name -Confirm:$false -ErrorAction SilentlyContinue 2>&1 | Out-String)
+        }}
+    }}
+
+    $sortie += "{marqueur_debut}"
     $sortie += (netsh wlan start hostednetwork 2>&1 | Out-String)
+    $sortie += "{marqueur_fin}"
 
     $adaptateur = Get-NetAdapter | Where-Object {{ $_.InterfaceDescription -like '*Hosted Network Virtual Adapter*' }} | Select-Object -First 1
     if ($adaptateur) {{
@@ -474,6 +587,8 @@ $sortie -join "`n" | Out-File -FilePath "{res}" -Encoding utf8
         ssid = ssid,
         mot_de_passe = mot_de_passe,
         ip = ip,
+        marqueur_debut = MARQUEUR_DEBUT_DEMARRAGE,
+        marqueur_fin = MARQUEUR_FIN_DEMARRAGE,
         res = resultat.display(),
     )
 }
@@ -492,10 +607,18 @@ $sortie | Out-File -FilePath "{res}" -Encoding utf8
 /// `netsh` répond dans la langue de Windows : on cherche des morceaux de
 /// phrase plutôt qu'un message exact, pour rester correct même si la
 /// formulation précise varie d'une version de Windows à l'autre.
-fn contient_confirmation_demarrage(sortie_minuscule: &str) -> bool {
-    sortie_minuscule.contains("hosted network started")
-        || sortie_minuscule.contains("le mode hébergé a démarré")
-        || sortie_minuscule.contains("réseau hébergé a démarré")
+///
+/// La comparaison passe par `normaliser` — donc sans accents — pour la même
+/// raison que le diagnostic : selon le chemin qu'a pris la sortie de `netsh`
+/// (console CP850, fichier UTF-8), les accents arrivent ici intacts ou
+/// abîmés. Les chercher tels quels ferait prendre une réussite pour un
+/// échec sur un Windows français, c'est-à-dire sur presque tous les PC visés.
+fn contient_confirmation_demarrage(sortie: &str) -> bool {
+    let normalisee = normaliser(sortie);
+    normalisee.contains("hosted network started")
+        // "le mode hébergé a démarré" / "le réseau hébergé a démarré", une
+        // fois les accents retirés.
+        || normalisee.contains("hberg a dmarr")
 }
 
 /// Active le point d'accès Wi-Fi local avec le SSID/mot de passe fournis, et
@@ -507,7 +630,6 @@ fn contient_confirmation_demarrage(sortie_minuscule: &str) -> bool {
 pub fn activer(ssid: &str, mot_de_passe: &str) -> Result<(), String> {
     let fichier_resultat = std::env::temp_dir().join("photocopie-benin-hotspot-resultat.txt");
     let sortie = executer_script_eleve(&script_activation(ssid, mot_de_passe, &fichier_resultat))?;
-    let sortie_minuscule = sortie.to_lowercase();
 
     if sortie.trim().is_empty() {
         return Err(
@@ -516,9 +638,17 @@ pub fn activer(ssid: &str, mot_de_passe: &str) -> Result<(), String> {
                 .to_string(),
         );
     }
-    if !contient_confirmation_demarrage(&sortie_minuscule) {
-        if sortie_minuscule.contains("non pris en charge") || sortie_minuscule.contains("not supported")
-        {
+    // Seule la réponse de `netsh wlan start hostednetwork` fait foi : les
+    // commandes de remise à zéro qui la précèdent produisent elles aussi des
+    // messages, dont certains ressemblent à des erreurs alors qu'ils sont
+    // normaux (arrêter un réseau qui ne tournait pas, par exemple).
+    let demarrage = extraire_section(&sortie, MARQUEUR_DEBUT_DEMARRAGE, MARQUEUR_FIN_DEMARRAGE)
+        .unwrap_or(sortie.as_str())
+        .trim()
+        .to_string();
+    if !contient_confirmation_demarrage(&demarrage) {
+        let normalise = normaliser(&demarrage);
+        if normalise.contains("non pris en charge") || normalise.contains("not supported") {
             return Err(
                 "La carte Wi-Fi de ce PC ne supporte pas la création d'un point d'accès \
                  autonome. Utilisez plutôt la solution de secours (paramètres Windows), qui \
@@ -526,9 +656,15 @@ pub fn activer(ssid: &str, mot_de_passe: &str) -> Result<(), String> {
                     .to_string(),
             );
         }
+        if demarrage.is_empty() {
+            return Err(format!(
+                "Windows n'a rien répondu à la commande de démarrage du réseau. Détail \
+                 technique complet : {}",
+                sortie.trim()
+            ));
+        }
         return Err(format!(
-            "Windows a refusé d'activer le point d'accès. Détail technique : {}",
-            sortie.trim()
+            "Windows a refusé d'activer le point d'accès. Message exact de Windows : {demarrage}"
         ));
     }
     if sortie.contains("ADAPTATEUR_INTROUVABLE") {
@@ -614,6 +750,39 @@ fn expliquer_echec_reseau_heberge(erreur: &str) -> String {
     erreur.to_string()
 }
 
+/// LE bug de terrain, resté invisible le plus longtemps : quand la méthode 2
+/// annonçait une réussite, on prenait l'adresse trouvée sur la carte Wi-Fi
+/// Direct — et, quand il n'y en avait aucune, on se rabattait sur une
+/// adresse DEVINÉE (192.168.137.1). Or "aucune adresse" ne veut pas dire
+/// "adresse inconnue" : ça veut dire que le réseau n'a jamais existé.
+///
+/// Les conséquences observées en boutique s'expliquent toutes par là : le QR
+/// affichait une adresse que rien ne portait, le serveur DNS refusait de
+/// s'y attacher (erreur Windows 10049, "l'adresse demandée n'est pas valide
+/// dans son contexte"), et le téléphone du client ne rejoignait jamais le PC
+/// — le tout sous un bandeau vert "Wi-Fi activé". Pire encore : cette fausse
+/// réussite écartait la méthode 1, la seule qui pouvait marcher sur ce PC,
+/// et jetait au passage son message d'erreur.
+///
+/// Une adresse absente est donc désormais un ÉCHEC, dit comme tel.
+fn echec_wifi_direct_sans_adresse(wdi_supporte: Option<bool>) -> String {
+    let constat = "Windows a annoncé avoir créé le réseau, mais aucune adresse n'est apparue \
+                   sur la carte Wi-Fi Direct : le réseau n'existe donc pas réellement, et \
+                   aucun téléphone n'aurait pu le rejoindre.";
+
+    if wdi_supporte == Some(false) {
+        return format!(
+            "{constat} La cause est connue pour ce PC : son pilote Wi-Fi n'expose pas \
+             l'interface WDI, dont cette méthode dépend (Windows l'écrit lui-même dans le \
+             diagnostic : « interface WDI non prise en charge »). Sur ce poste, seule la \
+             méthode 1 (réseau hébergé) peut fonctionner — c'est son message d'erreur, \
+             ci-dessus, qu'il faut traiter."
+        );
+    }
+
+    constat.to_string()
+}
+
 /// Essaie TOUTES les façons connues de créer un Wi-Fi depuis ce PC, dans
 /// l'ordre de ce qui a le plus de chances de marcher, et ne renonce qu'après
 /// les avoir toutes épuisées.
@@ -667,17 +836,30 @@ pub fn activer_par_tous_les_moyens(
         );
     } else {
         match crate::wifi_direct::activer(ssid, mot_de_passe) {
-            Ok(()) => {
-                let adresse = adresse_adaptateur_wifi_direct().unwrap_or(Ipv4Addr::new(192, 168, 137, 1));
-                if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
-                    *garde = Some(adresse);
+            // Windows dit avoir démarré le réseau. Ça ne suffit pas : c'est
+            // l'adresse réellement apparue sur la carte Wi-Fi Direct qui
+            // prouve qu'il existe (voir `echec_wifi_direct_sans_adresse`).
+            Ok(()) => match adresse_adaptateur_wifi_direct() {
+                Some(adresse) => {
+                    if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
+                        *garde = Some(adresse);
+                    }
+                    return Ok(Activation {
+                        methode: "Wi-Fi Direct",
+                        adresse,
+                        echecs_precedents: echecs,
+                    });
                 }
-                return Ok(Activation {
-                    methode: "Wi-Fi Direct",
-                    adresse,
-                    echecs_precedents: echecs,
-                });
-            }
+                None => {
+                    // Ne pas laisser tourner une annonce Wi-Fi Direct qui ne
+                    // mène à rien : elle occuperait la carte pour rien.
+                    let _ = crate::wifi_direct::desactiver();
+                    echecs.push(format!(
+                        "Méthode 2 (Wi-Fi Direct) : {}",
+                        echec_wifi_direct_sans_adresse(diagnostic.wdi_supporte)
+                    ));
+                }
+            },
             Err(e) => echecs.push(format!("Méthode 2 (Wi-Fi Direct) : {e}")),
         }
     }
@@ -951,24 +1133,50 @@ mod tests {
     fn chaque_situation_de_boutique_recoit_la_bonne_consigne() {
         // PC déjà sur le réseau de la boutique : le parcours le plus simple,
         // il passe avant tout le reste même si ce PC sait créer un Wi-Fi.
-        let deja_en_reseau = composer_verdict(Some(true), Some(true), Some(true), Some(true), true);
+        let deja_en_reseau = composer_verdict(
+            Some(true),
+            Some(true),
+            Some(true),
+            Some(true),
+            Some(true),
+            true,
+        );
         assert!(deja_en_reseau.contains("Montrez simplement le QR"));
         assert!(deja_en_reseau.contains("pas nécessaire ici"));
 
         // Portable capable de créer son Wi-Fi, hors de tout réseau.
-        let cree_son_wifi =
-            composer_verdict(Some(true), Some(true), Some(false), Some(true), false);
+        let cree_son_wifi = composer_verdict(
+            Some(true),
+            Some(true),
+            Some(false),
+            Some(true),
+            Some(true),
+            false,
+        );
         assert!(cree_son_wifi.contains("Activer le Wi-Fi local"));
 
         // Portable dont le pilote refuse les deux méthodes : reste le
         // Bluetooth, et il faut dire qu'il ne couvre pas les iPhone.
-        let bluetooth_seul =
-            composer_verdict(Some(true), Some(false), Some(false), Some(true), false);
+        let bluetooth_seul = composer_verdict(
+            Some(true),
+            Some(false),
+            Some(false),
+            Some(true),
+            Some(true),
+            false,
+        );
         assert!(bluetooth_seul.contains("Bluetooth"));
         assert!(bluetooth_seul.contains("iPhone"));
 
         // Poste sans rien : ne pas laisser le gérant chercher.
-        let rien = composer_verdict(Some(false), Some(false), Some(false), Some(false), false);
+        let rien = composer_verdict(
+            Some(false),
+            Some(false),
+            Some(false),
+            Some(false),
+            Some(false),
+            false,
+        );
         assert!(rien.contains("clé USB"));
         assert!(rien.contains("câble réseau"));
     }
@@ -978,21 +1186,135 @@ mod tests {
         // Windows ne dit rien de clair (`None` partout) : l'application sait
         // essayer les deux méthodes, donc le verdict ne doit pas envoyer le
         // gérant vers la clé USB par excès de prudence.
-        let indetermine = composer_verdict(None, None, None, None, false);
+        let indetermine = composer_verdict(None, None, None, None, None, false);
         assert!(
             indetermine.contains("Activer le Wi-Fi local"),
             "obtenu : {indetermine}"
         );
     }
 
+    /// La ligne exacte relevée sur le PC de terrain (Broadcom 802.11n,
+    /// pilote de 2011), accents abîmés compris comme les envoie la console
+    /// française.
+    #[test]
+    fn lit_la_ligne_wdi_du_pc_de_terrain() {
+        let terrain = "    Version WDI (fabricant de mat\u{FFFD}riel) : interface WDI non prise \
+                       en charge";
+        assert_eq!(lire_prise_en_charge_wdi(terrain), Some(false));
+
+        assert_eq!(
+            lire_prise_en_charge_wdi("    WDI Version (IHV)     : WDI not supported"),
+            Some(false)
+        );
+        // Pilote moderne : un numéro de version.
+        assert_eq!(
+            lire_prise_en_charge_wdi("    WDI Version (IHV)     : 0.0.0.20"),
+            Some(true)
+        );
+        // Rien sur le WDI : on ne devine pas.
+        assert_eq!(
+            lire_prise_en_charge_wdi("    Wi-Fi Direct GO : Supported"),
+            None
+        );
+    }
+
+    /// Le piège du PC de terrain : `wirelesscapabilities` y annonce
+    /// "Wi-Fi Direct GO : pris en charge" alors que le pilote ne gère pas
+    /// l'interface WDI dont cette méthode dépend. Le verdict ne doit alors
+    /// pas s'appuyer sur la méthode 2 — et surtout pas déclarer capable un
+    /// PC dont le réseau hébergé, lui, est refusé.
+    #[test]
+    fn un_pilote_sans_wdi_ne_compte_pas_sur_le_wifi_direct() {
+        let sans_wdi = composer_verdict(
+            Some(true),
+            Some(false), // réseau hébergé refusé
+            Some(true),  // Wi-Fi Direct annoncé...
+            Some(false), // ...mais pas d'interface WDI : promesse non tenue
+            Some(true),
+            false,
+        );
+        assert!(
+            !sans_wdi.contains("Activer le Wi-Fi local"),
+            "obtenu : {sans_wdi}"
+        );
+        assert!(sans_wdi.contains("Bluetooth"));
+
+        // Contrôle : avec le WDI, la même machine reste bien capable.
+        let avec_wdi = composer_verdict(
+            Some(true),
+            Some(false),
+            Some(true),
+            Some(true),
+            Some(true),
+            false,
+        );
+        assert!(avec_wdi.contains("Activer le Wi-Fi local"));
+    }
+
+    /// Le correctif central de cette version : une méthode 2 sans adresse
+    /// n'est pas une réussite, et le message doit désigner la méthode 1
+    /// comme la seule piste réelle quand le pilote n'a pas le WDI.
+    #[test]
+    fn une_methode_2_sans_adresse_est_dite_echouee_et_renvoie_vers_la_methode_1() {
+        let sans_wdi = echec_wifi_direct_sans_adresse(Some(false));
+        assert!(sans_wdi.contains("n'existe donc pas réellement"));
+        assert!(sans_wdi.contains("WDI"));
+        assert!(sans_wdi.contains("méthode 1"));
+
+        // Sans information sur le WDI, on constate sans inventer de cause.
+        let inconnu = echec_wifi_direct_sans_adresse(None);
+        assert!(inconnu.contains("n'existe donc pas réellement"));
+        assert!(!inconnu.contains("WDI"));
+    }
+
+    /// Le script élevé lance maintenant plusieurs commandes avant le vrai
+    /// démarrage. Confondre leurs messages avec celui de `start` ferait
+    /// afficher au gérant une phrase sans rapport avec la panne.
+    #[test]
+    fn isole_la_reponse_de_la_commande_de_demarrage() {
+        let sortie = "Le mode hébergé est arrêté.\n===DEBUT_DEMARRAGE===\nLe groupe ou la \
+                      ressource n'est pas dans l'état approprié.\n===FIN_DEMARRAGE===\n\
+                      ADRESSE_CONFIGUREE";
+        let section = extraire_section(&sortie, MARQUEUR_DEBUT_DEMARRAGE, MARQUEUR_FIN_DEMARRAGE)
+            .expect("la section doit être trouvée");
+        assert!(section.contains("état approprié"));
+        assert!(!section.contains("est arrêté"));
+        assert!(!section.contains("ADRESSE_CONFIGUREE"));
+    }
+
+    /// Un script interrompu (PowerShell tué, PC qui s'éteint) n'écrit pas le
+    /// marqueur de fin. Rendre `None` ferait perdre exactement le message
+    /// qu'on cherchait à capturer.
+    #[test]
+    fn rend_la_fin_de_sortie_quand_le_marqueur_de_fin_manque() {
+        let tronquee = "préliminaires\n===DEBUT_DEMARRAGE===\nErreur brutale";
+        assert_eq!(
+            extraire_section(&tronquee, MARQUEUR_DEBUT_DEMARRAGE, MARQUEUR_FIN_DEMARRAGE),
+            Some("\nErreur brutale")
+        );
+        assert_eq!(
+            extraire_section("rien du tout", MARQUEUR_DEBUT_DEMARRAGE, MARQUEUR_FIN_DEMARRAGE),
+            None
+        );
+    }
+
     #[test]
     fn reconnait_la_confirmation_en_francais_et_en_anglais() {
+        // Accents intacts (sortie lue en UTF-8)…
         assert!(contient_confirmation_demarrage(
-            "le mode hébergé a démarré."
+            "Le mode hébergé a démarré."
         ));
-        assert!(contient_confirmation_demarrage("the hosted network started."));
+        assert!(contient_confirmation_demarrage(
+            "Le réseau hébergé a démarré."
+        ));
+        // …et accents abîmés (sortie passée par la console française) : le
+        // même message doit être reconnu dans les deux cas.
+        assert!(contient_confirmation_demarrage(
+            "Le mode h\u{FFFD}berg\u{FFFD} a d\u{FFFD}marr\u{FFFD}."
+        ));
+        assert!(contient_confirmation_demarrage("The hosted network started."));
         assert!(!contient_confirmation_demarrage(
-            "accès refusé. vous devez être administrateur."
+            "Accès refusé. Vous devez être administrateur."
         ));
     }
 
@@ -1011,5 +1333,29 @@ mod tests {
         assert!(script.contains(r#"ssid="Ma Boutique""#));
         assert!(script.contains(r#"key="secret`"123""#));
         assert!(script.contains("192.168.73.1"));
+    }
+
+    /// Les trois réparations automatiques ajoutées après les essais de
+    /// terrain : sans elles, le gérant devait ouvrir le Gestionnaire de
+    /// périphériques en pleine boutique, ou ne comprenait pas pourquoi un
+    /// deuxième essai échouait toujours.
+    #[cfg(windows)]
+    #[test]
+    fn le_script_repare_avant_de_demarrer() {
+        let script = script_activation("Boutique", "motdepasse", std::path::Path::new("C:\\r.txt"));
+        let position = |aiguille: &str| script.find(aiguille).expect(aiguille);
+
+        // 1. Arrêt d'un réseau resté ouvert, 2. remise à zéro de la carte
+        // virtuelle, 3. réactivation si Windows l'a désactivée — puis
+        // seulement le démarrage.
+        assert!(position("stop hostednetwork") < position("mode=disallow"));
+        assert!(position("mode=disallow") < position("mode=allow"));
+        assert!(position("mode=allow") < position("Enable-NetAdapter"));
+        assert!(position("Enable-NetAdapter") < position("start hostednetwork"));
+        assert!(script.contains("-IncludeHidden"));
+
+        // Le démarrage doit être encadré pour que son message soit isolable.
+        assert!(position(MARQUEUR_DEBUT_DEMARRAGE) < position("start hostednetwork"));
+        assert!(position("start hostednetwork") < position(MARQUEUR_FIN_DEMARRAGE));
     }
 }

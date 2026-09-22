@@ -705,6 +705,46 @@ async function afficherQr() {
 // connexion internet/Ethernet à partager — précisément le cas normal d'une
 // boutique hors ligne (vérifié sur le terrain). Ce bouton crée un point
 // d'accès autonome à la place (voir hotspot.rs), sans cette exigence.
+/// Affiche le compte rendu d'une activation Wi-Fi sous le bouton, dans une
+/// zone que le gérant peut relire et copier.
+///
+/// Remplace les fenêtres d'alerte utilisées jusqu'ici. La raison vient du
+/// terrain : quand l'activation échoue, le texte affiché contient le message
+/// EXACT de Windows — la seule information qui permette de réparer. Dans une
+/// alerte, il disparaît au premier clic, ne se copie pas, et se retrouve
+/// tronqué dès qu'il dépasse quelques lignes.
+function afficherCompteRenduWifi(titre, texte, ton) {
+  const zone = document.querySelector("#wifi-compte-rendu");
+  zone.hidden = false;
+  zone.innerHTML = "";
+
+  const entete = document.createElement("p");
+  entete.style.cssText = "font-weight:600; margin:0.75rem 0 0.25rem";
+  entete.textContent = titre;
+  if (ton === "attention") entete.style.color = "var(--rouge, #b00020)";
+  zone.appendChild(entete);
+
+  const detail = document.createElement("textarea");
+  detail.readOnly = true;
+  detail.rows = Math.min(16, Math.max(4, texte.split("\n").length + 1));
+  detail.style.cssText =
+    "width:100%; font-family:Consolas, monospace; font-size:0.75rem; line-height:1.4";
+  detail.value = texte;
+  zone.appendChild(detail);
+
+  zone.appendChild(
+    bouton("Copier ce message", "btn-secondaire", async () => {
+      try {
+        await navigator.clipboard.writeText(`${titre}\n\n${texte}`);
+        toast("✓ Message copié");
+      } catch {
+        detail.select();
+        toast("Sélectionnez et copiez le texte à la main.");
+      }
+    })
+  );
+}
+
 document.querySelector("#btn-activer-wifi-local").addEventListener("click", async (e) => {
   const bouton = e.currentTarget;
   bouton.disabled = true;
@@ -718,21 +758,24 @@ document.querySelector("#btn-activer-wifi-local").addEventListener("click", asyn
       // sur ce port). Sans ça, les téléphones se connectent au réseau mais
       // n'obtiennent jamais d'adresse ou n'ouvrent jamais la page tout
       // seuls — un souci invisible si on ne le montre pas explicitement ici.
-      alert(
-        `⚠️ Wi-Fi local activé (${resultat.methode}), mais avec un problème :\n\n` +
-          resultat.avertissements.join("\n\n") +
+      afficherCompteRenduWifi(
+        `⚠️ Wi-Fi local activé (${resultat.methode}), mais avec un problème :`,
+        resultat.avertissements.join("\n\n") +
           `\n\nSi les clients n'arrivent pas à se connecter ou si la page ne s'ouvre pas ` +
-          `toute seule, c'est probablement la cause. Un redémarrage du PC règle souvent ce ` +
-          `genre de conflit.`
+          `toute seule, c'est probablement la cause.`,
+        "attention"
       );
     } else {
+      document.querySelector("#wifi-compte-rendu").hidden = true;
       toast(`✓ Wi-Fi local activé (${resultat.methode}) — rafraîchissement du QR…`);
     }
     await afficherQr();
   } catch (err) {
-    alert(
-      `⚠️ Le Wi-Fi local n'a pas pu être activé.\n\n${err}\n\n` +
-        `Vous pouvez essayer la solution de secours ci-dessous (nécessite une connexion internet ou Ethernet).`
+    afficherCompteRenduWifi(
+      "⚠️ Le Wi-Fi local n'a pas pu être activé.",
+      `${err}\n\nSi rien ci-dessus ne débloque la situation, copiez ce message et ` +
+        `transmettez-le : il contient le message exact de Windows.`,
+      "attention"
     );
   } finally {
     bouton.disabled = false;
