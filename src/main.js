@@ -676,6 +676,19 @@ async function afficherQr() {
       urlEl.innerHTML =
         `⚠️ Ce QR fait rejoindre le Wi-Fi <strong>${echapperHtml(info.url)}</strong>… mais le Wi-Fi local n'est pas allumé. ` +
         `Appuyez d'abord sur « 📶 Activer le Wi-Fi local de la boutique », sinon le client se connectera à un réseau qui n'existe pas.`;
+    } else if (info.mode === "routeur_actif") {
+      // Le routeur fait tourner le Wi-Fi lui-même — indépendamment de
+      // l'application — donc pas d'avertissement "réseau éteint" ici : ce
+      // mode signifie seulement que l'ouverture automatique fonctionne.
+      urlEl.innerHTML =
+        `Le client scanne et rejoint le Wi-Fi du routeur. Sur iPhone la page d'envoi s'ouvre toute seule ; ` +
+        `sur Android, une notification « Se connecter au réseau Wi-Fi » apparaît — il la touche et la page s'ouvre. ` +
+        `Si rien n'apparaît : <strong>${echapperHtml(info.url)}</strong>.`;
+    } else if (info.mode === "routeur_inactif") {
+      urlEl.innerHTML =
+        `Ce QR fait rejoindre le Wi-Fi du routeur — ça fonctionne déjà, le routeur n'a pas besoin de cette application. ` +
+        `Mais l'ouverture AUTOMATIQUE de la page n'est pas encore prête : appuyez sur « 📶 Activer le Wi-Fi local de la boutique » ` +
+        `une fois, sinon le client devra ouvrir son navigateur lui-même et taper <strong>${echapperHtml(info.url)}</strong>.`;
     } else {
       urlEl.innerHTML =
         `Ce QR ouvre directement la page d'envoi (${echapperHtml(info.url)}) dans le navigateur du client. ` +
@@ -1577,19 +1590,32 @@ async function rendreReglages(corps) {
   secWifi.innerHTML = `
     <h3>Wi-Fi local (pour le QR unique)</h3>
     <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
-      Recopiez ici le nom et le mot de passe affichés sur l'écran des
-      paramètres Windows (bouton "Ouvrir le partage de connexion" dans la
-      fenêtre QR) — permet au QR de connecter le client automatiquement.
+      Deux installations possibles. <strong>Ce PC crée le réseau</strong> :
+      recopiez le nom et le mot de passe affichés sur l'écran des paramètres
+      Windows (bouton "Ouvrir le partage de connexion" dans la fenêtre QR).
+      <strong>Routeur externe</strong> (recommandé si ce PC n'a pas de carte
+      Wi-Fi ou si la première méthode échoue) : un petit routeur dédié crée
+      le réseau à la place du PC — aucun abonnement ni accès internet requis,
+      juste du courant. Réglez alors son propre nom/mot de passe ici, et
+      dans les réglages du routeur, désignez l'adresse de ce PC comme
+      serveur DNS distribué (sinon la page ne s'ouvrira pas toute seule).
     </p>
   `;
   const formWifi = document.createElement("form");
   formWifi.innerHTML = `
+    <label>Type de réseau
+      <select id="reg-wifi-type">
+        <option value="pc" ${params.wifi_type_reseau === "routeur_externe" ? "" : "selected"}>Ce PC crée le réseau</option>
+        <option value="routeur_externe" ${params.wifi_type_reseau === "routeur_externe" ? "selected" : ""}>Routeur externe dédié</option>
+      </select>
+    </label>
     <label>Nom du réseau (SSID) <input type="text" id="reg-wifi-ssid" value="${echapperHtml(params.wifi_ssid)}" /></label>
     <label>Mot de passe <input type="text" id="reg-wifi-mdp" value="${echapperHtml(params.wifi_mot_de_passe)}" /></label>
     <button type="submit" class="btn-secondaire">Enregistrer</button>
   `;
   formWifi.addEventListener("submit", async (e) => {
     e.preventDefault();
+    await invoke("set_boutique_setting", { cle: "wifi_type_reseau", valeur: document.querySelector("#reg-wifi-type").value });
     await invoke("set_boutique_setting", { cle: "wifi_ssid", valeur: document.querySelector("#reg-wifi-ssid").value });
     await invoke("set_boutique_setting", { cle: "wifi_mot_de_passe", valeur: document.querySelector("#reg-wifi-mdp").value });
     toast("✓ Wi-Fi enregistré — le QR l'utilisera dès maintenant");

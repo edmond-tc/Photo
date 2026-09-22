@@ -19,24 +19,30 @@ use tokio::net::UdpSocket;
 
 const PORT_DNS: u16 = 53;
 
-/// Tente de s'installer sur le port DNS de l'adresse du point d'accès.
-/// Rendu visible dans l'interface plutôt que perdu dans un `eprintln!` :
-/// Windows peut déjà avoir son propre relais DNS actif sur cette carte
-/// (partage de connexion), auquel cas cette tentative échoue en silence
-/// côté système — mais ne doit plus l'être côté gérant, puisque c'est
-/// précisément ce serveur qui déclenche l'ouverture automatique de la page.
+/// Tente de s'installer sur le port DNS. Rendu visible dans l'interface
+/// plutôt que perdu dans un `eprintln!` : Windows peut déjà avoir son
+/// propre relais DNS actif ailleurs sur la machine, auquel cas cette
+/// tentative échoue en silence côté système — mais ne doit plus l'être côté
+/// gérant, puisque c'est précisément ce serveur qui déclenche l'ouverture
+/// automatique de la page.
+///
+/// Écoute sur TOUTES les cartes (`0.0.0.0`), comme le fait déjà `dhcp.rs` —
+/// et pour la même raison : exiger une adresse précise (l'ancienne
+/// approche) s'est montrée fragile sur le terrain. Windows peut mettre un
+/// instant à rendre une adresse fraîchement attribuée réellement utilisable
+/// pour un bind, et la détecter "trop tôt" fait échouer ce démarrage avec
+/// une erreur système ("l'adresse demandée n'est pas valide dans son
+/// contexte") — sans qu'aucun bug ne soit en cause côté adresse elle-même.
+/// `0.0.0.0`, lui, n'a jamais échoué dans aucun essai sur le terrain,
+/// exactement comme pour DHCP.
+///
+/// La restriction "ne répondre qu'aux téléphones du point d'accès" (pour ne
+/// pas perturber le vrai réseau de la boutique si le PC y est aussi
+/// branché) est maintenue — juste déplacée : ce n'est plus le système
+/// d'exploitation qui la fait respecter au moment d'ouvrir le port, c'est
+/// `servir` qui l'applique à chaque paquet reçu (voir `dans_le_bon_reseau`).
 pub async fn demarrer(adresse: Ipv4Addr) -> Result<tauri::async_runtime::JoinHandle<()>, String> {
-    // On écoute UNIQUEMENT sur l'adresse du point d'accès, jamais sur toutes
-    // les cartes réseau.
-    //
-    // Ce serveur répond à n'importe quelle question par notre propre adresse
-    // — c'est son rôle pour le portail captif. Mais si le PC est en même
-    // temps branché au réseau de la boutique (câble vers la box), écouter
-    // partout reviendrait à répondre aussi aux autres appareils de ce
-    // réseau, et donc à leur couper internet en détournant tous leurs noms
-    // de domaine vers ce PC. Se limiter à l'adresse du point d'accès confine
-    // l'effet aux seuls téléphones qui l'ont rejoint.
-    let socket = UdpSocket::bind(format!("{adresse}:{PORT_DNS}"))
+    let socket = UdpSocket::bind(format!("0.0.0.0:{PORT_DNS}"))
         .await
         .map_err(|e| {
             format!(
@@ -49,6 +55,16 @@ pub async fn demarrer(adresse: Ipv4Addr) -> Result<tauri::async_runtime::JoinHan
     Ok(tauri::async_runtime::spawn(servir(socket, adresse)))
 }
 
+/// L'expéditeur appartient-il au même réseau /24 que notre point d'accès ?
+/// Seul un paquet dans ce cas obtient une réponse — les autres sont
+/// ignorés en silence, comme s'ils avaient été reçus par un serveur DNS qui
+/// n'écoutait que sur cette carte précise. Le résultat pour le reste du
+/// réseau de la boutique est identique à l'ancienne approche (bind ciblé) ;
+/// seule la façon de l'obtenir a changé.
+fn dans_le_bon_reseau(expediteur: Ipv4Addr, adresse: Ipv4Addr) -> bool {
+    expediteur.octets()[..3] == adresse.octets()[..3]
+}
+
 async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
     let mut tampon = [0u8; 512];
     loop {
@@ -56,6 +72,12 @@ async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
             Ok(v) => v,
             Err(_) => continue,
         };
+        let std::net::SocketAddr::V4(expediteur) = expediteur else {
+            continue;
+        };
+        if !dans_le_bon_reseau(*expediteur.ip(), adresse) {
+            continue;
+        }
         if let Some(reponse) = construire_reponse(&tampon[..taille], adresse) {
             let _ = socket.send_to(&reponse, expediteur).await;
         }
@@ -136,5 +158,25 @@ mod tests {
     #[test]
     fn ignore_un_paquet_illisible_sans_planter() {
         assert!(construire_reponse(&[1, 2, 3], Ipv4Addr::new(192, 168, 73, 1)).is_none());
+    }
+
+    /// Le point qui remplace l'ancienne protection par bind ciblé : un
+    /// appareil du VRAI réseau de la boutique (si le PC y est aussi
+    /// branché par câble) ne doit jamais recevoir de réponse, sous peine de
+    /// lui couper internet en détournant tous ses noms de domaine.
+    #[test]
+    fn ne_repond_qu_aux_appareils_du_meme_reseau_que_le_point_d_acces() {
+        let point_acces = Ipv4Addr::new(192, 168, 73, 1);
+
+        // Un téléphone qui a bien rejoint le point d'accès.
+        assert!(dans_le_bon_reseau(Ipv4Addr::new(192, 168, 73, 42), point_acces));
+
+        // Un appareil du réseau de la boutique (box sur un tout autre
+        // sous-réseau) : jamais de réponse, jamais d'interférence.
+        assert!(!dans_le_bon_reseau(Ipv4Addr::new(10, 0, 0, 5), point_acces));
+        assert!(!dans_le_bon_reseau(
+            Ipv4Addr::new(192, 168, 1, 5),
+            point_acces
+        ));
     }
 }

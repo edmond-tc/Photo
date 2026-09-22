@@ -13,6 +13,7 @@ pub mod models;
 pub mod obex;
 pub mod qr;
 pub mod retention;
+pub mod routeur_externe;
 pub mod server;
 pub mod updates;
 pub mod usb;

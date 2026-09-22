@@ -63,6 +63,17 @@ pub fn adresse_point_acces_active() -> Option<Ipv4Addr> {
     ADRESSE_ACTIVE.lock().ok().and_then(|garde| *garde)
 }
 
+/// Enregistre l'adresse en service — pour un réseau que ce module n'a pas
+/// lui-même créé. Utilisé par `routeur_externe.rs` : un routeur dédié crée
+/// son propre réseau indépendamment de nous, mais `adresse_locale()`
+/// (server.rs) et le QR ont quand même besoin de savoir, par la même source
+/// unique que pour nos deux méthodes, quelle adresse est en service.
+pub fn definir_adresse_active(adresse: Option<Ipv4Addr>) {
+    if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
+        *garde = adresse;
+    }
+}
+
 /// Ce que ce PC-ci sait faire, tel que Windows le déclare. Établi SANS
 /// demander les droits administrateur et sans rien activer : le gérant (ou
 /// le revendeur, avant même une vente) peut donc le lancer sur n'importe

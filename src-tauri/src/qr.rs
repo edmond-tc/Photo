@@ -11,6 +11,12 @@ use std::io::Cursor;
 pub const MODE_POINT_ACCES_ACTIF: &str = "point_acces_actif";
 pub const MODE_POINT_ACCES_INACTIF: &str = "point_acces_inactif";
 pub const MODE_RESEAU_PARTAGE: &str = "reseau_partage";
+/// Réseau créé par un routeur Wi-Fi dédié (voir `routeur_externe.rs`), pas
+/// par le PC : contrairement au point d'accès du PC, le Wi-Fi du routeur
+/// fonctionne TOUJOURS, que l'application ait démarré son tour de
+/// passe-passe DNS ou non — seule l'ouverture automatique en dépend.
+pub const MODE_ROUTEUR_ACTIF: &str = "routeur_actif";
+pub const MODE_ROUTEUR_INACTIF: &str = "routeur_inactif";
 
 #[derive(serde::Serialize)]
 pub struct ServerInfo {
@@ -39,6 +45,7 @@ pub struct ServerInfo {
 pub fn build_server_info(
     wifi_ssid: Option<String>,
     wifi_mot_de_passe: Option<String>,
+    type_reseau: Option<String>,
 ) -> Result<ServerInfo, String> {
     // Même logique que le serveur HTTP lui-même (voir `server::adresse_locale`) :
     // la page servie doit être joignable à l'adresse annoncée dans le QR.
@@ -52,20 +59,35 @@ pub fn build_server_info(
         });
     };
 
-    // Proposer de rejoindre un réseau qui n'est pas allumé enverrait le
-    // client dans le vide : le mode le signale pour que l'interface rappelle
-    // d'abord d'activer le Wi-Fi local.
-    let mode = if crate::hotspot::point_acces_actif() {
-        MODE_POINT_ACCES_ACTIF
-    } else {
-        MODE_POINT_ACCES_INACTIF
-    };
+    let mode = choisir_mode(
+        type_reseau.as_deref() == Some("routeur_externe"),
+        crate::hotspot::point_acces_actif(),
+    );
 
     Ok(ServerInfo {
         qr_data_uri: build_qr_data_uri(&wifi_qr_payload(&ssid, wifi_mot_de_passe.as_deref()))?,
         url,
         mode,
     })
+}
+
+/// Séparée de `build_server_info` pour être testable sans toucher à l'état
+/// global du point d'accès ni générer d'image QR.
+///
+/// Proposer de rejoindre un réseau qui n'est pas allumé enverrait le client
+/// dans le vide : le mode le signale pour que l'interface rappelle d'abord
+/// d'activer le Wi-Fi local. Distinction importante pour un routeur dédié :
+/// son Wi-Fi fonctionne déjà (le routeur, pas nous, le fait tourner) même
+/// quand `actif` est faux — "inactif" y signifie seulement que l'ouverture
+/// automatique ne se déclenchera pas encore, pas que le réseau est absent
+/// comme c'est le cas pour le point d'accès du PC.
+fn choisir_mode(routeur_externe: bool, actif: bool) -> &'static str {
+    match (routeur_externe, actif) {
+        (true, true) => MODE_ROUTEUR_ACTIF,
+        (true, false) => MODE_ROUTEUR_INACTIF,
+        (false, true) => MODE_POINT_ACCES_ACTIF,
+        (false, false) => MODE_POINT_ACCES_INACTIF,
+    }
 }
 
 /// Format standard "WIFI:" reconnu nativement par les appareils photo
@@ -102,4 +124,27 @@ fn build_qr_data_uri(data: &str) -> Result<String, String> {
         "data:image/png;base64,{}",
         STANDARD.encode(png_bytes.into_inner())
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Le cas qui compte le plus : un routeur dédié fait déjà tourner son
+    /// Wi-Fi tout seul. Le confondre avec "réseau absent" (le message du
+    /// point d'accès du PC) enverrait le gérant vérifier un routeur qui
+    /// fonctionne très bien, ou pire, le pousserait à le débrancher.
+    #[test]
+    fn un_routeur_inactif_cote_application_n_est_pas_un_reseau_absent() {
+        assert_eq!(choisir_mode(true, false), MODE_ROUTEUR_INACTIF);
+        assert_ne!(choisir_mode(true, false), MODE_POINT_ACCES_INACTIF);
+    }
+
+    #[test]
+    fn choisit_le_bon_mode_dans_les_quatre_situations() {
+        assert_eq!(choisir_mode(false, true), MODE_POINT_ACCES_ACTIF);
+        assert_eq!(choisir_mode(false, false), MODE_POINT_ACCES_INACTIF);
+        assert_eq!(choisir_mode(true, true), MODE_ROUTEUR_ACTIF);
+        assert_eq!(choisir_mode(true, false), MODE_ROUTEUR_INACTIF);
+    }
 }

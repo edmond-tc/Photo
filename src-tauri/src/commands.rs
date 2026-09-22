@@ -290,6 +290,7 @@ pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value,
         "logo_chemin": db::get_setting(&conn, "boutique_logo_chemin"),
         "wifi_ssid": db::get_setting(&conn, "wifi_ssid"),
         "wifi_mot_de_passe": db::get_setting(&conn, "wifi_mot_de_passe"),
+        "wifi_type_reseau": db::get_setting(&conn, "wifi_type_reseau"),
         "fidelite_seuil_visites": db::get_setting(&conn, "fidelite_seuil_visites"),
         "fidelite_remise_pourcent": db::get_setting(&conn, "fidelite_remise_pourcent"),
         "bluetooth_nom": db::get_setting(&conn, "bluetooth_nom"),
@@ -311,6 +312,7 @@ pub fn set_boutique_setting(
         "dossier_sauvegarde",
         "wifi_ssid",
         "wifi_mot_de_passe",
+        "wifi_type_reseau",
         "fidelite_seuil_visites",
         "fidelite_remise_pourcent",
         "bluetooth_nom",
@@ -391,8 +393,9 @@ pub fn get_server_info(app: AppHandle) -> Result<qr::ServerInfo, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let ssid = db::get_setting(&conn, "wifi_ssid");
     let mot_de_passe = db::get_setting(&conn, "wifi_mot_de_passe");
+    let type_reseau = db::get_setting(&conn, "wifi_type_reseau");
     drop(conn);
-    qr::build_server_info(ssid, mot_de_passe)
+    qr::build_server_info(ssid, mot_de_passe, type_reseau)
 }
 
 /// Ouvre directement la page des paramètres Windows pour le partage de
@@ -457,6 +460,32 @@ pub async fn activer_point_acces_local(
             "Configurez d'abord un nom de réseau (SSID) dans Réglages → Wi-Fi local.".to_string(),
         );
     };
+
+    let type_reseau = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        db::get_setting(&conn, "wifi_type_reseau")
+    };
+
+    // Un routeur dédié crée déjà son propre réseau, indépendamment de nous :
+    // rien à activer côté Wi-Fi, seulement le tour de passe-passe DNS qui
+    // ouvre la page toute seule (voir routeur_externe.rs).
+    if type_reseau.as_deref() == Some("routeur_externe") {
+        let (adresse, tache_dns) = crate::routeur_externe::activer().await?;
+        crate::hotspot::definir_adresse_active(Some(adresse));
+
+        let anciennes = std::mem::replace(
+            &mut *etat_point_acces.0.lock().map_err(|e| e.to_string())?,
+            vec![tache_dns],
+        );
+        for tache in anciennes {
+            tache.abort();
+        }
+
+        return Ok(ResultatActivationWifi {
+            methode: "routeur externe".to_string(),
+            avertissements: Vec::new(),
+        });
+    }
 
     // Bloquant (attend la fenêtre d'autorisation Windows) : sur un thread
     // dédié, pour ne jamais geler les autres commandes pendant ce temps.
