@@ -425,11 +425,24 @@ pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
 /// `dns.rs`) : sans eux, un téléphone connecté au Wi-Fi n'obtient ni
 /// adresse IP, ni moyen d'être redirigé automatiquement vers la page
 /// d'envoi.
+#[derive(serde::Serialize)]
+pub struct ResultatActivationWifi {
+    pub methode: String,
+    /// Vide quand tout a démarré normalement. Sinon, chaque entrée est un
+    /// service qui n'a pas pu s'installer — DHCP et/ou DNS, chacun pouvant
+    /// échouer indépendamment de l'autre (Windows fait parfois tourner ses
+    /// propres services sur ces mêmes ports dès le Wi-Fi Direct activé).
+    /// Avant ce champ, un tel échec s'écrivait dans une console qui
+    /// n'existe pas dans l'application installée : le gérant voyait "Wi-Fi
+    /// activé" sans jamais savoir que l'ouverture automatique était morte.
+    pub avertissements: Vec<String>,
+}
+
 #[tauri::command]
 pub async fn activer_point_acces_local(
     state: State<'_, DbState>,
     etat_point_acces: State<'_, crate::hotspot::EtatPointAcces>,
-) -> Result<String, String> {
+) -> Result<ResultatActivationWifi, String> {
     let ssid = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         db::get_setting(&conn, "wifi_ssid").filter(|s| !s.trim().is_empty())
@@ -453,22 +466,33 @@ pub async fn activer_point_acces_local(
     .await
     .map_err(|e| e.to_string())??;
 
-    let tache_dhcp = tauri::async_runtime::spawn(crate::dhcp::demarrer(activation.adresse));
-    let tache_dns = tauri::async_runtime::spawn(crate::dns::demarrer(activation.adresse));
+    let mut nouvelles_taches = Vec::new();
+    let mut avertissements = Vec::new();
+
+    match crate::dhcp::demarrer(activation.adresse).await {
+        Ok(tache) => nouvelles_taches.push(tache),
+        Err(e) => avertissements.push(e),
+    }
+    match crate::dns::demarrer(activation.adresse).await {
+        Ok(tache) => nouvelles_taches.push(tache),
+        Err(e) => avertissements.push(e),
+    }
+
     // Une activation précédente laissée en cours (le gérant a cliqué deux
     // fois) ne doit pas faire tourner deux serveurs DHCP/DNS en même temps
     // sur les mêmes ports.
-    let ancien = etat_point_acces
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .replace((tache_dhcp, tache_dns));
-    if let Some((ancien_dhcp, ancien_dns)) = ancien {
-        ancien_dhcp.abort();
-        ancien_dns.abort();
+    let anciennes_taches = std::mem::replace(
+        &mut *etat_point_acces.0.lock().map_err(|e| e.to_string())?,
+        nouvelles_taches,
+    );
+    for tache in anciennes_taches {
+        tache.abort();
     }
 
-    Ok(activation.methode.to_string())
+    Ok(ResultatActivationWifi {
+        methode: activation.methode.to_string(),
+        avertissements,
+    })
 }
 
 /// Coupe le point d'accès Wi-Fi local activé par `activer_point_acces_local`,
@@ -477,14 +501,9 @@ pub async fn activer_point_acces_local(
 pub async fn desactiver_point_acces_local(
     etat_point_acces: State<'_, crate::hotspot::EtatPointAcces>,
 ) -> Result<(), String> {
-    if let Some((tache_dhcp, tache_dns)) = etat_point_acces
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .take()
-    {
-        tache_dhcp.abort();
-        tache_dns.abort();
+    let taches = std::mem::take(&mut *etat_point_acces.0.lock().map_err(|e| e.to_string())?);
+    for tache in taches {
+        tache.abort();
     }
     tauri::async_runtime::spawn_blocking(crate::hotspot::desactiver_par_tous_les_moyens)
         .await

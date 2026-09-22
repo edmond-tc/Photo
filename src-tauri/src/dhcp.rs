@@ -31,25 +31,35 @@ const DUREE_BAIL_SECONDES: u32 = 3600;
 const PREMIERE_ADRESSE: u8 = 20;
 const NOMBRE_ADRESSES: u8 = 200;
 
-/// Tourne indéfiniment (jusqu'à ce que le point d'accès soit désactivé —
-/// voir `hotspot::desactiver`, qui annule cette tâche).
-pub async fn demarrer(adresse_serveur: Ipv4Addr) {
-    let socket = match UdpSocket::bind(format!("0.0.0.0:{PORT_SERVEUR}")).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!(
+/// Tente de s'installer sur le port DHCP. Rendu visible dans l'interface
+/// (au lieu d'un simple `eprintln!` perdu dans une console qui n'existe pas
+/// dans l'application installée) : Windows peut déjà faire tourner SON
+/// PROPRE serveur DHCP sur la carte du point d'accès — par exemple via le
+/// partage de connexion qu'il active parfois tout seul avec le Wi-Fi Direct
+/// — et dans ce cas cette tentative échoue exactement comme l'a fait le
+/// port 4173 quand l'application tournait deux fois : sans le dire, un
+/// gérant croirait le Wi-Fi pleinement fonctionnel alors qu'aucun téléphone
+/// ne recevrait d'adresse.
+pub async fn demarrer(adresse_serveur: Ipv4Addr) -> Result<tauri::async_runtime::JoinHandle<()>, String> {
+    let socket = UdpSocket::bind(format!("0.0.0.0:{PORT_SERVEUR}"))
+        .await
+        .map_err(|e| {
+            format!(
                 "Serveur DHCP local indisponible (port {PORT_SERVEUR} : {e}) — les téléphones \
                  connectés au Wi-Fi local n'obtiendront aucune adresse. Vérifiez qu'aucun autre \
                  logiciel (partage de connexion Windows, par exemple) n'utilise déjà ce port."
-            );
-            return;
-        }
-    };
-    if let Err(e) = socket.set_broadcast(true) {
-        eprintln!("Impossible d'activer la diffusion DHCP : {e}");
-        return;
-    }
+            )
+        })?;
+    socket
+        .set_broadcast(true)
+        .map_err(|e| format!("Impossible d'activer la diffusion DHCP : {e}"))?;
 
+    Ok(tauri::async_runtime::spawn(servir(socket, adresse_serveur)))
+}
+
+/// Tourne indéfiniment (jusqu'à ce que le point d'accès soit désactivé —
+/// voir `hotspot::desactiver`, qui annule cette tâche).
+async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
     let mut tampon = [0u8; 576];
     loop {
         let taille = match socket.recv(&mut tampon).await {

@@ -19,9 +19,13 @@ use tokio::net::UdpSocket;
 
 const PORT_DNS: u16 = 53;
 
-/// Tourne indéfiniment (jusqu'à ce que le point d'accès soit désactivé, qui
-/// annule cette tâche — voir `hotspot::desactiver`).
-pub async fn demarrer(adresse: Ipv4Addr) {
+/// Tente de s'installer sur le port DNS de l'adresse du point d'accès.
+/// Rendu visible dans l'interface plutôt que perdu dans un `eprintln!` :
+/// Windows peut déjà avoir son propre relais DNS actif sur cette carte
+/// (partage de connexion), auquel cas cette tentative échoue en silence
+/// côté système — mais ne doit plus l'être côté gérant, puisque c'est
+/// précisément ce serveur qui déclenche l'ouverture automatique de la page.
+pub async fn demarrer(adresse: Ipv4Addr) -> Result<tauri::async_runtime::JoinHandle<()>, String> {
     // On écoute UNIQUEMENT sur l'adresse du point d'accès, jamais sur toutes
     // les cartes réseau.
     //
@@ -32,18 +36,20 @@ pub async fn demarrer(adresse: Ipv4Addr) {
     // réseau, et donc à leur couper internet en détournant tous leurs noms
     // de domaine vers ce PC. Se limiter à l'adresse du point d'accès confine
     // l'effet aux seuls téléphones qui l'ont rejoint.
-    let socket = match UdpSocket::bind(format!("{adresse}:{PORT_DNS}")).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!(
+    let socket = UdpSocket::bind(format!("{adresse}:{PORT_DNS}"))
+        .await
+        .map_err(|e| {
+            format!(
                 "Serveur DNS local indisponible (port {PORT_DNS} : {e}) — l'ouverture \
                  automatique de la page chez le client ne fonctionnera pas, mais le Wi-Fi \
                  et l'ouverture manuelle du navigateur restent utilisables."
-            );
-            return;
-        }
-    };
+            )
+        })?;
 
+    Ok(tauri::async_runtime::spawn(servir(socket, adresse)))
+}
+
+async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
     let mut tampon = [0u8; 512];
     loop {
         let (taille, expediteur) = match socket.recv_from(&mut tampon).await {

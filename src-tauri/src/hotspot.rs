@@ -33,8 +33,12 @@ pub const ADRESSE_POINT_ACCES: Ipv4Addr = Ipv4Addr::new(192, 168, 73, 1);
 /// actif : leurs tâches sont gardées ici pour pouvoir les arrêter net à la
 /// désactivation, plutôt que de les laisser tourner indéfiniment en fond
 /// après que le Wi-Fi lui-même a été coupé.
+/// DHCP et DNS peuvent chacun réussir ou échouer à s'installer
+/// indépendamment (Windows peut occuper l'un des deux ports sans l'autre) :
+/// une liste plutôt qu'un couple figé, pour ne garder que les tâches qui
+/// ont réellement démarré.
 #[derive(Default)]
-pub struct EtatPointAcces(pub Mutex<Option<(JoinHandle<()>, JoinHandle<()>)>>);
+pub struct EtatPointAcces(pub Mutex<Vec<JoinHandle<()>>>);
 
 /// L'adresse EFFECTIVEMENT en service, quand un point d'accès tourne.
 ///

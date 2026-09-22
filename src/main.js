@@ -698,8 +698,23 @@ document.querySelector("#btn-activer-wifi-local").addEventListener("click", asyn
   const texteInitial = bouton.textContent;
   bouton.textContent = "Activation en cours… (une fenêtre Windows va demander une autorisation)";
   try {
-    const methode = await invoke("activer_point_acces_local");
-    toast(`✓ Wi-Fi local activé (${methode}) — rafraîchissement du QR…`);
+    const resultat = await invoke("activer_point_acces_local");
+    if (resultat.avertissements.length > 0) {
+      // Le Wi-Fi lui-même a démarré, mais DHCP et/ou DNS n'ont pas pu
+      // s'installer (souvent : Windows fait déjà tourner son propre service
+      // sur ce port). Sans ça, les téléphones se connectent au réseau mais
+      // n'obtiennent jamais d'adresse ou n'ouvrent jamais la page tout
+      // seuls — un souci invisible si on ne le montre pas explicitement ici.
+      alert(
+        `⚠️ Wi-Fi local activé (${resultat.methode}), mais avec un problème :\n\n` +
+          resultat.avertissements.join("\n\n") +
+          `\n\nSi les clients n'arrivent pas à se connecter ou si la page ne s'ouvre pas ` +
+          `toute seule, c'est probablement la cause. Un redémarrage du PC règle souvent ce ` +
+          `genre de conflit.`
+      );
+    } else {
+      toast(`✓ Wi-Fi local activé (${resultat.methode}) — rafraîchissement du QR…`);
+    }
     await afficherQr();
   } catch (err) {
     alert(
