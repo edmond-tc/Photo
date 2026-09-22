@@ -1,8 +1,11 @@
 pub mod backup;
 pub mod commands;
 pub mod db;
+pub mod dhcp;
+pub mod dns;
 pub mod files;
 pub mod gestion;
+pub mod hotspot;
 pub mod impression;
 pub mod license;
 pub mod models;
@@ -35,6 +38,7 @@ pub fn run() {
 
             app.manage(DbState(Mutex::new(conn)));
             app.manage(server::EtatServeur::default());
+            app.manage(hotspot::EtatPointAcces::default());
 
             if let Some(folder) = watched_folder {
                 watcher::watch_folder(app.handle().clone(), PathBuf::from(folder));
@@ -64,6 +68,8 @@ pub fn run() {
             commands::choisir_logo_boutique,
             commands::get_server_info,
             commands::ouvrir_parametres_partage_connexion,
+            commands::activer_point_acces_local,
+            commands::desactiver_point_acces_local,
             commands::generer_rapport_diagnostic,
             commands::sauvegarder_maintenant,
             backup::lister_sauvegardes,

@@ -153,11 +153,29 @@ fn demarrer_portail_captif() {
     });
 }
 
-/// L'adresse réelle du PC sur le réseau local, résolue à chaque requête : le
-/// partage de connexion Windows donne le plus souvent 192.168.137.1, mais pas
-/// toujours (PC branché sur la box du quartier, autre configuration...). Une
-/// adresse écrite en dur enverrait alors le client sur une page inexistante.
-fn adresse_locale() -> String {
+/// L'adresse réelle du PC sur le réseau local, résolue à chaque requête.
+///
+/// `local_ip_address::local_ip()` détermine l'adresse en regardant par quelle
+/// carte partirait une connexion vers internet — sur un PC de boutique qui
+/// n'a justement AUCUN internet, ce détour ne mène nulle part de fiable, et
+/// peut renvoyer l'adresse d'une carte qu'aucun client ne peut joindre.
+///
+/// Si le point d'accès Wi-Fi local de l'application (`hotspot::activer`) est
+/// actif, son adresse est FIXE et déjà connue (`hotspot::ADRESSE_POINT_ACCES`)
+/// — pas besoin de la deviner, et c'est elle, précisément, que les serveurs
+/// DHCP/DNS locaux annoncent aux téléphones. On ne retombe sur la détection
+/// générique que si ce point d'accès n'est pas utilisé (gérant resté sur le
+/// "Point d'accès mobile" classique de Windows, ou vrai réseau de la
+/// boutique).
+pub fn adresse_locale() -> String {
+    if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
+        if interfaces
+            .iter()
+            .any(|(_, ip)| *ip == std::net::IpAddr::V4(crate::hotspot::ADRESSE_POINT_ACCES))
+        {
+            return crate::hotspot::ADRESSE_POINT_ACCES.to_string();
+        }
+    }
     local_ip_address::local_ip()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|_| "192.168.137.1".to_string())

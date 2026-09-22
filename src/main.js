@@ -682,6 +682,30 @@ async function afficherQr() {
   ouvrirModal("modal-qr");
 }
 
+// Le "Point d'accès mobile" des paramètres Windows refuse de s'activer sans
+// connexion internet/Ethernet à partager — précisément le cas normal d'une
+// boutique hors ligne (vérifié sur le terrain). Ce bouton crée un point
+// d'accès autonome à la place (voir hotspot.rs), sans cette exigence.
+document.querySelector("#btn-activer-wifi-local").addEventListener("click", async (e) => {
+  const bouton = e.currentTarget;
+  bouton.disabled = true;
+  const texteInitial = bouton.textContent;
+  bouton.textContent = "Activation en cours… (une fenêtre Windows va demander une autorisation)";
+  try {
+    await invoke("activer_point_acces_local");
+    toast("✓ Wi-Fi local activé — rafraîchissement du QR…");
+    await afficherQr();
+  } catch (err) {
+    alert(
+      `⚠️ Le Wi-Fi local n'a pas pu être activé.\n\n${err}\n\n` +
+        `Vous pouvez essayer la solution de secours ci-dessous (nécessite une connexion internet ou Ethernet).`
+    );
+  } finally {
+    bouton.disabled = false;
+    bouton.textContent = texteInitial;
+  }
+});
+
 document.querySelector("#btn-parametres-partage").addEventListener("click", async () => {
   try {
     await invoke("ouvrir_parametres_partage_connexion");
@@ -1683,18 +1707,34 @@ async function rendreReglages(corps) {
     const input = document.createElement("input");
     input.type = "number";
     input.value = t.prix_unitaire;
-    // Confirmation visible : un tarif s'applique ensuite à TOUS les clients.
-    // Sans retour à l'écran, le gérant ne savait pas si son nouveau prix
-    // était pris en compte — et pouvait facturer une journée à l'ancien.
-    input.addEventListener("change", async () => {
+
+    // Bouton explicite plutôt que l'événement "change" du champ : celui-ci se
+    // déclenche à CHAQUE clic sur les flèches ↑↓ du champ numérique, pas
+    // seulement une fois le prix choisi — un gérant qui ajustait un prix en
+    // cliquant plusieurs fois enregistrait chaque valeur intermédiaire (et
+    // remplissait l'historique de prix qu'il n'avait jamais voulu valider).
+    const btnValider = document.createElement("button");
+    btnValider.type = "button";
+    btnValider.className = "btn-secondaire";
+    btnValider.textContent = "Valider";
+    btnValider.disabled = true;
+
+    input.addEventListener("input", () => {
+      btnValider.disabled = Number(input.value) === t.prix_unitaire;
+    });
+
+    btnValider.addEventListener("click", async () => {
       try {
         await invoke("update_tarif", { id: t.id, prixUnitaire: Number(input.value) });
         toast(`✓ ${t.libelle} : ${formatFcfa(Number(input.value))}`);
+        t.prix_unitaire = Number(input.value);
+        btnValider.disabled = true;
       } catch (err) {
         toast(`Ce tarif n'a pas été enregistré : ${err}`, "attention", 6000);
       }
     });
-    ligne.append(`${t.libelle} (par ${t.unite}) : `, input);
+
+    ligne.append(`${t.libelle} (par ${t.unite}) : `, input, btnValider);
     secTarifs.appendChild(ligne);
   }
   corps.appendChild(secTarifs);

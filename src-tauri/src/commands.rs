@@ -396,8 +396,10 @@ pub fn get_server_info(app: AppHandle) -> Result<qr::ServerInfo, String> {
 }
 
 /// Ouvre directement la page des paramètres Windows pour le partage de
-/// connexion Wi-Fi (Mobile Hotspot) — plus simple et robuste que de piloter
-/// l'API WinRT de tethering sans pouvoir la tester sur une vraie machine.
+/// connexion Wi-Fi (Mobile Hotspot) — gardé comme solution de secours pour
+/// une carte Wi-Fi qui ne supporterait pas `netsh wlan hostednetwork` (voir
+/// `activer_point_acces_local`), ou pour un PC qui a une vraie connexion
+/// internet à partager.
 #[tauri::command]
 pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
     #[cfg(windows)]
@@ -411,6 +413,84 @@ pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
     {
         Err("Disponible uniquement sur Windows".to_string())
     }
+}
+
+/// Active le point d'accès Wi-Fi local (voir `hotspot.rs`) avec le SSID et
+/// le mot de passe enregistrés dans Réglages. Contrairement au "Point
+/// d'accès mobile" des paramètres Windows, ne demande aucune connexion
+/// internet ou Ethernet à partager — vérifié sur le terrain comme étant le
+/// blocage réel rencontré par une boutique 100% hors ligne.
+///
+/// Démarre aussi les petits serveurs DHCP et DNS locaux (voir `dhcp.rs` et
+/// `dns.rs`) : sans eux, un téléphone connecté au Wi-Fi n'obtient ni
+/// adresse IP, ni moyen d'être redirigé automatiquement vers la page
+/// d'envoi.
+#[tauri::command]
+pub async fn activer_point_acces_local(
+    state: State<'_, DbState>,
+    etat_point_acces: State<'_, crate::hotspot::EtatPointAcces>,
+) -> Result<(), String> {
+    let ssid = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        db::get_setting(&conn, "wifi_ssid").filter(|s| !s.trim().is_empty())
+    };
+    let mot_de_passe = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        db::get_setting(&conn, "wifi_mot_de_passe").unwrap_or_default()
+    };
+
+    let Some(ssid) = ssid else {
+        return Err(
+            "Configurez d'abord un nom de réseau (SSID) dans Réglages → Wi-Fi local.".to_string(),
+        );
+    };
+
+    // Bloquant (attend la fenêtre d'autorisation Windows) : sur un thread
+    // dédié, pour ne jamais geler les autres commandes pendant ce temps.
+    tauri::async_runtime::spawn_blocking(move || crate::hotspot::activer(&ssid, &mot_de_passe))
+        .await
+        .map_err(|e| e.to_string())??;
+
+    let tache_dhcp = tauri::async_runtime::spawn(crate::dhcp::demarrer(
+        crate::hotspot::ADRESSE_POINT_ACCES,
+    ));
+    let tache_dns = tauri::async_runtime::spawn(crate::dns::demarrer(
+        crate::hotspot::ADRESSE_POINT_ACCES,
+    ));
+    // Une activation précédente laissée en cours (le gérant a cliqué deux
+    // fois) ne doit pas faire tourner deux serveurs DHCP/DNS en même temps
+    // sur les mêmes ports.
+    let ancien = etat_point_acces
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .replace((tache_dhcp, tache_dns));
+    if let Some((ancien_dhcp, ancien_dns)) = ancien {
+        ancien_dhcp.abort();
+        ancien_dns.abort();
+    }
+
+    Ok(())
+}
+
+/// Coupe le point d'accès Wi-Fi local activé par `activer_point_acces_local`,
+/// ainsi que les serveurs DHCP/DNS qui l'accompagnent.
+#[tauri::command]
+pub async fn desactiver_point_acces_local(
+    etat_point_acces: State<'_, crate::hotspot::EtatPointAcces>,
+) -> Result<(), String> {
+    if let Some((tache_dhcp, tache_dns)) = etat_point_acces
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .take()
+    {
+        tache_dhcp.abort();
+        tache_dns.abort();
+    }
+    tauri::async_runtime::spawn_blocking(crate::hotspot::desactiver)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[derive(serde::Serialize)]

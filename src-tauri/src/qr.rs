@@ -24,15 +24,10 @@ pub fn build_server_info(
     wifi_ssid: Option<String>,
     wifi_mot_de_passe: Option<String>,
 ) -> Result<ServerInfo, String> {
-    let ip = local_ip_address::local_ip().map_err(|_| {
-        "Impossible de déterminer l'adresse Wi-Fi locale du PC. Vérifiez que le partage de \
-         connexion (Mobile Hotspot) est actif dans les paramètres Windows (bouton ci-dessous). \
-         Si ça ne s'active toujours pas : certaines cartes Wi-Fi ne peuvent pas être à la fois \
-         connectées à internet ET créer un point d'accès — désactivez temporairement le Wi-Fi \
-         internet du PC, ou utilisez le dossier surveillé/la clé USB en attendant."
-            .to_string()
-    })?;
-    let url = format!("http://{ip}:{PORT}/");
+    // Même logique que le serveur HTTP lui-même (voir `server::adresse_locale`
+    // pour pourquoi une carte 169.254.x.x est préférée) : la page servie doit
+    // être joignable à l'adresse annoncée dans le QR, pas à une autre carte.
+    let url = format!("http://{}:{PORT}/", crate::server::adresse_locale());
 
     match wifi_ssid.filter(|s| !s.is_empty()) {
         Some(ssid) => {
