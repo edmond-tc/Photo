@@ -40,8 +40,13 @@ pub struct EtatPointAcces(pub Mutex<Option<(JoinHandle<()>, JoinHandle<()>)>>);
 /// demander les droits administrateur et sans rien activer : le gérant (ou
 /// le revendeur, avant même une vente) peut donc le lancer sur n'importe
 /// quel PC en quelques secondes.
+///
+/// Le but n'est pas d'afficher des capacités techniques, mais de répondre à
+/// la seule question qui se pose en boutique : **sur CE poste, qu'est-ce que
+/// je fais ?** D'où le `verdict`, écrit pour être lu tel quel et suivi sans
+/// rien connaître du sujet.
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
-pub struct DiagnosticWifi {
+pub struct DiagnosticPoste {
     /// `None` quand Windows n'a pas répondu du tout (netsh absent, bloqué…).
     pub carte_wifi_presente: Option<bool>,
     /// Support du point d'accès autonome (`netsh wlan hostednetwork`), la
@@ -53,6 +58,16 @@ pub struct DiagnosticWifi {
     /// capacité que l'exemple officiel Microsoft dit de vérifier avant
     /// d'utiliser cette API.
     pub wifi_direct_go_supporte: Option<bool>,
+    /// Ce PC a-t-il une radio Bluetooth ? Wi-Fi et Bluetooth partageant la
+    /// même puce sur l'immense majorité des machines, un PC sans Wi-Fi n'en
+    /// a presque jamais — c'est justement ce qu'il faut vérifier plutôt que
+    /// de le supposer.
+    pub bluetooth_present: Option<bool>,
+    /// Ce PC est-il déjà joignable sur un réseau (câble Ethernet vers la box
+    /// de la boutique, ou Wi-Fi existant) ? Si oui, le téléphone du client
+    /// peut l'atteindre directement : c'est le parcours le plus simple, sans
+    /// point d'accès ni portail captif.
+    pub reseau_utilisable: bool,
     /// Phrase directement affichable au gérant.
     pub verdict: String,
     /// Sortie brute de Windows, à copier/transmettre au support : c'est elle
@@ -125,42 +140,77 @@ fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
     Some(true)
 }
 
-/// Le verdict tient compte des DEUX méthodes : une seule suffit à créer le
-/// réseau, donc ce PC n'est vraiment incompatible que si les deux sont
-/// explicitement refusées.
+/// Ce PC est-il déjà sur un réseau que le téléphone d'un client pourrait
+/// rejoindre ?
+///
+/// On écarte trois familles d'adresses qui ressemblent à un réseau sans en
+/// être un : la boucle locale (le PC qui se parle à lui-même), les adresses
+/// 169.254.x.x que Windows s'attribue justement quand AUCUN réseau n'a
+/// répondu, et l'adresse de notre propre point d'accès — sinon un PC ne
+/// serait jamais que "déjà en réseau avec lui-même".
+fn reseau_utilisable(adresses: &[Ipv4Addr]) -> bool {
+    adresses.iter().any(|adresse| {
+        !adresse.is_loopback()
+            && !adresse.is_link_local()
+            && *adresse != ADRESSE_POINT_ACCES
+            && !adresse.is_unspecified()
+    })
+}
+
+/// Traduit les capacités constatées en une consigne que le gérant peut
+/// suivre tel quel, sans rien connaître au sujet.
+///
+/// L'ordre n'est pas celui des capacités techniques mais celui du confort du
+/// client : un PC déjà sur le réseau de la boutique offre le parcours le
+/// plus simple qui existe (un scan, la page s'ouvre dans le vrai
+/// navigateur), donc il passe avant la création d'un point d'accès, qui
+/// impose au téléphone de changer de réseau puis de passer par le portail
+/// captif.
 fn composer_verdict(
     carte_wifi_presente: Option<bool>,
     reseau_heberge_supporte: Option<bool>,
     wifi_direct_go_supporte: Option<bool>,
+    bluetooth_present: Option<bool>,
+    reseau_utilisable: bool,
 ) -> String {
-    if carte_wifi_presente == Some(false) {
-        return "Ce PC n'a aucune carte Wi-Fi : il ne pourra jamais créer de réseau Wi-Fi \
-                lui-même. Il faut une clé Wi-Fi USB (quelques milliers de francs), ou brancher \
-                le PC au réseau Wi-Fi existant de la boutique s'il y en a un."
+    // Une seule des deux méthodes suffit à créer le réseau : exiger les deux
+    // déclarerait incapable un PC parfaitement capable.
+    let sait_creer_un_wifi = carte_wifi_presente != Some(false)
+        && (reseau_heberge_supporte != Some(false) || wifi_direct_go_supporte != Some(false));
+
+    if reseau_utilisable {
+        let complement = if sait_creer_un_wifi {
+            " Ce PC sait aussi créer son propre Wi-Fi, mais ce n'est pas nécessaire ici."
+        } else {
+            ""
+        };
+        return format!(
+            "✅ Ce PC est déjà sur un réseau. Montrez simplement le QR : la page d'envoi \
+             s'ouvrira directement sur le téléphone du client, à condition qu'il soit connecté \
+             au même Wi-Fi (celui de la box ou du routeur de la boutique). C'est le cas le plus \
+             simple, rien d'autre à faire.{complement}"
+        );
+    }
+
+    if sait_creer_un_wifi {
+        return "✅ Ce PC sait créer le Wi-Fi de la boutique. Appuyez sur « Activer le Wi-Fi \
+                local de la boutique », puis montrez le QR au client."
             .to_string();
     }
 
-    match (reseau_heberge_supporte, wifi_direct_go_supporte) {
-        (Some(true), _) | (_, Some(true)) => {
-            let methodes = match (reseau_heberge_supporte, wifi_direct_go_supporte) {
-                (Some(true), Some(true)) => "les deux méthodes",
-                (Some(true), _) => "la méthode 1 (réseau hébergé)",
-                _ => "la méthode 2 (Wi-Fi Direct)",
-            };
-            format!(
-                "Compatible : ce PC sait créer le réseau Wi-Fi de la boutique sans internet, \
-                 via {methodes}."
-            )
-        }
-        (Some(false), Some(false)) => "Incompatible : la carte Wi-Fi de ce PC refuse les deux \
-             méthodes de création de réseau. Il faut une clé Wi-Fi USB, ou brancher le PC au \
-             réseau Wi-Fi existant de la boutique s'il y en a un."
-            .to_string(),
-        _ => "Indéterminé : Windows n'annonce pas clairement ce que cette carte Wi-Fi sait \
-              faire. L'application essaiera quand même les deux méthodes ; en cas d'échec, \
-              transmettez le rapport technique ci-dessous."
-            .to_string(),
+    if bluetooth_present == Some(true) {
+        return "⚠️ Ce PC ne peut pas créer de Wi-Fi et n'est branché à aucun réseau, mais il a \
+                le Bluetooth. Les clients Android peuvent envoyer par Bluetooth (les iPhone ne \
+                le peuvent pas). Mieux : branchez un câble réseau entre ce PC et la box de la \
+                boutique, et tout redevient simple."
+            .to_string();
     }
+
+    "❌ Ce PC n'a ni Wi-Fi utilisable, ni réseau branché, ni Bluetooth. L'envoi par QR est \
+     impossible en l'état. Deux solutions gratuites : brancher un câble réseau entre ce PC et \
+     la box de la boutique, ou passer par une clé USB. Sinon, une clé Wi-Fi USB règle le \
+     problème définitivement."
+        .to_string()
 }
 
 #[cfg(windows)]
@@ -182,10 +232,45 @@ fn executer_netsh(arguments: &[&str]) -> String {
         .unwrap_or_default()
 }
 
-/// Interroge Windows sur les capacités Wi-Fi de CE PC. Aucun droit
+/// Adresses IPv4 réellement portées par les cartes de ce PC.
+fn adresses_locales() -> Vec<Ipv4Addr> {
+    local_ip_address::list_afinet_netifas()
+        .map(|interfaces| {
+            interfaces
+                .into_iter()
+                .filter_map(|(_, ip)| match ip {
+                    std::net::IpAddr::V4(v4) => Some(v4),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Présence d'une radio Bluetooth. `None` si Windows ne sait pas répondre,
+/// ce qui ne vaut pas "absente".
+#[cfg(windows)]
+fn bluetooth_present() -> Option<bool> {
+    use windows::Devices::Bluetooth::BluetoothAdapter;
+
+    let Ok(operation) = BluetoothAdapter::GetDefaultAsync() else {
+        // L'API elle-même est absente : on ne sait pas, et "on ne sait pas"
+        // ne doit pas être présenté comme "il n'y en a pas".
+        return None;
+    };
+
+    // Sans radio, Windows ne rend pas d'erreur mais un adaptateur vide, dont
+    // l'adresse matérielle vaut zéro. C'est cette adresse qui tranche.
+    match operation.get() {
+        Ok(adaptateur) => Some(adaptateur.BluetoothAddress().unwrap_or(0) != 0),
+        Err(_) => Some(false),
+    }
+}
+
+/// Interroge Windows sur les capacités de CE PC. Aucun droit
 /// administrateur, aucune activation, aucun effet de bord.
 #[cfg(windows)]
-pub fn diagnostiquer() -> DiagnosticWifi {
+pub fn diagnostiquer() -> DiagnosticPoste {
     let pilotes = executer_netsh(&["wlan", "show", "drivers"]);
     let interfaces = executer_netsh(&["wlan", "show", "interfaces"]);
     let capacites = executer_netsh(&["wlan", "show", "wirelesscapabilities"]);
@@ -193,15 +278,21 @@ pub fn diagnostiquer() -> DiagnosticWifi {
     let carte_wifi_presente = lire_presence_carte_wifi(&interfaces);
     let reseau_heberge_supporte = lire_prise_en_charge_reseau_heberge(&pilotes);
     let wifi_direct_go_supporte = lire_prise_en_charge_wifi_direct_go(&capacites);
+    let bluetooth_present = bluetooth_present();
+    let reseau_utilisable = reseau_utilisable(&adresses_locales());
 
-    DiagnosticWifi {
+    DiagnosticPoste {
         carte_wifi_presente,
         reseau_heberge_supporte,
         wifi_direct_go_supporte,
+        bluetooth_present,
+        reseau_utilisable,
         verdict: composer_verdict(
             carte_wifi_presente,
             reseau_heberge_supporte,
             wifi_direct_go_supporte,
+            bluetooth_present,
+            reseau_utilisable,
         ),
         details_bruts: format!(
             "--- netsh wlan show interfaces ---\n{}\n--- netsh wlan show drivers ---\n{}\
@@ -214,11 +305,13 @@ pub fn diagnostiquer() -> DiagnosticWifi {
 }
 
 #[cfg(not(windows))]
-pub fn diagnostiquer() -> DiagnosticWifi {
-    DiagnosticWifi {
+pub fn diagnostiquer() -> DiagnosticPoste {
+    DiagnosticPoste {
         carte_wifi_presente: None,
         reseau_heberge_supporte: None,
         wifi_direct_go_supporte: None,
+        bluetooth_present: None,
+        reseau_utilisable: false,
         verdict: "Diagnostic disponible uniquement sur Windows.".to_string(),
         details_bruts: String::new(),
     }
@@ -618,21 +711,61 @@ mod tests {
     }
 
     #[test]
-    fn une_seule_methode_supportee_suffit_a_declarer_le_pc_compatible() {
-        assert!(composer_verdict(Some(true), Some(false), Some(true)).contains("Compatible"));
-        assert!(composer_verdict(Some(true), Some(true), Some(false)).contains("Compatible"));
-        assert!(
-            composer_verdict(Some(true), Some(false), Some(false)).contains("Incompatible"),
-            "les deux méthodes refusées : c'est le seul vrai cas d'incompatibilité"
-        );
+    fn ne_prend_pas_une_absence_de_reseau_pour_un_reseau() {
+        // 169.254.x.x est précisément ce que Windows s'attribue quand AUCUN
+        // réseau n'a répondu : le confondre avec un vrai réseau ferait dire
+        // au gérant "montrez le QR" alors que rien ne fonctionnerait.
+        assert!(!reseau_utilisable(&[Ipv4Addr::new(169, 254, 12, 34)]));
+        assert!(!reseau_utilisable(&[Ipv4Addr::new(127, 0, 0, 1)]));
+        assert!(!reseau_utilisable(&[ADRESSE_POINT_ACCES]));
+        assert!(!reseau_utilisable(&[]));
+
+        assert!(reseau_utilisable(&[Ipv4Addr::new(192, 168, 1, 25)]));
+        assert!(reseau_utilisable(&[
+            Ipv4Addr::new(127, 0, 0, 1),
+            Ipv4Addr::new(10, 0, 0, 7)
+        ]));
+    }
+
+    /// Un cas par ligne du tableau des situations rencontrées en boutique.
+    /// Ces phrases sont lues telles quelles par le gérant : une consigne qui
+    /// ne correspond pas à son poste le laisse bloqué devant un client.
+    #[test]
+    fn chaque_situation_de_boutique_recoit_la_bonne_consigne() {
+        // PC déjà sur le réseau de la boutique : le parcours le plus simple,
+        // il passe avant tout le reste même si ce PC sait créer un Wi-Fi.
+        let deja_en_reseau = composer_verdict(Some(true), Some(true), Some(true), Some(true), true);
+        assert!(deja_en_reseau.contains("Montrez simplement le QR"));
+        assert!(deja_en_reseau.contains("pas nécessaire ici"));
+
+        // Portable capable de créer son Wi-Fi, hors de tout réseau.
+        let cree_son_wifi =
+            composer_verdict(Some(true), Some(true), Some(false), Some(true), false);
+        assert!(cree_son_wifi.contains("Activer le Wi-Fi local"));
+
+        // Portable dont le pilote refuse les deux méthodes : reste le
+        // Bluetooth, et il faut dire qu'il ne couvre pas les iPhone.
+        let bluetooth_seul =
+            composer_verdict(Some(true), Some(false), Some(false), Some(true), false);
+        assert!(bluetooth_seul.contains("Bluetooth"));
+        assert!(bluetooth_seul.contains("iPhone"));
+
+        // Poste sans rien : ne pas laisser le gérant chercher.
+        let rien = composer_verdict(Some(false), Some(false), Some(false), Some(false), false);
+        assert!(rien.contains("clé USB"));
+        assert!(rien.contains("câble réseau"));
     }
 
     #[test]
-    fn le_verdict_est_explicite_dans_chaque_cas() {
-        assert!(composer_verdict(Some(false), None, None).contains("clé Wi-Fi USB"));
-        assert!(composer_verdict(Some(true), Some(true), Some(true)).contains("Compatible"));
-        assert!(composer_verdict(Some(true), None, None).contains("Indéterminé"));
-        assert!(composer_verdict(None, None, None).contains("Indéterminé"));
+    fn dans_le_doute_on_propose_d_essayer_plutot_que_de_renoncer() {
+        // Windows ne dit rien de clair (`None` partout) : l'application sait
+        // essayer les deux méthodes, donc le verdict ne doit pas envoyer le
+        // gérant vers la clé USB par excès de prudence.
+        let indetermine = composer_verdict(None, None, None, None, false);
+        assert!(
+            indetermine.contains("Activer le Wi-Fi local"),
+            "obtenu : {indetermine}"
+        );
     }
 
     #[test]

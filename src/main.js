@@ -1661,6 +1661,56 @@ async function rendreReglages(corps) {
   secRetention.appendChild(formRetention);
   corps.appendChild(secRetention);
 
+  // Répond à la seule question qui se pose en installant l'application sur
+  // un poste inconnu : sur CE PC, comment les clients envoient-ils leurs
+  // fichiers ? Sans rien activer, sans autorisation Windows, en un clic.
+  const secPoste = document.createElement("section");
+  secPoste.innerHTML = `
+    <h3>Vérifier ce PC</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Indique en une phrase ce qu'il faut faire sur ce poste pour recevoir les
+      fichiers des clients. À lancer dès l'installation, avant le premier client.
+    </p>
+  `;
+  secPoste.appendChild(
+    bouton("Vérifier ce PC", "btn-secondaire", async () => {
+      const diag = await invoke("diagnostiquer_poste");
+
+      const verdict = document.createElement("p");
+      verdict.style.cssText =
+        "font-size:0.95rem; line-height:1.5; padding:0.75rem; border-radius:6px; background:var(--gris-clair); margin:0.5rem 0";
+      verdict.textContent = diag.verdict;
+      secPoste.appendChild(verdict);
+
+      // Le verdict automatique peut rester indécis : la sortie brute de
+      // Windows, elle, fait foi. On la garde accessible pour le support,
+      // sans l'imposer à l'écran du gérant.
+      if (diag.details_bruts) {
+        const details = document.createElement("details");
+        details.innerHTML = `<summary style="cursor:pointer; font-size:0.8rem">Détails techniques (à envoyer en cas de problème)</summary>`;
+        const zone = document.createElement("textarea");
+        zone.readOnly = true;
+        zone.rows = 12;
+        zone.style.cssText = "width:100%; font-family:Consolas, monospace; font-size:0.75rem";
+        zone.value = diag.details_bruts;
+        details.appendChild(zone);
+        details.appendChild(
+          bouton("Copier les détails", "btn-secondaire", async () => {
+            try {
+              await navigator.clipboard.writeText(diag.details_bruts);
+              toast("✓ Détails copiés");
+            } catch {
+              zone.select();
+              toast("Sélectionnez et copiez le texte à la main.");
+            }
+          })
+        );
+        secPoste.appendChild(details);
+      }
+    })
+  );
+  corps.appendChild(secPoste);
+
   // Rapport de diagnostic pour le porteur du projet
   const secRapport = document.createElement("section");
   secRapport.innerHTML = `

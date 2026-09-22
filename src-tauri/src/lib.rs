@@ -74,7 +74,7 @@ pub fn run() {
             commands::ouvrir_parametres_partage_connexion,
             commands::activer_point_acces_local,
             commands::desactiver_point_acces_local,
-            commands::diagnostiquer_wifi,
+            commands::diagnostiquer_poste,
             commands::generer_rapport_diagnostic,
             commands::sauvegarder_maintenant,
             backup::lister_sauvegardes,

@@ -491,11 +491,12 @@ pub async fn desactiver_point_acces_local(
         .map_err(|e| e.to_string())?
 }
 
-/// Rapport de compatibilité Wi-Fi de CE PC, sans rien activer ni demander
-/// les droits administrateur : ce que Windows déclare savoir faire, plus la
-/// sortie brute à transmettre au support quand le verdict reste indécis.
+/// Répond, pour CE poste, à la question qui se pose en boutique : qu'est-ce
+/// que je fais pour recevoir les fichiers des clients ? Sans rien activer ni
+/// demander les droits administrateur. Joint la sortie brute de Windows, à
+/// transmettre au support quand le verdict reste indécis.
 #[tauri::command]
-pub fn diagnostiquer_wifi() -> crate::hotspot::DiagnosticWifi {
+pub fn diagnostiquer_poste() -> crate::hotspot::DiagnosticPoste {
     crate::hotspot::diagnostiquer()
 }
 
