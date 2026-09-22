@@ -644,6 +644,21 @@ pub fn point_acces_actif() -> bool {
 /// L'attribution par Windows n'est pas instantanée après le démarrage du
 /// point d'accès : quelques tentatives espacées laissent le temps à l'IP
 /// d'apparaître avant de renoncer.
+///
+/// Trouvé sur le terrain : le premier essai de cette fonction filtrait
+/// seulement par NOM d'adaptateur, sans regarder s'il était réellement
+/// actif. Windows ne réutilise pas toujours le même adaptateur virtuel
+/// d'une activation à l'autre — il peut en laisser plusieurs enregistrés
+/// ("Microsoft Wi-Fi Direct Virtual Adapter #2", "#3"…) après des tests
+/// répétés, chacun avec une adresse mémorisée mais plus réellement en
+/// service. La fonction en trouvait un, mais pas forcément le bon : le
+/// serveur DNS a ensuite refusé de s'y attacher ("l'adresse demandée n'est
+/// pas valide dans son contexte", erreur Windows 10049) — preuve que
+/// l'adresse retenue n'était pas celle d'une carte vivante. On exige
+/// maintenant explicitement un adaptateur dont Windows dit lui-même qu'il
+/// est "Up" (en service), et une adresse à l'état "Preferred" (pas en
+/// cours d'attribution, pas en conflit) : les deux seuls signaux fiables
+/// qu'elle est utilisable tout de suite.
 #[cfg(windows)]
 fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
     use std::os::windows::process::CommandExt;
@@ -661,7 +676,9 @@ fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
                 "-NoProfile",
                 "-Command",
                 "(Get-NetAdapter | Where-Object { $_.InterfaceDescription -like \
-                 '*Wi-Fi Direct Virtual Adapter*' } | Get-NetIPAddress -AddressFamily IPv4 \
+                 '*Wi-Fi Direct Virtual Adapter*' -and $_.Status -eq 'Up' } | \
+                 Sort-Object -Property ifIndex -Descending | Select-Object -First 1 | \
+                 Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred \
                  -ErrorAction SilentlyContinue).IPAddress",
             ])
             .creation_flags(CREATE_NO_WINDOW)
