@@ -1,4 +1,5 @@
 pub mod backup;
+pub mod bluetooth;
 pub mod commands;
 pub mod db;
 pub mod dhcp;
@@ -9,6 +10,7 @@ pub mod hotspot;
 pub mod impression;
 pub mod license;
 pub mod models;
+pub mod obex;
 pub mod qr;
 pub mod retention;
 pub mod server;
@@ -48,6 +50,7 @@ pub fn run() {
             server::start(app.handle().clone());
             backup::start(app.handle().clone());
             retention::start(app.handle().clone());
+            bluetooth::demarrer(app.handle().clone());
 
             Ok(())
         })
