@@ -27,6 +27,22 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Trouvé sur le terrain : rien n'empêchait de lancer l'application
+        // deux fois (double-clic sur l'icône par habitude, ou parce que le
+        // premier lancement semblait lent). Le second processus tentait de
+        // reprendre le port 4173 déjà pris par le premier et échouait,
+        // désactivant silencieusement la réception par QR/Wi-Fi — jusqu'à
+        // ce que le gérant s'en aperçoive devant un client. Ce plugin doit
+        // être enregistré EN PREMIER (exigence de Tauri) : un second
+        // lancement ne crée plus de second processus, il ramène au premier
+        // au lieu de lui faire concurrence sur le même port.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(fenetre) = app.get_webview_window("main") {
+                let _ = fenetre.unminimize();
+                let _ = fenetre.show();
+                let _ = fenetre.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
