@@ -511,12 +511,9 @@ fn noter_visite(hote: &str, chemin: &str, navigateur: &str) {
 
 /// Les adresses que les téléphones appellent pour savoir s'ils ont internet.
 ///
-/// Sert UNIQUEMENT à marquer ces visites dans le journal, pour les repérer
-/// au milieu des autres. On a un temps répondu à ces adresses par une
-/// redirection, comme le fait un portail d'hôtel : sur le terrain, plus
-/// aucune page ne s'est ouverte, pas même par les réglages Wi-Fi, et
-/// l'Android ne rejoignait plus le réseau. La redirection a donc été
-/// retirée — on sert de nouveau la page elle-même, comme avant.
+/// Ces visites reçoivent une réponse à part (voir `page_de_controle`) et
+/// sont marquées dans le journal, pour qu'on les repère au milieu des
+/// autres.
 fn est_sonde_de_reseau(chemin: &str) -> bool {
     let chemin = chemin.to_ascii_lowercase();
     matches!(
@@ -529,6 +526,37 @@ fn est_sonde_de_reseau(chemin: &str) -> bool {
             | "/ncsi.txt"
             | "/success.txt"
             | "/canonical.html"
+    )
+}
+
+/// La page servie au téléphone qui vient vérifier son réseau — et à lui
+/// seul.
+///
+/// Elle tient en moins d'un kilo-octet, sans JavaScript, sans feuille de
+/// style, sans image. La page d'envoi, elle, en fait vingt mille avec du
+/// CSS et du JavaScript : c'est une vraie application, et c'est ce qu'on
+/// servait jusqu'ici à la fenêtre de contrôle du téléphone.
+///
+/// Or cette fenêtre n'est pas un navigateur ordinaire. C'est un affichage
+/// réduit, et une page trop lourde ou dont le style le gêne est une cause
+/// connue de fenêtre qui ne s'affiche pas du tout. Le téléphone conclut
+/// alors « pas d'internet » au lieu de « ce réseau demande une connexion »,
+/// et plus rien ne s'ouvre. Tout portail d'hôtel sert une page minuscule à
+/// cet instant précis ; nous servions une application entière.
+///
+/// Le `meta refresh` fait passer le téléphone à la vraie page tout seul.
+/// Le lien en dessous reste là pour le cas où il serait ignoré : une page
+/// de portail dont on ne peut pas sortir vaut une page qui ne s'ouvre pas.
+fn page_de_controle(adresse: &str) -> String {
+    format!(
+        "<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<title>Envoyer vos documents</title>\
+<meta http-equiv=\"refresh\" content=\"0; url=http://{adresse}/\"></head>\
+<body style=\"font-family:sans-serif;text-align:center;padding:2em\">\
+<h1 style=\"font-size:1.3em\">Photocopie</h1>\
+<p><a href=\"http://{adresse}/\" style=\"font-size:1.2em\">Envoyer vos documents</a></p>\
+</body></html>"
     )
 }
 
@@ -551,6 +579,14 @@ async fn page_accueil(
         uri.path(),
         &lire(axum::http::header::USER_AGENT),
     );
+
+    // Le téléphone qui vient vérifier son réseau reçoit la page minuscule,
+    // pas l'application entière. On ne touche même pas à la base de
+    // données : cette réponse doit partir tout de suite, une fenêtre de
+    // contrôle n'attend pas.
+    if est_sonde_de_reseau(uri.path()) {
+        return Html(page_de_controle(&adresse_locale()));
+    }
 
     let (whatsapp, bluetooth_nom) = {
         let state = app.state::<crate::db::DbState>();
@@ -1722,6 +1758,39 @@ mod tests {
         assert!(
             est_sonde_de_reseau("/GENERATE_204"),
             "la casse vient du téléphone"
+        );
+    }
+
+    /// Le poids est ici la fonctionnalité : c'est précisément parce que la
+    /// page d'envoi en fait vingt mille que la fenêtre de contrôle du
+    /// téléphone pouvait refuser de s'afficher. Un ajout innocent — une
+    /// image, une feuille de style — ramènerait la panne sans rien casser
+    /// de visible.
+    #[test]
+    fn la_page_de_controle_reste_minuscule() {
+        let page = page_de_controle("192.168.73.1");
+        assert!(
+            page.len() < 1024,
+            "la page de contrôle fait {} octets, elle doit rester sous 1 Ko",
+            page.len()
+        );
+        assert!(!page.contains("<script"), "aucun JavaScript");
+        assert!(!page.contains("<img"), "aucune image");
+        assert!(!page.contains("<link"), "aucune ressource externe");
+    }
+
+    /// Sans ces deux chemins, le téléphone affiche une page dont on ne peut
+    /// pas sortir : il aurait détecté le portail sans pouvoir l'utiliser.
+    #[test]
+    fn la_page_de_controle_mene_a_la_page_d_envoi() {
+        let page = page_de_controle("192.168.73.1");
+        assert!(
+            page.contains("http-equiv=\"refresh\""),
+            "passage automatique"
+        );
+        assert!(
+            page.contains("href=\"http://192.168.73.1/\""),
+            "lien de repli si le passage automatique est ignoré"
         );
     }
 

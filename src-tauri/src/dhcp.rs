@@ -287,10 +287,28 @@ fn construire_reponse(brut: &[u8], adresse_serveur: Ipv4Addr) -> Option<Vec<u8>>
     // ici, c'est risquer qu'il ignore l'option et retombe sur les
     // devinettes qu'on cherche justement à éviter. Voir
     // `server::api_portail`, qui répond et y indique la page à ouvrir.
-    opts.insert(DhcpOption::CaptivePortal(format!(
-        "http://{adresse_serveur}{}",
-        crate::server::CHEMIN_API_PORTAIL
-    )));
+    // ... et pourtant cette option N'EST PAS ENVOYÉE, pour la seconde fois.
+    //
+    // La RFC 8908 impose que l'adresse annoncée soit en https avec un
+    // certificat reconnu. Une boutique hors ligne sur l'adresse privée
+    // 192.168.73.1 n'en obtiendra jamais : il faudrait un nom de domaine
+    // public et une autorité joignable par internet. Notre adresse est donc
+    // en http, et aucun téléphone récent ne l'acceptera.
+    //
+    // Et sa seule présence suffit à couper l'autre mécanisme. PacketFence
+    // le constate en clair : « If Option 114 is present on Registration,
+    // the traditional network detection is ignored ». iOS passe en mode
+    // RFC 8908, n'arrive pas à s'en servir faute d'https, et ne revient pas
+    // à la détection classique — la seule utilisable hors ligne.
+    //
+    // Elle a été remise un moment, parce qu'une version sans elle avait
+    // paru tout casser en boutique. Le relevé de cet essai montre que le
+    // serveur d'adresses ET le serveur de noms étaient éteints ce jour-là,
+    // leurs ports tenus par une copie de l'application restée ouverte. Rien
+    // n'était donc testé, et ce retour en arrière ne reposait sur rien.
+    //
+    // `server::api_portail` reste en place : le jour où un certificat
+    // reconnu serait possible, il ne manquerait que la ligne retirée.
     opts.insert(DhcpOption::End);
 
     let mut octets = Vec::new();
@@ -485,12 +503,12 @@ mod tests {
         ));
     }
 
-    /// Sans cette option, le téléphone doit DEVINER qu'un portail existe.
+    /// L'inverse de ce que ce test vérifiait : annoncer l'option 114 EMPÊCHE
     /// Avec elle, on le lui dit. C'est la différence entre une page qui
     /// s'ouvre et une page qui ne s'ouvre qu'après une manipulation dans les
     /// réglages Wi-Fi — exactement ce qui était constaté en boutique.
     #[test]
-    fn annonce_l_adresse_du_portail_a_chaque_telephone() {
+    fn n_annonce_pas_d_option_114_qu_on_ne_peut_pas_honorer() {
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
 
         for type_demande in [MessageType::Discover, MessageType::Request] {
@@ -501,15 +519,11 @@ mod tests {
             .expect("une réponse est attendue");
             let reponse = decoder_requete(&brut).unwrap();
 
-            match reponse.opts().get(OptionCode::CaptivePortal) {
-                Some(DhcpOption::CaptivePortal(adresse)) => assert_eq!(
-                    adresse, "http://192.168.73.1/api-portail",
-                    "l'adresse annoncée doit être celle de la réponse normalisée \
-                     (RFC 8908), sur le port 80 — pas la page web, qu'un téléphone \
-                     récent ne saurait pas interpréter ici"
-                ),
-                autre => panic!("option de portail attendue, obtenu {autre:?}"),
-            }
+            assert!(
+                reponse.opts().get(OptionCode::CaptivePortal).is_none(),
+                "l'option 114 ne doit pas être annoncée : elle coupe la détection \
+                 classique, seul mécanisme utilisable sans certificat reconnu"
+            );
         }
     }
 
