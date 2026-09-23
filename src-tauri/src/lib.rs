@@ -45,6 +45,28 @@ pub fn run() {
                 let _ = fenetre.set_focus();
             }
         }))
+        // Glisser-déposer sur la fenêtre : le chemin le plus court quand le
+        // client arrive avec un câble.
+        //
+        // Un téléphone branché en USB n'apparaît PAS comme une clé : Windows
+        // le présente en MTP, sans lettre de lecteur, et la surveillance des
+        // clés (voir `usb.rs`) ne peut donc rien y voir. Restait à ouvrir le
+        // téléphone dans l'Explorateur et à retrouver le dossier surveillé —
+        // deux fenêtres et un chemin à mémoriser, devant un client qui
+        // attend. Lâcher les fichiers sur l'application fait la même chose
+        // en un geste, sans rien à configurer.
+        .on_window_event(|fenetre, evenement| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) =
+                evenement
+            {
+                for chemin in paths {
+                    // Un dossier lâché par erreur ne doit pas faire de bruit.
+                    if chemin.is_file() {
+                        watcher::enqueue_file(fenetre.app_handle(), chemin, "glisser", None, None);
+                    }
+                }
+            }
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {

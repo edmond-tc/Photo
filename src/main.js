@@ -626,7 +626,15 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
     fermerModal("modal-encaissement");
     retirerFichier(idEncaissementEnCours);
     jouerSonEncaissement();
-    if (confirm("Encaissement enregistré. Imprimer le reçu ?")) {
+    // Le reçu n'est plus proposé à chaque encaissement : dans les boutiques
+    // visées, l'usage est de ne PAS donner de reçu, et une question posée à
+    // chaque vente fait perdre un geste à chaque fois pour une réponse qui
+    // est presque toujours "non". Le gérant qui en délivre active l'option
+    // une fois dans Réglages, et le reçu sort alors tout seul.
+    //
+    // Dans les deux cas, il reste imprimable à la demande depuis
+    // l'historique : désactiver l'automatisme ne retire aucune possibilité.
+    if (await recuAutomatiqueActif()) {
       try {
         await invoke("imprimer_recu", { transactionId: resultat.transaction_id });
       } catch (err) {
@@ -644,6 +652,20 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
     alert(`⚠️ L'encaissement n'a pas pu être enregistré. Réessayez dans un instant — rien n'a été perdu.\n\nDétail : ${err}`);
   }
 });
+
+/// Le gérant a-t-il demandé qu'un reçu s'imprime après chaque encaissement ?
+///
+/// Répond non par défaut, y compris si le réglage est illisible : un reçu
+/// qui sort sans qu'on l'ait demandé gâche du papier et surprend le gérant,
+/// alors qu'un reçu manquant s'imprime en deux clics depuis l'historique.
+async function recuAutomatiqueActif() {
+  try {
+    const params = await invoke("get_boutique_settings");
+    return params.recu_automatique === "oui";
+  } catch {
+    return false;
+  }
+}
 
 // ───────────────────────────── QR / réception client ─────────────────────────────
 
@@ -908,7 +930,10 @@ async function ouvrirSection(section) {
 const AIDES_ECRAN = {
   accueil: {
     titre: "L'écran principal",
-    intro: "C'est l'écran de travail de la journée : les documents des clients arrivent ici tout seuls, du haut vers le bas.",
+    intro:
+      "C'est l'écran de travail de la journée : les documents des clients arrivent ici tout seuls, du haut vers le bas. " +
+      "Vous pouvez aussi GLISSER des fichiers directement sur cette fenêtre — pratique quand un client vient avec un câble : " +
+      "ouvrez son téléphone dans l'Explorateur, sélectionnez, et lâchez ici.",
     boutons: [
       ["Aperçu", "Regarder le document avant de l'imprimer, sans ouvrir un autre programme."],
       ["Imprimer", "Envoie le document à l'imprimante. Windows ouvre sa fenêtre d'impression habituelle."],
@@ -1278,6 +1303,8 @@ const LIBELLES_SOURCE = {
   dossier_surveille: "dossier surveillé",
   usb: "clé USB",
   qr: "QR client",
+  glisser: "glissé sur la fenêtre",
+  bluetooth: "Bluetooth",
 };
 
 // Une ligne = une impression réussie ; les erreurs (bourrage, hors ligne...)
@@ -1799,6 +1826,42 @@ async function rendreReglages(corps) {
   });
   secRetention.appendChild(formRetention);
   corps.appendChild(secRetention);
+
+  // Reçus : désactivés d'office. Dans les boutiques visées, l'usage est de
+  // ne pas en délivrer — poser la question à chaque encaissement coûtait un
+  // geste à chaque vente pour une réponse presque toujours négative.
+  const secRecus = document.createElement("section");
+  secRecus.innerHTML = `
+    <h3>Reçus</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Par défaut, aucun reçu n'est imprimé après un encaissement. Si vous en
+      délivrez, cochez la case : le reçu sortira alors tout seul à chaque
+      encaissement. Dans les deux cas, vous pouvez toujours en imprimer un à
+      la demande depuis l'historique.
+    </p>
+  `;
+  const formRecus = document.createElement("form");
+  formRecus.innerHTML = `
+    <label style="display:flex; align-items:center; gap:0.5rem">
+      <input type="checkbox" id="reg-recu-auto" ${params.recu_automatique === "oui" ? "checked" : ""} />
+      Imprimer un reçu après chaque encaissement
+    </label>
+    <button type="submit" class="btn-secondaire">Enregistrer</button>
+  `;
+  formRecus.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await invoke("set_boutique_setting", {
+        cle: "recu_automatique",
+        valeur: document.querySelector("#reg-recu-auto").checked ? "oui" : "non",
+      });
+      toast("✓ Réglage des reçus enregistré");
+    } catch (err) {
+      toast(String(err), "attention");
+    }
+  });
+  secRecus.appendChild(formRecus);
+  corps.appendChild(secRecus);
 
   // Répond à la seule question qui se pose en installant l'application sur
   // un poste inconnu : sur CE PC, comment les clients envoient-ils leurs

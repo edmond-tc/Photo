@@ -339,9 +339,26 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
         )
     };
 
-    let lien_whatsapp = match whatsapp.as_deref().and_then(normalize_phone) {
+// Les deux autres façons d'envoyer sont présentées comme des cartes à
+    // part entière, en bas de page — et non comme des liens en petit au pied
+    // de la page d'envoi. Un client qui n'arrive pas à passer par le Wi-Fi
+    // doit voir tout de suite qu'il lui reste deux chemins, pas déchiffrer
+    // une ligne grise.
+    //
+    // WhatsApp ouvre directement la discussion avec le gérant, sans que le
+    // client ait à retenir ou recopier un numéro.
+    let carte_whatsapp = match whatsapp.as_deref().and_then(normalize_phone) {
         Some(numero) => format!(
-            r#"<a class="lien-secondaire" href="https://wa.me/{numero}" target="_blank">Envoyer par WhatsApp à la place</a>"#
+            r#"<section class="carte carte-alternative">
+      <h2><span>📱</span> Envoyer par WhatsApp</h2>
+      <p class="aide">
+        Si l'envoi ci-dessus ne fonctionne pas, vous pouvez envoyer vos documents
+        directement au gérant sur WhatsApp. Cette solution consomme vos données mobiles.
+      </p>
+      <a class="bouton bouton-secondaire" href="https://wa.me/{numero}" target="_blank" rel="noopener">
+        Ouvrir la discussion WhatsApp
+      </a>
+    </section>"#
         ),
         None => String::new(),
     };
@@ -349,21 +366,51 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     // Sans nom configuré, on reste sur une instruction générique plutôt que
     // de dire au client de chercher un appareil "vide" — mieux vaut ne rien
     // promettre de précis que d'induire en erreur.
-    let bloc_bluetooth = match bluetooth_nom.filter(|n| !n.trim().is_empty()) {
+// Le Bluetooth ne consomme aucune donnée et ne dépend d'aucun réseau :
+    // c'est le vrai secours quand le Wi-Fi de la boutique ne veut pas.
+    //
+    // La carte EXPLIQUE au lieu d'agir, et c'est une limite du navigateur,
+    // pas un choix : le partage de fichiers depuis une page web n'est
+    // autorisé qu'en `https://`, impossible à obtenir pour une adresse
+    // locale sans coller un avertissement de sécurité sous les yeux du
+    // client. Le bouton natif (voir `#btn-partager-bluetooth`) reste présent
+    // et apparaîtra tout seul le jour où la page sera servie autrement.
+    //
+    // Sans nom configuré, on reste sur une consigne générique plutôt que
+    // d'envoyer le client chercher un appareil "vide".
+    let carte_bluetooth = match bluetooth_nom.filter(|n| !n.trim().is_empty()) {
         Some(nom) => format!(
-            r#"<div class="bluetooth-bloc">
-                <p style="margin:0 0 0.5rem">
-                    <strong>Envoyer par Bluetooth :</strong> activez le Bluetooth sur votre
-                    téléphone, puis utilisez le bouton "Partager par Bluetooth" ci-dessus
-                    si vous le voyez. Sinon : sélectionnez votre/vos fichier(s) dans vos
-                    Photos ou Fichiers, appuyez sur "Partager", puis "Bluetooth", et
-                    cherchez l'appareil ci-dessous.
-                </p>
-                <p class="bluetooth-nom-puce">📶 {nom}</p>
-            </div>"#,
+            r#"<section class="carte carte-alternative">
+      <h2><span>📶</span> Envoyer par Bluetooth</h2>
+      <p class="aide">
+        Sans internet et sans consommer vos données. Vos documents arrivent
+        directement sur l'ordinateur du gérant.
+      </p>
+      <ol class="etapes">
+        <li>Activez le <strong>Bluetooth</strong> sur votre téléphone.</li>
+        <li>Ouvrez vos documents, sélectionnez-en un ou plusieurs.</li>
+        <li>Appuyez sur <strong>Partager</strong>, puis <strong>Bluetooth</strong>.</li>
+        <li>Choisissez l'appareil nommé :</li>
+      </ol>
+      <p class="bluetooth-nom">{nom}</p>
+      <button type="button" id="btn-partager-bluetooth" class="bouton bouton-secondaire" hidden>
+        Partager maintenant par Bluetooth
+      </button>
+      <p class="rappel">
+        Si le gérant vous demande d'accepter la connexion sur son écran, c'est normal :
+        il doit autoriser votre téléphone une première fois.
+      </p>
+    </section>"#,
             nom = echapper_html(&nom)
         ),
-        None => r#"<p>Bluetooth : depuis votre téléphone, activez le Bluetooth et cherchez l'ordinateur de la boutique.</p>"#.to_string(),
+        None => r#"<section class="carte carte-alternative">
+      <h2><span>📶</span> Envoyer par Bluetooth</h2>
+      <p class="aide">
+        Activez le Bluetooth sur votre téléphone, puis Partager → Bluetooth, et
+        choisissez l'ordinateur de la boutique. Demandez son nom au gérant.
+      </p>
+    </section>"#
+            .to_string(),
     };
 
     Html(format!(
@@ -374,71 +421,162 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Envoyer un fichier à la boutique</title>
 <style>
-  body {{ font-family: "Segoe UI", Calibri, Arial, sans-serif; background:#f3f2f1; margin:0; padding:1.5rem; color:#323130; }}
-  .carte {{ max-width: 440px; margin: 0 auto; background:#fff; border-radius:8px; padding:1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}
-  h1 {{ font-size:1.1rem; color:#2b579a; margin-top:0; }}
-  input[type=text], input[type=tel] {{ width:100%; padding:0.6rem; margin-bottom:0.75rem; border:1px solid #d6d4d1; border-radius:4px; font-size:1rem; box-sizing:border-box; }}
-  input[type=file] {{ width:100%; margin-bottom:1rem; }}
-  button {{ width:100%; padding:0.85rem; background:#2b579a; color:#fff; border:none; border-radius:4px; font-size:1.05rem; font-weight:600; cursor:pointer; }}
-  .liens-secondaires {{ margin-top:1.5rem; text-align:center; font-size:0.8rem; }}
-  .liens-secondaires a {{ color:#605e5c; text-decoration:underline; }}
-  #confirmation {{ display:none; text-align:center; color:#107c10; font-weight:600; margin-top:1rem; }}
-  #statut-fidelite {{ display:none; text-align:center; background:#dff6dd; color:#107c10; font-weight:600; padding:0.75rem; border-radius:6px; margin-top:0.75rem; }}
-  #progression {{ display:none; height:8px; background:#e8e6e4; border-radius:4px; overflow:hidden; margin-bottom:1rem; }}
-  #progression > div {{ height:100%; width:0%; background:#2b579a; transition:width .15s; }}
-  #texte-progression {{ display:none; text-align:center; font-size:0.8rem; color:#605e5c; margin:-0.5rem 0 1rem; }}
-  .fichier {{ border:1px solid #d6d4d1; border-radius:6px; padding:0.6rem 0.75rem; margin-bottom:0.6rem; }}
-  .fichier-nom {{ font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-  .fichier-toggle {{ background:none; border:none; color:#2b579a; font-size:0.8rem; padding:0.2rem 0; cursor:pointer; width:auto; }}
-  .fichier-options {{ display:none; margin-top:0.5rem; font-size:0.85rem; }}
-  .fichier-options.ouvert {{ display:block; }}
-  .fichier-options label {{ display:flex; align-items:center; gap:0.4rem; margin-bottom:0.4rem; }}
-  .fichier-options select, .fichier-options input[type=number], .fichier-options input[type=text] {{
-    width: auto; flex:1; padding:0.35rem; margin:0; border:1px solid #d6d4d1; border-radius:4px;
+  :root {{
+    --bleu: #2b579a;
+    --bleu-clair: #eef3fa;
+    --gris-fond: #f3f2f1;
+    --gris-bord: #e1dfdd;
+    --gris-texte: #605e5c;
+    --texte: #252423;
+    --espace: 1rem;
   }}
-  .bluetooth-bloc {{ text-align:left; background:#f3f2f1; padding:0.75rem; border-radius:6px; line-height:1.6; }}
-  .bluetooth-nom-puce {{ text-align:center; font-size:1.15rem; font-weight:700; color:#2b579a; background:#fff; border:2px dashed #2b579a; border-radius:6px; padding:0.6rem; margin:0; word-break:break-word; }}
-  .btn-bluetooth {{ background:#fff; color:#2b579a; border:1px solid #2b579a; margin-bottom:1rem; }}
-  .note-prix {{ font-size:0.72rem; color:#8a8886; text-align:center; margin:-0.5rem 0 1rem; }}
-  .note-confidentialite {{ font-size:0.72rem; color:#605e5c; line-height:1.5; background:#f3f2f1; padding:0.6rem 0.7rem; border-radius:6px; margin:1rem 0 0; }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    background: var(--gris-fond);
+    margin: 0;
+    padding: var(--espace);
+    color: var(--texte);
+    line-height: 1.55;
+  }}
+  .page {{ max-width: 460px; margin: 0 auto; }}
+
+  /* Chaque bloc est une carte distincte, séparée des autres par un vrai
+     espace. Constaté sur une photo du terrain : tout était collé, et le
+     bouton d'envoi passait par-dessus le texte qui le suivait. */
+  .carte {{
+    background: #fff;
+    border-radius: 10px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    margin-bottom: var(--espace);
+  }}
+  .carte:last-child {{ margin-bottom: 0; }}
+
+  h1 {{ font-size: 1.25rem; color: var(--bleu); margin: 0 0 0.35rem; }}
+  h2 {{ font-size: 1rem; color: var(--bleu); margin: 0 0 0.5rem; display:flex; align-items:center; gap:0.5rem; }}
+  .sous-titre {{ font-size: 0.85rem; color: var(--gris-texte); margin: 0 0 1.25rem; }}
+
+  .champ {{ margin-bottom: 1.1rem; }}
+  .champ > label {{ display:block; font-size:0.9rem; font-weight:600; margin-bottom:0.15rem; }}
+  .aide {{ font-size: 0.78rem; color: var(--gris-texte); margin: 0 0 0.45rem; }}
+
+  input[type=text], input[type=tel] {{
+    width: 100%;
+    padding: 0.7rem 0.75rem;
+    border: 1px solid var(--gris-bord);
+    border-radius: 6px;
+    font-size: 1rem;
+    background: #fff;
+  }}
+  input[type=text]:focus, input[type=tel]:focus {{ outline: 2px solid var(--bleu); border-color: var(--bleu); }}
+  input[type=file] {{ width: 100%; font-size: 0.9rem; }}
+
+  button, .bouton {{
+    display: block;
+    width: 100%;
+    padding: 0.9rem;
+    background: var(--bleu);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    font-family: inherit;
+  }}
+  .bouton-secondaire {{
+    background: #fff;
+    color: var(--bleu);
+    border: 1.5px solid var(--bleu);
+  }}
+
+  /* Plus aucune marge négative ici : c'est elle qui faisait remonter ce
+     texte SOUS le bouton d'envoi. */
+  .note-prix {{ font-size: 0.78rem; color: var(--gris-texte); text-align: center; margin: 0.75rem 0 0; }}
+  .note-confidentialite {{
+    font-size: 0.78rem; color: var(--gris-texte);
+    background: var(--gris-fond); padding: 0.85rem; border-radius: 8px; margin: 1.1rem 0 0;
+  }}
+
+  #confirmation {{ display:none; text-align:center; color:#107c10; font-weight:600; margin: 1rem 0 0; }}
+  #statut-fidelite {{ display:none; text-align:center; background:#dff6dd; color:#107c10; font-weight:600; padding:0.8rem; border-radius:8px; margin: 0.8rem 0 0; }}
+  #progression {{ display:none; height:8px; background:var(--gris-bord); border-radius:4px; overflow:hidden; margin: 0 0 0.5rem; }}
+  #progression > div {{ height:100%; width:0%; background:var(--bleu); transition:width .15s; }}
+  #texte-progression {{ display:none; text-align:center; font-size:0.8rem; color:var(--gris-texte); margin: 0 0 0.75rem; }}
+
+  .fichier {{ border:1px solid var(--gris-bord); border-radius:8px; padding:0.75rem; margin-bottom:0.65rem; }}
+  .fichier-nom {{ font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .fichier-toggle {{ background:none; border:none; color:var(--bleu); font-size:0.82rem; padding:0.35rem 0 0; cursor:pointer; width:auto; text-align:left; font-weight:500; }}
+  .fichier-options {{ display:none; margin-top:0.6rem; font-size:0.85rem; }}
+  .fichier-options.ouvert {{ display:block; }}
+  .fichier-options label {{ display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem; }}
+  .fichier-options select, .fichier-options input[type=number], .fichier-options input[type=text] {{
+    width:auto; flex:1; padding:0.4rem; margin:0; border:1px solid var(--gris-bord); border-radius:5px;
+  }}
+
+  /* Les deux autres façons d'envoyer, en bas, chacune dans sa carte. */
+  .carte-alternative {{ background:#fff; border:1px solid var(--gris-bord); box-shadow:none; }}
+  .etapes {{ margin: 0.5rem 0 0.9rem; padding-left: 1.15rem; font-size: 0.85rem; color: var(--gris-texte); }}
+  .etapes li {{ margin-bottom: 0.35rem; }}
+  .bluetooth-nom {{
+    text-align:center; font-size:1.3rem; font-weight:700; color:var(--bleu);
+    background:var(--bleu-clair); border:2px dashed var(--bleu); border-radius:8px;
+    padding:0.85rem 0.6rem; margin:0 0 0.9rem; word-break:break-word; letter-spacing:0.02em;
+  }}
+  .rappel {{ font-size:0.78rem; color:var(--gris-texte); margin:0.75rem 0 0; }}
 </style>
 </head>
 <body>
-  <div class="carte">
-    <h1>Envoyer un fichier à la boutique</h1>
-    <form id="form-envoi">
-      <p style="font-size:0.78rem; color:#605e5c; margin:0 0 0.3rem">
-        Votre nom (facultatif) aide la boutique à savoir à qui appartient
-        votre fichier, surtout si plusieurs personnes envoient en même temps.
+  <div class="page">
+    <section class="carte">
+      <h1>Envoyer vos documents</h1>
+      <p class="sous-titre">Choisissez vos fichiers, le gérant les reçoit aussitôt.</p>
+
+      <form id="form-envoi">
+        <div class="champ">
+          <label for="champ-nom">Votre nom <span style="font-weight:400; color:var(--gris-texte)">(facultatif)</span></label>
+          <p class="aide">Aide la boutique à savoir à qui appartient votre fichier, surtout si plusieurs personnes envoient en même temps.</p>
+          <input type="text" id="champ-nom" name="nom" placeholder="Votre nom" />
+        </div>
+
+        <div class="champ">
+          <label for="champ-tel">Votre numéro <span style="font-weight:400; color:var(--gris-texte)">(facultatif)</span></label>
+          <p class="aide">Vous permet de profiter d'une réduction après plusieurs commandes chez cette boutique.</p>
+          <input type="tel" id="champ-tel" name="telephone" placeholder="Votre numéro" />
+        </div>
+
+        <div class="champ">
+          <label for="champ-fichiers">Vos documents</label>
+          <p class="aide">Un ou plusieurs fichiers à la fois.</p>
+          <input type="file" id="champ-fichiers" multiple required />
+        </div>
+
+        <div id="liste-fichiers"></div>
+        <div id="progression"><div></div></div>
+        <p id="texte-progression"></p>
+
+        <button type="submit">Envoyer à la boutique</button>
+        <p class="note-prix">Le prix est à régler directement avec le gérant, sur place.</p>
+      </form>
+
+      <p id="confirmation">Fichier(s) envoyé(s), merci ! Le gérant a été prévenu.</p>
+      <p id="statut-fidelite"></p>
+
+      <p class="note-confidentialite">
+        🔒 Votre document reste sur l'ordinateur de la boutique : il ne passe
+        par aucun site internet et n'est envoyé à personne d'autre. Il est
+        effacé automatiquement quelque temps après votre commande. Votre nom
+        et votre numéro ne servent qu'à retrouver votre document et à votre
+        réduction fidélité ; demandez au gérant si vous voulez qu'ils soient
+        effacés.
       </p>
-      <input type="text" name="nom" placeholder="Votre nom (optionnel)" />
-      <p style="font-size:0.78rem; color:#605e5c; margin:0.75rem 0 0.3rem">
-        Votre numéro (facultatif) vous permet de profiter d'une réduction
-        après plusieurs commandes chez cette boutique.
-      </p>
-      <input type="tel" name="telephone" placeholder="Votre numéro (optionnel)" />
-      <input type="file" id="champ-fichiers" multiple required />
-      <div id="liste-fichiers"></div>
-      <button type="button" id="btn-partager-bluetooth" class="btn-bluetooth" hidden>📤 Partager par Bluetooth à la place</button>
-      <div id="progression"><div></div></div>
-      <p id="texte-progression"></p>
-      <button type="submit">Envoyer à la boutique</button>
-      <p class="note-prix">Le prix est à régler directement avec le gérant, sur place.</p>
-    </form>
-    <p class="note-confidentialite">
-      🔒 Votre document reste sur l'ordinateur de la boutique : il ne passe
-      par aucun site internet et n'est envoyé à personne d'autre. Il est
-      effacé automatiquement quelque temps après votre commande. Votre nom
-      et votre numéro ne servent qu'à retrouver votre document et à votre
-      réduction fidélité ; demandez au gérant si vous voulez qu'ils soient
-      effacés.
-    </p>
-    <p id="confirmation">Fichier(s) envoyé(s), merci ! Le gérant a été prévenu.</p>
-    <p id="statut-fidelite"></p>
-    <div class="liens-secondaires">
-      {lien_whatsapp}
-      {bloc_bluetooth}
-    </div>
+    </section>
+
+    {carte_whatsapp}
+    {carte_bluetooth}
   </div>
   <script>
     const champFichiers = document.getElementById('champ-fichiers');

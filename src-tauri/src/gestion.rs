@@ -444,20 +444,54 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
             STANDARD.encode(octets)
         });
 
-    let chemin = if let Some(logo_base64) = logo_base64 {
-        let chemin = dossier_recus.join(format!("recu_{transaction_id}.html"));
-        let html = format!(
-            r#"<!doctype html><html lang="fr"><head><meta charset="utf-8">
+    // Toujours un reçu HTML, logo ou pas.
+    //
+    // Le repli en texte brut qui servait ici s'imprimait collé en haut à
+    // gauche de la feuille, sans aucun moyen de le placer : un bandeau de
+    // texte perdu sur un A4. Le HTML, lui, se centre — et le logo n'est plus
+    // qu'un détail optionnel à l'intérieur, au lieu de décider du format de
+    // sortie.
+    let bloc_logo = match &logo_base64 {
+        Some(logo) => format!(r#"<img src="data:image/png;base64,{logo}" alt="" />"#),
+        None => String::new(),
+    };
+
+    let chemin = dossier_recus.join(format!("recu_{transaction_id}.html"));
+    let html = format!(
+        r#"<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <title>Reçu n°{transaction_id}</title>
 <style>
-  body {{ font-family: "Segoe UI", Calibri, Arial, sans-serif; max-width: 320px; margin: 1rem auto; color:#222; }}
-  img {{ max-width: 120px; display:block; margin: 0 auto 0.5rem; }}
-  h1 {{ text-align:center; font-size:1.1rem; margin: 0 0 1rem; }}
-  hr {{ border: none; border-top: 1px dashed #999; margin: 0.75rem 0; }}
-  .ligne {{ display:flex; justify-content:space-between; font-size:0.9rem; margin:0.2rem 0; }}
-  .merci {{ text-align:center; margin-top:1rem; font-size:0.85rem; }}
+  /* Centré sur la feuille, dans les deux sens. Sans cela, le reçu sort
+     dans le coin haut-gauche d'un A4, ce qui donne un papier à moitié vide
+     et un ticket qu'on découpe de travers. */
+  @page {{ margin: 0; }}
+  html, body {{ height: 100%; }}
+  body {{
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    margin: 0;
+    color: #222;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }}
+  .recu {{
+    width: 78mm;
+    max-width: 100%;
+    padding: 6mm;
+    border: 1px dashed #bbb;
+    border-radius: 4px;
+  }}
+  img {{ max-width: 110px; display: block; margin: 0 auto 0.5rem; }}
+  h1 {{ text-align: center; font-size: 1.05rem; margin: 0 0 0.9rem; }}
+  hr {{ border: none; border-top: 1px dashed #999; margin: 0.7rem 0; }}
+  .ligne {{ display: flex; justify-content: space-between; gap: 0.75rem; font-size: 0.88rem; margin: 0.25rem 0; }}
+  .ligne span:last-child {{ text-align: right; }}
+  .merci {{ text-align: center; margin: 0.9rem 0 0; font-size: 0.85rem; }}
+  @media print {{ .recu {{ border: none; }} }}
 </style></head><body>
-<img src="data:image/png;base64,{logo_base64}" alt="Logo" />
+<div class="recu">
+{bloc_logo}
 <h1>{boutique_nom_html}</h1>
 <div class="ligne"><span>Reçu n°</span><span>{transaction_id}</span></div>
 <div class="ligne"><span>Date</span><span>{date_lisible}</span></div>
@@ -468,31 +502,10 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
 <div class="ligne"><span>{employe_ligne_html}</span></div>
 <hr>
 <p class="merci">Merci de votre visite !</p>
+</div>
 </body></html>"#
-        );
-        std::fs::write(&chemin, html).map_err(|e| e.to_string())?;
-        chemin
-    } else {
-        let separateur = "=".repeat(32);
-        let contenu = format!(
-            "{separateur}\n{boutique_nom:^32}\n{separateur}\n\
-             Reçu n°{transaction_id}\n\
-             Date : {date_lisible}\n\
-             {tiret}\n\
-             {description}\n\
-             Montant : {montant} FCFA\n\
-             Paiement : {moyen_libelle}\n\
-             {employe_ligne}\n\
-             {separateur}\n\
-             {merci:^32}\n\
-             {separateur}\n",
-            tiret = "-".repeat(32),
-            merci = "Merci de votre visite !",
-        );
-        let chemin = dossier_recus.join(format!("recu_{transaction_id}.txt"));
-        std::fs::write(&chemin, contenu).map_err(|e| e.to_string())?;
-        chemin
-    };
+    );
+    std::fs::write(&chemin, html).map_err(|e| e.to_string())?;
 
     files::shell_open(&chemin, "print")
 }
