@@ -845,7 +845,10 @@ function afficherCompteRenduWifi(titre, texte, ton) {
 
   const detail = document.createElement("textarea");
   detail.readOnly = true;
-  detail.rows = Math.min(16, Math.max(4, texte.split("\n").length + 1));
+  // Assez haut pour montrer le compte rendu ENTIER sans défiler : sur le
+  // terrain, la partie la plus décisive — la liste des programmes à
+  // l'écoute — se trouvait sous le bord du cadre, invisible sans le savoir.
+  detail.rows = Math.min(26, Math.max(4, texte.split("\n").length + 1));
   detail.style.cssText =
     "width:100%; font-family:Consolas, monospace; font-size:0.75rem; line-height:1.4";
   detail.value = texte;

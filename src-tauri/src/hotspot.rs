@@ -682,9 +682,19 @@ try {{
     #    Cette application n'en a aucun usage : elle ne partage pas
     #    d'internet, elle n'en a pas. On l'arrête donc, sans le désactiver
     #    définitivement — un redémarrage lui rend son réglage d'origine.
+    #    Preuve relevée sur le terrain, dans la liste des programmes à
+    #    l'écoute : « port 67 : 192.168.137.1 <- svchost ». C'est lui. Il
+    #    répondait aux téléphones à notre place et leur donnait SON adresse
+    #    comme serveur de noms — notre serveur répondait donc parfaitement à
+    #    personne, puisque aucun téléphone ne lui parlait.
+    #
+    #    Un simple arrêt ne suffit pas : le service redémarre tout seul, et
+    #    la création d'un réseau hébergé suffit à le réveiller. Il faut donc
+    #    l'empêcher de repartir AVANT de créer le réseau.
     $sortie += "===PARTAGE_CONNEXION==="
+    $sortie += (Set-Service -Name SharedAccess -StartupType Disabled -ErrorAction SilentlyContinue 2>&1 | Out-String)
     $sortie += (Stop-Service -Name SharedAccess -Force -ErrorAction SilentlyContinue 2>&1 | Out-String)
-    $sortie += ((Get-Service -Name SharedAccess -ErrorAction SilentlyContinue).Status | Out-String)
+    $sortie += ("SharedAccess : " + (Get-Service -Name SharedAccess -ErrorAction SilentlyContinue).Status)
 
     $sortie += (netsh wlan set hostednetwork mode=disallow 2>&1 | Out-String)
     $sortie += (netsh wlan set hostednetwork mode=allow ssid="{ssid}" key="{mot_de_passe}" 2>&1 | Out-String)
@@ -720,6 +730,17 @@ try {{
         Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
         New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "{ip}" -PrefixLength 24 -ErrorAction Stop | Out-Null
         $sortie += "ADRESSE_CONFIGUREE"
+
+        # Le partage de connexion laisse derrière lui SON adresse
+        # (192.168.137.1) sur cette même carte. Tant qu'elle y reste, il
+        # peut s'y raccrocher et reprendre la main sur les téléphones.
+        $sortie += "===ADRESSES_RESTANTES==="
+        Get-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object {{ $_.IPAddress -ne "{ip}" }} |
+            ForEach-Object {{
+                $sortie += ("retiree: " + $_.IPAddress)
+                Remove-NetIPAddress -IPAddress $_.IPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
+            }}
     }} else {{
         $sortie += "ADAPTATEUR_INTROUVABLE"
     }}
