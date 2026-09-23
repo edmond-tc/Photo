@@ -450,15 +450,41 @@ pub async fn activer_point_acces_local(
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         db::get_setting(&conn, "wifi_ssid").filter(|s| !s.trim().is_empty())
     };
+
     let mot_de_passe = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         db::get_setting(&conn, "wifi_mot_de_passe").unwrap_or_default()
     };
 
-    let Some(ssid) = ssid else {
-        return Err(
-            "Configurez d'abord un nom de réseau (SSID) dans Réglages → Wi-Fi local.".to_string(),
-        );
+    // Une installation neuve n'a encore aucun nom de réseau. Jusqu'ici, le
+    // bouton refusait d'agir et renvoyait le gérant dans les réglages —
+    // constaté sur le terrain juste après une réinstallation, et c'est un
+    // mur que rencontrera CHAQUE boutique à sa première utilisation, avec un
+    // client devant le comptoir.
+    //
+    // Il n'y a pourtant rien à décider : n'importe quel nom fait l'affaire.
+    // L'application en pose donc un, l'enregistre pour que le gérant le voie
+    // et puisse le changer dans Réglages, et continue.
+    let (ssid, mot_de_passe) = match ssid {
+        Some(ssid) => (ssid, mot_de_passe),
+        None => {
+            let nom_boutique = {
+                let conn = state.0.lock().map_err(|e| e.to_string())?;
+                db::get_setting(&conn, "boutique_nom")
+            };
+            let ssid = crate::hotspot::nom_reseau_par_defaut(nom_boutique.as_deref());
+            let mot_de_passe = if mot_de_passe.chars().count() >= 8 {
+                mot_de_passe
+            } else {
+                crate::hotspot::MOT_DE_PASSE_PAR_DEFAUT.to_string()
+            };
+
+            let conn = state.0.lock().map_err(|e| e.to_string())?;
+            db::set_setting(&conn, "wifi_ssid", &ssid).map_err(|e| e.to_string())?;
+            db::set_setting(&conn, "wifi_mot_de_passe", &mot_de_passe)
+                .map_err(|e| e.to_string())?;
+            (ssid, mot_de_passe)
+        }
     };
 
     let type_reseau = {

@@ -74,6 +74,39 @@ pub fn definir_adresse_active(adresse: Option<Ipv4Addr>) {
     }
 }
 
+/// Mot de passe posé d'office sur une installation neuve. Huit caractères
+/// au minimum : c'est la règle du Wi-Fi lui-même, pas la nôtre, et Windows
+/// refuse le réseau en dessous avec une erreur incompréhensible.
+///
+/// Il n'a pas à être secret : le QR que le client scanne le contient, par
+/// construction. Ce qui compte, c'est que le gérant puisse le lire dans
+/// Réglages et le changer s'il le souhaite.
+pub const MOT_DE_PASSE_PAR_DEFAUT: &str = "photocopie";
+
+/// Nom de réseau posé d'office sur une installation neuve, tiré du nom de la
+/// boutique quand il y en a un — le client reconnaît alors l'endroit où il
+/// se trouve dans la liste des Wi-Fi de son téléphone.
+///
+/// Réduit à ce qu'un SSID accepte sans histoires : lettres, chiffres et
+/// tirets, sans accent (tous les téléphones ne les affichent pas pareil), et
+/// 32 caractères au plus, la limite de la norme Wi-Fi.
+pub fn nom_reseau_par_defaut(nom_boutique: Option<&str>) -> String {
+    let propre: String = nom_boutique
+        .unwrap_or("")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|morceau| !morceau.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    if propre.is_empty() {
+        return "PHOTOCOPIE".to_string();
+    }
+    propre.chars().take(32).collect()
+}
+
 /// Ce que ce PC-ci sait faire, tel que Windows le déclare. Établi SANS
 /// demander les droits administrateur et sans rien activer : le gérant (ou
 /// le revendeur, avant même une vente) peut donc le lancer sur n'importe
@@ -1458,6 +1491,40 @@ mod tests {
             ),
             None
         );
+    }
+
+    /// Une installation neuve ne doit jamais bloquer le gérant devant un
+    /// client : il faut un nom de réseau utilisable, quoi qu'il y ait dans
+    /// les réglages.
+    #[test]
+    fn propose_toujours_un_nom_de_reseau_utilisable() {
+        assert_eq!(nom_reseau_par_defaut(None), "PHOTOCOPIE");
+        assert_eq!(nom_reseau_par_defaut(Some("")), "PHOTOCOPIE");
+        assert_eq!(nom_reseau_par_defaut(Some("   ")), "PHOTOCOPIE");
+
+        // Le nom de la boutique, nettoyé de ce qu'un SSID supporte mal :
+        // accents et ponctuation. Le client reconnaît ainsi l'endroit dans
+        // la liste des Wi-Fi de son téléphone.
+        assert_eq!(
+            nom_reseau_par_defaut(Some("Photocopie Tonanzé")),
+            "Photocopie-Tonanz"
+        );
+        assert_eq!(
+            nom_reseau_par_defaut(Some("Chez  Kofi & Fils")),
+            "Chez-Kofi-Fils"
+        );
+
+        // Limite de la norme Wi-Fi : 32 caractères.
+        let tres_long = "A".repeat(80);
+        assert_eq!(nom_reseau_par_defaut(Some(&tres_long)).chars().count(), 32);
+    }
+
+    /// Le mot de passe par défaut doit passer la règle du Wi-Fi, sinon
+    /// Windows refuse le réseau avec une erreur que personne ne comprend.
+    #[test]
+    fn le_mot_de_passe_par_defaut_respecte_la_regle_du_wifi() {
+        assert!(MOT_DE_PASSE_PAR_DEFAUT.chars().count() >= 8);
+        assert!(MOT_DE_PASSE_PAR_DEFAUT.is_ascii());
     }
 
     #[test]
