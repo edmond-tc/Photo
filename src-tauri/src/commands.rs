@@ -773,18 +773,13 @@ pub async fn activer_point_acces_local(
             },
         ),
     }
-    recapitulatif.push(
-        if reessayer(|| crate::server::api_portail_repond(activation.adresse)).await {
-            "✅ Annonce du portail aux téléphones — testée, répond".to_string()
-        } else {
-            let message = "L'annonce normalisée du portail (celle qui fait ouvrir la page \
-                           toute seule sur les téléphones récents) ne répond pas. La page \
-                           ne s'ouvrira pas d'elle-même."
-                .to_string();
-            avertissements.push(message);
-            "❌ Annonce du portail aux téléphones — NE RÉPOND PAS".to_string()
-        },
-    );
+    // Cette ligne annonçait autrefois la « réponse normalisée du portail »
+    // (RFC 8908). Elle a disparu avec l'option DHCP qui la désignait : cette
+    // option exige une adresse en https à certificat reconnu, impossible
+    // hors ligne, et sa seule présence coupait la détection classique sur
+    // iPhone. Voir `dhcp::construire_reponse`. Ce qui reste à vérifier, et
+    // qui décide vraiment de l'ouverture, est mesuré juste au-dessus par
+    // `portail_repond`.
     recapitulatif.push(if crate::pare_feu::regles_presentes() {
         "✅ Pare-feu Windows ouvert (4 ports)".to_string()
     } else {

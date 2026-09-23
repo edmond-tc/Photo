@@ -219,8 +219,14 @@ static PROBLEME_PORTAIL_CAPTIF: Mutex<Option<String>> = Mutex::new(None);
 /// Même raison que pour le serveur de noms : « démarré » ne veut pas dire
 /// « répond ». On envoie ici la requête exacte d'un Android rejoignant un
 /// réseau — le chemin de contrôle de Google, avec son nom d'hôte — et on
-/// exige un 200 portant notre page. C'est cette réponse-là, et pas une
-/// autre, qui fait conclure au téléphone « ce réseau demande une connexion ».
+/// exige la REDIRECTION, celle que tout portail captif renvoie et que les
+/// téléphones reconnaissent. C'est cette réponse-là, et pas une autre, qui
+/// fait conclure au téléphone « ce réseau demande une connexion ».
+///
+/// On exigeait ici un 200 tant qu'on servait la page elle-même. Le jour où
+/// l'on est passé à la redirection, ce test serait devenu rouge sans qu'un
+/// seul téléphone soit en cause : c'est le genre d'alerte fausse qui coûte
+/// une soirée au gérant et détruit la confiance dans les autres lignes.
 pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -246,7 +252,8 @@ pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
     };
 
     let debut = String::from_utf8_lossy(&tampon[..taille]);
-    debut.starts_with("HTTP/1.1 200") || debut.starts_with("HTTP/1.0 200")
+    let redirige = debut.starts_with("HTTP/1.1 302") || debut.starts_with("HTTP/1.0 302");
+    redirige && debut.to_ascii_lowercase().contains("location:")
 }
 
 /// La réponse normalisée du portail (RFC 8908) est-elle bien servie, et
