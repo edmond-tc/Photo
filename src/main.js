@@ -55,6 +55,50 @@ function formatFcfa(montant) {
   return `${Number(montant ?? 0).toLocaleString("fr-FR")} FCFA`;
 }
 
+// ── Sons ──────────────────────────────────────────────────────────────
+//
+// Signalé du terrain : « je ne sens rien ». Deux causes, toutes deux
+// invisibles parce que chaque échec était avalé sans un mot.
+//
+// 1. Un NOUVEL appareil audio était créé à chaque son. Le navigateur en
+//    limite le nombre à six par page : au septième, la création échoue, et
+//    l'application devenait définitivement muette pour le reste de la
+//    journée sans que rien ne le dise.
+//
+// 2. Un appareil audio fraîchement créé naît ENDORMI, et ne se réveille
+//    qu'à la demande, après un geste de l'utilisateur. Le son le plus utile
+//    — l'arrivée d'un document — se déclenche justement sans geste : il
+//    n'avait donc aucune chance de s'entendre.
+//
+// Un seul appareil est désormais créé, puis réveillé au premier clic ou à
+// la première touche. Une fois réveillé, il le reste : les sons déclenchés
+// en arrière-plan passent alors normalement.
+let appareilAudio = null;
+
+function contexteAudio() {
+  if (!appareilAudio) {
+    try {
+      appareilAudio = new (window.AudioContext || window.webkitAudioContext)();
+    } catch {
+      return null;
+    }
+  }
+  if (appareilAudio.state === "suspended") {
+    appareilAudio.resume().catch(() => {});
+  }
+  return appareilAudio.state === "closed" ? null : appareilAudio;
+}
+
+function debloquerSon() {
+  const ctx = contexteAudio();
+  if (ctx && ctx.state === "running") {
+    window.removeEventListener("pointerdown", debloquerSon);
+    window.removeEventListener("keydown", debloquerSon);
+  }
+}
+window.addEventListener("pointerdown", debloquerSon, { passive: true });
+window.addEventListener("keydown", debloquerSon, { passive: true });
+
 function jouerTonalite(ctx, { freq, debut, duree, gainMax }) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -71,19 +115,21 @@ function jouerTonalite(ctx, { freq, debut, duree, gainMax }) {
 // Carillon "ding-dong" : signale l'arrivée d'un nouveau fichier (USB, dossier
 // surveillé ou Wi-Fi — les trois passent par le même événement côté Rust).
 function jouerNotification() {
+  const ctx = contexteAudio();
+  if (!ctx) return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     jouerTonalite(ctx, { freq: 988, debut: 0, duree: 0.35, gainMax: 0.22 });
     jouerTonalite(ctx, { freq: 740, debut: 0.28, duree: 0.5, gainMax: 0.2 });
   } catch {
-    // Pas grave si le son ne peut pas jouer (ex: pas d'interaction utilisateur encore).
+    // Un son manqué ne doit jamais interrompre la réception d'un document.
   }
 }
 
 // Petit "tic" — confirme que l'impression a bien été envoyée.
 function jouerSonImpression() {
+  const ctx = contexteAudio();
+  if (!ctx) return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     jouerTonalite(ctx, { freq: 659, debut: 0, duree: 0.13, gainMax: 0.14 });
   } catch {
     // Pas grave si le son ne peut pas jouer.
@@ -92,8 +138,9 @@ function jouerSonImpression() {
 
 // Deux notes montantes — confirme qu'un encaissement vient d'être validé.
 function jouerSonEncaissement() {
+  const ctx = contexteAudio();
+  if (!ctx) return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     jouerTonalite(ctx, { freq: 523, debut: 0, duree: 0.14, gainMax: 0.16 });
     jouerTonalite(ctx, { freq: 659, debut: 0.13, duree: 0.22, gainMax: 0.16 });
   } catch {
@@ -1880,6 +1927,37 @@ async function rendreReglages(corps) {
   });
   secRecus.appendChild(formRecus);
   corps.appendChild(secRecus);
+
+  // « Je ne sens rien » : sans moyen d'essayer, impossible de distinguer
+  // une application muette d'un haut-parleur coupé. Ce bouton tranche en
+  // une seconde, et dit ce qu'il a trouvé.
+  const secSons = document.createElement("section");
+  secSons.innerHTML = `
+    <h3>Sons</h3>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      L'application émet trois sons : un carillon à l'arrivée d'un document,
+      un petit « tic » à l'envoi d'une impression, et deux notes à
+      l'encaissement. Appuyez pour les entendre.
+    </p>
+  `;
+  secSons.appendChild(
+    bouton("🔔 Tester les sons", "btn-secondaire", async () => {
+      const ctx = contexteAudio();
+      if (!ctx) {
+        toast("Ce PC ne fournit aucune sortie audio à l'application.", "attention");
+        return;
+      }
+      if (ctx.state !== "running") {
+        toast("Le son est encore endormi — réappuyez une fois.", "attention");
+        return;
+      }
+      jouerNotification();
+      setTimeout(jouerSonImpression, 900);
+      setTimeout(jouerSonEncaissement, 1400);
+      toast("🔔 Trois sons joués — si vous n'entendez rien, vérifiez le volume de Windows");
+    })
+  );
+  corps.appendChild(secSons);
 
   // Répond à la seule question qui se pose en installant l'application sur
   // un poste inconnu : sur CE PC, comment les clients envoient-ils leurs
