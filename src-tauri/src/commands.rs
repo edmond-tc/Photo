@@ -430,6 +430,32 @@ pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
 /// `dns.rs`) : sans eux, un téléphone connecté au Wi-Fi n'obtient ni
 /// adresse IP, ni moyen d'être redirigé automatiquement vers la page
 /// d'envoi.
+/// Réessaie de démarrer un serveur : le port qu'occupait le précédent met
+/// un instant à être rendu par le système, et un premier refus signifie
+/// souvent « pas encore libre » plutôt que « occupé par un autre logiciel ».
+/// Renoncer au premier essai laissait le gérant devant un message
+/// d'indisponibilité alors qu'il suffisait d'attendre une seconde.
+async fn demarrer_avec_reessais<F, Fut>(mut demarrage: F) -> Result<tauri::async_runtime::JoinHandle<()>, String>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<tauri::async_runtime::JoinHandle<()>, String>>,
+{
+    const TENTATIVES: u32 = 5;
+    const DELAI: std::time::Duration = std::time::Duration::from_millis(500);
+
+    let mut dernier = Err("jamais tenté".to_string());
+    for tentative in 0..TENTATIVES {
+        if tentative > 0 {
+            tokio::time::sleep(DELAI).await;
+        }
+        dernier = demarrage().await;
+        if dernier.is_ok() {
+            return dernier;
+        }
+    }
+    dernier
+}
+
 /// Réessaie un contrôle quelques secondes avant de le déclarer en échec.
 ///
 /// Les services viennent d'être lancés et l'adresse vient d'être validée :
@@ -579,6 +605,30 @@ pub async fn activer_point_acces_local(
     .await
     .map_err(|e| e.to_string())??;
 
+    // Couper les anciens serveurs AVANT d'en démarrer de nouveaux.
+    //
+    // L'ordre inverse — celui d'avant — rendait le conflit certain : deux
+    // serveurs ne peuvent pas tenir le même port, et l'ancien le tenait
+    // encore quand le nouveau tentait de s'y installer. D'où l'erreur
+    // Windows 10048 (« une seule utilisation de chaque adresse de socket est
+    // autorisée ») sur les ports 67 et 53, et des téléphones qui rejoignaient
+    // le Wi-Fi sans jamais recevoir d'adresse.
+    //
+    // Ce n'était pas seulement le cas du gérant qui clique deux fois :
+    // l'application démarre elle-même ces serveurs à son lancement quand
+    // elle trouve un point d'accès déjà allumé (voir
+    // `hotspot::reprendre_point_acces_existant`). Le conflit était donc
+    // systématique dès qu'on appuyait sur le bouton.
+    {
+        let anciennes = std::mem::take(&mut *etat_point_acces.0.lock().map_err(|e| e.to_string())?);
+        for tache in anciennes {
+            tache.abort();
+        }
+    }
+    // Arrêter une tâche ne rend pas le port dans l'instant : le système a
+    // besoin d'un moment pour le libérer réellement.
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
     let mut nouvelles_taches = Vec::new();
     let mut recapitulatif = vec![
         format!("Méthode : {}", activation.methode),
@@ -608,7 +658,7 @@ pub async fn activer_point_acces_local(
         "❌ Adresse du PC — TOUJOURS PAS UTILISABLE".to_string()
     });
 
-    match crate::dhcp::demarrer(activation.adresse).await {
+    match demarrer_avec_reessais(|| crate::dhcp::demarrer(activation.adresse)).await {
         Ok(tache) => {
             nouvelles_taches.push(tache);
             recapitulatif.push("✅ Adresses distribuées aux téléphones".to_string());
@@ -620,7 +670,7 @@ pub async fn activer_point_acces_local(
         }
     }
     let mut dns_demarre = false;
-    match crate::dns::demarrer(activation.adresse).await {
+    match demarrer_avec_reessais(|| crate::dns::demarrer(activation.adresse)).await {
         Ok(tache) => {
             nouvelles_taches.push(tache);
             dns_demarre = true;
@@ -686,16 +736,9 @@ pub async fn activer_point_acces_local(
         "❌ Pare-feu Windows — règles absentes".to_string()
     });
 
-    // Une activation précédente laissée en cours (le gérant a cliqué deux
-    // fois) ne doit pas faire tourner deux serveurs DHCP/DNS en même temps
-    // sur les mêmes ports.
-    let anciennes_taches = std::mem::replace(
-        &mut *etat_point_acces.0.lock().map_err(|e| e.to_string())?,
-        nouvelles_taches,
-    );
-    for tache in anciennes_taches {
-        tache.abort();
-    }
+    // Les anciennes ont déjà été arrêtées plus haut : il ne reste qu'à
+    // ranger celles qui viennent de démarrer.
+    *etat_point_acces.0.lock().map_err(|e| e.to_string())? = nouvelles_taches;
 
     Ok(ResultatActivationWifi {
         methode: activation.methode.to_string(),
