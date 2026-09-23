@@ -186,6 +186,44 @@ fn construire_router(app: AppHandle) -> Router {
 /// simplement jamais. Trois pannes de ce projet ont déjà eu cette forme.
 static PROBLEME_PORTAIL_CAPTIF: Mutex<Option<String>> = Mutex::new(None);
 
+/// Le portail répond-il VRAIMENT à la question que pose un téléphone ?
+///
+/// Même raison que pour le serveur de noms : « démarré » ne veut pas dire
+/// « répond ». On envoie ici la requête exacte d'un Android rejoignant un
+/// réseau — le chemin de contrôle de Google, avec son nom d'hôte — et on
+/// exige un 200 portant notre page. C'est cette réponse-là, et pas une
+/// autre, qui fait conclure au téléphone « ce réseau demande une connexion ».
+pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let connexion = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        tokio::net::TcpStream::connect((adresse, PORT_PORTAIL_CAPTIF)),
+    )
+    .await;
+    let Ok(Ok(mut flux)) = connexion else {
+        return false;
+    };
+
+    let requete = b"GET /generate_204 HTTP/1.0\r\nHost: connectivitycheck.gstatic.com\r\n\r\n";
+    if flux.write_all(requete).await.is_err() {
+        return false;
+    }
+
+    let mut tampon = vec![0u8; 2048];
+    let lecture = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        flux.read(&mut tampon),
+    )
+    .await;
+    let Ok(Ok(taille)) = lecture else {
+        return false;
+    };
+
+    let debut = String::from_utf8_lossy(&tampon[..taille]);
+    debut.starts_with("HTTP/1.1 200") || debut.starts_with("HTTP/1.0 200")
+}
+
 /// Le portail captif a-t-il échoué à démarrer ? Remonté au gérant parmi les
 /// avertissements d'activation du Wi-Fi.
 pub fn probleme_portail_captif() -> Option<String> {

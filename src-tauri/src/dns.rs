@@ -55,6 +55,62 @@ pub async fn demarrer(adresse: Ipv4Addr) -> Result<tauri::async_runtime::JoinHan
     Ok(tauri::async_runtime::spawn(servir(socket, adresse)))
 }
 
+/// Le serveur répond-il VRAIMENT ?
+///
+/// « Démarré » n'est pas « répond » : le port peut être pris, la réponse
+/// peut être rejetée, le filtre de sous-réseau peut écarter l'appelant. Sur
+/// le terrain, l'écran affichait « ✅ noms de domaine » pendant que les
+/// téléphones n'obtenaient rien — et plusieurs déplacements ont été perdus
+/// à chercher ailleurs.
+///
+/// On pose donc au serveur la question exacte que pose un iPhone en
+/// rejoignant un réseau, depuis l'adresse du point d'accès lui-même pour
+/// passer le même filtre qu'un téléphone du réseau, et on vérifie que la
+/// réponse désigne bien ce PC.
+pub async fn repond(adresse: Ipv4Addr) -> bool {
+    use hickory_proto::op::{Message, OpCode, Query};
+    use hickory_proto::rr::Name;
+    use std::str::FromStr;
+
+    let Ok(socket) = UdpSocket::bind(std::net::SocketAddr::from((adresse, 0))).await else {
+        return false;
+    };
+
+    let mut requete = Message::query();
+    requete.metadata.id = 0x4242;
+    requete.metadata.op_code = OpCode::Query;
+    requete.metadata.recursion_desired = true;
+    let Ok(nom) = Name::from_str("captive.apple.com.") else {
+        return false;
+    };
+    requete.add_query(Query::query(nom, RecordType::A));
+    let Ok(brut) = requete.to_vec() else {
+        return false;
+    };
+
+    if socket.send_to(&brut, (adresse, PORT_DNS)).await.is_err() {
+        return false;
+    }
+
+    let mut tampon = [0u8; 512];
+    let attente = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        socket.recv(&mut tampon),
+    )
+    .await;
+    let Ok(Ok(taille)) = attente else {
+        return false;
+    };
+
+    Message::from_vec(&tampon[..taille])
+        .ok()
+        .is_some_and(|reponse| {
+            reponse.answers.iter().any(|enregistrement| {
+                matches!(&enregistrement.data, RData::A(A(ip)) if *ip == adresse)
+            })
+        })
+}
+
 /// L'expéditeur appartient-il au même réseau /24 que notre point d'accès ?
 /// Seul un paquet dans ce cas obtient une réponse — les autres sont
 /// ignorés en silence, comme s'ils avaient été reçus par un serveur DNS qui

@@ -575,15 +575,33 @@ pub async fn activer_point_acces_local(
             avertissements.push(e);
         }
     }
+    let mut dns_demarre = false;
     match crate::dns::demarrer(activation.adresse).await {
         Ok(tache) => {
             nouvelles_taches.push(tache);
-            recapitulatif.push("✅ Noms de domaine (détournement vers ce PC)".to_string());
+            dns_demarre = true;
         }
         Err(e) => {
             recapitulatif.push("❌ Noms de domaine — NE TOURNE PAS".to_string());
             avertissements.push(e);
         }
+    }
+
+    // « Démarré » n'est pas « répond ». On pose donc au serveur la question
+    // exacte que pose un téléphone, et on n'annonce vert que si la réponse
+    // arrive. Plusieurs déplacements sur le terrain ont été perdus devant un
+    // écran tout vert alors que rien ne répondait.
+    if dns_demarre {
+        recapitulatif.push(if crate::dns::repond(activation.adresse).await {
+            "✅ Noms de domaine — testé, répond".to_string()
+        } else {
+            let message = "Le serveur de noms a démarré mais NE RÉPOND PAS à la question \
+                           que pose un téléphone en rejoignant le réseau. La page ne \
+                           pourra pas s'ouvrir toute seule."
+                .to_string();
+            avertissements.push(message);
+            "❌ Noms de domaine — démarré mais NE RÉPOND PAS".to_string()
+        });
     }
     // Le serveur qui fait s'ouvrir la page toute seule démarre au lancement
     // de l'application, bien avant ce bouton : son échec éventuel n'a aucune
@@ -593,8 +611,20 @@ pub async fn activer_point_acces_local(
             recapitulatif.push("❌ Ouverture automatique de la page — NE TOURNE PAS".to_string());
             avertissements.push(probleme);
         }
-        None => recapitulatif.push("✅ Ouverture automatique de la page".to_string()),
+        None => recapitulatif.push(
+            if crate::server::portail_repond(activation.adresse).await {
+                "✅ Ouverture automatique — testée, répond".to_string()
+            } else {
+                let message = "Le portail a démarré mais NE RÉPOND PAS sur le port 80. La \
+                               page ne pourra pas s'ouvrir toute seule ; le client devra \
+                               scanner le petit second QR."
+                    .to_string();
+                avertissements.push(message);
+                "❌ Ouverture automatique — démarrée mais NE RÉPOND PAS".to_string()
+            },
+        ),
     }
+    recapitulatif.push("✅ Adresse du portail annoncée aux téléphones (RFC 8910)".to_string());
     recapitulatif.push(if crate::pare_feu::regles_presentes() {
         "✅ Pare-feu Windows ouvert (4 ports)".to_string()
     } else {

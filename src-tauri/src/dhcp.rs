@@ -200,6 +200,31 @@ fn construire_reponse(brut: &[u8], adresse_serveur: Ipv4Addr) -> Option<Vec<u8>>
     opts.insert(DhcpOption::Router(vec![adresse_serveur]));
     opts.insert(DhcpOption::DomainNameServer(vec![adresse_serveur]));
     opts.insert(DhcpOption::AddressLeaseTime(DUREE_BAIL_SECONDES));
+
+    // DIRE au téléphone qu'il y a un portail, au lieu d'espérer qu'il le
+    // devine.
+    //
+    // Jusqu'ici on comptait uniquement sur sa vérification automatique :
+    // le téléphone interroge une page de contrôle chez Apple ou Google, on
+    // détourne la question, et il est CENSÉ en conclure « ce réseau demande
+    // une connexion ». Cette déduction est une heuristique, et sur le
+    // terrain elle n'aboutissait pas : la page ne s'ouvrait qu'après être
+    // entré à la main dans les réglages Wi-Fi, ce qui force une nouvelle
+    // vérification.
+    //
+    // La norme RFC 8910 prévoit exactement le cas : une option DHCP qui
+    // porte l'ADRESSE du portail. Plus de déduction — le téléphone
+    // l'apprend au moment même où il reçoit son adresse, avant d'avoir
+    // essayé quoi que ce soit. iOS la comprend depuis la version 14,
+    // Android depuis la 11.
+    //
+    // Sur le port 80, pas 4173 : c'est là que répond le serveur du portail
+    // (voir `server::PORT_PORTAIL_CAPTIF`), et une fenêtre de portail est un
+    // navigateur réduit où une adresse à port inhabituel est un risque
+    // inutile.
+    opts.insert(DhcpOption::CaptivePortal(format!(
+        "http://{adresse_serveur}/"
+    )));
     opts.insert(DhcpOption::End);
 
     let mut octets = Vec::new();
@@ -387,6 +412,30 @@ mod tests {
             decoder_requete(&brut).unwrap().yiaddr(),
             serveur
         ));
+    }
+
+    /// Sans cette option, le téléphone doit DEVINER qu'un portail existe.
+    /// Avec elle, on le lui dit. C'est la différence entre une page qui
+    /// s'ouvre et une page qui ne s'ouvre qu'après une manipulation dans les
+    /// réglages Wi-Fi — exactement ce qui était constaté en boutique.
+    #[test]
+    fn annonce_l_adresse_du_portail_a_chaque_telephone() {
+        let serveur = Ipv4Addr::new(192, 168, 73, 1);
+
+        for type_demande in [MessageType::Discover, MessageType::Request] {
+            let brut =
+                construire_reponse(&fabriquer_requete(type_demande, &[1, 2, 3, 4, 5, 6]), serveur)
+                    .expect("une réponse est attendue");
+            let reponse = decoder_requete(&brut).unwrap();
+
+            match reponse.opts().get(OptionCode::CaptivePortal) {
+                Some(DhcpOption::CaptivePortal(adresse)) => assert_eq!(
+                    adresse, "http://192.168.73.1/",
+                    "l'adresse annoncée doit être celle du portail, sur le port 80"
+                ),
+                autre => panic!("option de portail attendue, obtenu {autre:?}"),
+            }
+        }
     }
 
     #[test]
