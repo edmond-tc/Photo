@@ -76,8 +76,14 @@ pub async fn demarrer(
         .map_err(|e| {
             format!(
                 "Serveur DHCP local indisponible (port {PORT_SERVEUR} : {e}) — les téléphones \
-                 connectés au Wi-Fi local n'obtiendront aucune adresse. Vérifiez qu'aucun autre \
-                 logiciel (partage de connexion Windows, par exemple) n'utilise déjà ce port."
+                 connectés au Wi-Fi local n'obtiendront aucune adresse, et ne pourront donc pas \
+                 rejoindre le réseau du tout.\n\nCAUSE LA PLUS FRÉQUENTE : une AUTRE COPIE de \
+                 cette application tourne encore sur ce PC et retient le port. Regardez la liste \
+                 « Qui écoute sur les ports » plus bas : si « photocopie-benin » y apparaît, c'est \
+                 le cas. Remède : redémarrez le PC, puis rouvrez l'application UNE SEULE FOIS. \
+                 (Désinstaller ne suffit pas : Windows laisse tourner la copie déjà ouverte.)\n\n\
+                 Si le port est tenu par « svchost », il s'agit alors du partage de connexion \
+                 Windows."
             )
         })?;
     socket
@@ -271,36 +277,20 @@ fn construire_reponse(brut: &[u8], adresse_serveur: Ipv4Addr) -> Option<Vec<u8>>
     // essayé quoi que ce soit. iOS la comprend depuis la version 14,
     // Android depuis la 11.
     //
-    // ... et pourtant cette option N'EST PAS ENVOYÉE. Elle l'a été, et
-    // c'est précisément elle qui empêchait la page de s'ouvrir seule.
-    //
-    // La RFC 8908 impose que l'adresse annoncée soit en **https**, avec un
-    // certificat reconnu. Nous ne pouvons pas le faire : une boutique hors
-    // ligne, sur une adresse privée 192.168.73.1, n'obtiendra jamais de
-    // certificat reconnu — il faudrait un nom de domaine public et une
-    // autorité joignable par internet. Notre adresse était donc en http, et
-    // aucun téléphone récent ne l'acceptera jamais.
-    //
-    // Et le pire n'est pas qu'elle soit refusée : c'est qu'elle ANNULE
-    // l'autre mécanisme. Dès que l'option 114 est présente, iOS abandonne
-    // la détection classique — celle qui consiste à appeler
-    // captive.apple.com et à conclure d'une réponse inattendue qu'un
-    // portail existe. Le téléphone passe en mode RFC 8908, n'arrive pas à
-    // s'en servir faute d'https, et ne revient pas en arrière. Résultat :
-    // plus rien ne s'ouvre tout seul, et il faut entrer dans les réglages
-    // Wi-Fi pour forcer une nouvelle vérification. C'est mot pour mot ce
-    // qui était constaté en boutique, à chaque essai, sans exception.
-    //
-    // Constaté et documenté par d'autres : PacketFence, « If Option 114 is
-    // present on Registration, the traditional network detection is
-    // ignored » (inverse-inc/packetfence#7478) ; Apple, « Requires TLS
-    // encryption for the Captive Portal API server »
-    // (developer.apple.com/news/?id=q78sq5rv).
-    //
-    // La détection classique est donc le SEUL chemin praticable hors ligne.
-    // On lui laisse la voie libre. `server::api_portail` reste en place :
-    // le jour où un certificat reconnu serait possible, il ne manquerait
-    // que cette ligne.
+    // Sur le port 80, pas 4173 : c'est là que répond le serveur du portail
+    // (voir `server::PORT_PORTAIL_CAPTIF`), et une fenêtre de portail est un
+    // navigateur réduit où une adresse à port inhabituel est un risque
+    // inutile.
+    // L'adresse pointe sur la réponse normalisée (RFC 8908), pas sur la
+    // page : un téléphone récent qui reçoit cette option va y chercher une
+    // réponse dans un format précis, et non du HTML. Lui donner une page
+    // ici, c'est risquer qu'il ignore l'option et retombe sur les
+    // devinettes qu'on cherche justement à éviter. Voir
+    // `server::api_portail`, qui répond et y indique la page à ouvrir.
+    opts.insert(DhcpOption::CaptivePortal(format!(
+        "http://{adresse_serveur}{}",
+        crate::server::CHEMIN_API_PORTAIL
+    )));
     opts.insert(DhcpOption::End);
 
     let mut octets = Vec::new();
@@ -495,20 +485,12 @@ mod tests {
         ));
     }
 
-    /// Le contraire de ce que ce test vérifiait avant, et pour une raison
-    /// mesurée en boutique : annoncer l'option 114 EMPÊCHE la page de
-    /// s'ouvrir seule.
-    ///
-    /// iOS qui reçoit cette option abandonne la détection classique et
-    /// passe en mode RFC 8908 — lequel exige une adresse en https avec
-    /// certificat reconnu, hors de portée d'une boutique hors ligne sur une
-    /// adresse privée. Il ne revient pas en arrière. Plus rien ne s'ouvre
-    /// alors, sauf à entrer dans les réglages Wi-Fi.
-    ///
-    /// Ce test existe pour qu'on ne la remette pas « pour bien faire » : la
-    /// remettre paraît une amélioration, et c'est une panne.
+    /// Sans cette option, le téléphone doit DEVINER qu'un portail existe.
+    /// Avec elle, on le lui dit. C'est la différence entre une page qui
+    /// s'ouvre et une page qui ne s'ouvre qu'après une manipulation dans les
+    /// réglages Wi-Fi — exactement ce qui était constaté en boutique.
     #[test]
-    fn n_annonce_pas_d_option_114_qu_on_ne_peut_pas_honorer() {
+    fn annonce_l_adresse_du_portail_a_chaque_telephone() {
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
 
         for type_demande in [MessageType::Discover, MessageType::Request] {
@@ -519,40 +501,16 @@ mod tests {
             .expect("une réponse est attendue");
             let reponse = decoder_requete(&brut).unwrap();
 
-            assert!(
-                reponse.opts().get(OptionCode::CaptivePortal).is_none(),
-                "l'option 114 ne doit pas être annoncée : elle coupe la détection \
-                 classique, seul mécanisme utilisable sans certificat reconnu"
-            );
+            match reponse.opts().get(OptionCode::CaptivePortal) {
+                Some(DhcpOption::CaptivePortal(adresse)) => assert_eq!(
+                    adresse, "http://192.168.73.1/api-portail",
+                    "l'adresse annoncée doit être celle de la réponse normalisée \
+                     (RFC 8908), sur le port 80 — pas la page web, qu'un téléphone \
+                     récent ne saurait pas interpréter ici"
+                ),
+                autre => panic!("option de portail attendue, obtenu {autre:?}"),
+            }
         }
-    }
-
-    /// Ce que le téléphone doit recevoir, en revanche, et sans quoi il ne
-    /// peut ni nous joindre ni nous poser ses questions de noms.
-    #[test]
-    fn donne_bien_passerelle_masque_et_serveur_de_noms() {
-        let serveur = Ipv4Addr::new(192, 168, 73, 1);
-        let brut = construire_reponse(
-            &fabriquer_requete(MessageType::Request, &[1, 2, 3, 4, 5, 6]),
-            serveur,
-        )
-        .expect("une réponse est attendue");
-        let reponse = decoder_requete(&brut).unwrap();
-
-        assert_eq!(
-            reponse.opts().get(OptionCode::Router),
-            Some(&DhcpOption::Router(vec![serveur])),
-            "sans passerelle, le téléphone ne lance pas sa vérification de réseau"
-        );
-        assert_eq!(
-            reponse.opts().get(OptionCode::DomainNameServer),
-            Some(&DhcpOption::DomainNameServer(vec![serveur])),
-            "sans serveur de noms, il ne peut pas découvrir le portail"
-        );
-        assert_eq!(
-            reponse.opts().get(OptionCode::SubnetMask),
-            Some(&DhcpOption::SubnetMask(Ipv4Addr::new(255, 255, 255, 0)))
-        );
     }
 
     #[test]

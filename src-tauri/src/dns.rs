@@ -48,7 +48,11 @@ pub async fn demarrer(adresse: Ipv4Addr) -> Result<tauri::async_runtime::JoinHan
             format!(
                 "Serveur DNS local indisponible (port {PORT_DNS} : {e}) — l'ouverture \
                  automatique de la page chez le client ne fonctionnera pas, mais le Wi-Fi \
-                 et l'ouverture manuelle du navigateur restent utilisables."
+                 et le second QR restent utilisables.\n\nCAUSE LA PLUS FRÉQUENTE : une AUTRE \
+                 COPIE de cette application tourne encore sur ce PC et retient le port. Regardez \
+                 la liste « Qui écoute sur les ports » plus bas : si « photocopie-benin » y \
+                 apparaît, c'est le cas. Remède : redémarrez le PC, puis rouvrez l'application \
+                 UNE SEULE FOIS."
             )
         })?;
 

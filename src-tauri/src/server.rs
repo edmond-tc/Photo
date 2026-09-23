@@ -219,14 +219,8 @@ static PROBLEME_PORTAIL_CAPTIF: Mutex<Option<String>> = Mutex::new(None);
 /// Même raison que pour le serveur de noms : « démarré » ne veut pas dire
 /// « répond ». On envoie ici la requête exacte d'un Android rejoignant un
 /// réseau — le chemin de contrôle de Google, avec son nom d'hôte — et on
-/// exige la REDIRECTION, celle que tout portail captif renvoie et que les
-/// téléphones reconnaissent. C'est cette réponse-là, et pas une autre, qui
-/// fait conclure au téléphone « ce réseau demande une connexion ».
-///
-/// On exigeait ici un 200 tant qu'on servait la page elle-même. Le jour où
-/// l'on est passé à la redirection, ce test serait devenu rouge sans qu'un
-/// seul téléphone soit en cause : c'est le genre d'alerte fausse qui coûte
-/// une soirée au gérant et détruit la confiance dans les autres lignes.
+/// exige un 200 portant notre page. C'est cette réponse-là, et pas une
+/// autre, qui fait conclure au téléphone « ce réseau demande une connexion ».
 pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -252,8 +246,7 @@ pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
     };
 
     let debut = String::from_utf8_lossy(&tampon[..taille]);
-    let redirige = debut.starts_with("HTTP/1.1 302") || debut.starts_with("HTTP/1.0 302");
-    redirige && debut.to_ascii_lowercase().contains("location:")
+    debut.starts_with("HTTP/1.1 200") || debut.starts_with("HTTP/1.0 200")
 }
 
 /// La réponse normalisée du portail (RFC 8908) est-elle bien servie, et
@@ -505,9 +498,7 @@ fn noter_visite(hote: &str, chemin: &str, navigateur: &str) {
         let ligne = format!("{hote}{chemin}  [{court}]{marque}");
         // Une même visite n'apparaît qu'une fois, où qu'elle soit déjà dans
         // la liste. Ne comparer qu'à la dernière ligne laissait repasser la
-        // même visite dès qu'une autre s'était glissée entre deux, et le
-        // journal se remplissait de répétitions au détriment des autres
-        // appareils.
+        // même visite dès qu'une autre s'était glissée entre deux.
         if journal.iter().any(|existante| existante == &ligne) {
             return;
         }
@@ -520,11 +511,12 @@ fn noter_visite(hote: &str, chemin: &str, navigateur: &str) {
 
 /// Les adresses que les téléphones appellent pour savoir s'ils ont internet.
 ///
-/// Chaque système en a une : iOS demande `/hotspot-detect.html`, Android
-/// `/generate_204`, Windows `/connecttest.txt`. Ce ne sont pas des pages
-/// pour un humain — personne ne les tape — mais ce sont elles, et elles
-/// seules, qui décident si le téléphone annonce « ce réseau demande une
-/// connexion » et ouvre la page tout seul.
+/// Sert UNIQUEMENT à marquer ces visites dans le journal, pour les repérer
+/// au milieu des autres. On a un temps répondu à ces adresses par une
+/// redirection, comme le fait un portail d'hôtel : sur le terrain, plus
+/// aucune page ne s'est ouverte, pas même par les réglages Wi-Fi, et
+/// l'Android ne rejoignait plus le réseau. La redirection a donc été
+/// retirée — on sert de nouveau la page elle-même, comme avant.
 fn est_sonde_de_reseau(chemin: &str) -> bool {
     let chemin = chemin.to_ascii_lowercase();
     matches!(
@@ -545,7 +537,7 @@ async fn page_accueil(
     methode: axum::http::Method,
     uri: Uri,
     entetes: axum::http::HeaderMap,
-) -> axum::response::Response {
+) -> Html<String> {
     let lire = |nom: axum::http::HeaderName| {
         entetes
             .get(nom)
@@ -560,31 +552,17 @@ async fn page_accueil(
         &lire(axum::http::header::USER_AGENT),
     );
 
-    // Un téléphone qui vient vérifier son réseau reçoit une redirection, et
-    // non la page elle-même. C'est ce que fait tout portail captif de
-    // l'hôtel au café, et c'est le signal que les téléphones reconnaissent
-    // en premier. On renvoyait jusqu'ici la page complète avec un simple
-    // « tout va bien » : un iPhone est censé en déduire lui aussi qu'il est
-    // derrière un portail, mais il prend alors un chemin bien moins
-    // éprouvé que la redirection, que des milliards d'appareils empruntent
-    // chaque jour.
-    if est_sonde_de_reseau(uri.path()) {
-        return axum::response::Redirect::to(&format!("http://{}/", adresse_locale()))
-            .into_response();
-    }
-
     let (whatsapp, bluetooth_nom) = {
         let state = app.state::<crate::db::DbState>();
         let Ok(conn) = state.0.lock() else {
-            return Html("<p>Service temporairement indisponible, réessayez.</p>".to_string())
-                .into_response();
+            return Html("<p>Service temporairement indisponible, réessayez.</p>".to_string());
         };
         (
             crate::db::get_setting(&conn, "boutique_whatsapp"),
             crate::db::get_setting(&conn, "bluetooth_nom"),
         )
     };
-    Html(construire_page_accueil(whatsapp, bluetooth_nom)).into_response()
+    Html(construire_page_accueil(whatsapp, bluetooth_nom))
 }
 
 /// Séparée de `page_accueil` pour être vérifiable sans base ni serveur : la
@@ -1725,42 +1703,36 @@ mod tests {
         assert_eq!(echapper_html("Tom & Jerry"), "Tom &amp; Jerry");
     }
 
-    /// Chaque système a sa propre adresse de vérification, et les rater
-    /// revient à ne jamais ouvrir la page toute seule sur ce système-là.
-    /// Ce sont des adresses figées dans les téléphones : elles ne changent
-    /// pas, et rien ne signale une faute de frappe à l'exécution.
+    /// Ces adresses sont figées dans les téléphones et servent à marquer le
+    /// journal : une faute de frappe ne se signalerait nulle part ailleurs.
     #[test]
     fn reconnait_les_sondes_de_chaque_systeme() {
         for chemin in [
-            "/hotspot-detect.html",       // iPhone, iPad, Mac
-            "/library/test/success.html", // iOS, seconde adresse
-            "/generate_204",              // Android
-            "/gen_204",                   // Android, ancienne adresse
-            "/connecttest.txt",           // Windows 10 et 11
-            "/ncsi.txt",                  // Windows, ancienne adresse
-            "/success.txt",               // Firefox
-            "/canonical.html",            // Ubuntu
+            "/hotspot-detect.html",
+            "/library/test/success.html",
+            "/generate_204",
+            "/gen_204",
+            "/connecttest.txt",
+            "/ncsi.txt",
+            "/success.txt",
+            "/canonical.html",
         ] {
             assert!(est_sonde_de_reseau(chemin), "sonde non reconnue : {chemin}");
         }
+        assert!(
+            est_sonde_de_reseau("/GENERATE_204"),
+            "la casse vient du téléphone"
+        );
     }
 
-    /// La casse vient du téléphone, pas de nous : la reconnaissance ne doit
-    /// pas en dépendre.
-    #[test]
-    fn reconnait_les_sondes_quelle_que_soit_la_casse() {
-        assert!(est_sonde_de_reseau("/Hotspot-Detect.html"));
-        assert!(est_sonde_de_reseau("/GENERATE_204"));
-    }
-
-    /// La page du client, elle, doit être servie et non redirigée — sinon
-    /// le client tourne en rond entre la redirection et la page.
+    /// La page du client n'est pas une sonde : elle ne doit jamais porter
+    /// la marque, sinon le journal devient illisible.
     #[test]
     fn la_page_du_client_n_est_pas_une_sonde() {
         for chemin in ["/", "/envoyer", "/statut/abc", "/api-portail"] {
             assert!(
                 !est_sonde_de_reseau(chemin),
-                "chemin pris à tort pour une sonde : {chemin}"
+                "pris à tort pour une sonde : {chemin}"
             );
         }
     }
