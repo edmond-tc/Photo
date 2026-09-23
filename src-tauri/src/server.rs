@@ -355,15 +355,48 @@ pub fn adresse_locale() -> String {
     // était connecté, et le QR annonçait pourtant l'adresse d'une carte VPN
     // fantôme (`10.10.10.1`), injoignable. La carte du point d'accès, elle,
     // est reconnaissable à coup sûr (voir `hotspot::choisir_adresse_point_acces`).
-    if let Some(adresse) = crate::hotspot::adresse_point_acces_detectee() {
-        return adresse.to_string();
-    }
-    if let Some(adresse) = adresse_du_reseau_connecte() {
+    if let Some(adresse) = adresse_detectee_en_cache() {
         return adresse.to_string();
     }
     local_ip_address::local_ip()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|_| "192.168.137.1".to_string())
+}
+
+/// Combien de temps une adresse détectée reste valable sans réinterroger
+/// Windows. Assez court pour suivre un changement de réseau, assez long
+/// pour qu'une même action n'interroge pas le système dix fois.
+const DUREE_CACHE_ADRESSE: std::time::Duration = std::time::Duration::from_secs(15);
+
+static ADRESSE_DETECTEE: Mutex<Option<(std::time::Instant, Option<Ipv4Addr>)>> = Mutex::new(None);
+
+/// Trouver l'adresse de ce PC quand aucun point d'accès ne tourne demande
+/// d'interroger Windows — deux fois, et chaque interrogation lance un
+/// programme système qui met une à trois secondes à répondre.
+///
+/// Signalé sur le terrain : en ouvrant la fenêtre du QR, l'écran restait
+/// figé plusieurs secondes sans rien afficher, au point de croire à un
+/// plantage. C'était cette attente. Elle se payait aussi à CHAQUE page
+/// servie à un téléphone, ce qui est bien pire : une page lente est une
+/// page qu'un portail captif peut abandonner avant qu'elle n'arrive.
+///
+/// La réponse est donc gardée quelques secondes. Un point d'accès actif,
+/// lui, n'a jamais besoin de ce détour : son adresse est connue d'avance
+/// (voir `hotspot::adresse_point_acces_active`).
+fn adresse_detectee_en_cache() -> Option<Ipv4Addr> {
+    if let Ok(garde) = ADRESSE_DETECTEE.lock() {
+        if let Some((mesure_le, adresse)) = *garde {
+            if mesure_le.elapsed() < DUREE_CACHE_ADRESSE {
+                return adresse;
+            }
+        }
+    }
+
+    let adresse = crate::hotspot::adresse_point_acces_detectee().or_else(adresse_du_reseau_connecte);
+    if let Ok(mut garde) = ADRESSE_DETECTEE.lock() {
+        *garde = Some((std::time::Instant::now(), adresse));
+    }
+    adresse
 }
 
 /// L'adresse de ce PC sur le réseau auquel il est RÉELLEMENT relié.

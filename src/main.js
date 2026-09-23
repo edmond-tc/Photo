@@ -672,8 +672,22 @@ async function recuAutomatiqueActif() {
 async function afficherQr() {
   const conteneur = document.querySelector("#qr-conteneur");
   const urlEl = document.querySelector("#qr-url");
-  conteneur.innerHTML = "Chargement…";
+
+  // La fenêtre s'ouvre AVANT la préparation du QR, pas après.
+  //
+  // Jusqu'ici elle ne s'affichait qu'une fois tout prêt : entre le clic et
+  // l'apparition, l'écran ne bougeait pas d'un pixel. Le gérant croyait que
+  // l'application avait planté, et recliquait — ce que personne ne devrait
+  // avoir à deviner. On ouvre donc tout de suite, avec de quoi patienter,
+  // et le QR remplace l'attente quand il est prêt.
+  conteneur.innerHTML = `
+    <p class="chargement">
+      <span class="chargement-rond" aria-hidden="true"></span>
+      Préparation du QR, veuillez patienter…
+    </p>`;
   urlEl.textContent = "";
+  ouvrirModal("modal-qr");
+
   try {
     const info = await invoke("get_server_info");
     conteneur.innerHTML = "";
@@ -757,7 +771,6 @@ async function afficherQr() {
   } catch (e) {
     conteneur.innerHTML = `<p class="avertissement">${echapperHtml(e)}</p>`;
   }
-  ouvrirModal("modal-qr");
 }
 
 // Le "Point d'accès mobile" des paramètres Windows refuse de s'activer sans
