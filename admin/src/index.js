@@ -809,18 +809,36 @@ function pageTelecharger(disponible, empreinte, taille, leger) {
   // Le second bloc n'apparaît que si la compilation a bien produit la
   // version légère : la page reste utilisable sinon.
   const blocLeger = leger && leger.disponible
-    ? `<div class="carte" style="text-align:left; margin-top:1.5rem; border:1px solid #d1d1d1">
-         <h2 style="font-size:1rem; margin:0 0 0.5rem">Déjà installé sur ce PC ? Prenez la version légère</h2>
-         <p style="font-size:0.82rem; color:#605e5c; margin:0 0 0.8rem">
-           Même application, même version — mais sans le moteur d'affichage de
-           Windows, que ce PC possède déjà. <strong>${echapper(tailleLisible(leger.taille))}</strong>
-           au lieu de ${echapper(taille ? tailleLisible(taille) : "200 Mo et plus")}.
-           À n'utiliser que sur un PC où l'application a DÉJÀ été installée au
-           moins une fois ; sur un PC neuf, prenez la version complète ci-dessus.
+    ? `<div class="carte" style="text-align:left; margin-top:1.5rem; border:2px solid #0078d4">
+         <h2 style="font-size:1rem; margin:0 0 0.5rem">
+           Version légère — ${echapper(tailleLisible(leger.taille))} au lieu de
+           ${echapper(taille ? tailleLisible(taille) : "plus de 200 Mo")}
+         </h2>
+         <p style="font-size:0.85rem; margin:0 0 0.6rem">
+           <strong>À prendre si l'application est déjà installée sur ce PC</strong>
+           — par exemple pour passer à une version plus récente.
+         </p>
+         <p style="font-size:0.82rem; color:#605e5c; margin:0 0 0.6rem">
+           C'est exactement la même application, la même version. La seule
+           différence est ce qu'il y a dans le fichier : la version complète
+           embarque le moteur d'affichage de Windows, pour les PC qui ne
+           l'auraient pas ; celle-ci ne l'embarque pas, puisque ce PC l'a
+           déjà — c'est ce qui la rend si petite.
+         </p>
+         <p style="font-size:0.82rem; margin:0 0 0.8rem; background:#dff6dd; padding:0.6rem; border-radius:4px">
+           <strong>Aucune connexion internet n'est nécessaire sur le PC</strong>,
+           ni pour celle-ci ni pour la complète. Vous téléchargez le fichier là
+           où vous avez du réseau (téléphone, cybercafé), vous le passez au PC
+           par câble ou clé USB, et vous installez hors ligne.
          </p>
          <a class="btn secondaire" href="/telecharger/leger" style="display:block; padding:0.8rem; text-align:center">
-           ⬇️ Télécharger la mise à jour (${echapper(tailleLisible(leger.taille))})
+           ⬇️ Télécharger la version légère (${echapper(tailleLisible(leger.taille))})
          </a>
+         <p style="font-size:0.78rem; color:#605e5c; margin:0.8rem 0 0">
+           Sur un PC <strong>neuf</strong>, qui n'a jamais eu l'application :
+           prenez la version complète plus haut. Celle-ci y chercherait le
+           moteur d'affichage sur internet, et échouerait.
+         </p>
          ${blocVerification(leger.empreinte, CLE_INSTALLATEUR_LEGER)}
        </div>`
     : "";
@@ -835,7 +853,13 @@ function pageTelecharger(disponible, empreinte, taille, leger) {
       </p>
       ${
         disponible
-          ? `<a class="btn" href="/telecharger/exe" style="display:block; margin:1rem 0; padding:1rem;">⬇️ Télécharger pour Windows${taille ? ` (${echapper(tailleLisible(taille))})` : ""}</a>
+          ? `<h2 style="font-size:1rem; margin:1.2rem 0 0.3rem; text-align:left">Version complète — pour un PC neuf</h2>
+             <p style="font-size:0.82rem; color:#605e5c; text-align:left; margin:0">
+               À prendre la toute première fois sur un PC donné. Elle embarque
+               tout ce qu'il faut, y compris le moteur d'affichage de Windows :
+               elle s'installe donc sur une machine qui n'a jamais vu internet.
+             </p>
+             <a class="btn" href="/telecharger/exe" style="display:block; margin:0.8rem 0 1rem; padding:1rem;">⬇️ Télécharger pour Windows${taille ? ` (${echapper(tailleLisible(taille))})` : ""}</a>
              <p style="font-size:0.8rem; color:#605e5c; text-align:left">
                Au premier lancement, Windows affichera un avertissement
                "éditeur inconnu". Il apparaît sur tout logiciel dont l'auteur
