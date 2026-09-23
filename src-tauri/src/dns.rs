@@ -62,7 +62,18 @@ pub async fn demarrer(adresse: Ipv4Addr) -> Result<tauri::async_runtime::JoinHan
 /// ou « connectivitycheck.gstatic.com » prouve que la chaîne tient jusque
 /// là — et que ce qui suit ne dépend plus de nous.
 static JOURNAL: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-const MAX_JOURNAL: usize = 25;
+
+/// Assez grand pour qu'un téléphone bavard n'efface pas un téléphone
+/// discret.
+///
+/// Défaut constaté aussitôt après la mise en service, et il a produit une
+/// conclusion fausse : un Android pose une trentaine de questions
+/// différentes en quelques secondes (ses applications se réveillent toutes
+/// en même temps), là où un iPhone en pose deux ou trois. Avec une limite
+/// de 25 lignes, l'Android chassait entièrement l'iPhone du journal — et on
+/// en déduisait qu'il ne demandait rien, alors qu'il avait demandé et été
+/// servi. La mesure disait le contraire de la vérité.
+const MAX_JOURNAL: usize = 80;
 
 /// Les noms demandés, le plus ancien d'abord.
 pub fn journal() -> Vec<String> {
@@ -71,11 +82,26 @@ pub fn journal() -> Vec<String> {
 
 fn noter(expediteur: Ipv4Addr, nom: &str) {
     if let Ok(mut journal) = JOURNAL.lock() {
-        let ligne = format!("{expediteur} demande {nom}");
-        // Un téléphone réessaie sans cesse le même nom : ne garder que les
-        // demandes NOUVELLES, sinon le journal se remplit d'une seule
-        // question répétée et cache toutes les autres.
-        if journal.last().map(String::as_str) == Some(ligne.as_str()) {
+        // Les questions de vérification de réseau sont signalées : ce sont
+        // les seules qui décident de l'ouverture de la page, et elles se
+        // perdent sinon au milieu des dizaines d'autres.
+        let marque = if nom.contains("captive.apple")
+            || nom.contains("connectivitycheck")
+            || nom.contains("gstatic")
+            || nom.contains("msftconnecttest")
+        {
+            "  ⭐ VÉRIFICATION DE RÉSEAU"
+        } else {
+            ""
+        };
+        let ligne = format!("{expediteur} demande {nom}{marque}");
+        // Chaque couple (téléphone, nom) n'apparaît qu'UNE fois, où qu'il
+        // soit déjà dans la liste — et non plus seulement s'il vient d'être
+        // noté. Un téléphone réessaie le même nom des dizaines de fois : ne
+        // comparer qu'à la dernière ligne laissait repasser la même question
+        // dès qu'une autre s'était glissée entre deux, et le journal se
+        // remplissait de répétitions au détriment des autres appareils.
+        if journal.iter().any(|existante| existante == &ligne) {
             return;
         }
         if journal.len() >= MAX_JOURNAL {
@@ -123,11 +149,8 @@ pub async fn repond(adresse: Ipv4Addr) -> bool {
     }
 
     let mut tampon = [0u8; 512];
-    let attente = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        socket.recv(&mut tampon),
-    )
-    .await;
+    let attente =
+        tokio::time::timeout(std::time::Duration::from_secs(2), socket.recv(&mut tampon)).await;
     let Ok(Ok(taille)) = attente else {
         return false;
     };
@@ -135,9 +158,9 @@ pub async fn repond(adresse: Ipv4Addr) -> bool {
     Message::from_vec(&tampon[..taille])
         .ok()
         .is_some_and(|reponse| {
-            reponse.answers.iter().any(|enregistrement| {
-                matches!(&enregistrement.data, RData::A(A(ip)) if *ip == adresse)
-            })
+            reponse.answers.iter().any(
+                |enregistrement| matches!(&enregistrement.data, RData::A(A(ip)) if *ip == adresse),
+            )
         })
 }
 
@@ -301,7 +324,10 @@ mod tests {
         let point_acces = Ipv4Addr::new(192, 168, 73, 1);
 
         // Un téléphone qui a bien rejoint le point d'accès.
-        assert!(dans_le_bon_reseau(Ipv4Addr::new(192, 168, 73, 42), point_acces));
+        assert!(dans_le_bon_reseau(
+            Ipv4Addr::new(192, 168, 73, 42),
+            point_acces
+        ));
 
         // Un appareil du réseau de la boutique (box sur un tout autre
         // sous-réseau) : jamais de réponse, jamais d'interférence.

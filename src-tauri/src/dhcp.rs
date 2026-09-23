@@ -15,7 +15,7 @@
 //! une boutique, le temps d'une visite.
 
 use dhcproto::v4::{
-    DecodeResult, Decodable, Decoder, DhcpOption, Encodable, Encoder, Message as DhcpMessage,
+    Decodable, DecodeResult, Decoder, DhcpOption, Encodable, Encoder, Message as DhcpMessage,
     MessageType, Opcode, OptionCode,
 };
 use std::net::Ipv4Addr;
@@ -43,7 +43,7 @@ const NOMBRE_ADRESSES: u8 = 200;
 /// n'apparaît pas alors qu'il a bien rejoint le réseau, c'est qu'un autre
 /// programme lui a répondu — et on saura enfin lequel chercher.
 static JOURNAL: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-const MAX_JOURNAL: usize = 25;
+const MAX_JOURNAL: usize = 40;
 
 fn noter(ligne: String) {
     if let Ok(mut journal) = JOURNAL.lock() {
@@ -68,7 +68,9 @@ pub fn journal() -> Vec<String> {
 /// port 4173 quand l'application tournait deux fois : sans le dire, un
 /// gérant croirait le Wi-Fi pleinement fonctionnel alors qu'aucun téléphone
 /// ne recevrait d'adresse.
-pub async fn demarrer(adresse_serveur: Ipv4Addr) -> Result<tauri::async_runtime::JoinHandle<()>, String> {
+pub async fn demarrer(
+    adresse_serveur: Ipv4Addr,
+) -> Result<tauri::async_runtime::JoinHandle<()>, String> {
     let socket = UdpSocket::bind(format!("0.0.0.0:{PORT_SERVEUR}"))
         .await
         .map_err(|e| {
@@ -155,7 +157,9 @@ fn decoder_requete(brut: &[u8]) -> DecodeResult<DhcpMessage> {
 /// (MAC), donc toujours la même pour lui d'une requête à l'autre, sans avoir
 /// besoin de mémoriser de table de baux entre deux paquets séparés.
 fn adresse_pour(chaddr: &[u8]) -> u8 {
-    let empreinte = chaddr.iter().fold(0u32, |acc, o| acc.wrapping_mul(31).wrapping_add(*o as u32));
+    let empreinte = chaddr
+        .iter()
+        .fold(0u32, |acc, o| acc.wrapping_mul(31).wrapping_add(*o as u32));
     PREMIERE_ADRESSE.wrapping_add((empreinte % NOMBRE_ADRESSES as u32) as u8)
 }
 
@@ -302,7 +306,9 @@ mod tests {
         );
         requete.set_opcode(Opcode::BootRequest);
         requete.set_xid(123456);
-        requete.opts_mut().insert(DhcpOption::MessageType(type_message));
+        requete
+            .opts_mut()
+            .insert(DhcpOption::MessageType(type_message));
         let mut octets = Vec::new();
         requete.encode(&mut Encoder::new(&mut octets)).unwrap();
         octets
@@ -444,7 +450,10 @@ mod tests {
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
         assert!(!dans_notre_reseau(serveur, serveur));
         assert!(!dans_notre_reseau(Ipv4Addr::new(192, 168, 73, 0), serveur));
-        assert!(!dans_notre_reseau(Ipv4Addr::new(192, 168, 73, 255), serveur));
+        assert!(!dans_notre_reseau(
+            Ipv4Addr::new(192, 168, 73, 255),
+            serveur
+        ));
         assert!(dans_notre_reseau(Ipv4Addr::new(192, 168, 73, 44), serveur));
 
         // Demander l'adresse du PC lui-même se solde par un refus.
@@ -479,9 +488,11 @@ mod tests {
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
 
         for type_demande in [MessageType::Discover, MessageType::Request] {
-            let brut =
-                construire_reponse(&fabriquer_requete(type_demande, &[1, 2, 3, 4, 5, 6]), serveur)
-                    .expect("une réponse est attendue");
+            let brut = construire_reponse(
+                &fabriquer_requete(type_demande, &[1, 2, 3, 4, 5, 6]),
+                serveur,
+            )
+            .expect("une réponse est attendue");
             let reponse = decoder_requete(&brut).unwrap();
 
             match reponse.opts().get(OptionCode::CaptivePortal) {
