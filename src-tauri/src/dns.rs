@@ -95,6 +95,12 @@ fn construire_reponse(requete_brute: &[u8], adresse: Ipv4Addr) -> Option<Vec<u8>
 
     let mut reponse = Message::response(requete.metadata.id, requete.metadata.op_code);
     reponse.metadata.authoritative = true;
+    // Drapeaux recopiés de la demande : un téléphone qui a demandé la
+    // récursion attend qu'on le lui confirme. Une réponse sans ces marques
+    // est jetée par les résolveurs stricts — Android en tête — et le
+    // téléphone conclut « pas d'internet » au lieu de « portail à ouvrir ».
+    reponse.metadata.recursion_desired = requete.metadata.recursion_desired;
+    reponse.metadata.recursion_available = true;
     reponse.add_query(question.clone());
 
     // Seules les questions IPv4 (A) obtiennent une vraie réponse : renvoyer
@@ -120,6 +126,10 @@ mod tests {
         let mut requete = Message::query();
         requete.metadata.id = 4242;
         requete.metadata.op_code = OpCode::Query;
+        // Ce que pose tout téléphone réel : « je veux que tu cherches pour
+        // moi ». Ne pas le reproduire ici masquerait justement le défaut de
+        // drapeaux que ce fichier vient de corriger.
+        requete.metadata.recursion_desired = true;
         requete.add_query(Query::query(Name::from_str(nom).unwrap(), type_question));
         requete.to_vec().unwrap()
     }
@@ -153,6 +163,37 @@ mod tests {
         let reponse = Message::from_vec(&brut).expect("réponse mal formée");
 
         assert!(reponse.answers.is_empty(), "pas d'IPv6 disponible ici");
+    }
+
+    /// Un téléphone n'accepte une réponse DNS que si elle lui ressemble :
+    /// l'identifiant recopié, la question renvoyée, et surtout les drapeaux
+    /// cohérents avec sa demande. Android est particulièrement strict —
+    /// une réponse mal pavoisée est jetée en silence, et le téléphone
+    /// conclut alors « ce réseau n'a pas internet » au lieu de « ce réseau
+    /// demande une connexion ». Aucune page ne s'ouvre, et rien ne le dit.
+    #[test]
+    fn la_reponse_porte_les_drapeaux_attendus_par_un_telephone() {
+        let adresse = Ipv4Addr::new(192, 168, 73, 1);
+        let requete = fabriquer_requete("captive.apple.com.", RecordType::A);
+        let brut = construire_reponse(&requete, adresse).expect("une réponse est attendue");
+        let reponse = Message::from_vec(&brut).expect("réponse mal formée");
+
+        assert_eq!(reponse.metadata.message_type, MessageType::Response);
+        assert_eq!(reponse.metadata.id, 4242);
+        assert_eq!(
+            reponse.metadata.response_code,
+            hickory_proto::op::ResponseCode::NoError,
+            "un code d'erreur ferait conclure au téléphone que le nom n'existe pas"
+        );
+        assert!(
+            reponse.metadata.recursion_desired,
+            "le drapeau « récursion demandée » du client doit être recopié tel quel"
+        );
+        assert!(
+            reponse.metadata.recursion_available,
+            "sans « récursion disponible », un résolveur strict jette la réponse"
+        );
+        assert_eq!(reponse.queries.len(), 1, "la question doit être renvoyée");
     }
 
     #[test]
