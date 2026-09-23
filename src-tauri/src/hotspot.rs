@@ -1235,6 +1235,49 @@ pub fn reprendre_point_acces_existant(app: tauri::AppHandle) {
     });
 }
 
+/// Attend que l'adresse du point d'accès devienne RÉELLEMENT utilisable.
+///
+/// Le défaut que cette attente corrige a fait perdre plusieurs jours, et il
+/// était invisible : tout démarrait, tout s'affichait en vert, et rien ne
+/// répondait.
+///
+/// Windows n'accepte pas sur-le-champ une adresse qu'il vient d'attribuer.
+/// Elle passe d'abord par un état de vérification — il s'assure que
+/// personne d'autre ne la porte sur le réseau — et pendant ces quelques
+/// secondes, aucun programme ne peut s'y attacher ni y être joint. C'est
+/// exactement ce que disait l'erreur Windows 10049 rencontrée plus tôt
+/// (« l'adresse demandée n'est pas valide dans son contexte ») : elle
+/// n'était pas fausse, elle était PRÉMATURÉE.
+///
+/// Conséquence sur le terrain, et elle explique tout : le téléphone rejoint
+/// le réseau pendant cette même fenêtre. Ses premières questions — « quelle
+/// est l'adresse de captive.apple.com ? », « ce réseau a-t-il internet ? » —
+/// tombent dans le vide. Il en conclut « réseau sans internet », le retient,
+/// et ne repose plus la question. Seule une vérification forcée, en entrant
+/// à la main dans les réglages Wi-Fi, finit par aboutir — ce que le gérant
+/// devait faire à chaque fois.
+///
+/// On attend donc que l'adresse réponde avant de déclarer le Wi-Fi prêt.
+/// La tentative d'attachement est le seul test qui vaille : elle échoue tant
+/// que Windows n'a pas fini, et réussit à l'instant précis où il a fini.
+pub async fn attendre_adresse_utilisable(adresse: Ipv4Addr) -> bool {
+    const TENTATIVES: u32 = 40;
+    const DELAI: std::time::Duration = std::time::Duration::from_millis(500);
+
+    for tentative in 0..TENTATIVES {
+        if tentative > 0 {
+            tokio::time::sleep(DELAI).await;
+        }
+        if tokio::net::UdpSocket::bind(std::net::SocketAddr::from((adresse, 0)))
+            .await
+            .is_ok()
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// Coupe le réseau quelle que soit la méthode qui l'a créé.
 pub fn desactiver_par_tous_les_moyens() -> Result<(), String> {
     if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {

@@ -430,6 +430,32 @@ pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
 /// `dns.rs`) : sans eux, un téléphone connecté au Wi-Fi n'obtient ni
 /// adresse IP, ni moyen d'être redirigé automatiquement vers la page
 /// d'envoi.
+/// Réessaie un contrôle quelques secondes avant de le déclarer en échec.
+///
+/// Les services viennent d'être lancés et l'adresse vient d'être validée :
+/// un premier refus ne veut pas encore dire « ne marche pas », il peut
+/// simplement vouloir dire « pas encore ». Déclarer rouge trop tôt enverrait
+/// chercher une panne qui n'existe pas — l'inverse exact du service que ce
+/// récapitulatif doit rendre.
+async fn reessayer<F, Fut>(mut controle: F) -> bool
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    const TENTATIVES: u32 = 6;
+    const DELAI: std::time::Duration = std::time::Duration::from_millis(800);
+
+    for tentative in 0..TENTATIVES {
+        if tentative > 0 {
+            tokio::time::sleep(DELAI).await;
+        }
+        if controle().await {
+            return true;
+        }
+    }
+    false
+}
+
 #[derive(serde::Serialize)]
 pub struct ResultatActivationWifi {
     pub methode: String,
@@ -558,11 +584,29 @@ pub async fn activer_point_acces_local(
         format!("Méthode : {}", activation.methode),
         format!("Adresse de ce PC : {}", activation.adresse),
     ];
+
     // Les méthodes qui ont échoué AVANT celle qui a réussi comptent comme
     // des avertissements : sur un PC dont le pilote ne convient qu'à la
     // méthode 1, une "réussite" de la méthode 2 peut n'être qu'apparente,
     // et c'est l'échec de la méthode 1 qui contient la vraie information.
     let mut avertissements = activation.avertissements.clone();
+
+    // Rien ne sert de démarrer ni de tester quoi que ce soit tant que
+    // l'adresse n'est pas utilisable : Windows met quelques secondes à la
+    // valider, et tout ce qui se passe avant tombe dans le vide — y compris
+    // les premières questions du téléphone qui vient de rejoindre le réseau
+    // (voir `hotspot::attendre_adresse_utilisable`).
+    let adresse_prete = crate::hotspot::attendre_adresse_utilisable(activation.adresse).await;
+    recapitulatif.push(if adresse_prete {
+        "✅ Adresse du PC prête (validée par Windows)".to_string()
+    } else {
+        let message = "L'adresse du point d'accès n'est toujours pas utilisable après 20 \
+                       secondes. Rien ne pourra répondre aux téléphones. Coupez puis \
+                       réactivez le Wi-Fi local ; si cela se reproduit, redémarrez le PC."
+            .to_string();
+        avertissements.push(message);
+        "❌ Adresse du PC — TOUJOURS PAS UTILISABLE".to_string()
+    });
 
     match crate::dhcp::demarrer(activation.adresse).await {
         Ok(tache) => {
@@ -592,7 +636,7 @@ pub async fn activer_point_acces_local(
     // arrive. Plusieurs déplacements sur le terrain ont été perdus devant un
     // écran tout vert alors que rien ne répondait.
     if dns_demarre {
-        recapitulatif.push(if crate::dns::repond(activation.adresse).await {
+        recapitulatif.push(if reessayer(|| crate::dns::repond(activation.adresse)).await {
             "✅ Noms de domaine — testé, répond".to_string()
         } else {
             let message = "Le serveur de noms a démarré mais NE RÉPOND PAS à la question \
@@ -612,7 +656,7 @@ pub async fn activer_point_acces_local(
             avertissements.push(probleme);
         }
         None => recapitulatif.push(
-            if crate::server::portail_repond(activation.adresse).await {
+            if reessayer(|| crate::server::portail_repond(activation.adresse)).await {
                 "✅ Ouverture automatique — testée, répond".to_string()
             } else {
                 let message = "Le portail a démarré mais NE RÉPOND PAS sur le port 80. La \
@@ -625,7 +669,7 @@ pub async fn activer_point_acces_local(
         ),
     }
     recapitulatif.push(
-        if crate::server::api_portail_repond(activation.adresse).await {
+        if reessayer(|| crate::server::api_portail_repond(activation.adresse)).await {
             "✅ Annonce du portail aux téléphones — testée, répond".to_string()
         } else {
             let message = "L'annonce normalisée du portail (celle qui fait ouvrir la page \
