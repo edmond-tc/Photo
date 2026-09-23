@@ -692,9 +692,17 @@ try {{
     #    la création d'un réseau hébergé suffit à le réveiller. Il faut donc
     #    l'empêcher de repartir AVANT de créer le réseau.
     $sortie += "===PARTAGE_CONNEXION==="
-    $sortie += (Set-Service -Name SharedAccess -StartupType Disabled -ErrorAction SilentlyContinue 2>&1 | Out-String)
-    $sortie += (Stop-Service -Name SharedAccess -Force -ErrorAction SilentlyContinue 2>&1 | Out-String)
-    $sortie += ("SharedAccess : " + (Get-Service -Name SharedAccess -ErrorAction SilentlyContinue).Status)
+    #    Deux services, pas un. Windows en a deux qui font ce travail et
+    #    portent tous deux l'adresse 192.168.137.1 : « SharedAccess » (le
+    #    partage de connexion classique) et « icssvc » (le point d'accès
+    #    mobile). N'en couper qu'un laisse l'autre reprendre la main — ce
+    #    qui s'est vu sur le terrain, où svchost tenait toujours le port 67
+    #    après un premier essai.
+    foreach ($nom in @('SharedAccess', 'icssvc')) {{
+        $sortie += (Set-Service -Name $nom -StartupType Disabled -ErrorAction SilentlyContinue 2>&1 | Out-String)
+        $sortie += (Stop-Service -Name $nom -Force -ErrorAction SilentlyContinue 2>&1 | Out-String)
+        $sortie += ($nom + " : " + (Get-Service -Name $nom -ErrorAction SilentlyContinue).Status)
+    }}
 
     $sortie += (netsh wlan set hostednetwork mode=disallow 2>&1 | Out-String)
     $sortie += (netsh wlan set hostednetwork mode=allow ssid="{ssid}" key="{mot_de_passe}" 2>&1 | Out-String)

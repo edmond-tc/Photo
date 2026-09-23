@@ -790,6 +790,7 @@ fieldset {
   body.impression-qr #modal-qr #btn-parametres-partage,
   body.impression-qr #modal-qr #btn-activer-wifi-local,
   body.impression-qr #modal-qr #wifi-compte-rendu,
+  body.impression-qr #modal-qr #btn-journal-telephones,
   body.impression-qr #modal-qr #btn-imprimer-qr,
   body.impression-qr #modal-qr #qr-url {
     display: none !important;

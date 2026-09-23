@@ -55,6 +55,36 @@ pub async fn demarrer(adresse: Ipv4Addr) -> Result<tauri::async_runtime::JoinHan
     Ok(tauri::async_runtime::spawn(servir(socket, adresse)))
 }
 
+/// Les noms que les téléphones ont RÉELLEMENT demandés à ce serveur.
+///
+/// Même raison que pour les adresses : c'est la seule preuve qu'un
+/// téléphone nous parle. Voir un téléphone demander « captive.apple.com »
+/// ou « connectivitycheck.gstatic.com » prouve que la chaîne tient jusque
+/// là — et que ce qui suit ne dépend plus de nous.
+static JOURNAL: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+const MAX_JOURNAL: usize = 25;
+
+/// Les noms demandés, le plus ancien d'abord.
+pub fn journal() -> Vec<String> {
+    JOURNAL.lock().map(|j| j.clone()).unwrap_or_default()
+}
+
+fn noter(expediteur: Ipv4Addr, nom: &str) {
+    if let Ok(mut journal) = JOURNAL.lock() {
+        let ligne = format!("{expediteur} demande {nom}");
+        // Un téléphone réessaie sans cesse le même nom : ne garder que les
+        // demandes NOUVELLES, sinon le journal se remplit d'une seule
+        // question répétée et cache toutes les autres.
+        if journal.last().map(String::as_str) == Some(ligne.as_str()) {
+            return;
+        }
+        if journal.len() >= MAX_JOURNAL {
+            journal.remove(0);
+        }
+        journal.push(ligne);
+    }
+}
+
 /// Le serveur répond-il VRAIMENT ?
 ///
 /// « Démarré » n'est pas « répond » : le port peut être pris, la réponse
@@ -133,6 +163,11 @@ async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
         };
         if !dans_le_bon_reseau(*expediteur.ip(), adresse) {
             continue;
+        }
+        if let Ok(demande) = hickory_proto::op::Message::from_vec(&tampon[..taille]) {
+            if let Some(question) = demande.queries.first() {
+                noter(*expediteur.ip(), &question.name().to_string());
+            }
         }
         if let Some(reponse) = construire_reponse(&tampon[..taille], adresse) {
             let _ = socket.send_to(&reponse, expediteur).await;

@@ -482,6 +482,44 @@ where
     false
 }
 
+/// Ce que les téléphones ont réellement demandé depuis l'activation.
+///
+/// Après des jours d'hypothèses successives — chacune plausible, chacune
+/// réfutée par l'essai suivant — c'est la seule question qui reste : ces
+/// serveurs reçoivent-ils, oui ou non, les demandes du téléphone ? Le
+/// gérant connecte un téléphone, appuie ici, et la réponse ne se discute
+/// plus.
+#[tauri::command]
+pub fn journal_des_telephones() -> Vec<String> {
+    let adresses = crate::dhcp::journal();
+    let noms = crate::dns::journal();
+
+    let mut lignes = Vec::new();
+    lignes.push("— Demandes d'adresse reçues —".to_string());
+    if adresses.is_empty() {
+        lignes.push(
+            "(aucune) Aucun téléphone n'a demandé d'adresse à CE serveur. S'il a pourtant \
+             rejoint le réseau, c'est qu'un autre programme lui a répondu."
+                .to_string(),
+        );
+    } else {
+        lignes.extend(adresses);
+    }
+
+    lignes.push(String::new());
+    lignes.push("— Noms demandés reçus —".to_string());
+    if noms.is_empty() {
+        lignes.push(
+            "(aucun) Aucun téléphone n'a posé de question à CE serveur de noms. Il ne peut \
+             donc pas découvrir le portail, et la page ne s'ouvrira jamais d'elle-même."
+                .to_string(),
+        );
+    } else {
+        lignes.extend(noms);
+    }
+    lignes
+}
+
 #[derive(serde::Serialize)]
 pub struct ResultatActivationWifi {
     pub methode: String,

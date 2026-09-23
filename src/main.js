@@ -918,6 +918,21 @@ document.querySelector("#btn-parametres-partage").addEventListener("click", asyn
   }
 });
 
+// La preuve, au lieu de la déduction. Le gérant connecte un téléphone au
+// Wi-Fi, appuie ici, et voit ce que ce PC a RÉELLEMENT reçu de lui.
+document.querySelector("#btn-journal-telephones").addEventListener("click", async () => {
+  try {
+    const lignes = await invoke("journal_des_telephones");
+    afficherCompteRenduWifi(
+      "📋 Ce que les téléphones ont demandé à ce PC",
+      lignes.join("\n"),
+      "ok"
+    );
+  } catch (err) {
+    afficherCompteRenduWifi("⚠️ Journal illisible", String(err), "attention");
+  }
+});
+
 document.querySelector("#btn-imprimer-qr").addEventListener("click", () => {
   imprimerPage("impression-qr");
 });

@@ -119,6 +119,7 @@ pub fn run() {
             commands::activer_point_acces_local,
             commands::desactiver_point_acces_local,
             commands::diagnostiquer_poste,
+            commands::journal_des_telephones,
             commands::generer_rapport_diagnostic,
             commands::sauvegarder_maintenant,
             backup::lister_sauvegardes,

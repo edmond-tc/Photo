@@ -31,6 +31,34 @@ const DUREE_BAIL_SECONDES: u32 = 3600;
 const PREMIERE_ADRESSE: u8 = 20;
 const NOMBRE_ADRESSES: u8 = 200;
 
+/// Ce que les téléphones ont RÉELLEMENT demandé à ce serveur.
+///
+/// Dernier recours contre les suppositions. Après des jours d'hypothèses
+/// successives — toutes plausibles, toutes réfutées par l'essai suivant —
+/// la seule question qui vaille encore est : ce serveur reçoit-il, oui ou
+/// non, les demandes du téléphone ?
+///
+/// Si le téléphone apparaît ici, c'est nous qui l'avons servi : il a donc
+/// notre adresse comme serveur de noms, et la panne est ailleurs. S'il
+/// n'apparaît pas alors qu'il a bien rejoint le réseau, c'est qu'un autre
+/// programme lui a répondu — et on saura enfin lequel chercher.
+static JOURNAL: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+const MAX_JOURNAL: usize = 25;
+
+fn noter(ligne: String) {
+    if let Ok(mut journal) = JOURNAL.lock() {
+        if journal.len() >= MAX_JOURNAL {
+            journal.remove(0);
+        }
+        journal.push(ligne);
+    }
+}
+
+/// Les demandes reçues, la plus ancienne d'abord.
+pub fn journal() -> Vec<String> {
+    JOURNAL.lock().map(|j| j.clone()).unwrap_or_default()
+}
+
 /// Tente de s'installer sur le port DHCP. Rendu visible dans l'interface
 /// (au lieu d'un simple `eprintln!` perdu dans une console qui n'existe pas
 /// dans l'application installée) : Windows peut déjà faire tourner SON
@@ -66,6 +94,21 @@ async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
             Ok(v) => v,
             Err(_) => continue,
         };
+        if let Ok(demande) = decoder_requete(&tampon[..taille]) {
+            let type_demande = match demande.opts().get(OptionCode::MessageType) {
+                Some(DhcpOption::MessageType(t)) => format!("{t:?}"),
+                _ => "?".to_string(),
+            };
+            let mac = demande
+                .chaddr()
+                .iter()
+                .take(6)
+                .map(|o| format!("{o:02X}"))
+                .collect::<Vec<_>>()
+                .join(":");
+            noter(format!("{type_demande} de {mac}"));
+        }
+
         if let Some(reponse) = construire_reponse(&tampon[..taille], adresse_serveur) {
             // Le client n'a pas encore d'adresse : seule une diffusion peut
             // l'atteindre. Mais LAQUELLE compte, et c'est ce qui manquait.
