@@ -484,8 +484,8 @@ pub fn executer_script_eleve(script: &str) -> Result<String, String> {
     // référencées par `info` restent en vie jusqu'à la fin de la fonction,
     // après l'appel bloquant (WaitForSingleObject) qui les utilise encore.
     let lance = unsafe { ShellExecuteExW(&mut info) };
-    let _ = std::fs::remove_file(&fichier_script);
     if lance.is_err() || info.hProcess.is_invalid() {
+        let _ = std::fs::remove_file(&fichier_script);
         return Err(
             "La demande d'autorisation administrateur a été refusée ou annulée. \
              Réessayez et cliquez \"Oui\" sur la fenêtre Windows qui apparaît."
@@ -499,6 +499,27 @@ pub fn executer_script_eleve(script: &str) -> Result<String, String> {
         WaitForSingleObject(info.hProcess, INFINITE);
         let _ = CloseHandle(info.hProcess);
     }
+
+    // LE bug qui a fait échouer la méthode 1 pendant tout le projet, et qui
+    // ne se voyait pas parce qu'il ne laissait aucune trace.
+    //
+    // `ShellExecuteExW` rend la main dès que le processus est CRÉÉ — pas
+    // quand il a fini, ni même quand il a ouvert son fichier. Le script
+    // était effacé juste après cette ligne, donc pendant que PowerShell
+    // démarrait encore. PowerShell trouvait alors un `-File` qui n'existait
+    // plus, s'arrêtait sans rien écrire, et l'application n'avait pour seule
+    // information qu'un fichier de résultat vide : « Windows n'a rien
+    // répondu. Vérifiez que vous avez bien cliqué Oui ». Message
+    // doublement trompeur, puisque le gérant AVAIT cliqué "Oui" et que la
+    // commande n'avait jamais été lue.
+    //
+    // C'est une course : selon la vitesse du disque et le temps passé sur la
+    // fenêtre d'autorisation, la suppression gagnait ou perdait. D'où des
+    // échecs qui semblaient aléatoires, et une méthode 1 réputée
+    // "incompatible avec ce PC" alors qu'elle n'avait jamais été exécutée.
+    //
+    // Le fichier n'est donc effacé qu'ICI, une fois le processus terminé.
+    let _ = std::fs::remove_file(&fichier_script);
 
     let resultat = std::fs::read_to_string(&fichier_resultat).unwrap_or_default();
     let _ = std::fs::remove_file(&fichier_resultat);
@@ -641,8 +662,10 @@ pub fn activer(ssid: &str, mot_de_passe: &str) -> Result<(), String> {
 
     if sortie.trim().is_empty() {
         return Err(
-            "Windows n'a rien répondu. Vérifiez que vous avez bien cliqué \"Oui\" sur la \
-             fenêtre d'autorisation qui devait apparaître."
+            "Windows n'a pas exécuté la commande d'activation (aucune réponse). Si la fenêtre \
+             d'autorisation Windows est bien apparue et que vous avez cliqué \"Oui\", \
+             réessayez une fois : ce PC a peut-être mis plus de temps que prévu à démarrer la \
+             commande."
                 .to_string(),
         );
     }
@@ -895,9 +918,16 @@ fn tenter_toutes_les_methodes(
                     // Ne pas laisser tourner une annonce Wi-Fi Direct qui ne
                     // mène à rien : elle occuperait la carte pour rien.
                     let _ = crate::wifi_direct::desactiver();
+                    let cartes = adresses_par_carte();
                     echecs.push(format!(
-                        "Méthode 2 (Wi-Fi Direct) : {}",
-                        echec_wifi_direct_sans_adresse(diagnostic.wdi_supporte)
+                        "Méthode 2 (Wi-Fi Direct) : {}\n\nAdresses présentes sur ce PC au \
+                         moment de l'échec :\n{}",
+                        echec_wifi_direct_sans_adresse(diagnostic.wdi_supporte),
+                        if cartes.trim().is_empty() {
+                            "(aucune)".to_string()
+                        } else {
+                            cartes.trim().to_string()
+                        }
                     ));
                 }
             },
@@ -918,43 +948,100 @@ pub fn point_acces_actif() -> bool {
     adresse_point_acces_active().is_some()
 }
 
-/// Retrouve l'adresse IPv4 RÉELLEMENT assignée à l'adaptateur Wi-Fi Direct.
+/// Séparateur entre l'adresse et la description de la carte qui la porte,
+/// dans la sortie de `adresses_par_carte`.
+const SEPARATEUR_CARTE: char = '|';
+
+/// Choisit, parmi toutes les adresses en service de ce PC, celle du réseau
+/// que l'application vient de créer.
 ///
-/// Windows choisit cette adresse lui-même, et PAS forcément dans
-/// 192.168.137.0/24 comme on pourrait s'y attendre — vérifié sur le terrain
-/// où un PC l'a attribuée en 10.10.10.0/24 (une carte VPN installée sur la
-/// machine, sans rapport, utilisait déjà cette plage classique). Deviner un
-/// préfixe fixe était donc voué à se tromper sur certains PC.
+/// Constaté sur le terrain, photo à l'appui : le réseau Wi-Fi existait
+/// vraiment (le téléphone du gérant s'y était connecté, pleine réception),
+/// mais le QR annonçait `10.10.10.1` — l'adresse d'une carte VPN fantôme
+/// sans rapport, qui n'a évidemment jamais répondu
+/// ("ERR_ADDRESS_UNREACHABLE"). Deviner "la première adresse locale venue"
+/// ne pouvait pas marcher sur un PC qui en porte plusieurs.
 ///
-/// On retrouve la bonne adresse en identifiant l'adaptateur par son NOM —
-/// "Microsoft Wi-Fi Direct Virtual Adapter", stable et non localisé, comme
-/// pour l'adaptateur du réseau hébergé (voir `script_activation`) — plutôt
-/// que par une plage d'adresses supposée. Aucune élévation nécessaire :
-/// lire l'adresse d'une carte réseau ne demande pas les droits
-/// administrateur, contrairement à créer le réseau lui-même.
+/// On choisit donc sur un critère vérifiable, dans cet ordre :
 ///
-/// L'attribution par Windows n'est pas instantanée après le démarrage du
-/// point d'accès : quelques tentatives espacées laissent le temps à l'IP
-/// d'apparaître avant de renoncer.
-///
-/// Trouvé sur le terrain : le premier essai de cette fonction filtrait
-/// seulement par NOM d'adaptateur, sans regarder s'il était réellement
-/// actif. Windows ne réutilise pas toujours le même adaptateur virtuel
-/// d'une activation à l'autre — il peut en laisser plusieurs enregistrés
-/// ("Microsoft Wi-Fi Direct Virtual Adapter #2", "#3"…) après des tests
-/// répétés, chacun avec une adresse mémorisée mais plus réellement en
-/// service. La fonction en trouvait un, mais pas forcément le bon : le
-/// serveur DNS a ensuite refusé de s'y attacher ("l'adresse demandée n'est
-/// pas valide dans son contexte", erreur Windows 10049) — preuve que
-/// l'adresse retenue n'était pas celle d'une carte vivante. On exige
-/// maintenant explicitement un adaptateur dont Windows dit lui-même qu'il
-/// est "Up" (en service), et une adresse à l'état "Preferred" (pas en
-/// cours d'attribution, pas en conflit) : les deux seuls signaux fiables
-/// qu'elle est utilisable tout de suite.
+/// 1. l'adresse portée par une carte virtuelle de point d'accès — Windows
+///    les nomme toujours pareil, et ce nom n'est pas traduit ;
+/// 2. à défaut, une adresse dans `192.168.137.0/24`, la plage que Windows
+///    réserve depuis toujours à ses points d'accès logiciels ;
+/// 3. sinon rien — plutôt qu'une adresse choisie au hasard, qui enverrait
+///    de nouveau le client dans le vide.
+fn choisir_adresse_point_acces(lignes: &str) -> Option<Ipv4Addr> {
+    let entrees: Vec<(Ipv4Addr, String)> = lignes
+        .lines()
+        .filter_map(|ligne| {
+            let (adresse, carte) = ligne.trim().split_once(SEPARATEUR_CARTE)?;
+            let adresse = adresse.trim().parse::<Ipv4Addr>().ok()?;
+            if adresse.is_loopback() || adresse.is_unspecified() || adresse.is_link_local() {
+                return None;
+            }
+            Some((adresse, normaliser(carte)))
+        })
+        .collect();
+
+    entrees
+        .iter()
+        .find(|(_, carte)| {
+            carte.contains("wi-fi direct virtual adapter")
+                || carte.contains("hosted network virtual adapter")
+        })
+        .or_else(|| {
+            entrees
+                .iter()
+                .find(|(adresse, _)| adresse.octets()[..3] == [192, 168, 137])
+        })
+        .map(|(adresse, _)| *adresse)
+}
+
+/// Toutes les adresses IPv4 réellement en service, chacune suivie du nom de
+/// la carte qui la porte. Sert à choisir la bonne (voir
+/// `choisir_adresse_point_acces`) et, quand aucune ne convient, à montrer au
+/// support ce que ce PC présentait vraiment au moment de l'échec.
 #[cfg(windows)]
-fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
+fn adresses_par_carte() -> String {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred \
+             -ErrorAction SilentlyContinue | ForEach-Object { \
+             $d = (Get-NetAdapter -InterfaceIndex $_.InterfaceIndex \
+             -ErrorAction SilentlyContinue).InterfaceDescription; \
+             \"$($_.IPAddress)|$d\" }",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|sortie| String::from_utf8_lossy(&sortie.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+#[cfg(not(windows))]
+fn adresses_par_carte() -> String {
+    String::new()
+}
+
+/// L'adresse d'un point d'accès que Windows fait tourner en ce moment, s'il
+/// y en a un. Contrairement à `adresse_point_acces_active`, ne s'appuie pas
+/// sur ce que l'application croit avoir activé mais sur ce que Windows
+/// présente réellement : dernier filet quand notre propre comptabilité s'est
+/// perdue (activation partielle, application redémarrée, réseau créé lors
+/// d'un essai précédent).
+pub fn adresse_point_acces_detectee() -> Option<Ipv4Addr> {
+    choisir_adresse_point_acces(&adresses_par_carte())
+}
+
+/// Retrouve l'adresse du point d'accès que Windows vient de créer.
+///
+/// L'attribution n'est pas instantanée : quelques tentatives espacées
+/// laissent le temps à l'adresse d'apparaître avant de renoncer.
+fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
     const TENTATIVES: u32 = 10;
     const DELAI_ENTRE_TENTATIVES: std::time::Duration = std::time::Duration::from_millis(500);
 
@@ -962,33 +1049,10 @@ fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
         if tentative > 0 {
             std::thread::sleep(DELAI_ENTRE_TENTATIVES);
         }
-
-        let sortie = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-Command",
-                "(Get-NetAdapter | Where-Object { $_.InterfaceDescription -like \
-                 '*Wi-Fi Direct Virtual Adapter*' -and $_.Status -eq 'Up' } | \
-                 Sort-Object -Property ifIndex -Descending | Select-Object -First 1 | \
-                 Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred \
-                 -ErrorAction SilentlyContinue).IPAddress",
-            ])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-
-        let Ok(sortie) = sortie else { continue };
-        let trouvee = String::from_utf8_lossy(&sortie.stdout)
-            .lines()
-            .find_map(|ligne| ligne.trim().parse::<Ipv4Addr>().ok());
-        if trouvee.is_some() {
-            return trouvee;
+        if let Some(adresse) = choisir_adresse_point_acces(&adresses_par_carte()) {
+            return Some(adresse);
         }
     }
-    None
-}
-
-#[cfg(not(windows))]
-fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
     None
 }
 
@@ -1335,6 +1399,63 @@ mod tests {
         );
         assert_eq!(
             extraire_section("rien du tout", MARQUEUR_DEBUT_DEMARRAGE, MARQUEUR_FIN_DEMARRAGE),
+            None
+        );
+    }
+
+    /// Le cas exact photographié en boutique : le réseau Wi-Fi existait
+    /// vraiment (le téléphone s'y était connecté, pleine réception), mais le
+    /// QR annonçait `10.10.10.1` — une carte VPN fantôme — et le téléphone
+    /// répondait "ERR_ADDRESS_UNREACHABLE". C'est la carte du point d'accès
+    /// qu'il fallait retenir, pas la première venue.
+    #[test]
+    fn ignore_la_carte_fantome_et_retient_celle_du_point_d_acces() {
+        let terrain = "10.10.10.1|TAP-Windows Adapter V9\n                       192.168.137.1|Microsoft Wi-Fi Direct Virtual Adapter #2\n                       169.254.4.9|Realtek PCIe GbE Family Controller";
+        assert_eq!(
+            choisir_adresse_point_acces(terrain),
+            Some(Ipv4Addr::new(192, 168, 137, 1))
+        );
+    }
+
+    /// L'ordre des lignes ne doit rien changer : c'est le NOM de la carte
+    /// qui tranche, pas sa position dans la liste.
+    #[test]
+    fn le_choix_ne_depend_pas_de_l_ordre_des_cartes() {
+        let carte_apres = "10.10.10.1|TAP-Windows Adapter V9\n                           192.168.73.1|Microsoft Hosted Network Virtual Adapter";
+        let carte_avant = "192.168.73.1|Microsoft Hosted Network Virtual Adapter\n                           10.10.10.1|TAP-Windows Adapter V9";
+        let attendue = Some(Ipv4Addr::new(192, 168, 73, 1));
+        assert_eq!(choisir_adresse_point_acces(carte_apres), attendue);
+        assert_eq!(choisir_adresse_point_acces(carte_avant), attendue);
+    }
+
+    /// Sans carte reconnaissable, la plage que Windows réserve à ses points
+    /// d'accès logiciels reste un indice valable — mais elle seule.
+    #[test]
+    fn retombe_sur_la_plage_des_points_d_acces_windows_puis_renonce() {
+        assert_eq!(
+            choisir_adresse_point_acces("192.168.137.1|Carte au nom inconnu"),
+            Some(Ipv4Addr::new(192, 168, 137, 1))
+        );
+        // Aucune carte de point d'accès, aucune adresse dans la plage
+        // Windows : renoncer vaut mieux qu'annoncer au client une adresse
+        // qui ne répondra pas — c'est exactement le bug qu'on corrige.
+        assert_eq!(
+            choisir_adresse_point_acces("10.10.10.1|TAP-Windows Adapter V9"),
+            None
+        );
+        assert_eq!(choisir_adresse_point_acces(""), None);
+        assert_eq!(choisir_adresse_point_acces("ligne sans separateur"), None);
+    }
+
+    /// Une carte branchée sur rien, ou la boucle locale, ne désignent aucun
+    /// réseau joignable — même si leur nom ressemble à celui d'un point
+    /// d'accès.
+    #[test]
+    fn ecarte_les_adresses_qui_ne_menent_nulle_part() {
+        assert_eq!(
+            choisir_adresse_point_acces(
+                "169.254.1.1|Microsoft Wi-Fi Direct Virtual Adapter\n                 127.0.0.1|Loopback\n0.0.0.0|Carte inconnue"
+            ),
             None
         );
     }

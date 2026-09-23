@@ -190,6 +190,14 @@ pub fn adresse_locale() -> String {
     if let Some(adresse) = crate::hotspot::adresse_point_acces_active() {
         return adresse.to_string();
     }
+    // Avant toute autre piste : un point d'accès que Windows fait réellement
+    // tourner. Photographié en boutique — le réseau existait, le téléphone y
+    // était connecté, et le QR annonçait pourtant l'adresse d'une carte VPN
+    // fantôme (`10.10.10.1`), injoignable. La carte du point d'accès, elle,
+    // est reconnaissable à coup sûr (voir `hotspot::choisir_adresse_point_acces`).
+    if let Some(adresse) = crate::hotspot::adresse_point_acces_detectee() {
+        return adresse.to_string();
+    }
     if let Some(adresse) = adresse_du_reseau_connecte() {
         return adresse.to_string();
     }
