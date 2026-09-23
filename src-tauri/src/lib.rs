@@ -69,6 +69,10 @@ pub fn run() {
             backup::start(app.handle().clone());
             retention::start(app.handle().clone());
             bluetooth::demarrer(app.handle().clone());
+            // Reprend un point d'accès rallumé par Windows au démarrage du
+            // PC (voir `hotspot::reprendre_point_acces_existant`) : le gérant
+            // n'a alors plus rien à cliquer le matin.
+            hotspot::reprendre_point_acces_existant(app.handle().clone());
 
             Ok(())
         })

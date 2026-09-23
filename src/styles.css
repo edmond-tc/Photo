@@ -802,11 +802,16 @@ fieldset {
     width: 320px;
     height: 320px;
   }
-  /* Deux QR sur la même affiche : plus petits, côte à côte, chacun sous son
-     numéro — c'est l'ordre 1 puis 2 qui doit sauter aux yeux du client. */
+  /* Sur l'affiche, le code principal reste grand : c'est le seul geste
+     demandé au client. Celui de secours est nettement plus petit, pour
+     qu'on ne croie pas qu'il faille scanner les deux. */
   body.impression-qr #qr-conteneur.deux-qr img {
-    width: 260px;
-    height: 260px;
+    width: 300px;
+    height: 300px;
+  }
+  body.impression-qr #qr-conteneur .qr-secours img {
+    width: 120px;
+    height: 120px;
   }
   body.impression-qr #qr-intro {
     text-align: center;
@@ -828,6 +833,16 @@ fieldset {
 .qr-bloc {
   margin: 0;
   text-align: center;
+}
+
+/* Le filet de secours : présent et lisible, mais visiblement secondaire. */
+.qr-secours {
+  opacity: 0.75;
+}
+
+.qr-secours figcaption {
+  font-weight: 400 !important;
+  font-size: 0.75rem !important;
 }
 
 .qr-bloc figcaption {

@@ -74,6 +74,58 @@ pub fn definir_adresse_active(adresse: Option<Ipv4Addr>) {
     }
 }
 
+/// Nom de la tâche Windows qui rallume le Wi-Fi de la boutique à chaque
+/// démarrage du PC. Fixe : la recréer sous le même nom remplace l'ancienne
+/// au lieu d'en empiler une seconde.
+pub const NOM_TACHE_DEMARRAGE: &str = "Photocopie Benin - Wi-Fi boutique";
+
+/// Ce que la tâche exécute à l'ouverture de session.
+///
+/// Le réseau hébergé de Windows ne survit pas à un redémarrage : sans cette
+/// tâche, le gérant doit rappuyer sur « Activer le Wi-Fi local » chaque
+/// matin — et s'il oublie, le premier client de la journée repart avec ses
+/// documents sous le bras, sans que personne ne comprenne pourquoi.
+///
+/// La tâche ne refait PAS la configuration du réseau : Windows garde le nom
+/// et le mot de passe de son côté depuis l'activation. Elle se contente de
+/// le rallumer et de lui redonner son adresse fixe — la même que partout
+/// ailleurs dans ce module, jamais devinée.
+///
+/// Tout y est silencieux : si le réseau ne démarre pas, rien ne doit
+/// s'afficher au visage du gérant à l'ouverture de sa session. Le bouton
+/// reste là, et lui dira ce qui ne va pas.
+const SCRIPT_DEMARRAGE: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+netsh wlan start hostednetwork | Out-Null
+$adaptateur = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*Hosted Network Virtual Adapter*' } | Select-Object -First 1
+if ($adaptateur) {
+    Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
+    New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "__ADRESSE__" -PrefixLength 24 -ErrorAction SilentlyContinue | Out-Null
+}
+"#;
+
+/// Écrit le script de démarrage à un endroit stable, et rend son chemin.
+///
+/// Dans le dossier de l'utilisateur et non dans `%TEMP%` : Windows efface le
+/// contenu de `%TEMP%`, et une tâche qui pointe vers un fichier disparu
+/// échoue en silence tous les matins.
+#[cfg(windows)]
+fn ecrire_script_demarrage() -> Result<std::path::PathBuf, String> {
+    let dossier = std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("photocopie-benin");
+    std::fs::create_dir_all(&dossier)
+        .map_err(|e| format!("Impossible de préparer le démarrage automatique ({e})."))?;
+
+    let fichier = dossier.join("demarrage-wifi.ps1");
+    let contenu = SCRIPT_DEMARRAGE.replace("__ADRESSE__", &ADRESSE_POINT_ACCES.to_string());
+    // Même marque UTF-8 que le script d'activation, pour la même raison.
+    std::fs::write(&fichier, format!("\u{FEFF}{contenu}"))
+        .map_err(|e| format!("Impossible d'écrire le démarrage automatique ({e})."))?;
+    Ok(fichier)
+}
+
 /// Mot de passe posé d'office sur une installation neuve. Huit caractères
 /// au minimum : c'est la règle du Wi-Fi lui-même, pas la nôtre, et Windows
 /// refuse le réseau en dessous avec une erreur incompréhensible.
@@ -601,7 +653,12 @@ fn extraire_section<'a>(sortie: &'a str, debut: &str, fin: &str) -> Option<&'a s
 ///    invisible sans l'option "Afficher les périphériques cachés") → ce
 ///    script tourne déjà en administrateur, il la réactive lui-même.
 #[cfg(windows)]
-fn script_activation(ssid: &str, mot_de_passe: &str, resultat: &std::path::Path) -> String {
+fn script_activation(
+    ssid: &str,
+    mot_de_passe: &str,
+    resultat: &std::path::Path,
+    script_demarrage: &std::path::Path,
+) -> String {
     let ssid = echapper_powershell(ssid);
     let mot_de_passe = echapper_powershell(mot_de_passe);
     let ip = ADRESSE_POINT_ACCES.to_string();
@@ -632,6 +689,14 @@ try {{
     $sortie += "===PARE_FEU==="
 {pare_feu}
 
+    # 6. Rallumer ce réseau à chaque démarrage du PC, sans rien demander.
+    #    Créée dans le même accord administrateur : une tâche planifiée "au
+    #    plus haut niveau de privilèges" ne redemande jamais d'autorisation
+    #    par la suite.
+    $sortie += "===DEMARRAGE_AUTO==="
+    $commandeTache = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{script_demarrage}"'
+    $sortie += (schtasks /Create /TN "{nom_tache}" /TR $commandeTache /SC ONLOGON /RL HIGHEST /F 2>&1 | Out-String)
+
     $adaptateur = Get-NetAdapter | Where-Object {{ $_.InterfaceDescription -like '*Hosted Network Virtual Adapter*' }} | Select-Object -First 1
     if ($adaptateur) {{
         Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
@@ -651,6 +716,8 @@ $sortie -join "`n" | Out-File -FilePath "{res}" -Encoding utf8
         marqueur_debut = MARQUEUR_DEBUT_DEMARRAGE,
         marqueur_fin = MARQUEUR_FIN_DEMARRAGE,
         pare_feu = crate::pare_feu::commandes_powershell(),
+        nom_tache = NOM_TACHE_DEMARRAGE,
+        script_demarrage = script_demarrage.display(),
         res = resultat.display(),
     )
 }
@@ -691,7 +758,16 @@ fn contient_confirmation_demarrage(sortie: &str) -> bool {
 #[cfg(windows)]
 pub fn activer(ssid: &str, mot_de_passe: &str) -> Result<(), String> {
     let fichier_resultat = std::env::temp_dir().join("photocopie-benin-hotspot-resultat.txt");
-    let sortie = executer_script_eleve(&script_activation(ssid, mot_de_passe, &fichier_resultat))?;
+    // Écrit avant l'élévation : ce dossier appartient à l'utilisateur, aucun
+    // droit administrateur n'y est nécessaire. En cas d'échec on active quand
+    // même — le démarrage automatique est un confort, pas une condition.
+    let script_demarrage = ecrire_script_demarrage().unwrap_or_default();
+    let sortie = executer_script_eleve(&script_activation(
+        ssid,
+        mot_de_passe,
+        &fichier_resultat,
+        &script_demarrage,
+    ))?;
 
     if sortie.trim().is_empty() {
         return Err(
@@ -1087,6 +1163,76 @@ fn adresse_adaptateur_wifi_direct() -> Option<Ipv4Addr> {
         }
     }
     None
+}
+
+/// Au lancement de l'application : adopte un point d'accès que Windows fait
+/// déjà tourner, et remet en service ce qui va avec.
+///
+/// C'est la seconde moitié du démarrage automatique. La tâche planifiée
+/// (voir `NOM_TACHE_DEMARRAGE`) rallume le réseau Wi-Fi à l'ouverture de
+/// session, mais un réseau seul ne sert à rien : sans les serveurs DHCP et
+/// DNS — qui vivent dans cette application, pas dans Windows — les
+/// téléphones rejoignent un Wi-Fi qui ne leur donne aucune adresse et
+/// n'ouvre aucune page. Exactement le « Connexion… » sans fin du terrain.
+///
+/// Les deux moitiés ne démarrent pas au même rythme : Windows peut mettre
+/// une minute à sortir le réseau, et l'application s'ouvre souvent avant.
+/// D'où des tentatives espacées plutôt qu'un seul regard au démarrage.
+///
+/// N'active RIEN par elle-même et ne demande aucune autorisation : elle se
+/// contente de constater. Si aucun réseau n'a été allumé, il ne se passe
+/// rien et le bouton « Activer le Wi-Fi local » garde son rôle habituel.
+pub fn reprendre_point_acces_existant(app: tauri::AppHandle) {
+    use tauri::Manager;
+
+    const TENTATIVES: u32 = 12;
+    const DELAI: std::time::Duration = std::time::Duration::from_secs(5);
+
+    tauri::async_runtime::spawn(async move {
+        for tentative in 0..TENTATIVES {
+            if tentative > 0 {
+                tokio::time::sleep(DELAI).await;
+            }
+            // Le gérant a pu appuyer sur le bouton entre-temps : ne pas lui
+            // passer devant, ni faire tourner deux DHCP sur le même port.
+            if point_acces_actif() {
+                return;
+            }
+
+            // Interroger Windows est bloquant : jamais directement dans une
+            // tâche asynchrone, sous peine de figer le reste.
+            let trouvee = tauri::async_runtime::spawn_blocking(adresse_point_acces_detectee)
+                .await
+                .ok()
+                .flatten();
+            let Some(adresse) = trouvee else { continue };
+
+            let mut taches = Vec::new();
+            if let Ok(tache) = crate::dhcp::demarrer(adresse).await {
+                taches.push(tache);
+            }
+            if let Ok(tache) = crate::dns::demarrer(adresse).await {
+                taches.push(tache);
+            }
+            // Sans DHCP ni DNS, se déclarer actif ferait afficher un QR pour
+            // un réseau où rien ne répondrait : mieux vaut laisser le gérant
+            // appuyer sur le bouton, qui lui dira ce qui bloque.
+            if taches.is_empty() {
+                return;
+            }
+
+            definir_adresse_active(Some(adresse));
+            if let Some(etat) = app.try_state::<EtatPointAcces>() {
+                if let Ok(mut garde) = etat.0.lock() {
+                    let anciennes = std::mem::replace(&mut *garde, taches);
+                    for ancienne in anciennes {
+                        ancienne.abort();
+                    }
+                }
+            }
+            return;
+        }
+    });
 }
 
 /// Coupe le réseau quelle que soit la méthode qui l'a créé.
@@ -1558,7 +1704,12 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn le_script_d_activation_integre_le_ssid_et_le_mot_de_passe_echappes() {
-        let script = script_activation("Ma Boutique", "secret\"123", std::path::Path::new("C:\\r.txt"));
+        let script = script_activation(
+            "Ma Boutique",
+            "secret\"123",
+            std::path::Path::new("C:\\r.txt"),
+            std::path::Path::new("C:\\demarrage.ps1"),
+        );
         assert!(script.contains(r#"ssid="Ma Boutique""#));
         assert!(script.contains(r#"key="secret`"123""#));
         assert!(script.contains("192.168.73.1"));
@@ -1571,7 +1722,12 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn le_script_repare_avant_de_demarrer() {
-        let script = script_activation("Boutique", "motdepasse", std::path::Path::new("C:\\r.txt"));
+        let script = script_activation(
+            "Boutique",
+            "motdepasse",
+            std::path::Path::new("C:\\r.txt"),
+            std::path::Path::new("C:\\demarrage.ps1"),
+        );
         let position = |aiguille: &str| script.find(aiguille).expect(aiguille);
 
         // 1. Arrêt d'un réseau resté ouvert, 2. remise à zéro de la carte
@@ -1586,5 +1742,17 @@ mod tests {
         // Le démarrage doit être encadré pour que son message soit isolable.
         assert!(position(MARQUEUR_DEBUT_DEMARRAGE) < position("start hostednetwork"));
         assert!(position("start hostednetwork") < position(MARQUEUR_FIN_DEMARRAGE));
+
+        // Le réseau doit se rallumer tout seul au démarrage du PC, sinon le
+        // gérant qui oublie de cliquer perd son premier client de la journée.
+        assert!(script.contains("schtasks /Create"));
+        assert!(script.contains(NOM_TACHE_DEMARRAGE));
+        assert!(script.contains("/SC ONLOGON"));
+        // "Au plus haut niveau de privilèges" : c'est ce qui évite que
+        // Windows redemande une autorisation chaque matin.
+        assert!(script.contains("/RL HIGHEST"));
+        // /F remplace la tâche existante au lieu d'échouer, sinon une
+        // deuxième activation ne mettrait jamais le chemin à jour.
+        assert!(script.contains("/F"));
     }
 }

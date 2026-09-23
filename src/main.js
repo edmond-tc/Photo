@@ -658,35 +658,46 @@ async function afficherQr() {
     conteneur.classList.toggle("deux-qr", Boolean(info.qr_page_data_uri));
 
     // Cette phrase part à l'impression sur l'affiche collée à l'entrée :
-    // c'est souvent la seule consigne que le client lira.
-    document.querySelector("#qr-intro").textContent = info.qr_page_data_uri
-      ? "Scannez le code 1, puis le code 2, avec l'appareil photo de votre téléphone"
-      : "Scannez ce code avec l'appli Scanner de votre téléphone";
+    // c'est souvent la seule consigne que le client lira. Elle annonce UN
+    // seul geste, parce que c'est le cas normal — le second code n'est qu'un
+    // filet, et l'annoncer d'emblée ferait croire qu'il faut deux scans.
+    document.querySelector("#qr-intro").textContent =
+      "Scannez ce code avec l'appareil photo de votre téléphone";
 
-    // Un QR seul quand il ouvre directement la page ; deux QR numérotés
-    // quand il faut d'abord rejoindre un Wi-Fi. Le second existe pour que le
-    // client n'ait JAMAIS à taper l'adresse quand l'ouverture automatique ne
-    // se déclenche pas (voir `qr.rs`).
-    const ajouterQr = (source, numero, legende) => {
+    // UN SEUL geste pour le client. Le téléphone rejoint le Wi-Fi, puis la
+    // page s'ouvre d'elle-même : c'est le rôle du portail captif (voir
+    // `dns.rs`). Il ne pouvait pas fonctionner tant que les téléphones ne
+    // recevaient aucune adresse — ce qui vient d'être corrigé.
+    //
+    // Le second code reste, mais à sa vraie place : un filet discret, pour
+    // le cas où l'ouverture automatique ne se déclenche pas (certains
+    // Android se contentent d'une notification qu'on peut manquer). Le
+    // montrer aussi gros que le premier faisait croire qu'il fallait
+    // toujours deux scans.
+    const ajouterQr = (source, legende, taille) => {
       const bloc = document.createElement("figure");
       bloc.className = "qr-bloc";
       const img = document.createElement("img");
       img.src = source;
       img.alt = legende;
-      img.width = info.qr_page_data_uri ? 180 : 220;
-      img.height = info.qr_page_data_uri ? 180 : 220;
+      img.width = taille;
+      img.height = taille;
       bloc.appendChild(img);
       const texte = document.createElement("figcaption");
-      texte.textContent = numero ? `${numero} — ${legende}` : legende;
+      texte.textContent = legende;
       bloc.appendChild(texte);
       conteneur.appendChild(bloc);
+      return bloc;
     };
 
+    ajouterQr(info.qr_data_uri, "Scannez pour envoyer vos documents", 220);
+
     if (info.qr_page_data_uri) {
-      ajouterQr(info.qr_data_uri, "1", "Rejoindre le Wi-Fi de la boutique");
-      ajouterQr(info.qr_page_data_uri, "2", "Ouvrir la page pour envoyer ses documents");
-    } else {
-      ajouterQr(info.qr_data_uri, null, "Ouvrir la page pour envoyer ses documents");
+      ajouterQr(
+        info.qr_page_data_uri,
+        "La page ne s'est pas ouverte ? Scannez celui-ci",
+        110
+      ).classList.add("qr-secours");
     }
     // Chaque installation appelle une consigne différente : dire au gérant
     // une phrase qui ne correspond pas à son poste le laisserait sans réponse
@@ -696,10 +707,9 @@ async function afficherQr() {
       // une notification à toucher. L'adresse reste affichée pour que le
       // gérant puisse guider un client dont le téléphone ne réagit pas.
       urlEl.innerHTML =
-        `Le client scanne le <strong>QR 1</strong> et rejoint le Wi-Fi. La page d'envoi s'ouvre souvent toute seule ` +
-        `(iPhone) ou après avoir touché une notification (Android). ` +
-        `Si elle ne s'ouvre pas, il scanne le <strong>QR 2</strong> : rien à taper, jamais. ` +
-        `Dès la deuxième visite, son téléphone retient le Wi-Fi — un seul scan suffit.`;
+        `<strong>Un seul scan.</strong> Le téléphone rejoint le Wi-Fi et la page d'envoi s'ouvre toute seule — ` +
+        `immédiatement sur iPhone, après une notification « Se connecter au réseau » sur certains Android. ` +
+        `Le petit code en dessous ne sert que si elle ne s'ouvre pas : rien à taper, jamais.`;
     } else if (info.mode === "point_acces_inactif") {
       urlEl.innerHTML =
         `⚠️ Ce QR fait rejoindre le Wi-Fi <strong>${echapperHtml(info.url)}</strong>… mais le Wi-Fi local n'est pas allumé. ` +
@@ -709,15 +719,13 @@ async function afficherQr() {
       // l'application — donc pas d'avertissement "réseau éteint" ici : ce
       // mode signifie seulement que l'ouverture automatique fonctionne.
       urlEl.innerHTML =
-        `Le client scanne le <strong>QR 1</strong> pour rejoindre le Wi-Fi, puis le <strong>QR 2</strong> ` +
-        `pour ouvrir la page d'envoi — sauf si elle s'est déjà ouverte toute seule. Rien à taper, jamais. ` +
-        `Dès la deuxième visite, son téléphone retient le Wi-Fi.`;
+        `<strong>Un seul scan.</strong> Le téléphone rejoint le Wi-Fi du routeur et la page d'envoi s'ouvre ` +
+        `toute seule. Le petit code en dessous ne sert que si elle ne s'ouvre pas : rien à taper, jamais.`;
     } else if (info.mode === "routeur_inactif") {
       urlEl.innerHTML =
-        `Le <strong>QR 1</strong> fait rejoindre le Wi-Fi, le <strong>QR 2</strong> ouvre la page d'envoi : ` +
-        `les deux fonctionnent déjà, le client n'a rien à taper. ` +
-        `L'ouverture AUTOMATIQUE de la page, elle, n'est pas activée : appuyez une fois sur ` +
-        `« 📶 Activer le Wi-Fi local de la boutique » si vous voulez que la page s'ouvre sans le second scan.`;
+        `Le grand code fait rejoindre le Wi-Fi, le petit ouvre la page d'envoi : les deux fonctionnent déjà, ` +
+        `le client n'a rien à taper. Mais l'ouverture AUTOMATIQUE de la page n'est pas activée : appuyez une ` +
+        `fois sur « 📶 Activer le Wi-Fi local de la boutique » pour que le grand code suffise à lui seul.`;
     } else {
       urlEl.innerHTML =
         `Ce QR ouvre directement la page d'envoi (${echapperHtml(info.url)}) dans le navigateur du client. ` +
