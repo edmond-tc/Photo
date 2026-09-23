@@ -624,7 +624,18 @@ pub async fn activer_point_acces_local(
             },
         ),
     }
-    recapitulatif.push("✅ Adresse du portail annoncée aux téléphones (RFC 8910)".to_string());
+    recapitulatif.push(
+        if crate::server::api_portail_repond(activation.adresse).await {
+            "✅ Annonce du portail aux téléphones — testée, répond".to_string()
+        } else {
+            let message = "L'annonce normalisée du portail (celle qui fait ouvrir la page \
+                           toute seule sur les téléphones récents) ne répond pas. La page \
+                           ne s'ouvrira pas d'elle-même."
+                .to_string();
+            avertissements.push(message);
+            "❌ Annonce du portail aux téléphones — NE RÉPOND PAS".to_string()
+        },
+    );
     recapitulatif.push(if crate::pare_feu::regles_presentes() {
         "✅ Pare-feu Windows ouvert (4 ports)".to_string()
     } else {

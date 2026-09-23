@@ -222,8 +222,15 @@ fn construire_reponse(brut: &[u8], adresse_serveur: Ipv4Addr) -> Option<Vec<u8>>
     // (voir `server::PORT_PORTAIL_CAPTIF`), et une fenêtre de portail est un
     // navigateur réduit où une adresse à port inhabituel est un risque
     // inutile.
+    // L'adresse pointe sur la réponse normalisée (RFC 8908), pas sur la
+    // page : un téléphone récent qui reçoit cette option va y chercher une
+    // réponse dans un format précis, et non du HTML. Lui donner une page
+    // ici, c'est risquer qu'il ignore l'option et retombe sur les
+    // devinettes qu'on cherche justement à éviter. Voir
+    // `server::api_portail`, qui répond et y indique la page à ouvrir.
     opts.insert(DhcpOption::CaptivePortal(format!(
-        "http://{adresse_serveur}/"
+        "http://{adresse_serveur}{}",
+        crate::server::CHEMIN_API_PORTAIL
     )));
     opts.insert(DhcpOption::End);
 
@@ -430,8 +437,10 @@ mod tests {
 
             match reponse.opts().get(OptionCode::CaptivePortal) {
                 Some(DhcpOption::CaptivePortal(adresse)) => assert_eq!(
-                    adresse, "http://192.168.73.1/",
-                    "l'adresse annoncée doit être celle du portail, sur le port 80"
+                    adresse, "http://192.168.73.1/api-portail",
+                    "l'adresse annoncée doit être celle de la réponse normalisée \
+                     (RFC 8908), sur le port 80 — pas la page web, qu'un téléphone \
+                     récent ne saurait pas interpréter ici"
                 ),
                 autre => panic!("option de portail attendue, obtenu {autre:?}"),
             }

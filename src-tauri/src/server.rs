@@ -145,10 +145,41 @@ pub fn start(app: AppHandle) {
 ///
 /// Le même routeur sert les deux ports : la page doit répondre pareil, quel
 /// que soit le chemin par lequel le téléphone arrive.
+/// Chemin annoncé aux téléphones par l'option DHCP du portail (voir
+/// `dhcp.rs`). Fixe, car il voyage dans une offre DHCP et doit rester le
+/// même d'une version à l'autre.
+pub const CHEMIN_API_PORTAIL: &str = "/api-portail";
+
+/// Réponse normalisée d'un portail captif (RFC 8908).
+///
+/// Indispensable en complément de l'option DHCP : celle-ci annonce une
+/// ADRESSE, et un téléphone récent ne s'attend pas à y trouver une page
+/// web — il attend cette réponse-ci, dans un format précis, qui lui dit en
+/// clair « oui, ce réseau est fermé » et « voici la page à ouvrir ».
+/// Envoyer l'adresse sans servir cette réponse revient à lui parler une
+/// langue qu'il ne comprend qu'à moitié : les clients stricts l'ignorent.
+///
+/// Le type de contenu compte autant que le contenu : `application/captive+json`
+/// est ce à quoi iOS et Android reconnaissent une réponse de portail.
+async fn api_portail(State(app): State<AppHandle>) -> impl IntoResponse {
+    let _ = app;
+    let adresse = adresse_locale();
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "application/captive+json",
+        )],
+        format!(
+            r#"{{"captive":true,"user-portal-url":"http://{adresse}/","can-extend-session":true}}"#
+        ),
+    )
+}
+
 fn construire_router(app: AppHandle) -> Router {
     Router::new()
         .route("/envoyer", post(recevoir_fichier))
         .route("/statut/:jeton", get(statut_fichier))
+        .route(CHEMIN_API_PORTAIL, get(api_portail))
         // Toute autre adresse, `/` comprise : la page d'envoi, en 200.
         .fallback(page_accueil)
         .layer(DefaultBodyLimit::max(TAILLE_MAX_ENVOI))
@@ -222,6 +253,46 @@ pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
 
     let debut = String::from_utf8_lossy(&tampon[..taille]);
     debut.starts_with("HTTP/1.1 200") || debut.starts_with("HTTP/1.0 200")
+}
+
+/// La réponse normalisée du portail (RFC 8908) est-elle bien servie, et
+/// avec le bon type de contenu ?
+///
+/// C'est le mécanisme sur lequel repose désormais l'ouverture automatique,
+/// et il ne suffit pas qu'il existe : un téléphone n'y reconnaît une
+/// réponse de portail que si le type de contenu est exactement celui
+/// attendu. Autant le vérifier ici plutôt que sur le téléphone du gérant.
+pub async fn api_portail_repond(adresse: Ipv4Addr) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let connexion = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        tokio::net::TcpStream::connect((adresse, PORT_PORTAIL_CAPTIF)),
+    )
+    .await;
+    let Ok(Ok(mut flux)) = connexion else {
+        return false;
+    };
+
+    let requete = format!("GET {CHEMIN_API_PORTAIL} HTTP/1.0\r\nHost: {adresse}\r\n\r\n");
+    if flux.write_all(requete.as_bytes()).await.is_err() {
+        return false;
+    }
+
+    let mut tampon = vec![0u8; 2048];
+    let lecture = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        flux.read(&mut tampon),
+    )
+    .await;
+    let Ok(Ok(taille)) = lecture else {
+        return false;
+    };
+
+    let reponse = String::from_utf8_lossy(&tampon[..taille]);
+    reponse.contains(" 200")
+        && reponse.contains("application/captive+json")
+        && reponse.contains("\"captive\":true")
 }
 
 /// Le portail captif a-t-il échoué à démarrer ? Remonté au gérant parmi les
