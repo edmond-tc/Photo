@@ -490,7 +490,7 @@ fn noter_visite(hote: &str, chemin: &str, navigateur: &str) {
         // Le nom du navigateur est long : on n'en garde que le début, qui
         // suffit à distinguer un iPhone d'un Android.
         let court: String = navigateur.chars().take(40).collect();
-        let marque = if est_sonde_de_reseau(chemin) {
+        let marque = if est_sonde_de_reseau(chemin, hote) {
             "  ⭐ VÉRIFICATION DE RÉSEAU"
         } else {
             ""
@@ -509,24 +509,56 @@ fn noter_visite(hote: &str, chemin: &str, navigateur: &str) {
     }
 }
 
-/// Les adresses que les téléphones appellent pour savoir s'ils ont internet.
+/// Les machines que les téléphones appellent pour savoir s'ils ont internet.
 ///
+/// Reconnaître le CHEMIN ne suffit pas, et c'est un trou qu'on ne pouvait
+/// pas deviner : iOS n'interroge pas seulement
+/// `captive.apple.com/hotspot-detect.html`, il interroge aussi
+/// `netcts.cdn-apple.com/` — à la racine. Un test par chemin laisse donc
+/// passer cette seconde vérification, qui reçoit alors la page d'envoi
+/// entière. C'est exactement l'écart rapporté par nodogsplash : leur
+/// portail s'affichait pour la première adresse et jamais pour la seconde
+/// (nodogsplash/nodogsplash#472).
+///
+/// La machine appelée, elle, est toujours l'une de celles-ci, quel que
+/// soit le chemin.
+const MACHINES_DE_CONTROLE: &[&str] = &[
+    "captive.apple.com",             // iPhone, iPad, Mac
+    "netcts.cdn-apple.com",          // iOS récent, interrogé à la racine
+    "connectivitycheck.gstatic.com", // Android
+    "connectivitycheck.android.com", // Android
+    "clients3.google.com",           // Android, ancienne adresse
+    "www.msftconnecttest.com",       // Windows 10 et 11
+    "www.msftncsi.com",              // Windows, ancienne adresse
+    "detectportal.firefox.com",      // Firefox
+    "connectivity-check.ubuntu.com", // Ubuntu
+];
+
+/// Les chemins connus, gardés en plus des machines : un téléphone peut
+/// appeler par adresse IP, sans nom, et la machine est alors la nôtre.
+const CHEMINS_DE_CONTROLE: &[&str] = &[
+    "/hotspot-detect.html",
+    "/library/test/success.html",
+    "/generate_204",
+    "/gen_204",
+    "/connecttest.txt",
+    "/ncsi.txt",
+    "/success.txt",
+    "/canonical.html",
+];
+
 /// Ces visites reçoivent une réponse à part (voir `page_de_controle`) et
 /// sont marquées dans le journal, pour qu'on les repère au milieu des
 /// autres.
-fn est_sonde_de_reseau(chemin: &str) -> bool {
+fn est_sonde_de_reseau(chemin: &str, hote: &str) -> bool {
+    // Le port fait partie de l'en-tête « Host » et n'appartient pas au nom.
+    let hote = hote.to_ascii_lowercase();
+    let hote = hote.split(':').next().unwrap_or("");
+    if MACHINES_DE_CONTROLE.contains(&hote) {
+        return true;
+    }
     let chemin = chemin.to_ascii_lowercase();
-    matches!(
-        chemin.as_str(),
-        "/hotspot-detect.html"
-            | "/library/test/success.html"
-            | "/generate_204"
-            | "/gen_204"
-            | "/connecttest.txt"
-            | "/ncsi.txt"
-            | "/success.txt"
-            | "/canonical.html"
-    )
+    CHEMINS_DE_CONTROLE.contains(&chemin.as_str())
 }
 
 /// La page servie au téléphone qui vient vérifier son réseau — et à lui
@@ -584,7 +616,7 @@ async fn page_accueil(
     // pas l'application entière. On ne touche même pas à la base de
     // données : cette réponse doit partir tout de suite, une fenêtre de
     // contrôle n'attend pas.
-    if est_sonde_de_reseau(uri.path()) {
+    if est_sonde_de_reseau(uri.path(), &lire(axum::http::header::HOST)) {
         return Html(page_de_controle(&adresse_locale()));
     }
 
@@ -1753,12 +1785,38 @@ mod tests {
             "/success.txt",
             "/canonical.html",
         ] {
-            assert!(est_sonde_de_reseau(chemin), "sonde non reconnue : {chemin}");
+            assert!(
+                est_sonde_de_reseau(chemin, "192.168.73.1"),
+                "sonde non reconnue : {chemin}"
+            );
         }
         assert!(
-            est_sonde_de_reseau("/GENERATE_204"),
+            est_sonde_de_reseau("/GENERATE_204", "192.168.73.1"),
             "la casse vient du téléphone"
         );
+    }
+
+    /// Le trou que la documentation a révélé : iOS interroge aussi
+    /// `netcts.cdn-apple.com/`, à la RACINE. Un test par chemin seul le
+    /// laisse passer, et cette seconde vérification reçoit alors la page
+    /// entière — le cas rapporté par nodogsplash, où le portail
+    /// s'affichait pour une adresse et jamais pour l'autre.
+    #[test]
+    fn reconnait_les_machines_de_controle_meme_a_la_racine() {
+        for hote in [
+            "netcts.cdn-apple.com",
+            "captive.apple.com",
+            "connectivitycheck.gstatic.com",
+            "www.msftconnecttest.com",
+            "detectportal.firefox.com",
+        ] {
+            assert!(
+                est_sonde_de_reseau("/", hote),
+                "machine de contrôle non reconnue à la racine : {hote}"
+            );
+        }
+        // Le port fait partie de l'en-tête « Host » et n'appartient pas au nom.
+        assert!(est_sonde_de_reseau("/", "NETCTS.CDN-APPLE.COM:80"));
     }
 
     /// Le poids est ici la fonctionnalité : c'est précisément parce que la
@@ -1800,7 +1858,7 @@ mod tests {
     fn la_page_du_client_n_est_pas_une_sonde() {
         for chemin in ["/", "/envoyer", "/statut/abc", "/api-portail"] {
             assert!(
-                !est_sonde_de_reseau(chemin),
+                !est_sonde_de_reseau(chemin, "192.168.73.1"),
                 "pris à tort pour une sonde : {chemin}"
             );
         }
