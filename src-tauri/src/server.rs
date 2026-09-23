@@ -1,7 +1,7 @@
 use crate::watcher::{enqueue_file_avec_options, OptionsImpression};
 use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
-use axum::http::{StatusCode, Uri};
-use axum::response::{Html, IntoResponse, Redirect};
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use std::net::Ipv4Addr;
@@ -124,11 +124,33 @@ pub fn start(app: AppHandle) {
     });
 }
 
+/// Toute adresse inconnue reçoit LA PAGE elle-même, et non une redirection.
+///
+/// La différence est décisive, et c'est elle qui manquait. Quand un
+/// téléphone rejoint le réseau, il va chercher une page de contrôle
+/// (`captive.apple.com` pour iPhone, `connectivitycheck.gstatic.com` pour
+/// Android). Il n'attend pas une adresse où aller : il attend un CONTENU.
+/// Recevoir une redirection — de surcroît vers un autre port — le laisse
+/// hésitant : l'iPhone n'ouvre alors rien, et attend qu'on entre dans les
+/// réglages Wi-Fi pour refaire sa vérification. C'est exactement ce que le
+/// terrain a constaté : « il faut que j'ouvre mes paramètres Wi-Fi avant que
+/// ça ne s'ouvre ».
+///
+/// Recevoir directement une page qui n'est pas celle attendue lui fait
+/// conclure immédiatement « ce réseau demande une connexion » et ouvrir sa
+/// fenêtre de portail, sans rien demander à personne.
+///
+/// Ce comportement était déjà décrit dans le commentaire de
+/// `demarrer_portail_captif`, mais le code, lui, redirigeait toujours.
+///
+/// Le même routeur sert les deux ports : la page doit répondre pareil, quel
+/// que soit le chemin par lequel le téléphone arrive.
 fn construire_router(app: AppHandle) -> Router {
     Router::new()
-        .route("/", get(page_accueil))
         .route("/envoyer", post(recevoir_fichier))
         .route("/statut/:jeton", get(statut_fichier))
+        // Toute autre adresse, `/` comprise : la page d'envoi, en 200.
+        .fallback(page_accueil)
         .layer(DefaultBodyLimit::max(TAILLE_MAX_ENVOI))
         .with_state(app)
 }
@@ -145,11 +167,16 @@ fn construire_router(app: AppHandle) -> Router {
 /// conclure "ce réseau demande une connexion" et ouvrir un navigateur.
 ///
 /// On sert donc ici la VRAIE page d'envoi, et non une redirection vers le
-/// port {PORT} comme auparavant : la fenêtre qu'ouvre l'iPhone est un
-/// navigateur réduit et cloisonné, où une redirection vers un port
-/// inhabituel est un risque inutile. Servir directement la page supprime ce
-/// détour. Elle pèse ~19 Ko, bien en dessous des ~128 Ko au-delà desquels
-/// iOS refuse d'afficher un portail.
+/// port {PORT} : la fenêtre qu'ouvre l'iPhone est un navigateur réduit et
+/// cloisonné, où une redirection vers un port inhabituel est un risque
+/// inutile. Servir directement la page supprime ce détour. Elle pèse ~19 Ko,
+/// bien en dessous des ~128 Ko au-delà desquels iOS refuse d'afficher un
+/// portail.
+///
+/// Ce paragraphe décrivait l'intention depuis le début, mais le code
+/// redirigeait quand même — l'écart n'a été vu que lorsque le terrain a
+/// rapporté qu'il fallait ouvrir les réglages Wi-Fi pour déclencher
+/// l'ouverture. Voir `construire_router_portail`.
 /// Pourquoi le portail captif ne tourne pas, s'il ne tourne pas.
 ///
 /// Ce défaut s'écrivait jusqu'ici dans un `eprintln!` — c'est-à-dire dans
@@ -167,7 +194,7 @@ pub fn probleme_portail_captif() -> Option<String> {
 
 fn demarrer_portail_captif(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let router = construire_router(app).fallback(rediriger_vers_accueil);
+        let router = construire_router(app);
         let addr = format!("0.0.0.0:{PORT_PORTAIL_CAPTIF}");
         match tokio::net::TcpListener::bind(&addr).await {
             Ok(listener) => {
@@ -282,9 +309,6 @@ fn premiere_adresse_utilisable(sortie: &str) -> Option<Ipv4Addr> {
     })
 }
 
-async fn rediriger_vers_accueil(_uri: Uri) -> impl IntoResponse {
-    Redirect::to(&format!("http://{}:{PORT}/", adresse_locale()))
-}
 
 /// Le serveur local a-t-il réussi à démarrer ? Utilisé avant d'afficher le
 /// QR code pour ne jamais présenter un lien mort au gérant.
