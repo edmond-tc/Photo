@@ -740,6 +740,21 @@ pub async fn activer_point_acces_local(
     // ranger celles qui viennent de démarrer.
     *etat_point_acces.0.lock().map_err(|e| e.to_string())? = nouvelles_taches;
 
+    // La liste des programmes qui tiennent ces ports est jointe systéma-
+    // tiquement : c'est le seul moyen de savoir si un autre logiciel répond
+    // aux téléphones à notre place, et une photo de cet écran suffit alors
+    // à le nommer.
+    let ecoutes = tauri::async_runtime::spawn_blocking(crate::hotspot::qui_ecoute_sur_les_ports)
+        .await
+        .unwrap_or_default();
+    if !ecoutes.trim().is_empty() {
+        recapitulatif.push(String::new());
+        recapitulatif.push("— Qui écoute sur les ports —".to_string());
+        for ligne in ecoutes.lines() {
+            recapitulatif.push(ligne.to_string());
+        }
+    }
+
     Ok(ResultatActivationWifi {
         methode: activation.methode.to_string(),
         recapitulatif,

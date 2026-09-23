@@ -668,6 +668,24 @@ $ErrorActionPreference = 'Continue'
 $sortie = @()
 try {{
     $sortie += (netsh wlan stop hostednetwork 2>&1 | Out-String)
+
+    # 0. Écarter le « Partage de connexion Internet » de Windows.
+    #
+    #    Ce service fournit SON PROPRE serveur d'adresses et de noms sur les
+    #    réseaux hébergés, en se réservant l'adresse précise de la carte. Sur
+    #    Windows, une telle réservation passe devant un programme qui écoute
+    #    sur toutes les adresses : le nôtre continue de répondre aux tests
+    #    locaux, mais les paquets venus de la carte Wi-Fi, eux, partent chez
+    #    lui. D'où la contradiction observée sur le terrain — le PC se répond
+    #    à lui-même, et le téléphone n'obtient rien.
+    #
+    #    Cette application n'en a aucun usage : elle ne partage pas
+    #    d'internet, elle n'en a pas. On l'arrête donc, sans le désactiver
+    #    définitivement — un redémarrage lui rend son réglage d'origine.
+    $sortie += "===PARTAGE_CONNEXION==="
+    $sortie += (Stop-Service -Name SharedAccess -Force -ErrorAction SilentlyContinue 2>&1 | Out-String)
+    $sortie += ((Get-Service -Name SharedAccess -ErrorAction SilentlyContinue).Status | Out-String)
+
     $sortie += (netsh wlan set hostednetwork mode=disallow 2>&1 | Out-String)
     $sortie += (netsh wlan set hostednetwork mode=allow ssid="{ssid}" key="{mot_de_passe}" 2>&1 | Out-String)
 
@@ -1233,6 +1251,55 @@ pub fn reprendre_point_acces_existant(app: tauri::AppHandle) {
             return;
         }
     });
+}
+
+/// QUI écoute réellement sur les ports dont dépend l'ouverture automatique.
+///
+/// Question posée par une contradiction que rien d'autre n'explique :
+/// l'application interroge son propre PC et reçoit une réponse, pendant que
+/// le téléphone, lui, ne reçoit rien. Les deux ne peuvent être vrais en même
+/// temps que si un AUTRE programme répond aux téléphones à notre place.
+///
+/// Windows le permet : un programme qui se réserve l'adresse précise du
+/// point d'accès passe devant celui qui écoute sur toutes les adresses. Le
+/// test local arrive quand même à destination ; le paquet venu de la carte
+/// Wi-Fi, non. Le candidat connu est le service « Partage de connexion
+/// Internet », qui fournit son propre DNS sur les réseaux hébergés.
+///
+/// On lit donc la liste, avec le nom des programmes. Plus de supposition :
+/// soit un autre nom apparaît, soit il n'y a que le nôtre et cette piste se
+/// ferme pour de bon.
+#[cfg(windows)]
+pub fn qui_ecoute_sur_les_ports() -> String {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let script = "\
+        $ports = 53,67,80,4173; \
+        $lignes = @(); \
+        foreach ($p in $ports) { \
+          $u = Get-NetUDPEndpoint -LocalPort $p -ErrorAction SilentlyContinue; \
+          $t = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; \
+          foreach ($e in @($u) + @($t)) { \
+            if ($e) { \
+              $nom = (Get-Process -Id $e.OwningProcess -ErrorAction SilentlyContinue).ProcessName; \
+              $lignes += (\"port \" + $p + \" : \" + $e.LocalAddress + \" <- \" + $nom); \
+            } \
+          } \
+        } \
+        if ($lignes.Count -eq 0) { 'aucun' } else { $lignes -join \"`n\" }";
+
+    std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|sortie| String::from_utf8_lossy(&sortie.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+#[cfg(not(windows))]
+pub fn qui_ecoute_sur_les_ports() -> String {
+    String::new()
 }
 
 /// Attend que l'adresse du point d'accès devienne RÉELLEMENT utilisable.
