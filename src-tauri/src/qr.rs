@@ -64,7 +64,11 @@ pub fn build_server_info(
 ) -> Result<ServerInfo, String> {
     // Même logique que le serveur HTTP lui-même (voir `server::adresse_locale`) :
     // la page servie doit être joignable à l'adresse annoncée dans le QR.
-    let url = format!("http://{}:{PORT}/", crate::server::adresse_locale());
+    let url = format!(
+        "http://{}{}/",
+        crate::server::adresse_locale(),
+        suffixe_port()
+    );
 
     let Some(ssid) = wifi_ssid.filter(|s| !s.is_empty()) else {
         return Ok(ServerInfo {
@@ -87,6 +91,28 @@ pub fn build_server_info(
         url,
         mode,
     })
+}
+
+/// Le port à écrire dans l'adresse du QR : aucun quand le portail répond
+/// sur le port 80, faute de quoi le port 4173.
+///
+/// La même page est servie sur les deux (voir `server::construire_router`).
+/// Mais une adresse sans port — « http://192.168.73.1/ » — est plus courte,
+/// donc le QR a moins de carrés et se lit de plus loin et plus vite ; et
+/// c'est la forme ordinaire qu'attendent les appareils photo des
+/// téléphones, alors qu'un port inhabituel est le genre de détail qu'un
+/// système peut traiter autrement. Signalé sur le terrain : l'iPhone
+/// n'arrivait pas à ouvrir ce second code.
+///
+/// On ne prend le port 80 que si le portail y répond vraiment : quand il
+/// n'a pas pu s'y installer (port déjà pris), pointer dessus donnerait un
+/// QR qui ne mène nulle part, alors que 4173, lui, répond.
+fn suffixe_port() -> String {
+    if crate::server::probleme_portail_captif().is_none() {
+        String::new()
+    } else {
+        format!(":{PORT}")
+    }
 }
 
 /// Séparée de `build_server_info` pour être testable sans toucher à l'état
