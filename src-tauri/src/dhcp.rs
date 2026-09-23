@@ -67,10 +67,32 @@ async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
             Err(_) => continue,
         };
         if let Some(reponse) = construire_reponse(&tampon[..taille], adresse_serveur) {
-            // Le client n'a pas encore d'adresse : seule la diffusion générale
-            // du réseau local peut l'atteindre.
+            // Le client n'a pas encore d'adresse : seule une diffusion peut
+            // l'atteindre. Mais LAQUELLE compte, et c'est ce qui manquait.
+            //
+            // `255.255.255.255` ne désigne aucun réseau en particulier : sur
+            // un PC qui a plusieurs cartes — et un PC de boutique en a
+            // toujours plusieurs (Ethernet, Wi-Fi, cartes virtuelles) —
+            // Windows choisit tout seul par où l'envoyer, en suivant sa
+            // table de routage. Il l'envoie donc vers la carte de sortie
+            // habituelle, PAS vers le point d'accès qu'on vient de créer.
+            // Le téléphone attendait une réponse qui partait ailleurs :
+            // « Connexion… » pour toujours.
+            //
+            // La diffusion du sous-réseau (192.168.73.255 pour un point
+            // d'accès en 192.168.73.1) ne laisse aucun choix à Windows :
+            // cette plage n'existe que sur la carte du point d'accès, la
+            // réponse ne peut donc sortir que par là.
+            let [a, b, c, _] = adresse_serveur.octets();
+            let diffusion_du_reseau = Ipv4Addr::new(a, b, c, 255);
             let _ = socket
-                .send_to(&reponse, ("255.255.255.255", PORT_CLIENT))
+                .send_to(&reponse, (diffusion_du_reseau, PORT_CLIENT))
+                .await;
+            // Envoyée aussi à l'ancienne adresse, pour les rares appareils
+            // qui n'écoutent que celle-là. Un DHCP reçu deux fois ne gêne
+            // aucun client ; ne pas le recevoir du tout les bloque tous.
+            let _ = socket
+                .send_to(&reponse, (Ipv4Addr::BROADCAST, PORT_CLIENT))
                 .await;
         }
     }
@@ -88,6 +110,26 @@ fn adresse_pour(chaddr: &[u8]) -> u8 {
     PREMIERE_ADRESSE.wrapping_add((empreinte % NOMBRE_ADRESSES as u32) as u8)
 }
 
+/// L'adresse que le téléphone réclame : soit explicitement dans sa demande,
+/// soit celle qu'il utilise déjà et cherche à prolonger.
+fn adresse_demandee(requete: &DhcpMessage) -> Option<Ipv4Addr> {
+    if let Some(DhcpOption::RequestedIpAddress(ip)) =
+        requete.opts().get(OptionCode::RequestedIpAddress)
+    {
+        return Some(*ip);
+    }
+    Some(requete.ciaddr()).filter(|ip| !ip.is_unspecified())
+}
+
+/// Cette adresse a-t-elle un sens sur notre point d'accès ? L'adresse du PC
+/// lui-même est exclue : la donner à un téléphone couperait tout.
+fn dans_notre_reseau(adresse: Ipv4Addr, adresse_serveur: Ipv4Addr) -> bool {
+    adresse.octets()[..3] == adresse_serveur.octets()[..3]
+        && adresse.octets()[3] != adresse_serveur.octets()[3]
+        && adresse.octets()[3] != 0
+        && adresse.octets()[3] != 255
+}
+
 fn construire_reponse(brut: &[u8], adresse_serveur: Ipv4Addr) -> Option<Vec<u8>> {
     let requete = decoder_requete(brut).ok()?;
     if requete.opcode() != Opcode::BootRequest {
@@ -99,18 +141,34 @@ fn construire_reponse(brut: &[u8], adresse_serveur: Ipv4Addr) -> Option<Vec<u8>>
         return None;
     };
 
-    let type_reponse = match type_demande {
-        MessageType::Discover => MessageType::Offer,
-        // Une Request confirme simplement l'adresse déjà annoncée dans notre
-        // Offer précédente : pas de vraie négociation possible (on n'a rien
-        // mémorisé), donc toujours un Ack plutôt qu'un Nak — l'adresse
-        // dérivée du MAC du téléphone est de toute façon stable.
-        MessageType::Request => MessageType::Ack,
+    let [a, b, c, _] = adresse_serveur.octets();
+    let adresse_derivee = Ipv4Addr::new(a, b, c, adresse_pour(requete.chaddr()));
+
+    // Ce que le téléphone réclame, s'il réclame quelque chose. Un téléphone
+    // qui a déjà été connecté à un autre Wi-Fi redemande d'abord SON
+    // ancienne adresse, apprise ailleurs.
+    let demandee = adresse_demandee(&requete);
+
+    let (type_reponse, adresse_client) = match type_demande {
+        MessageType::Discover => (MessageType::Offer, adresse_derivee),
+        MessageType::Request => match demandee {
+            // Adresse cohérente avec notre réseau : on l'accorde telle
+            // quelle, même si ce n'est pas celle qu'on aurait choisie.
+            Some(ip) if dans_notre_reseau(ip, adresse_serveur) => (MessageType::Ack, ip),
+            // Adresse d'un AUTRE réseau : il faut dire NON, explicitement.
+            //
+            // C'est le second défaut trouvé ici, et il expliquait à lui seul
+            // un « Connexion… » sans fin. On répondait « d'accord » (Ack) en
+            // y mettant une adresse DIFFÉRENTE de celle demandée. Pour le
+            // téléphone, cette réponse est incohérente : il la jette,
+            // redemande, la jette encore — sans jamais se connecter ni
+            // afficher d'erreur. Un refus net (Nak), lui, le fait repartir
+            // immédiatement de zéro et aboutir en une seconde.
+            Some(_) => (MessageType::Nak, Ipv4Addr::UNSPECIFIED),
+            None => (MessageType::Ack, adresse_derivee),
+        },
         _ => return None,
     };
-
-    let [a, b, c, _] = adresse_serveur.octets();
-    let adresse_client = Ipv4Addr::new(a, b, c, adresse_pour(requete.chaddr()));
 
     let mut reponse = DhcpMessage::new(
         Ipv4Addr::UNSPECIFIED,
@@ -128,6 +186,16 @@ fn construire_reponse(brut: &[u8], adresse_serveur: Ipv4Addr) -> Option<Vec<u8>>
     let opts = reponse.opts_mut();
     opts.insert(DhcpOption::MessageType(type_reponse));
     opts.insert(DhcpOption::ServerIdentifier(adresse_serveur));
+
+    // Un refus ne porte aucun réglage : y joindre un masque ou une
+    // passerelle ferait douter le téléphone de ce qu'on lui refuse.
+    if type_reponse == MessageType::Nak {
+        opts.insert(DhcpOption::End);
+        let mut octets = Vec::new();
+        reponse.encode(&mut Encoder::new(&mut octets)).ok()?;
+        return Some(octets);
+    }
+
     opts.insert(DhcpOption::SubnetMask(Ipv4Addr::new(255, 255, 255, 0)));
     opts.insert(DhcpOption::Router(vec![adresse_serveur]));
     opts.insert(DhcpOption::DomainNameServer(vec![adresse_serveur]));
@@ -203,6 +271,122 @@ mod tests {
             offre2.yiaddr(),
             "le même téléphone doit recevoir la même adresse à chaque requête"
         );
+    }
+
+    fn requete_avec_adresse_demandee(mac: &[u8; 6], demandee: Ipv4Addr) -> Vec<u8> {
+        let mut requete = DhcpMessage::new(
+            Ipv4Addr::UNSPECIFIED,
+            Ipv4Addr::UNSPECIFIED,
+            Ipv4Addr::UNSPECIFIED,
+            Ipv4Addr::UNSPECIFIED,
+            mac,
+        );
+        requete.set_opcode(Opcode::BootRequest);
+        requete.set_xid(123456);
+        requete
+            .opts_mut()
+            .insert(DhcpOption::MessageType(MessageType::Request));
+        requete
+            .opts_mut()
+            .insert(DhcpOption::RequestedIpAddress(demandee));
+        let mut octets = Vec::new();
+        requete.encode(&mut Encoder::new(&mut octets)).unwrap();
+        octets
+    }
+
+    fn type_de(brut: &[u8]) -> MessageType {
+        match decoder_requete(brut)
+            .unwrap()
+            .opts()
+            .get(OptionCode::MessageType)
+        {
+            Some(DhcpOption::MessageType(t)) => *t,
+            autre => panic!("type de message illisible : {autre:?}"),
+        }
+    }
+
+    /// Le cas exact vu sur le terrain : « Connexion… » qui ne finit jamais.
+    ///
+    /// Un téléphone déjà connecté ailleurs redemande d'abord SON ancienne
+    /// adresse. On répondait « d'accord » en y mettant une adresse
+    /// différente : réponse incohérente, que le téléphone jette et
+    /// redemande, indéfiniment, sans jamais afficher d'erreur. Il faut
+    /// refuser NET pour qu'il reparte de zéro et aboutisse.
+    #[test]
+    fn refuse_net_une_adresse_venue_d_un_autre_reseau() {
+        let serveur = Ipv4Addr::new(192, 168, 73, 1);
+        let ancienne = Ipv4Addr::new(192, 168, 1, 57); // le Wi-Fi de la maison
+        let brut = construire_reponse(
+            &requete_avec_adresse_demandee(&[1, 2, 3, 4, 5, 6], ancienne),
+            serveur,
+        )
+        .expect("un refus est attendu, pas un silence");
+
+        assert_eq!(type_de(&brut), MessageType::Nak);
+        let reponse = decoder_requete(&brut).unwrap();
+        assert!(
+            reponse.yiaddr().is_unspecified(),
+            "un refus n'attribue aucune adresse"
+        );
+        // Un refus ne porte aucun réglage : sinon le téléphone doute de ce
+        // qu'on lui refuse.
+        assert_eq!(reponse.opts().get(OptionCode::SubnetMask), None);
+        assert_eq!(reponse.opts().get(OptionCode::Router), None);
+    }
+
+    /// À l'inverse, une adresse cohérente avec notre réseau doit être
+    /// accordée TELLE QUELLE — même si ce n'est pas celle qu'on aurait
+    /// choisie. Répondre autre chose relancerait la même boucle.
+    #[test]
+    fn accorde_telle_quelle_une_adresse_coherente_avec_notre_reseau() {
+        let serveur = Ipv4Addr::new(192, 168, 73, 1);
+        let demandee = Ipv4Addr::new(192, 168, 73, 44);
+        let brut = construire_reponse(
+            &requete_avec_adresse_demandee(&[1, 2, 3, 4, 5, 6], demandee),
+            serveur,
+        )
+        .unwrap();
+
+        assert_eq!(type_de(&brut), MessageType::Ack);
+        assert_eq!(
+            decoder_requete(&brut).unwrap().yiaddr(),
+            demandee,
+            "le téléphone doit recevoir EXACTEMENT l'adresse qu'il a demandée"
+        );
+    }
+
+    /// Ni l'adresse du PC, ni les adresses réservées du réseau ne peuvent
+    /// être attribuées à un téléphone : la première lui couperait l'accès au
+    /// PC, les autres ne désignent aucun appareil.
+    #[test]
+    fn n_accorde_jamais_l_adresse_du_pc_ni_les_adresses_reservees() {
+        let serveur = Ipv4Addr::new(192, 168, 73, 1);
+        assert!(!dans_notre_reseau(serveur, serveur));
+        assert!(!dans_notre_reseau(Ipv4Addr::new(192, 168, 73, 0), serveur));
+        assert!(!dans_notre_reseau(Ipv4Addr::new(192, 168, 73, 255), serveur));
+        assert!(dans_notre_reseau(Ipv4Addr::new(192, 168, 73, 44), serveur));
+
+        // Demander l'adresse du PC lui-même se solde par un refus.
+        let brut =
+            construire_reponse(&requete_avec_adresse_demandee(&[7; 6], serveur), serveur).unwrap();
+        assert_eq!(type_de(&brut), MessageType::Nak);
+    }
+
+    /// Une demande sans adresse précise reste servie normalement : c'est le
+    /// cas du tout premier téléphone, qui n'a encore rien à réclamer.
+    #[test]
+    fn une_demande_sans_adresse_precise_recoit_toujours_une_adresse() {
+        let serveur = Ipv4Addr::new(192, 168, 73, 1);
+        let brut = construire_reponse(
+            &fabriquer_requete(MessageType::Request, &[1, 2, 3, 4, 5, 6]),
+            serveur,
+        )
+        .unwrap();
+        assert_eq!(type_de(&brut), MessageType::Ack);
+        assert!(dans_notre_reseau(
+            decoder_requete(&brut).unwrap().yiaddr(),
+            serveur
+        ));
     }
 
     #[test]
