@@ -476,20 +476,61 @@ pub fn journal_pages() -> Vec<String> {
     JOURNAL_PAGES.lock().map(|j| j.clone()).unwrap_or_default()
 }
 
+/// Assez grand pour que deux téléphones tiennent côte à côte.
+///
+/// Même défaut que celui découvert sur le journal des noms, et il aurait
+/// produit la même conclusion fausse : un Android qui se connecte réclame
+/// aussitôt une dizaine de pages, et une limite trop courte aurait effacé
+/// la visite de l'iPhone — c'est-à-dire précisément la ligne qu'on vient
+/// lire.
+const MAX_JOURNAL_PAGES: usize = 60;
+
 fn noter_visite(hote: &str, chemin: &str, navigateur: &str) {
     if let Ok(mut journal) = JOURNAL_PAGES.lock() {
         // Le nom du navigateur est long : on n'en garde que le début, qui
         // suffit à distinguer un iPhone d'un Android.
         let court: String = navigateur.chars().take(40).collect();
-        let ligne = format!("{hote}{chemin}  [{court}]");
-        if journal.last().map(String::as_str) == Some(ligne.as_str()) {
+        let marque = if est_sonde_de_reseau(chemin) {
+            "  ⭐ VÉRIFICATION DE RÉSEAU"
+        } else {
+            ""
+        };
+        let ligne = format!("{hote}{chemin}  [{court}]{marque}");
+        // Une même visite n'apparaît qu'une fois, où qu'elle soit déjà dans
+        // la liste. Ne comparer qu'à la dernière ligne laissait repasser la
+        // même visite dès qu'une autre s'était glissée entre deux, et le
+        // journal se remplissait de répétitions au détriment des autres
+        // appareils.
+        if journal.iter().any(|existante| existante == &ligne) {
             return;
         }
-        if journal.len() >= 25 {
+        if journal.len() >= MAX_JOURNAL_PAGES {
             journal.remove(0);
         }
         journal.push(ligne);
     }
+}
+
+/// Les adresses que les téléphones appellent pour savoir s'ils ont internet.
+///
+/// Chaque système en a une : iOS demande `/hotspot-detect.html`, Android
+/// `/generate_204`, Windows `/connecttest.txt`. Ce ne sont pas des pages
+/// pour un humain — personne ne les tape — mais ce sont elles, et elles
+/// seules, qui décident si le téléphone annonce « ce réseau demande une
+/// connexion » et ouvre la page tout seul.
+fn est_sonde_de_reseau(chemin: &str) -> bool {
+    let chemin = chemin.to_ascii_lowercase();
+    matches!(
+        chemin.as_str(),
+        "/hotspot-detect.html"
+            | "/library/test/success.html"
+            | "/generate_204"
+            | "/gen_204"
+            | "/connecttest.txt"
+            | "/ncsi.txt"
+            | "/success.txt"
+            | "/canonical.html"
+    )
 }
 
 async fn page_accueil(
@@ -497,7 +538,7 @@ async fn page_accueil(
     methode: axum::http::Method,
     uri: Uri,
     entetes: axum::http::HeaderMap,
-) -> Html<String> {
+) -> axum::response::Response {
     let lire = |nom: axum::http::HeaderName| {
         entetes
             .get(nom)
@@ -512,17 +553,31 @@ async fn page_accueil(
         &lire(axum::http::header::USER_AGENT),
     );
 
+    // Un téléphone qui vient vérifier son réseau reçoit une redirection, et
+    // non la page elle-même. C'est ce que fait tout portail captif de
+    // l'hôtel au café, et c'est le signal que les téléphones reconnaissent
+    // en premier. On renvoyait jusqu'ici la page complète avec un simple
+    // « tout va bien » : un iPhone est censé en déduire lui aussi qu'il est
+    // derrière un portail, mais il prend alors un chemin bien moins
+    // éprouvé que la redirection, que des milliards d'appareils empruntent
+    // chaque jour.
+    if est_sonde_de_reseau(uri.path()) {
+        return axum::response::Redirect::to(&format!("http://{}/", adresse_locale()))
+            .into_response();
+    }
+
     let (whatsapp, bluetooth_nom) = {
         let state = app.state::<crate::db::DbState>();
         let Ok(conn) = state.0.lock() else {
-            return Html("<p>Service temporairement indisponible, réessayez.</p>".to_string());
+            return Html("<p>Service temporairement indisponible, réessayez.</p>".to_string())
+                .into_response();
         };
         (
             crate::db::get_setting(&conn, "boutique_whatsapp"),
             crate::db::get_setting(&conn, "bluetooth_nom"),
         )
     };
-    Html(construire_page_accueil(whatsapp, bluetooth_nom))
+    Html(construire_page_accueil(whatsapp, bluetooth_nom)).into_response()
 }
 
 /// Séparée de `page_accueil` pour être vérifiable sans base ni serveur : la
@@ -1661,5 +1716,45 @@ mod tests {
         // L'esperluette doit être traitée en premier, sinon les entités
         // produites par les remplacements suivants seraient ré-échappées.
         assert_eq!(echapper_html("Tom & Jerry"), "Tom &amp; Jerry");
+    }
+
+    /// Chaque système a sa propre adresse de vérification, et les rater
+    /// revient à ne jamais ouvrir la page toute seule sur ce système-là.
+    /// Ce sont des adresses figées dans les téléphones : elles ne changent
+    /// pas, et rien ne signale une faute de frappe à l'exécution.
+    #[test]
+    fn reconnait_les_sondes_de_chaque_systeme() {
+        for chemin in [
+            "/hotspot-detect.html",       // iPhone, iPad, Mac
+            "/library/test/success.html", // iOS, seconde adresse
+            "/generate_204",              // Android
+            "/gen_204",                   // Android, ancienne adresse
+            "/connecttest.txt",           // Windows 10 et 11
+            "/ncsi.txt",                  // Windows, ancienne adresse
+            "/success.txt",               // Firefox
+            "/canonical.html",            // Ubuntu
+        ] {
+            assert!(est_sonde_de_reseau(chemin), "sonde non reconnue : {chemin}");
+        }
+    }
+
+    /// La casse vient du téléphone, pas de nous : la reconnaissance ne doit
+    /// pas en dépendre.
+    #[test]
+    fn reconnait_les_sondes_quelle_que_soit_la_casse() {
+        assert!(est_sonde_de_reseau("/Hotspot-Detect.html"));
+        assert!(est_sonde_de_reseau("/GENERATE_204"));
+    }
+
+    /// La page du client, elle, doit être servie et non redirigée — sinon
+    /// le client tourne en rond entre la redirection et la page.
+    #[test]
+    fn la_page_du_client_n_est_pas_une_sonde() {
+        for chemin in ["/", "/envoyer", "/statut/abc", "/api-portail"] {
+            assert!(
+                !est_sonde_de_reseau(chemin),
+                "chemin pris à tort pour une sonde : {chemin}"
+            );
+        }
     }
 }
