@@ -141,29 +141,53 @@ mod tests {
     fn supprime_le_document_ancien_et_le_marque_comme_supprime() {
         let (dossier, conn) = base_de_test();
         let chemin = creer_document(dossier.path(), "vieux.pdf");
-        inserer(&conn, 1, &chemin.to_string_lossy(), "traite", "2026-01-01T08:00:00+01:00");
+        inserer(
+            &conn,
+            1,
+            &chemin.to_string_lossy(),
+            "traite",
+            "2026-01-01T08:00:00+01:00",
+        );
 
         let (nombre, octets) = purger(&conn, dossier.path(), "2026-06-01");
 
         assert_eq!(nombre, 1);
         assert!(octets > 0);
-        assert!(!chemin.exists(), "le fichier aurait dû être effacé du disque");
+        assert!(
+            !chemin.exists(),
+            "le fichier aurait dû être effacé du disque"
+        );
         let supprime: i64 = conn
-            .query_row("SELECT document_supprime FROM files_queue WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT document_supprime FROM files_queue WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(supprime, 1, "l'historique doit savoir que le document n'existe plus");
+        assert_eq!(
+            supprime, 1,
+            "l'historique doit savoir que le document n'existe plus"
+        );
     }
 
     #[test]
     fn la_ligne_de_comptabilite_reste_intacte() {
         let (dossier, conn) = base_de_test();
         let chemin = creer_document(dossier.path(), "vieux.pdf");
-        inserer(&conn, 1, &chemin.to_string_lossy(), "traite", "2026-01-01T08:00:00+01:00");
+        inserer(
+            &conn,
+            1,
+            &chemin.to_string_lossy(),
+            "traite",
+            "2026-01-01T08:00:00+01:00",
+        );
 
         purger(&conn, dossier.path(), "2026-06-01");
 
         let reste: i64 = conn
-            .query_row("SELECT COUNT(*) FROM files_queue WHERE id = 1", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM files_queue WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(reste, 1, "seul le fichier s'efface, jamais la comptabilité");
     }
@@ -172,19 +196,34 @@ mod tests {
     fn ne_touche_pas_une_commande_encore_en_attente() {
         let (dossier, conn) = base_de_test();
         let chemin = creer_document(dossier.path(), "en_cours.pdf");
-        inserer(&conn, 1, &chemin.to_string_lossy(), "en_attente", "2026-01-01T08:00:00+01:00");
+        inserer(
+            &conn,
+            1,
+            &chemin.to_string_lossy(),
+            "en_attente",
+            "2026-01-01T08:00:00+01:00",
+        );
 
         let (nombre, _) = purger(&conn, dossier.path(), "2026-06-01");
 
         assert_eq!(nombre, 0);
-        assert!(chemin.exists(), "un document pas encore servi ne doit jamais disparaître");
+        assert!(
+            chemin.exists(),
+            "un document pas encore servi ne doit jamais disparaître"
+        );
     }
 
     #[test]
     fn ne_touche_pas_un_document_recent() {
         let (dossier, conn) = base_de_test();
         let chemin = creer_document(dossier.path(), "recent.pdf");
-        inserer(&conn, 1, &chemin.to_string_lossy(), "traite", "2026-09-15T08:00:00+01:00");
+        inserer(
+            &conn,
+            1,
+            &chemin.to_string_lossy(),
+            "traite",
+            "2026-09-15T08:00:00+01:00",
+        );
 
         let (nombre, _) = purger(&conn, dossier.path(), "2026-06-01");
 
@@ -201,21 +240,39 @@ mod tests {
         std::fs::create_dir_all(&ailleurs).unwrap();
         let chemin = ailleurs.join("travail.pdf");
         std::fs::write(&chemin, b"fichier personnel").unwrap();
-        inserer(&conn, 1, &chemin.to_string_lossy(), "traite", "2026-01-01T08:00:00+01:00");
+        inserer(
+            &conn,
+            1,
+            &chemin.to_string_lossy(),
+            "traite",
+            "2026-01-01T08:00:00+01:00",
+        );
 
         let (nombre, _) = purger(&conn, dossier.path(), "2026-06-01");
 
         assert_eq!(nombre, 0);
-        assert!(chemin.exists(), "un fichier hors des dossiers de l'appli ne doit jamais être effacé");
+        assert!(
+            chemin.exists(),
+            "un fichier hors des dossiers de l'appli ne doit jamais être effacé"
+        );
     }
 
     #[test]
     fn ne_repasse_pas_sur_un_document_deja_supprime() {
         let (dossier, conn) = base_de_test();
         let chemin = creer_document(dossier.path(), "deja.pdf");
-        inserer(&conn, 1, &chemin.to_string_lossy(), "traite", "2026-01-01T08:00:00+01:00");
-        conn.execute("UPDATE files_queue SET document_supprime = 1 WHERE id = 1", [])
-            .unwrap();
+        inserer(
+            &conn,
+            1,
+            &chemin.to_string_lossy(),
+            "traite",
+            "2026-01-01T08:00:00+01:00",
+        );
+        conn.execute(
+            "UPDATE files_queue SET document_supprime = 1 WHERE id = 1",
+            [],
+        )
+        .unwrap();
 
         let (nombre, _) = purger(&conn, dossier.path(), "2026-06-01");
 

@@ -62,7 +62,9 @@ mod implementation {
             .Advertisement()
             .map_err(|e| format!("Wi-Fi Direct inutilisable sur ce PC ({e})."))?;
         annonce
-            .SetListenStateDiscoverability(WiFiDirectAdvertisementListenStateDiscoverability::Normal)
+            .SetListenStateDiscoverability(
+                WiFiDirectAdvertisementListenStateDiscoverability::Normal,
+            )
             .map_err(|e| format!("Wi-Fi Direct refuse d'être visible ({e})."))?;
 
         let parametres = annonce

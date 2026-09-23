@@ -83,7 +83,10 @@ fn scanner_dossier(app: &AppHandle, dossier: &Path, profondeur: u32, restants: &
             continue;
         }
         let nom = entry.file_name();
-        if nom.to_string_lossy().eq_ignore_ascii_case(NOM_FICHIER_LICENCE) {
+        if nom
+            .to_string_lossy()
+            .eq_ignore_ascii_case(NOM_FICHIER_LICENCE)
+        {
             // Interceptée avant classify() : un .txt serait sinon mis en
             // file d'attente comme un document à imprimer.
             if let Ok(contenu) = std::fs::read_to_string(&path) {

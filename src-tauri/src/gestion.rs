@@ -766,7 +766,11 @@ pub struct RapportPeriode {
 /// c'est l'appelant (voir `rapport_jour`/`rapport_semaine`/`rapport_mois`)
 /// qui décide de la période, cette fonction ne fait que l'appliquer.
 #[tauri::command]
-pub fn rapport_periode(state: State<DbState>, debut: String, fin: String) -> Result<RapportPeriode, String> {
+pub fn rapport_periode(
+    state: State<DbState>,
+    debut: String,
+    fin: String,
+) -> Result<RapportPeriode, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     Ok(calculer_rapport_periode(&conn, &debut, &fin))
 }
@@ -777,11 +781,19 @@ pub fn rapport_periode(state: State<DbState>, debut: String, fin: String) -> Res
 /// supérieure EXCLUSIVE — d'où cette fonction plutôt qu'un simple "<= fin".
 fn fin_exclusive_de(fin_incluse: &str) -> String {
     chrono::NaiveDate::parse_from_str(fin_incluse, "%Y-%m-%d")
-        .map(|d| (d + chrono::Duration::days(1)).format("%Y-%m-%d").to_string())
+        .map(|d| {
+            (d + chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        })
         .unwrap_or_else(|_| fin_incluse.to_string())
 }
 
-fn calculer_rapport_periode(conn: &rusqlite::Connection, debut: &str, fin_incluse: &str) -> RapportPeriode {
+fn calculer_rapport_periode(
+    conn: &rusqlite::Connection,
+    debut: &str,
+    fin_incluse: &str,
+) -> RapportPeriode {
     let fin_exclusive = fin_exclusive_de(fin_incluse);
 
     let nombre_commandes: i64 = conn
@@ -840,7 +852,9 @@ fn calculer_rapport_periode(conn: &rusqlite::Connection, debut: &str, fin_inclus
     let mut documents_avec_ecart = 0i64;
     let mut comptes: std::collections::BTreeMap<String, i64> = std::collections::BTreeMap::new();
     for json in jsons {
-        let Ok(ecarts) = serde_json::from_str::<Vec<Ecart>>(&json) else { continue };
+        let Ok(ecarts) = serde_json::from_str::<Vec<Ecart>>(&json) else {
+            continue;
+        };
         if ecarts.is_empty() {
             continue;
         }
@@ -885,7 +899,10 @@ fn calculer_rapport_periode(conn: &rusqlite::Connection, debut: &str, fin_inclus
         .expect("requête répartition imprimantes valide");
     let repartition_imprimante: Vec<StatImprimante> = stmt_imprimantes
         .query_map(params![debut, fin_exclusive], |r| {
-            Ok(StatImprimante { imprimante: r.get(0)?, nombre: r.get(1)? })
+            Ok(StatImprimante {
+                imprimante: r.get(0)?,
+                nombre: r.get(1)?,
+            })
         })
         .map(|rows| rows.filter_map(Result::ok).collect())
         .unwrap_or_default();
@@ -1326,7 +1343,12 @@ mod tests {
         (dossier, conn)
     }
 
-    fn inserer_transaction(conn: &rusqlite::Connection, montant: i64, statut: &str, created_at: &str) {
+    fn inserer_transaction(
+        conn: &rusqlite::Connection,
+        montant: i64,
+        statut: &str,
+        created_at: &str,
+    ) {
         conn.execute(
             "INSERT INTO transactions (description, montant_calcule, montant, moyen_paiement, statut, created_at)
              VALUES ('test', ?1, ?1, 'especes', ?2, ?3)",
@@ -1335,7 +1357,11 @@ mod tests {
         .expect("insertion de transaction de test");
     }
 
-    fn inserer_document_imprime(conn: &rusqlite::Connection, received_at: &str, ecarts_json: Option<&str>) {
+    fn inserer_document_imprime(
+        conn: &rusqlite::Connection,
+        received_at: &str,
+        ecarts_json: Option<&str>,
+    ) {
         conn.execute(
             "INSERT INTO files_queue
                 (original_name, path, source, kind, status, received_at, jeton,
@@ -1413,9 +1439,17 @@ mod tests {
         let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
         assert_eq!(rapport.documents_imprimes_confirmes, 3);
         assert_eq!(rapport.documents_avec_ecart, 2);
-        let couleur = rapport.ecarts_par_champ.iter().find(|s| s.champ == "couleur").unwrap();
+        let couleur = rapport
+            .ecarts_par_champ
+            .iter()
+            .find(|s| s.champ == "couleur")
+            .unwrap();
         assert_eq!(couleur.nombre, 2);
-        let feuilles = rapport.ecarts_par_champ.iter().find(|s| s.champ == "feuilles").unwrap();
+        let feuilles = rapport
+            .ecarts_par_champ
+            .iter()
+            .find(|s| s.champ == "feuilles")
+            .unwrap();
         assert_eq!(feuilles.nombre, 1);
     }
 
@@ -1435,10 +1469,40 @@ mod tests {
     #[test]
     fn repartit_par_couleur_et_recto_verso_sans_compter_les_inconnus() {
         let (_d, conn) = base_de_test();
-        inserer_document_imprime_detaille(&conn, 1, "a.pdf", "2026-03-10T08:00:00+01:00", "2026-03-10T08:01:00+01:00", Some(true), Some(false), Some("HP"), 2);
-        inserer_document_imprime_detaille(&conn, 2, "b.pdf", "2026-03-10T09:00:00+01:00", "2026-03-10T09:01:00+01:00", Some(false), Some(true), Some("HP"), 3);
+        inserer_document_imprime_detaille(
+            &conn,
+            1,
+            "a.pdf",
+            "2026-03-10T08:00:00+01:00",
+            "2026-03-10T08:01:00+01:00",
+            Some(true),
+            Some(false),
+            Some("HP"),
+            2,
+        );
+        inserer_document_imprime_detaille(
+            &conn,
+            2,
+            "b.pdf",
+            "2026-03-10T09:00:00+01:00",
+            "2026-03-10T09:01:00+01:00",
+            Some(false),
+            Some(true),
+            Some("HP"),
+            3,
+        );
         // Pilote qui n'a rien remonté : ne doit compter ni couleur ni N&B.
-        inserer_document_imprime_detaille(&conn, 3, "c.pdf", "2026-03-10T10:00:00+01:00", "2026-03-10T10:01:00+01:00", None, None, None, 1);
+        inserer_document_imprime_detaille(
+            &conn,
+            3,
+            "c.pdf",
+            "2026-03-10T10:00:00+01:00",
+            "2026-03-10T10:01:00+01:00",
+            None,
+            None,
+            None,
+            1,
+        );
 
         let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
         assert_eq!(rapport.documents_couleur, 1);
@@ -1450,9 +1514,39 @@ mod tests {
     #[test]
     fn repartit_par_imprimante_du_plus_utilise_au_moins_utilise() {
         let (_d, conn) = base_de_test();
-        inserer_document_imprime_detaille(&conn, 1, "a.pdf", "2026-03-10T08:00:00+01:00", "2026-03-10T08:01:00+01:00", None, None, Some("HP LaserJet"), 1);
-        inserer_document_imprime_detaille(&conn, 2, "b.pdf", "2026-03-10T09:00:00+01:00", "2026-03-10T09:01:00+01:00", None, None, Some("HP LaserJet"), 1);
-        inserer_document_imprime_detaille(&conn, 3, "c.pdf", "2026-03-10T10:00:00+01:00", "2026-03-10T10:01:00+01:00", None, None, Some("Canon G3010"), 1);
+        inserer_document_imprime_detaille(
+            &conn,
+            1,
+            "a.pdf",
+            "2026-03-10T08:00:00+01:00",
+            "2026-03-10T08:01:00+01:00",
+            None,
+            None,
+            Some("HP LaserJet"),
+            1,
+        );
+        inserer_document_imprime_detaille(
+            &conn,
+            2,
+            "b.pdf",
+            "2026-03-10T09:00:00+01:00",
+            "2026-03-10T09:01:00+01:00",
+            None,
+            None,
+            Some("HP LaserJet"),
+            1,
+        );
+        inserer_document_imprime_detaille(
+            &conn,
+            3,
+            "c.pdf",
+            "2026-03-10T10:00:00+01:00",
+            "2026-03-10T10:01:00+01:00",
+            None,
+            None,
+            Some("Canon G3010"),
+            1,
+        );
 
         let rapport = calculer_rapport_periode(&conn, "2026-03-10", "2026-03-10");
         assert_eq!(rapport.repartition_imprimante.len(), 2);
@@ -1465,12 +1559,35 @@ mod tests {
     #[test]
     fn detail_impressions_trie_par_heure_de_fin_et_calcule_l_attente() {
         let (_d, conn) = base_de_test();
-        inserer_document_imprime_detaille(&conn, 1, "second.pdf", "2026-03-10T08:00:00+01:00", "2026-03-10T09:30:00+01:00", None, None, None, 1);
-        inserer_document_imprime_detaille(&conn, 2, "premier.pdf", "2026-03-10T07:50:00+01:00", "2026-03-10T08:00:00+01:00", None, None, None, 1);
+        inserer_document_imprime_detaille(
+            &conn,
+            1,
+            "second.pdf",
+            "2026-03-10T08:00:00+01:00",
+            "2026-03-10T09:30:00+01:00",
+            None,
+            None,
+            None,
+            1,
+        );
+        inserer_document_imprime_detaille(
+            &conn,
+            2,
+            "premier.pdf",
+            "2026-03-10T07:50:00+01:00",
+            "2026-03-10T08:00:00+01:00",
+            None,
+            None,
+            None,
+            1,
+        );
 
         let lignes = calculer_impressions_periode(&conn, "2026-03-10", "2026-03-10").unwrap();
         assert_eq!(lignes.len(), 2);
-        assert_eq!(lignes[0].original_name, "premier.pdf", "trié par heure de FIN, pas de réception");
+        assert_eq!(
+            lignes[0].original_name, "premier.pdf",
+            "trié par heure de FIN, pas de réception"
+        );
         assert_eq!(lignes[0].attente_minutes, Some(10));
         assert_eq!(lignes[1].original_name, "second.pdf");
         assert_eq!(lignes[1].attente_minutes, Some(90));
@@ -1486,7 +1603,10 @@ mod tests {
         )
         .unwrap();
         let lignes = calculer_impressions_periode(&conn, "2026-03-10", "2026-03-10").unwrap();
-        assert!(lignes.is_empty(), "une impression en erreur ne doit jamais apparaître dans le détail du rapport");
+        assert!(
+            lignes.is_empty(),
+            "une impression en erreur ne doit jamais apparaître dans le détail du rapport"
+        );
     }
 
     #[test]
@@ -1541,7 +1661,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(total, 20, "le prix reste calculé sur le total de feuilles");
-        assert_eq!(pages, 10, "le nombre de pages saisi doit être retrouvé tel quel");
+        assert_eq!(
+            pages, 10,
+            "le nombre de pages saisi doit être retrouvé tel quel"
+        );
         assert_eq!(
             total / pages,
             2,

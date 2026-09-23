@@ -129,7 +129,9 @@ pub fn restaurer_sauvegarde(app: AppHandle, chemin: String) -> Result<String, St
     // On n'ouvre que des fichiers du dossier de sauvegarde : l'interface ne
     // propose rien d'autre, et une restauration depuis n'importe où serait un
     // moyen détourné de faire ouvrir un fichier arbitraire à l'application.
-    if !chemin_dans_le_dossier(&dossier, &source) || source.extension().is_none_or(|e| e != "sqlite3") {
+    if !chemin_dans_le_dossier(&dossier, &source)
+        || source.extension().is_none_or(|e| e != "sqlite3")
+    {
         return Err("Ce fichier n'est pas une sauvegarde de l'application.".to_string());
     }
     if !source.is_file() {
@@ -169,7 +171,8 @@ pub fn restaurer_sauvegarde(app: AppHandle, chemin: String) -> Result<String, St
     // L'API de backup SQLite écrit dans la connexion déjà ouverte : la base en
     // service est remplacée sans fermer ni rouvrir l'application.
     let conn_source = Connection::open(&source).map_err(|e| e.to_string())?;
-    let restauration = Backup::new(&conn_source, &mut conn_en_service).map_err(|e| e.to_string())?;
+    let restauration =
+        Backup::new(&conn_source, &mut conn_en_service).map_err(|e| e.to_string())?;
     restauration
         .run_to_completion(5, Duration::from_millis(250), None)
         .map_err(|e| e.to_string())?;
@@ -277,7 +280,9 @@ mod tests {
 
     #[test]
     fn reconnait_une_sauvegarde_automatique() {
-        assert!(est_sauvegarde_automatique("photocopie-20260917-081500.sqlite3"));
+        assert!(est_sauvegarde_automatique(
+            "photocopie-20260917-081500.sqlite3"
+        ));
     }
 
     #[test]
@@ -285,7 +290,9 @@ mod tests {
         // Le cas qui cassait la promesse de `restaurer_sauvegarde` : cette
         // copie doit survivre, c'est le seul retour en arrière possible
         // après une restauration malheureuse.
-        assert!(!est_sauvegarde_automatique("avant-restauration-20260917-081500.sqlite3"));
+        assert!(!est_sauvegarde_automatique(
+            "avant-restauration-20260917-081500.sqlite3"
+        ));
     }
 
     #[test]
@@ -301,17 +308,24 @@ mod tests {
         // Plus que la limite, pour forcer la rotation.
         for i in 0..(SAUVEGARDES_A_CONSERVER + 5) {
             std::fs::write(
-                dossier.path().join(format!("photocopie-2026091{i:02}-080000.sqlite3")),
+                dossier
+                    .path()
+                    .join(format!("photocopie-2026091{i:02}-080000.sqlite3")),
                 b"x",
             )
             .unwrap();
         }
-        let secours = dossier.path().join("avant-restauration-20260101-000000.sqlite3");
+        let secours = dossier
+            .path()
+            .join("avant-restauration-20260101-000000.sqlite3");
         std::fs::write(&secours, b"x").unwrap();
 
         nettoyer_anciennes_sauvegardes(dossier.path());
 
-        assert!(secours.exists(), "la copie de secours a été effacée par la rotation");
+        assert!(
+            secours.exists(),
+            "la copie de secours a été effacée par la rotation"
+        );
         let restantes = std::fs::read_dir(dossier.path())
             .unwrap()
             .flatten()

@@ -58,7 +58,11 @@ pub fn commandes_powershell() -> String {
         (REGLE_PAGE, "TCP", u32::from(PORT)),
         (REGLE_DHCP, "UDP", 67),
         (REGLE_DNS, "UDP", 53),
-        (REGLE_PORTAIL, "TCP", u32::from(crate::server::PORT_PORTAIL_CAPTIF)),
+        (
+            REGLE_PORTAIL,
+            "TCP",
+            u32::from(crate::server::PORT_PORTAIL_CAPTIF),
+        ),
     ];
 
     regles
@@ -98,22 +102,22 @@ pub fn regles_presentes() -> bool {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL].iter().all(|nom| {
-        std::process::Command::new("netsh")
-            .args([
-                "advfirewall",
-                "firewall",
-                "show",
-                "rule",
-                &format!("name={nom}"),
-            ])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .map(|sortie| {
-                regle_trouvee(&String::from_utf8_lossy(&sortie.stdout))
-            })
-            .unwrap_or(false)
-    })
+    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL]
+        .iter()
+        .all(|nom| {
+            std::process::Command::new("netsh")
+                .args([
+                    "advfirewall",
+                    "firewall",
+                    "show",
+                    "rule",
+                    &format!("name={nom}"),
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+                .map(|sortie| regle_trouvee(&String::from_utf8_lossy(&sortie.stdout)))
+                .unwrap_or(false)
+        })
 }
 
 #[cfg(not(windows))]
@@ -228,7 +232,9 @@ mod tests {
         assert!(!regle_trouvee(
             "Aucune r\u{FFFD}gle ne correspond aux crit\u{FFFD}res sp\u{FFFD}cifi\u{FFFD}s."
         ));
-        assert!(!regle_trouvee("Aucune règle ne correspond aux critères spécifiés."));
+        assert!(!regle_trouvee(
+            "Aucune règle ne correspond aux critères spécifiés."
+        ));
         assert!(!regle_trouvee(""));
         assert!(regle_trouvee(
             "Nom de la règle : Photocopie Benin - page envoi\nActivée : Oui"

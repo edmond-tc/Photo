@@ -179,16 +179,22 @@ pub fn tache_correspond(nom_document_spouleur: &str, nom_fichier_original: &str)
 /// l'appelant de continuer à interroger le spouleur dans ce cas.
 pub fn interpreter(tache: &TacheSpouleur) -> Option<EtatFinal> {
     if tache.statut & JOB_STATUS_ERROR != 0 {
-        return Some(EtatFinal::Erreur("Erreur d'impression signalée par Windows.".to_string()));
+        return Some(EtatFinal::Erreur(
+            "Erreur d'impression signalée par Windows.".to_string(),
+        ));
     }
     if tache.statut & JOB_STATUS_PAPEROUT != 0 {
-        return Some(EtatFinal::Erreur("Imprimante à court de papier.".to_string()));
+        return Some(EtatFinal::Erreur(
+            "Imprimante à court de papier.".to_string(),
+        ));
     }
     if tache.statut & JOB_STATUS_OFFLINE != 0 {
         return Some(EtatFinal::Erreur("Imprimante hors ligne.".to_string()));
     }
     if tache.statut & JOB_STATUS_BLOCKED_DEVQ != 0 {
-        return Some(EtatFinal::Erreur("Impression bloquée (vérifier l'imprimante).".to_string()));
+        return Some(EtatFinal::Erreur(
+            "Impression bloquée (vérifier l'imprimante).".to_string(),
+        ));
     }
     if tache.statut & (JOB_STATUS_DELETING | JOB_STATUS_DELETED) != 0 {
         return Some(EtatFinal::Erreur("Impression annulée.".to_string()));
@@ -240,7 +246,11 @@ pub struct Facturation {
 /// silencieusement ignoré : mieux vaut ne rien dire que signaler un écart
 /// sur une information qu'on n'a jamais eue. Ne bloque jamais rien — cette
 /// fonction ne fait qu'observer, jamais refuser une action.
-pub fn comparer_a_la_facturation(facture: &Facturation, imprime_pages: u32, imprime: &DetailsImpression) -> Vec<Ecart> {
+pub fn comparer_a_la_facturation(
+    facture: &Facturation,
+    imprime_pages: u32,
+    imprime: &DetailsImpression,
+) -> Vec<Ecart> {
     let mut ecarts = Vec::new();
 
     if imprime_pages as i64 != facture.feuilles {
@@ -282,11 +292,19 @@ pub fn comparer_a_la_facturation(facture: &Facturation, imprime_pages: u32, impr
 }
 
 fn libelle_couleur(couleur: bool) -> String {
-    if couleur { "Couleur".to_string() } else { "Noir & Blanc".to_string() }
+    if couleur {
+        "Couleur".to_string()
+    } else {
+        "Noir & Blanc".to_string()
+    }
 }
 
 fn libelle_recto_verso(recto_verso: bool) -> String {
-    if recto_verso { "Recto-verso".to_string() } else { "Recto simple".to_string() }
+    if recto_verso {
+        "Recto-verso".to_string()
+    } else {
+        "Recto simple".to_string()
+    }
 }
 
 /// Enregistre le résultat en base, une fois la surveillance terminée
@@ -300,7 +318,12 @@ pub fn enregistrer_resultat(
     etat: &EtatFinal,
 ) -> rusqlite::Result<()> {
     match etat {
-        EtatFinal::Terminee { pages, details, poste_utilisateur, imprimante } => {
+        EtatFinal::Terminee {
+            pages,
+            details,
+            poste_utilisateur,
+            imprimante,
+        } => {
             let facture: Option<(i64, bool, bool, String)> = conn
                 .query_row(
                     "SELECT copies, couleur, recto_verso, format_papier FROM files_queue WHERE id = ?1",
@@ -310,7 +333,12 @@ pub fn enregistrer_resultat(
                 .ok();
 
             let ecarts_json = facture.map(|(feuilles, couleur, recto_verso, format_papier)| {
-                let facturation = Facturation { feuilles, couleur, recto_verso, format_papier };
+                let facturation = Facturation {
+                    feuilles,
+                    couleur,
+                    recto_verso,
+                    format_papier,
+                };
                 let ecarts = comparer_a_la_facturation(&facturation, *pages, details);
                 serde_json::to_string(&ecarts).unwrap_or_else(|_| "[]".to_string())
             });
@@ -387,9 +415,7 @@ mod windows_impl {
             return None;
         }
         let mut tampon: Vec<u16> = vec![0; taille as usize];
-        let ok = unsafe {
-            GetDefaultPrinterW(PWSTR(tampon.as_mut_ptr()), &mut taille).as_bool()
-        };
+        let ok = unsafe { GetDefaultPrinterW(PWSTR(tampon.as_mut_ptr()), &mut taille).as_bool() };
         if !ok {
             return None;
         }
@@ -406,7 +432,14 @@ mod windows_impl {
         let mut octets_necessaires: u32 = 0;
         let mut nb_imprimantes: u32 = 0;
         unsafe {
-            let _ = EnumPrintersW(flags, PWSTR::null(), 4, None, &mut octets_necessaires, &mut nb_imprimantes);
+            let _ = EnumPrintersW(
+                flags,
+                PWSTR::null(),
+                4,
+                None,
+                &mut octets_necessaires,
+                &mut nb_imprimantes,
+            );
         }
         if octets_necessaires == 0 {
             return Vec::new();
@@ -414,7 +447,14 @@ mod windows_impl {
         let mut tampon: Vec<u8> = vec![0; octets_necessaires as usize];
         let mut renvoyees: u32 = 0;
         let ok = unsafe {
-            EnumPrintersW(flags, PWSTR::null(), 4, Some(&mut tampon), &mut octets_necessaires, &mut renvoyees)
+            EnumPrintersW(
+                flags,
+                PWSTR::null(),
+                4,
+                Some(&mut tampon),
+                &mut octets_necessaires,
+                &mut renvoyees,
+            )
         };
         if ok.is_err() {
             return Vec::new();
@@ -488,7 +528,15 @@ mod windows_impl {
         // Premier appel à vide pour connaître la taille réelle du tampon —
         // le nombre de tâches en file n'est jamais connu à l'avance.
         unsafe {
-            let _ = EnumJobsW(hprinter, 0, 500, 2, None, &mut octets_necessaires, &mut nb_taches);
+            let _ = EnumJobsW(
+                hprinter,
+                0,
+                500,
+                2,
+                None,
+                &mut octets_necessaires,
+                &mut nb_taches,
+            );
         }
         if octets_necessaires == 0 {
             return Vec::new();
@@ -496,7 +544,15 @@ mod windows_impl {
         let mut tampon: Vec<u8> = vec![0; octets_necessaires as usize];
         let mut renvoyees: u32 = 0;
         let ok = unsafe {
-            EnumJobsW(hprinter, 0, 500, 2, Some(&mut tampon), &mut octets_necessaires, &mut renvoyees)
+            EnumJobsW(
+                hprinter,
+                0,
+                500,
+                2,
+                Some(&mut tampon),
+                &mut octets_necessaires,
+                &mut renvoyees,
+            )
         };
         if ok.is_err() {
             return Vec::new();
@@ -517,7 +573,14 @@ mod windows_impl {
         }
         let mut tampon: Vec<u8> = vec![0; octets_necessaires as usize];
         let ok = unsafe {
-            GetJobW(hprinter, job_id, 2, Some(&mut tampon), &mut octets_necessaires).as_bool()
+            GetJobW(
+                hprinter,
+                job_id,
+                2,
+                Some(&mut tampon),
+                &mut octets_necessaires,
+            )
+            .as_bool()
         };
         if !ok {
             return None;
@@ -546,11 +609,13 @@ mod windows_impl {
                 None => return EtatFinal::Introuvable,
             },
         };
-        let mut nom_imprimante_wide: Vec<u16> = nom_imprimante.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut nom_imprimante_wide: Vec<u16> = nom_imprimante
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
         let mut hprinter = HANDLE(std::ptr::null_mut());
-        let ouvert = unsafe {
-            OpenPrinterW(PWSTR(nom_imprimante_wide.as_mut_ptr()), &mut hprinter, None)
-        };
+        let ouvert =
+            unsafe { OpenPrinterW(PWSTR(nom_imprimante_wide.as_mut_ptr()), &mut hprinter, None) };
         if ouvert.is_err() {
             return EtatFinal::Introuvable;
         }
@@ -695,12 +760,18 @@ mod tests {
     fn accepte_un_nom_entoure_par_l_application_d_impression() {
         // Adobe et d'autres lecteurs ajoutent parfois un préfixe/suffixe
         // ("Microsoft Print to PDF - facture-client.pdf", des guillemets…).
-        assert!(tache_correspond("Adobe Acrobat - facture-client.pdf", "facture-client.pdf"));
+        assert!(tache_correspond(
+            "Adobe Acrobat - facture-client.pdf",
+            "facture-client.pdf"
+        ));
     }
 
     #[test]
     fn refuse_un_nom_totalement_different() {
-        assert!(!tache_correspond("rapport-mensuel.docx", "facture-client.pdf"));
+        assert!(!tache_correspond(
+            "rapport-mensuel.docx",
+            "facture-client.pdf"
+        ));
     }
 
     #[test]
@@ -779,7 +850,12 @@ mod tests {
             format_papier: Some("A4".to_string()),
         };
         match interpreter(&t) {
-            Some(EtatFinal::Terminee { poste_utilisateur, imprimante, details, .. }) => {
+            Some(EtatFinal::Terminee {
+                poste_utilisateur,
+                imprimante,
+                details,
+                ..
+            }) => {
                 assert_eq!(poste_utilisateur.as_deref(), Some("gerant-pc"));
                 assert_eq!(imprimante.as_deref(), Some("HP LaserJet"));
                 assert_eq!(details.couleur, Some(true));
@@ -790,7 +866,10 @@ mod tests {
 
     #[test]
     fn erreur_imprimante_est_signalee() {
-        assert!(matches!(interpreter(&tache(JOB_STATUS_ERROR, 1, 0)), Some(EtatFinal::Erreur(_))));
+        assert!(matches!(
+            interpreter(&tache(JOB_STATUS_ERROR, 1, 0)),
+            Some(EtatFinal::Erreur(_))
+        ));
     }
 
     #[test]
@@ -803,7 +882,10 @@ mod tests {
 
     #[test]
     fn tache_supprimee_est_une_erreur_pas_un_succes() {
-        assert!(matches!(interpreter(&tache(JOB_STATUS_DELETED, 3, 1)), Some(EtatFinal::Erreur(_))));
+        assert!(matches!(
+            interpreter(&tache(JOB_STATUS_DELETED, 3, 1)),
+            Some(EtatFinal::Erreur(_))
+        ));
     }
 
     #[test]
@@ -821,43 +903,73 @@ mod tests {
 
     #[test]
     fn devmode_sans_champ_renseigne_ne_donne_aucun_detail() {
-        let brut = DevmodeBrut { champs_presents: 0, ..Default::default() };
+        let brut = DevmodeBrut {
+            champs_presents: 0,
+            ..Default::default()
+        };
         assert_eq!(interpreter_devmode(&brut), DetailsImpression::default());
     }
 
     #[test]
     fn devmode_detecte_la_couleur() {
-        let brut = DevmodeBrut { champs_presents: DM_COLOR, couleur: DMCOLOR_COLOR, ..Default::default() };
+        let brut = DevmodeBrut {
+            champs_presents: DM_COLOR,
+            couleur: DMCOLOR_COLOR,
+            ..Default::default()
+        };
         assert_eq!(interpreter_devmode(&brut).couleur, Some(true));
     }
 
     #[test]
     fn devmode_detecte_le_noir_et_blanc() {
-        let brut = DevmodeBrut { champs_presents: DM_COLOR, couleur: 1, ..Default::default() };
+        let brut = DevmodeBrut {
+            champs_presents: DM_COLOR,
+            couleur: 1,
+            ..Default::default()
+        };
         assert_eq!(interpreter_devmode(&brut).couleur, Some(false));
     }
 
     #[test]
     fn devmode_detecte_le_recto_verso() {
-        let brut = DevmodeBrut { champs_presents: DM_DUPLEX, recto_verso: 2, ..Default::default() };
+        let brut = DevmodeBrut {
+            champs_presents: DM_DUPLEX,
+            recto_verso: 2,
+            ..Default::default()
+        };
         assert_eq!(interpreter_devmode(&brut).recto_verso, Some(true));
     }
 
     #[test]
     fn devmode_detecte_le_recto_simple() {
-        let brut = DevmodeBrut { champs_presents: DM_DUPLEX, recto_verso: DMDUP_SIMPLEX, ..Default::default() };
+        let brut = DevmodeBrut {
+            champs_presents: DM_DUPLEX,
+            recto_verso: DMDUP_SIMPLEX,
+            ..Default::default()
+        };
         assert_eq!(interpreter_devmode(&brut).recto_verso, Some(false));
     }
 
     #[test]
     fn devmode_reconnait_le_format_a4() {
-        let brut = DevmodeBrut { champs_presents: DM_PAPERSIZE, format_papier: DMPAPER_A4, ..Default::default() };
-        assert_eq!(interpreter_devmode(&brut).format_papier.as_deref(), Some("A4"));
+        let brut = DevmodeBrut {
+            champs_presents: DM_PAPERSIZE,
+            format_papier: DMPAPER_A4,
+            ..Default::default()
+        };
+        assert_eq!(
+            interpreter_devmode(&brut).format_papier.as_deref(),
+            Some("A4")
+        );
     }
 
     #[test]
     fn devmode_format_inconnu_n_affiche_rien_plutot_qu_un_code_illisible() {
-        let brut = DevmodeBrut { champs_presents: DM_PAPERSIZE, format_papier: 200, ..Default::default() };
+        let brut = DevmodeBrut {
+            champs_presents: DM_PAPERSIZE,
+            format_papier: 200,
+            ..Default::default()
+        };
         assert_eq!(interpreter_devmode(&brut).format_papier, None);
     }
 
@@ -865,14 +977,23 @@ mod tests {
     fn devmode_copies_zero_est_ignore_meme_si_le_champ_est_marque_present() {
         // Un pilote qui renseigne le drapeau mais laisse 0 : pas une vraie
         // information, mieux vaut ne rien afficher qu'un "0 copie" absurde.
-        let brut = DevmodeBrut { champs_presents: DM_COPIES, copies: 0, ..Default::default() };
+        let brut = DevmodeBrut {
+            champs_presents: DM_COPIES,
+            copies: 0,
+            ..Default::default()
+        };
         assert_eq!(interpreter_devmode(&brut).copies, None);
     }
 
     // ───────────────────── comparer_a_la_facturation ─────────────────────
 
     fn facturation(feuilles: i64, couleur: bool, recto_verso: bool, format: &str) -> Facturation {
-        Facturation { feuilles, couleur, recto_verso, format_papier: format.to_string() }
+        Facturation {
+            feuilles,
+            couleur,
+            recto_verso,
+            format_papier: format.to_string(),
+        }
     }
 
     #[test]
@@ -906,7 +1027,10 @@ mod tests {
     #[test]
     fn detecte_un_ecart_de_couleur() {
         let f = facturation(3, false, false, "A4");
-        let d = DetailsImpression { couleur: Some(true), ..Default::default() };
+        let d = DetailsImpression {
+            couleur: Some(true),
+            ..Default::default()
+        };
         let ecarts = comparer_a_la_facturation(&f, 3, &d);
         assert_eq!(ecarts.len(), 1);
         assert_eq!(ecarts[0].champ, "couleur");
@@ -917,7 +1041,10 @@ mod tests {
     #[test]
     fn detecte_un_ecart_de_recto_verso() {
         let f = facturation(3, false, true, "A4");
-        let d = DetailsImpression { recto_verso: Some(false), ..Default::default() };
+        let d = DetailsImpression {
+            recto_verso: Some(false),
+            ..Default::default()
+        };
         let ecarts = comparer_a_la_facturation(&f, 3, &d);
         assert_eq!(ecarts.len(), 1);
         assert_eq!(ecarts[0].champ, "recto_verso");
@@ -926,7 +1053,10 @@ mod tests {
     #[test]
     fn detecte_un_ecart_de_format() {
         let f = facturation(3, false, false, "A4");
-        let d = DetailsImpression { format_papier: Some("A3".to_string()), ..Default::default() };
+        let d = DetailsImpression {
+            format_papier: Some("A3".to_string()),
+            ..Default::default()
+        };
         let ecarts = comparer_a_la_facturation(&f, 3, &d);
         assert_eq!(ecarts.len(), 1);
         assert_eq!(ecarts[0].champ, "format_papier");
@@ -1004,7 +1134,10 @@ mod tests {
         assert_eq!(couleur, Some(1));
         assert_eq!(poste.as_deref(), Some("caisse-1"));
         assert_eq!(imprimante.as_deref(), Some("HP LaserJet"));
-        assert!(termine_le.is_some(), "l'heure de fin de traitement doit être enregistrée");
+        assert!(
+            termine_le.is_some(),
+            "l'heure de fin de traitement doit être enregistrée"
+        );
     }
 
     #[test]
@@ -1017,14 +1150,21 @@ mod tests {
             1,
             &EtatFinal::Terminee {
                 pages: 1,
-                details: DetailsImpression { couleur: Some(true), ..Default::default() },
+                details: DetailsImpression {
+                    couleur: Some(true),
+                    ..Default::default()
+                },
                 poste_utilisateur: None,
                 imprimante: None,
             },
         )
         .unwrap();
         let ecarts_json: Option<String> = conn
-            .query_row("SELECT impression_ecarts FROM files_queue WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT impression_ecarts FROM files_queue WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         let ecarts: Vec<Ecart> = serde_json::from_str(&ecarts_json.unwrap()).unwrap();
         assert_eq!(ecarts.len(), 1);

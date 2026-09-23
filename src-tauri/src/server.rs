@@ -165,10 +165,7 @@ async fn api_portail(State(app): State<AppHandle>) -> impl IntoResponse {
     let _ = app;
     let adresse = adresse_locale();
     (
-        [(
-            axum::http::header::CONTENT_TYPE,
-            "application/captive+json",
-        )],
+        [(axum::http::header::CONTENT_TYPE, "application/captive+json")],
         format!(
             r#"{{"captive":true,"user-portal-url":"http://{adresse}/","can-extend-session":true}}"#
         ),
@@ -242,11 +239,8 @@ pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
     }
 
     let mut tampon = vec![0u8; 2048];
-    let lecture = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        flux.read(&mut tampon),
-    )
-    .await;
+    let lecture =
+        tokio::time::timeout(std::time::Duration::from_secs(2), flux.read(&mut tampon)).await;
     let Ok(Ok(taille)) = lecture else {
         return false;
     };
@@ -280,11 +274,8 @@ pub async fn api_portail_repond(adresse: Ipv4Addr) -> bool {
     }
 
     let mut tampon = vec![0u8; 2048];
-    let lecture = tokio::time::timeout(
-        std::time::Duration::from_secs(2),
-        flux.read(&mut tampon),
-    )
-    .await;
+    let lecture =
+        tokio::time::timeout(std::time::Duration::from_secs(2), flux.read(&mut tampon)).await;
     let Ok(Ok(taille)) = lecture else {
         return false;
     };
@@ -392,7 +383,8 @@ fn adresse_detectee_en_cache() -> Option<Ipv4Addr> {
         }
     }
 
-    let adresse = crate::hotspot::adresse_point_acces_detectee().or_else(adresse_du_reseau_connecte);
+    let adresse =
+        crate::hotspot::adresse_point_acces_detectee().or_else(adresse_du_reseau_connecte);
     if let Ok(mut garde) = ADRESSE_DETECTEE.lock() {
         *garde = Some((std::time::Instant::now(), adresse));
     }
@@ -450,7 +442,6 @@ fn premiere_adresse_utilisable(sortie: &str) -> Option<Ipv4Addr> {
             .filter(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_link_local())
     })
 }
-
 
 /// Le serveur local a-t-il réussi à démarrer ? Utilisé avant d'afficher le
 /// QR code pour ne jamais présenter un lien mort au gérant.
@@ -538,7 +529,7 @@ async fn page_accueil(
 /// page change de forme selon les réglages de la boutique, et c'est
 /// justement une de ces variantes qui a cassé l'envoi sur le terrain.
 fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<String>) -> String {
-// Les deux autres façons d'envoyer sont présentées comme des cartes à
+    // Les deux autres façons d'envoyer sont présentées comme des cartes à
     // part entière, en bas de page — et non comme des liens en petit au pied
     // de la page d'envoi. Un client qui n'arrive pas à passer par le Wi-Fi
     // doit voir tout de suite qu'il lui reste deux chemins, pas déchiffrer
@@ -578,7 +569,7 @@ fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<Strin
     // Sans nom configuré, on reste sur une instruction générique plutôt que
     // de dire au client de chercher un appareil "vide" — mieux vaut ne rien
     // promettre de précis que d'induire en erreur.
-// Le Bluetooth ne consomme aucune donnée et ne dépend d'aucun réseau :
+    // Le Bluetooth ne consomme aucune donnée et ne dépend d'aucun réseau :
     // c'est le vrai secours quand le Wi-Fi de la boutique ne veut pas.
     //
     // La carte EXPLIQUE au lieu d'agir, et c'est une limite du navigateur,
@@ -1076,7 +1067,11 @@ fn espace_disque_insuffisant(data_dir: &std::path::Path) -> bool {
 /// séparées finiraient par diverger, et la protection la plus faible
 /// deviendrait la porte d'entrée.
 pub fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
-    let nom = nom_brut.rsplit(['/', '\\']).next().unwrap_or(nom_brut).trim();
+    let nom = nom_brut
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(nom_brut)
+        .trim();
     // Retire aussi les caractères interdits dans un nom de fichier Windows et
     // les caractères de contrôle, sinon std::fs::write échoue silencieusement
     // plus loin et le fichier reçu disparaît sans que personne ne s'en rende
@@ -1089,22 +1084,20 @@ pub fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
     let nom = nom.trim();
 
     const NOMS_RESERVES_WINDOWS: [&str; 22] = [
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
-        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
     let base = nom.split('.').next().unwrap_or(nom).to_uppercase();
 
-    if nom.is_empty() || nom == "." || nom == ".." || NOMS_RESERVES_WINDOWS.contains(&base.as_str()) {
+    if nom.is_empty() || nom == "." || nom == ".." || NOMS_RESERVES_WINDOWS.contains(&base.as_str())
+    {
         "fichier_recu".to_string()
     } else {
         nom.to_string()
     }
 }
 
-async fn recevoir_fichier(
-    State(app): State<AppHandle>,
-    multipart: Multipart,
-) -> impl IntoResponse {
+async fn recevoir_fichier(State(app): State<AppHandle>, multipart: Multipart) -> impl IntoResponse {
     // Attend son tour si trois envois sont déjà en cours (voir
     // ENVOIS_SIMULTANES_MAX) : le permis est pris AVANT de lire le corps de
     // la requête, sinon la mémoire serait déjà consommée au moment où on
@@ -1319,7 +1312,11 @@ async fn enregistrer_envoi(
     // internet (SMS/WhatsApp) — le téléphone reste sur le Wi-Fi local tant
     // que le client n'a pas quitté la boutique. Chaque jeton n'ouvre que sur
     // la commande qu'il a lui-même envoyée.
-    (StatusCode::OK, Json(serde_json::json!({ "jetons": jetons }))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "jetons": jetons })),
+    )
+        .into_response()
 }
 
 #[derive(serde::Serialize)]
@@ -1405,7 +1402,9 @@ async fn statut_fichier(
                          encore {restantes} avant votre réduction fidélité."
                     )
                 } else {
-                    format!("✅ Commande traitée, merci ! C'est votre {visites}ᵉ commande chez nous.")
+                    format!(
+                        "✅ Commande traitée, merci ! C'est votre {visites}ᵉ commande chez nous."
+                    )
                 }
             }
             None => "✅ Commande traitée, merci pour votre confiance !".to_string(),
@@ -1446,11 +1445,7 @@ mod tests {
 
         let variantes = [
             ("sans réglage", None, None),
-            (
-                "WhatsApp seul",
-                Some("+22997000000".to_string()),
-                None,
-            ),
+            ("WhatsApp seul", Some("+22997000000".to_string()), None),
             ("Bluetooth seul", None, Some("PC-BOUTIQUE".to_string())),
             (
                 "les deux",
@@ -1544,7 +1539,10 @@ mod tests {
             "virus.exe"
         );
         assert_eq!(nom_fichier_sans_chemin("../../etc/passwd"), "passwd");
-        assert_eq!(nom_fichier_sans_chemin("/absolu/document.pdf"), "document.pdf");
+        assert_eq!(
+            nom_fichier_sans_chemin("/absolu/document.pdf"),
+            "document.pdf"
+        );
     }
 
     #[test]
@@ -1566,13 +1564,22 @@ mod tests {
 
     #[test]
     fn nettoie_les_caracteres_interdits_sans_perdre_le_document() {
-        assert_eq!(nom_fichier_sans_chemin(r#"fac<ture>:"a|b?.pdf"#), "factureab.pdf");
-        assert_eq!(nom_fichier_sans_chemin("rapport\u{0}\u{7}.pdf"), "rapport.pdf");
+        assert_eq!(
+            nom_fichier_sans_chemin(r#"fac<ture>:"a|b?.pdf"#),
+            "factureab.pdf"
+        );
+        assert_eq!(
+            nom_fichier_sans_chemin("rapport\u{0}\u{7}.pdf"),
+            "rapport.pdf"
+        );
     }
 
     #[test]
     fn garde_un_nom_normal_intact() {
-        assert_eq!(nom_fichier_sans_chemin("Mémoire chapitre 3.pdf"), "Mémoire chapitre 3.pdf");
+        assert_eq!(
+            nom_fichier_sans_chemin("Mémoire chapitre 3.pdf"),
+            "Mémoire chapitre 3.pdf"
+        );
     }
 
     #[test]
@@ -1586,7 +1593,10 @@ mod tests {
     #[test]
     fn borne_les_textes_envoyes_par_le_client() {
         let enorme = "x".repeat(5_000_000);
-        assert_eq!(borner_texte(&enorme, LONGUEUR_MAX_NOM).chars().count(), LONGUEUR_MAX_NOM);
+        assert_eq!(
+            borner_texte(&enorme, LONGUEUR_MAX_NOM).chars().count(),
+            LONGUEUR_MAX_NOM
+        );
     }
 
     #[test]
@@ -1625,9 +1635,18 @@ mod tests {
 
     #[test]
     fn normalise_les_numeros_beninois() {
-        assert_eq!(normalize_phone("0197000000").as_deref(), Some("2290197000000"));
-        assert_eq!(normalize_phone("97000000").as_deref(), Some("2290197000000"));
-        assert_eq!(normalize_phone("+229 01 97 00 00 00").as_deref(), Some("2290197000000"));
+        assert_eq!(
+            normalize_phone("0197000000").as_deref(),
+            Some("2290197000000")
+        );
+        assert_eq!(
+            normalize_phone("97000000").as_deref(),
+            Some("2290197000000")
+        );
+        assert_eq!(
+            normalize_phone("+229 01 97 00 00 00").as_deref(),
+            Some("2290197000000")
+        );
         assert_eq!(normalize_phone("pas de chiffres"), None);
     }
 

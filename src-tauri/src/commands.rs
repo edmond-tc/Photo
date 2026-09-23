@@ -435,7 +435,9 @@ pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
 /// souvent « pas encore libre » plutôt que « occupé par un autre logiciel ».
 /// Renoncer au premier essai laissait le gérant devant un message
 /// d'indisponibilité alors qu'il suffisait d'attendre une seconde.
-async fn demarrer_avec_reessais<F, Fut>(mut demarrage: F) -> Result<tauri::async_runtime::JoinHandle<()>, String>
+async fn demarrer_avec_reessais<F, Fut>(
+    mut demarrage: F,
+) -> Result<tauri::async_runtime::JoinHandle<()>, String>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<tauri::async_runtime::JoinHandle<()>, String>>,
@@ -737,16 +739,18 @@ pub async fn activer_point_acces_local(
     // arrive. Plusieurs déplacements sur le terrain ont été perdus devant un
     // écran tout vert alors que rien ne répondait.
     if dns_demarre {
-        recapitulatif.push(if reessayer(|| crate::dns::repond(activation.adresse)).await {
-            "✅ Noms de domaine — testé, répond".to_string()
-        } else {
-            let message = "Le serveur de noms a démarré mais NE RÉPOND PAS à la question \
+        recapitulatif.push(
+            if reessayer(|| crate::dns::repond(activation.adresse)).await {
+                "✅ Noms de domaine — testé, répond".to_string()
+            } else {
+                let message = "Le serveur de noms a démarré mais NE RÉPOND PAS à la question \
                            que pose un téléphone en rejoignant le réseau. La page ne \
                            pourra pas s'ouvrir toute seule."
-                .to_string();
-            avertissements.push(message);
-            "❌ Noms de domaine — démarré mais NE RÉPOND PAS".to_string()
-        });
+                    .to_string();
+                avertissements.push(message);
+                "❌ Noms de domaine — démarré mais NE RÉPOND PAS".to_string()
+            },
+        );
     }
     // Le serveur qui fait s'ouvrir la page toute seule démarre au lancement
     // de l'application, bien avant ce bouton : son échec éventuel n'a aucune
@@ -879,7 +883,11 @@ pub fn generer_rapport_diagnostic(
                 |r| r.get(0),
             )
             .ok();
-        (boutique_nom, nombre_transactions_total, dernier_fichier_recu)
+        (
+            boutique_nom,
+            nombre_transactions_total,
+            dernier_fichier_recu,
+        )
     };
 
     let licence = crate::license::get_license_status(state)?;

@@ -325,7 +325,10 @@ mod tests {
             "piege.exe"
         );
         assert_eq!(nom_de_fichier_sur(Some("/etc/passwd")), "passwd");
-        assert_eq!(nom_de_fichier_sur(Some("../../../secret.txt")), "secret.txt");
+        assert_eq!(
+            nom_de_fichier_sur(Some("../../../secret.txt")),
+            "secret.txt"
+        );
         assert_eq!(nom_de_fichier_sur(Some("do:cu*ment?.pdf")), "document.pdf");
     }
 
@@ -384,7 +387,10 @@ mod tests {
     fn la_reponse_de_connexion_annonce_la_taille_de_paquet() {
         let reponse = reponse_connexion();
         assert_eq!(reponse[0], REPONSE_SUCCES);
-        assert_eq!(u16::from_be_bytes([reponse[1], reponse[2]]) as usize, reponse.len());
+        assert_eq!(
+            u16::from_be_bytes([reponse[1], reponse[2]]) as usize,
+            reponse.len()
+        );
         assert_eq!(
             u16::from_be_bytes([reponse[5], reponse[6]]),
             TAILLE_PAQUET_MAX

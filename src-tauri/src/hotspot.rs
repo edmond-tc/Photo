@@ -227,9 +227,9 @@ fn normaliser(sortie: &str) -> String {
 /// supported" et en lit la valeur (Oui/Non/Yes/No).
 fn lire_prise_en_charge_reseau_heberge(sortie: &str) -> Option<bool> {
     let normalisee = normaliser(sortie);
-    let ligne = normalisee.lines().find(|ligne| {
-        ligne.contains("hosted network") || ligne.contains("rseau hberg")
-    })?;
+    let ligne = normalisee
+        .lines()
+        .find(|ligne| ligne.contains("hosted network") || ligne.contains("rseau hberg"))?;
     let valeur = ligne.rsplit(':').next()?.trim();
     if valeur.contains("oui") || valeur.contains("yes") {
         Some(true)
@@ -489,7 +489,11 @@ pub fn diagnostiquer() -> DiagnosticPoste {
             "--- pare-feu Windows ---\nRègles de réception en place : {}\
              \n--- netsh wlan show interfaces ---\n{}\n--- netsh wlan show drivers ---\n{}\
              \n--- netsh wlan show wirelesscapabilities ---\n{}",
-            if crate::pare_feu::regles_presentes() { "oui" } else { "non (créées à l'activation)" },
+            if crate::pare_feu::regles_presentes() {
+                "oui"
+            } else {
+                "non (créées à l'activation)"
+            },
             interfaces.trim(),
             pilotes.trim(),
             capacites.trim()
@@ -979,10 +983,7 @@ fn echec_wifi_direct_sans_adresse(wdi_supporte: Option<bool>) -> String {
 /// sur les PC plus anciens, Wi-Fi Direct sur les plus récents. Les essayer
 /// l'une après l'autre couvre donc bien plus de machines que n'importe
 /// laquelle seule — et le gérant, lui, ne voit qu'un seul bouton.
-pub fn activer_par_tous_les_moyens(
-    ssid: &str,
-    mot_de_passe: &str,
-) -> Result<Activation, String> {
+pub fn activer_par_tous_les_moyens(ssid: &str, mot_de_passe: &str) -> Result<Activation, String> {
     let mut activation = tenter_toutes_les_methodes(ssid, mot_de_passe)?;
     if let Err(e) = garantir_pare_feu() {
         activation.avertissements.push(e);
@@ -1011,10 +1012,7 @@ fn garantir_pare_feu() -> Result<(), String> {
     })
 }
 
-fn tenter_toutes_les_methodes(
-    ssid: &str,
-    mot_de_passe: &str,
-) -> Result<Activation, String> {
+fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activation, String> {
     let diagnostic = diagnostiquer();
     if diagnostic.carte_wifi_presente == Some(false) {
         return Err(diagnostic.verdict);
@@ -1716,7 +1714,11 @@ mod tests {
             Some("\nErreur brutale")
         );
         assert_eq!(
-            extraire_section("rien du tout", MARQUEUR_DEBUT_DEMARRAGE, MARQUEUR_FIN_DEMARRAGE),
+            extraire_section(
+                "rien du tout",
+                MARQUEUR_DEBUT_DEMARRAGE,
+                MARQUEUR_FIN_DEMARRAGE
+            ),
             None
         );
     }
@@ -1826,7 +1828,9 @@ mod tests {
         assert!(contient_confirmation_demarrage(
             "Le mode h\u{FFFD}berg\u{FFFD} a d\u{FFFD}marr\u{FFFD}."
         ));
-        assert!(contient_confirmation_demarrage("The hosted network started."));
+        assert!(contient_confirmation_demarrage(
+            "The hosted network started."
+        ));
         assert!(!contient_confirmation_demarrage(
             "Accès refusé. Vous devez être administrateur."
         ));

@@ -258,7 +258,11 @@ fn signature_valide(machine_id: &str, expiration_compacte: &str, signature: &str
     let Ok(cle) = VerifyingKey::from_bytes(&CLE_PUBLIQUE) else {
         return false;
     };
-    decoder_et_verifier_signature(&message_a_signer(machine_id, expiration_compacte), signature, &cle)
+    decoder_et_verifier_signature(
+        &message_a_signer(machine_id, expiration_compacte),
+        signature,
+        &cle,
+    )
 }
 
 fn verifier_cle(machine_id: &str, cle: &str) -> Option<NaiveDate> {
@@ -352,7 +356,8 @@ pub fn code_installation_deja_valide(state: State<DbState>) -> Result<bool, Stri
         return Ok(true);
     }
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let code = db::get_setting(&conn, "code_installation").or_else(|| registre::lire("CodeInstallation"));
+    let code =
+        db::get_setting(&conn, "code_installation").or_else(|| registre::lire("CodeInstallation"));
     Ok(code.is_some_and(|code| code_installation_valide_sur_cette_machine(&code)))
 }
 
@@ -674,7 +679,10 @@ mod tests {
         ];
         let a = composer_empreinte(&valeurs).expect("empreinte attendue");
         let b = composer_empreinte(&valeurs).expect("empreinte attendue");
-        assert_eq!(a, b, "la même machine doit toujours donner la même empreinte");
+        assert_eq!(
+            a, b,
+            "la même machine doit toujours donner la même empreinte"
+        );
         assert!(a.starts_with("MAT-"));
         // Dictable au téléphone : des groupes courts, pas une longue suite.
         assert!(a.len() <= 30, "identifiant trop long à dicter : {a}");
@@ -701,7 +709,11 @@ mod tests {
             None
         );
         assert_eq!(
-            composer_empreinte(&["00000000".to_string(), "FFFFFFFF".to_string(), "---".to_string()]),
+            composer_empreinte(&[
+                "00000000".to_string(),
+                "FFFFFFFF".to_string(),
+                "---".to_string()
+            ]),
             None
         );
     }
@@ -768,95 +780,109 @@ mod tests {
     #[test]
     fn aucune_trace_lisible_ne_plante_pas() {
         assert_eq!(debut_essai_le_plus_ancien(&[]), None);
-        assert_eq!(debut_essai_le_plus_ancien(&[None, Some("n'importe quoi".to_string())]), None);
+        assert_eq!(
+            debut_essai_le_plus_ancien(&[None, Some("n'importe quoi".to_string())]),
+            None
+        );
     }
 
-#[test]
-fn cle_generee_par_le_worker_reel_est_acceptee() {
-    // Clé produite par le Worker Cloudflare tournant en local (workerd),
-    // via le vrai parcours : connexion, création de boutique, génération.
-    let cle = "YXZJGFCYSJ4S6HAQCYEKSBF69R1JVCKH0QPGFVJ1FZ34W4AS2A85XEHZTW8AK0ZEZWN72QJ04HJ1AN8KB4MXF2JR2RFGP0475GDK838-20261015";
-    assert!(super::verifier_cle("MACHINE-DE-TEST-1234", cle).is_some());
-    assert!(super::verifier_cle("AUTRE-MACHINE", cle).is_none());
-}
+    #[test]
+    fn cle_generee_par_le_worker_reel_est_acceptee() {
+        // Clé produite par le Worker Cloudflare tournant en local (workerd),
+        // via le vrai parcours : connexion, création de boutique, génération.
+        let cle = "YXZJGFCYSJ4S6HAQCYEKSBF69R1JVCKH0QPGFVJ1FZ34W4AS2A85XEHZTW8AK0ZEZWN72QJ04HJ1AN8KB4MXF2JR2RFGP0475GDK838-20261015";
+        assert!(super::verifier_cle("MACHINE-DE-TEST-1234", cle).is_some());
+        assert!(super::verifier_cle("AUTRE-MACHINE", cle).is_none());
+    }
 
-// ───────────── Code d'installation ─────────────
-// Utilise une paire de clés jetable générée sur place (pas le vrai secret du
-// Worker, inconnu ici) : on vérifie la mécanique de `decoder_et_verifier_signature`
-// et du préfixe "INST-", indépendamment de la vraie clé publique embarquée.
+    // ───────────── Code d'installation ─────────────
+    // Utilise une paire de clés jetable générée sur place (pas le vrai secret du
+    // Worker, inconnu ici) : on vérifie la mécanique de `decoder_et_verifier_signature`
+    // et du préfixe "INST-", indépendamment de la vraie clé publique embarquée.
 
-fn fabriquer_code_de_test(cle_privee: &ed25519_dalek::SigningKey, id: &str) -> String {
-    use ed25519_dalek::Signer;
-    let signature = cle_privee.sign(&message_a_signer_installation(id));
-    format!("INST-{}", base32::encode(Alphabet::Crockford, &signature.to_bytes()))
-}
+    fn fabriquer_code_de_test(cle_privee: &ed25519_dalek::SigningKey, id: &str) -> String {
+        use ed25519_dalek::Signer;
+        let signature = cle_privee.sign(&message_a_signer_installation(id));
+        format!(
+            "INST-{}",
+            base32::encode(Alphabet::Crockford, &signature.to_bytes())
+        )
+    }
 
-#[test]
-fn accepte_un_code_signe_pour_cette_machine() {
-    use ed25519_dalek::SigningKey;
-    let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
-    let cle_publique = cle_privee.verifying_key();
-    let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
-    let message = message_a_signer_installation("MACHINE-1");
-    let signature = code.strip_prefix("INST-").unwrap();
-    assert!(super::decoder_et_verifier_signature(&message, signature, &cle_publique));
-}
+    #[test]
+    fn accepte_un_code_signe_pour_cette_machine() {
+        use ed25519_dalek::SigningKey;
+        let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
+        let cle_publique = cle_privee.verifying_key();
+        let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
+        let message = message_a_signer_installation("MACHINE-1");
+        let signature = code.strip_prefix("INST-").unwrap();
+        assert!(super::decoder_et_verifier_signature(
+            &message,
+            signature,
+            &cle_publique
+        ));
+    }
 
-#[test]
-fn refuse_un_code_sans_le_prefixe_inst() {
-    assert!(!code_installation_valide_pour("MACHINE-1", "ABCDEFGH"));
-}
+    #[test]
+    fn refuse_un_code_sans_le_prefixe_inst() {
+        assert!(!code_installation_valide_pour("MACHINE-1", "ABCDEFGH"));
+    }
 
-#[test]
-fn refuse_un_code_signe_pour_une_autre_machine() {
-    use ed25519_dalek::SigningKey;
-    let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
-    let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
-    let message_autre_machine = message_a_signer_installation("MACHINE-2");
-    let signature = code.strip_prefix("INST-").unwrap();
-    assert!(!super::decoder_et_verifier_signature(
-        &message_autre_machine,
-        signature,
-        &cle_privee.verifying_key()
-    ));
-}
+    #[test]
+    fn refuse_un_code_signe_pour_une_autre_machine() {
+        use ed25519_dalek::SigningKey;
+        let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
+        let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
+        let message_autre_machine = message_a_signer_installation("MACHINE-2");
+        let signature = code.strip_prefix("INST-").unwrap();
+        assert!(!super::decoder_et_verifier_signature(
+            &message_autre_machine,
+            signature,
+            &cle_privee.verifying_key()
+        ));
+    }
 
-#[test]
-fn refuse_un_code_dont_la_signature_est_modifiee() {
-    use ed25519_dalek::SigningKey;
-    let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
-    let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
-    // Jamais le tout dernier caractère : en base32 (512 bits de signature
-    // sur 103 caractères), il ne porte que 2 bits utiles sur 5 — certaines
-    // paires de caractères n'y diffèrent que sur un bit de bourrage ignoré
-    // au décodage, ce qui rendrait ce test bogué (pas seulement rare).
-    let mut caracteres: Vec<char> = code.chars().collect();
-    let position = caracteres.len() / 2;
-    caracteres[position] = if caracteres[position] == 'A' { 'B' } else { 'A' };
-    let code: String = caracteres.into_iter().collect();
-    let message = message_a_signer_installation("MACHINE-1");
-    let signature = code.strip_prefix("INST-").unwrap();
-    assert!(!super::decoder_et_verifier_signature(
-        &message,
-        signature,
-        &cle_privee.verifying_key()
-    ));
-}
+    #[test]
+    fn refuse_un_code_dont_la_signature_est_modifiee() {
+        use ed25519_dalek::SigningKey;
+        let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
+        let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
+        // Jamais le tout dernier caractère : en base32 (512 bits de signature
+        // sur 103 caractères), il ne porte que 2 bits utiles sur 5 — certaines
+        // paires de caractères n'y diffèrent que sur un bit de bourrage ignoré
+        // au décodage, ce qui rendrait ce test bogué (pas seulement rare).
+        let mut caracteres: Vec<char> = code.chars().collect();
+        let position = caracteres.len() / 2;
+        caracteres[position] = if caracteres[position] == 'A' {
+            'B'
+        } else {
+            'A'
+        };
+        let code: String = caracteres.into_iter().collect();
+        let message = message_a_signer_installation("MACHINE-1");
+        let signature = code.strip_prefix("INST-").unwrap();
+        assert!(!super::decoder_et_verifier_signature(
+            &message,
+            signature,
+            &cle_privee.verifying_key()
+        ));
+    }
 
-#[test]
-fn accepte_un_code_colle_avec_espaces_et_en_minuscules() {
-    use ed25519_dalek::SigningKey;
-    let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
-    let cle_publique = cle_privee.verifying_key();
-    let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
-    let collee = format!("  {}\n", code.to_lowercase());
-    let normalisee: String = collee.chars().filter(|c| !c.is_whitespace()).collect();
-    let normalisee = normalisee.to_uppercase();
-    let signature = normalisee.strip_prefix("INST-").unwrap();
-    assert!(super::decoder_et_verifier_signature(
-        &message_a_signer_installation("MACHINE-1"),
-        signature,
-        &cle_publique
-    ));
-}
+    #[test]
+    fn accepte_un_code_colle_avec_espaces_et_en_minuscules() {
+        use ed25519_dalek::SigningKey;
+        let cle_privee = SigningKey::generate(&mut rand::rngs::OsRng);
+        let cle_publique = cle_privee.verifying_key();
+        let code = fabriquer_code_de_test(&cle_privee, "MACHINE-1");
+        let collee = format!("  {}\n", code.to_lowercase());
+        let normalisee: String = collee.chars().filter(|c| !c.is_whitespace()).collect();
+        let normalisee = normalisee.to_uppercase();
+        let signature = normalisee.strip_prefix("INST-").unwrap();
+        assert!(super::decoder_et_verifier_signature(
+            &message_a_signer_installation("MACHINE-1"),
+            signature,
+            &cle_publique
+        ));
+    }
 }

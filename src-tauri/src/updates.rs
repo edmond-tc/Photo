@@ -175,10 +175,13 @@ fn parse_version(s: &str) -> Vec<u32> {
 /// vue — pour ne jamais montrer deux fois la même liste. Appelé juste après
 /// une activation de licence réussie (voir main.js).
 #[tauri::command]
-pub fn recuperer_nouveautes_et_marquer_vues(state: State<'_, DbState>) -> Result<Vec<Nouveaute>, String> {
+pub fn recuperer_nouveautes_et_marquer_vues(
+    state: State<'_, DbState>,
+) -> Result<Vec<Nouveaute>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
 
-    let derniere_vue = db::get_setting(&conn, "derniere_version_vue").unwrap_or_else(|| "0.0.0".to_string());
+    let derniere_vue =
+        db::get_setting(&conn, "derniere_version_vue").unwrap_or_else(|| "0.0.0".to_string());
     let derniere_vue = parse_version(&derniere_vue);
     let actuelle = parse_version(VERSION_ACTUELLE);
 

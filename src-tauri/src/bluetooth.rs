@@ -35,7 +35,11 @@ fn dossier_de_reception(app: &tauri::AppHandle) -> Option<PathBuf> {
 
 /// Écrit le fichier reçu sans jamais en écraser un autre : deux clients qui
 /// envoient "document.pdf" le même jour ne doivent pas se recouvrir.
-pub fn enregistrer_fichier(dossier: &std::path::Path, nom: &str, donnees: &[u8]) -> std::io::Result<PathBuf> {
+pub fn enregistrer_fichier(
+    dossier: &std::path::Path,
+    nom: &str,
+    donnees: &[u8],
+) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dossier)?;
 
     let mut chemin = dossier.join(nom);
@@ -67,8 +71,7 @@ mod implementation {
 
     /// L'annonce Bluetooth vit aussi longtemps que ces deux objets : les
     /// relâcher retirerait le PC de la liste des destinataires possibles.
-    static SERVICE: Mutex<Option<(RfcommServiceProvider, StreamSocketListener)>> =
-        Mutex::new(None);
+    static SERVICE: Mutex<Option<(RfcommServiceProvider, StreamSocketListener)>> = Mutex::new(None);
 
     pub fn demarrer(app: tauri::AppHandle) {
         // Sur un PC sans radio Bluetooth, l'enregistrement échoue : c'est

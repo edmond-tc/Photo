@@ -167,7 +167,12 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         // sans passer par le mot de passe technique (réservé au porteur du
         // projet) — voir gestion::supprimer_document. On garde une trace du
         // fait que le document a été supprimé, jamais de la comptabilité.
-        ajouter_colonne_si_absente(conn, "files_queue", "document_supprime", "INTEGER NOT NULL DEFAULT 0")?;
+        ajouter_colonne_si_absente(
+            conn,
+            "files_queue",
+            "document_supprime",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
     }
 
     if version < 3 {
@@ -175,7 +180,12 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         // avant, "Imprimer" ne faisait que transmettre l'ordre à Windows,
         // sans jamais savoir si le papier était vraiment sorti. Voir
         // impression.rs.
-        ajouter_colonne_si_absente(conn, "files_queue", "impression_confirmee", "INTEGER NOT NULL DEFAULT 0")?;
+        ajouter_colonne_si_absente(
+            conn,
+            "files_queue",
+            "impression_confirmee",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         ajouter_colonne_si_absente(conn, "files_queue", "pages_imprimees", "INTEGER")?;
         ajouter_colonne_si_absente(conn, "files_queue", "impression_erreur", "TEXT")?;
     }
@@ -187,9 +197,19 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         // détail réel de ce que l'imprimante a reçu (couleur, recto-verso,
         // format, poste, imprimante utilisée) et la comparaison avec ce qui
         // a été facturé — voir impression.rs.
-        ajouter_colonne_si_absente(conn, "files_queue", "recto_verso", "INTEGER NOT NULL DEFAULT 0")?;
+        ajouter_colonne_si_absente(
+            conn,
+            "files_queue",
+            "recto_verso",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         ajouter_colonne_si_absente(conn, "files_queue", "impression_couleur_reelle", "INTEGER")?;
-        ajouter_colonne_si_absente(conn, "files_queue", "impression_recto_verso_reelle", "INTEGER")?;
+        ajouter_colonne_si_absente(
+            conn,
+            "files_queue",
+            "impression_recto_verso_reelle",
+            "INTEGER",
+        )?;
         ajouter_colonne_si_absente(conn, "files_queue", "impression_format_reel", "TEXT")?;
         ajouter_colonne_si_absente(conn, "files_queue", "impression_copies_reelles", "INTEGER")?;
         ajouter_colonne_si_absente(conn, "files_queue", "impression_poste", "TEXT")?;
@@ -221,7 +241,12 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         // lieu de 20). Les lignes antérieures valent 1, ce qui reproduit
         // exactement l'affichage d'avant : aucune commande existante ne
         // change de prix.
-        ajouter_colonne_si_absente(conn, "files_queue", "pages_document", "INTEGER NOT NULL DEFAULT 1")?;
+        ajouter_colonne_si_absente(
+            conn,
+            "files_queue",
+            "pages_document",
+            "INTEGER NOT NULL DEFAULT 1",
+        )?;
     }
 
     conn.pragma_update(None, "user_version", VERSION_SCHEMA)?;
