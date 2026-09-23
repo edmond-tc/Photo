@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    # Nécessaire pour créer la publication qui porte le lien direct de la
+    # mise à jour légère (voir la dernière étape).
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -166,3 +170,37 @@ jobs:
           path: src-tauri/target/release/generer-licence.exe
           if-no-files-found: error
           retention-days: 14
+
+      # Un lien direct de 3,7 Mo, que l'on peut envoyer tel quel au gérant.
+      #
+      # L'artefact GitHub ci-dessus ne se télécharge qu'en bloc — 223 Mo
+      # d'archive pour en extraire 3,7 Mo — et seulement en étant connecté.
+      # Sur un forfait mobile au Bénin, c'est inutilisable : c'est
+      # exactement le reproche qui a été fait sur le terrain. Une
+      # publication, elle, se télécharge fichier par fichier et sans compte.
+      #
+      # `continue-on-error` parce qu'un lien de secours qui échoue ne doit
+      # jamais faire échouer une construction par ailleurs réussie : la
+      # publication principale reste celle de Cloudflare, plus haut.
+      - name: Publier un lien direct pour la mise à jour légère
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "v$version"
+          $fichiers = @(
+            "installateurs/GestionPhotocopie-MiseAJour.exe",
+            "installateurs/empreinte-sha256-mise-a-jour.txt"
+          )
+          $notes = "Mise a jour legere ($([math]::Round((Get-Item 'installateurs/GestionPhotocopie-MiseAJour.exe').Length / 1MB, 1)) Mo).`n`nAucune connexion internet n'est necessaire sur le PC de la boutique apres l'installation."
+
+          # Une même version peut être reconstruite (correction du
+          # workflow, relance après incident) : on remplace alors les
+          # fichiers au lieu d'échouer sur un tag déjà pris.
+          if (gh release view $tag 2>$null) {
+            gh release upload $tag $fichiers --clobber
+          } else {
+            gh release create $tag $fichiers --title "Gestion Photocopie $version" --notes $notes --latest
+          }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
