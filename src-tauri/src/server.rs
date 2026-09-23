@@ -338,7 +338,13 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
             crate::db::get_setting(&conn, "bluetooth_nom"),
         )
     };
+    Html(construire_page_accueil(whatsapp, bluetooth_nom))
+}
 
+/// Séparée de `page_accueil` pour être vérifiable sans base ni serveur : la
+/// page change de forme selon les réglages de la boutique, et c'est
+/// justement une de ces variantes qui a cassé l'envoi sur le terrain.
+fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<String>) -> String {
 // Les deux autres façons d'envoyer sont présentées comme des cartes à
     // part entière, en bas de page — et non comme des liens en petit au pied
     // de la page d'envoi. Un client qui n'arrive pas à passer par le Wi-Fi
@@ -426,7 +432,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
             .to_string(),
     };
 
-    Html(format!(
+    format!(
         r#"<!doctype html>
 <html lang="fr">
 <head>
@@ -521,7 +527,12 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
   #texte-progression {{ display:none; text-align:center; font-size:0.8rem; color:var(--gris-texte); margin: 0 0 0.75rem; }}
 
   .fichier {{ border:1px solid var(--gris-bord); border-radius:8px; padding:0.75rem; margin-bottom:0.65rem; }}
-  .fichier-nom {{ font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .fichier-entete {{ display:flex; align-items:center; gap:0.5rem; }}
+  .fichier-nom {{ flex:1; font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .fichier-retirer {{
+    width:auto; flex:0 0 auto; background:none; border:none; color:var(--gris-texte);
+    font-size:1.1rem; line-height:1; padding:0.2rem 0.35rem; cursor:pointer;
+  }}
   .fichier-toggle {{ background:none; border:none; color:var(--bleu); font-size:0.82rem; padding:0.35rem 0 0; cursor:pointer; width:auto; text-align:left; font-weight:500; }}
   .fichier-options {{ display:none; margin-top:0.6rem; font-size:0.85rem; }}
   .fichier-options.ouvert {{ display:block; }}
@@ -567,8 +578,11 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
 
         <div class="champ">
           <label for="champ-fichiers">Vos documents</label>
-          <p class="aide">Un ou plusieurs fichiers à la fois.</p>
-          <input type="file" id="champ-fichiers" multiple required />
+          <p class="aide">
+            Vous pouvez les ajouter <strong>un par un</strong> : chaque choix s'ajoute
+            à la liste, rien ne remplace ce que vous avez déjà mis.
+          </p>
+          <input type="file" id="champ-fichiers" multiple />
         </div>
 
         <div id="liste-fichiers"></div>
@@ -599,36 +613,88 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     const champFichiers = document.getElementById('champ-fichiers');
     const listeFichiers = document.getElementById('liste-fichiers');
 
-    // Par défaut : Noir & Blanc, A4, 1 copie — le client ne voit ces
-    // réglages que s'il clique "Personnaliser", pour ne jamais compliquer
-    // l'envoi simple d'un fichier tel quel.
-    champFichiers.addEventListener('change', () => {{
+    // La sélection est CUMULÉE ici, au lieu de vivre dans le champ.
+    //
+    // Sur iPhone, choisir des documents ne permet souvent d'en prendre qu'un
+    // seul à la fois — c'est le sélecteur d'Apple qui l'impose, pas notre
+    // page, et la fenêtre réduite qu'ouvre un portail captif est encore plus
+    // limitée. Tant que la liste vivait dans le champ, un second choix
+    // EFFAÇAIT le premier : le client ne pouvait donc envoyer qu'un seul
+    // document, sans que rien ne le prévienne.
+    //
+    // En gardant la liste de notre côté, ajouter se fait autant de fois
+    // qu'on veut — un par un s'il le faut — et l'on peut aussi retirer une
+    // ligne. Le champ est vidé après chaque choix, sinon reprendre le même
+    // fichier ne déclencherait aucun événement.
+    //
+    // Chaque ligne garde SES options (Noir & Blanc, A4, 1 copie par défaut,
+    // le client ne les voit qu'en cliquant "Personnaliser") : elles vivent
+    // dans l'objet et non dans le HTML, pour survivre au réaffichage
+    // provoqué par un ajout ou un retrait.
+    let fichiersChoisis = [];
+
+    function memeFichier(a, b) {{
+      return a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
+    }}
+
+    function afficherFichiers() {{
       listeFichiers.innerHTML = '';
-      [...champFichiers.files].forEach((fichier, i) => {{
+      fichiersChoisis.forEach((choix, i) => {{
         const bloc = document.createElement('div');
         bloc.className = 'fichier';
         bloc.innerHTML = `
-          <div class="fichier-nom">${{fichier.name}}</div>
+          <div class="fichier-entete">
+            <div class="fichier-nom">${{choix.fichier.name}}</div>
+            <button type="button" class="fichier-retirer" aria-label="Retirer">✕</button>
+          </div>
           <button type="button" class="fichier-toggle">Personnaliser (couleur, format, copies)…</button>
           <div class="fichier-options">
-            <label><input type="checkbox" name="couleur_${{i}}" /> Couleur (sinon Noir &amp; Blanc)</label>
+            <label><input type="checkbox" class="opt-couleur" /> Couleur (sinon Noir &amp; Blanc)</label>
             <label>Format
-              <select name="format_${{i}}">
+              <select class="opt-format">
                 <option value="A4">A4</option>
                 <option value="A3">A3</option>
                 <option value="A5">A5</option>
               </select>
             </label>
-            <label>Copies <input type="number" name="copies_${{i}}" min="1" value="1" /></label>
-            <label>Pages (ex: 1-5) <input type="text" name="pages_${{i}}" placeholder="toutes" /></label>
+            <label>Copies <input type="number" class="opt-copies" min="1" value="1" /></label>
+            <label>Pages (ex: 1-5) <input type="text" class="opt-pages" placeholder="toutes" /></label>
           </div>
         `;
-        bloc.querySelector('.fichier-toggle').addEventListener('click', (e) => {{
+        const couleur = bloc.querySelector('.opt-couleur');
+        const format = bloc.querySelector('.opt-format');
+        const copies = bloc.querySelector('.opt-copies');
+        const pages = bloc.querySelector('.opt-pages');
+        couleur.checked = choix.couleur;
+        format.value = choix.format;
+        copies.value = choix.copies;
+        pages.value = choix.pages;
+        couleur.addEventListener('change', () => {{ choix.couleur = couleur.checked; }});
+        format.addEventListener('change', () => {{ choix.format = format.value; }});
+        copies.addEventListener('change', () => {{ choix.copies = copies.value || '1'; }});
+        pages.addEventListener('input', () => {{ choix.pages = pages.value; }});
+
+        bloc.querySelector('.fichier-toggle').addEventListener('click', () => {{
           bloc.querySelector('.fichier-options').classList.toggle('ouvert');
+        }});
+        bloc.querySelector('.fichier-retirer').addEventListener('click', () => {{
+          fichiersChoisis.splice(i, 1);
+          afficherFichiers();
         }});
         listeFichiers.appendChild(bloc);
       }});
       majBoutonBluetooth();
+    }}
+
+    champFichiers.addEventListener('change', () => {{
+      [...champFichiers.files].forEach((fichier) => {{
+        if (!fichiersChoisis.some((c) => memeFichier(c.fichier, fichier))) {{
+          fichiersChoisis.push({{ fichier, couleur: false, format: 'A4', copies: '1', pages: '' }});
+        }}
+      }});
+      // Vidé pour que rechoisir le même fichier déclenche bien un événement.
+      champFichiers.value = '';
+      afficherFichiers();
     }});
 
     // Le bouton Bluetooth n'apparaît que si le téléphone sait le faire
@@ -649,7 +715,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     const btnBluetooth = document.getElementById('btn-partager-bluetooth');
     function majBoutonBluetooth() {{
       if (!btnBluetooth) return;
-      const fichiers = [...champFichiers.files];
+      const fichiers = fichiersChoisis.map((c) => c.fichier);
       const peutPartager =
         fichiers.length > 0 &&
         typeof navigator.canShare === 'function' &&
@@ -659,7 +725,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     if (btnBluetooth) {{
       btnBluetooth.addEventListener('click', async () => {{
         try {{
-          await navigator.share({{ files: [...champFichiers.files] }});
+          await navigator.share({{ files: fichiersChoisis.map((c) => c.fichier) }});
         }} catch {{
           // Annulé par le client, ou échec — pas grave, il peut toujours
           // utiliser "Envoyer à la boutique" ou les instructions manuelles.
@@ -678,17 +744,21 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
         audioClient = new (window.AudioContext || window.webkitAudioContext)();
       }} catch {{}}
       const form = e.target;
+      if (fichiersChoisis.length === 0) {{
+        alert('Choisissez au moins un document avant d\'envoyer.');
+        return;
+      }}
       const donnees = new FormData();
       donnees.append('nom', form.nom.value);
       donnees.append('telephone', form.telephone.value);
-      [...champFichiers.files].forEach((fichier, i) => {{
-        donnees.append(`fichier_${{i}}`, fichier);
-        donnees.append(`couleur_${{i}}`, form[`couleur_${{i}}`]?.checked ? '1' : '0');
-        donnees.append(`format_${{i}}`, form[`format_${{i}}`]?.value || 'A4');
-        donnees.append(`copies_${{i}}`, form[`copies_${{i}}`]?.value || '1');
-        donnees.append(`pages_${{i}}`, form[`pages_${{i}}`]?.value || '');
+      fichiersChoisis.forEach((choix, i) => {{
+        donnees.append(`fichier_${{i}}`, choix.fichier);
+        donnees.append(`couleur_${{i}}`, choix.couleur ? '1' : '0');
+        donnees.append(`format_${{i}}`, choix.format || 'A4');
+        donnees.append(`copies_${{i}}`, choix.copies || '1');
+        donnees.append(`pages_${{i}}`, choix.pages || '');
       }});
-      donnees.append('nombre_fichiers', String(champFichiers.files.length));
+      donnees.append('nombre_fichiers', String(fichiersChoisis.length));
 
       const bouton = form.querySelector('button');
       const barre = document.querySelector('#progression');
@@ -779,7 +849,7 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
   </script>
 </body>
 </html>"#
-    ))
+    )
 }
 
 struct FichierRecu {
@@ -1160,6 +1230,87 @@ async fn statut_fichier(
 
 #[cfg(test)]
 mod tests {
+    /// Le bug qui a fait perdre une journée de terrain : en déplaçant le
+    /// bouton « Partager par Bluetooth » dans une carte qui n'existe que
+    /// lorsqu'un nom Bluetooth est configuré, son élément a disparu de la
+    /// page — mais le script continuait de le lire sans garde. Il levait
+    /// donc une erreur AVANT d'installer l'interception du formulaire, et le
+    /// navigateur retombait sur l'envoi HTML classique : page rechargée,
+    /// vide, aucun fichier parti. Rien ne le signalait.
+    ///
+    /// Ce test parcourt CHAQUE variante de la page et exige que tout élément
+    /// lu par le script y soit présent — ou, s'il est facultatif, qu'il soit
+    /// lu derrière une garde. La liste ci-dessous n'est pas à rallonger à la
+    /// légère : y ajouter un identifiant, c'est accepter qu'il puisse
+    /// manquer un jour.
+    #[test]
+    fn le_script_ne_lit_aucun_element_absent_de_la_page() {
+        use super::construire_page_accueil;
+
+        // Facultatifs par construction, donc lus avec une garde dans le
+        // script (`if (btnBluetooth)`).
+        const FACULTATIFS: &[&str] = &["btn-partager-bluetooth"];
+
+        let variantes = [
+            ("sans réglage", None, None),
+            (
+                "WhatsApp seul",
+                Some("+22997000000".to_string()),
+                None,
+            ),
+            ("Bluetooth seul", None, Some("PC-BOUTIQUE".to_string())),
+            (
+                "les deux",
+                Some("+22997000000".to_string()),
+                Some("PC-BOUTIQUE".to_string()),
+            ),
+        ];
+
+        for (nom_variante, whatsapp, bluetooth) in variantes {
+            let page = construire_page_accueil(whatsapp, bluetooth);
+
+            // Tous les identifiants que le script va chercher.
+            let mut reste = page.as_str();
+            while let Some(depart) = reste.find("getElementById('") {
+                reste = &reste[depart + "getElementById('".len()..];
+                let fin = reste.find('\'').expect("appel getElementById mal formé");
+                let identifiant = &reste[..fin];
+                if FACULTATIFS.contains(&identifiant) {
+                    continue;
+                }
+                assert!(
+                    page.contains(&format!("id=\"{identifiant}\"")),
+                    "variante « {nom_variante} » : le script lit l'élément \
+                     « {identifiant} », qui n'existe pas dans cette page. Un élément \
+                     facultatif doit être lu derrière une garde, sinon l'erreur \
+                     emporte tout le script — et l'envoi avec."
+                );
+            }
+        }
+    }
+
+    /// Le seul élément facultatif doit rester lu derrière sa garde : la
+    /// retirer reproduirait exactement la panne du terrain.
+    #[test]
+    fn le_bouton_bluetooth_facultatif_reste_lu_derriere_une_garde() {
+        use super::construire_page_accueil;
+
+        let sans_bluetooth = construire_page_accueil(None, None);
+        assert!(
+            !sans_bluetooth.contains("id=\"btn-partager-bluetooth\""),
+            "sans nom configuré, ce bouton n'a pas lieu d'être"
+        );
+        assert!(
+            sans_bluetooth.contains("if (btnBluetooth)"),
+            "il est donc lu derrière une garde, faute de quoi le script s'arrête \
+             avant d'installer l'envoi"
+        );
+
+        let avec_bluetooth = construire_page_accueil(None, Some("PC-BOUTIQUE".to_string()));
+        assert!(avec_bluetooth.contains("id=\"btn-partager-bluetooth\""));
+        assert!(avec_bluetooth.contains("PC-BOUTIQUE"));
+    }
+
     /// Le bug exact venu du terrain : une carte VPN ou de machine virtuelle
     /// laissée par un ancien logiciel portait `10.10.10.1`, et le QR
     /// annonçait cette adresse au client — qui ne pouvait évidemment rien
