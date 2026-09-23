@@ -1,6 +1,6 @@
 use crate::watcher::{enqueue_file_avec_options, OptionsImpression};
 use axum::extract::{DefaultBodyLimit, Multipart, Path, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, Uri};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -469,7 +469,58 @@ fn echapper_html(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
+/// Ce que les téléphones ont RÉELLEMENT demandé au serveur de pages.
+///
+/// Dernier maillon qui manquait. On savait qu'un téléphone recevait son
+/// adresse, puis qu'il posait ses questions de noms — mais pas s'il venait
+/// ensuite frapper à la porte du portail. Or c'est cette visite-là, et elle
+/// seule, qui décide de l'ouverture de la page.
+///
+/// La signature du navigateur est notée avec : celui d'un iPhone qui vient
+/// vérifier son réseau s'annonce « CaptiveNetworkSupport », celui d'Android
+/// autrement. On sait donc QUI a frappé, sans avoir à le deviner.
+static JOURNAL_PAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+pub fn journal_pages() -> Vec<String> {
+    JOURNAL_PAGES.lock().map(|j| j.clone()).unwrap_or_default()
+}
+
+fn noter_visite(hote: &str, chemin: &str, navigateur: &str) {
+    if let Ok(mut journal) = JOURNAL_PAGES.lock() {
+        // Le nom du navigateur est long : on n'en garde que le début, qui
+        // suffit à distinguer un iPhone d'un Android.
+        let court: String = navigateur.chars().take(40).collect();
+        let ligne = format!("{hote}{chemin}  [{court}]");
+        if journal.last().map(String::as_str) == Some(ligne.as_str()) {
+            return;
+        }
+        if journal.len() >= 25 {
+            journal.remove(0);
+        }
+        journal.push(ligne);
+    }
+}
+
+async fn page_accueil(
+    State(app): State<AppHandle>,
+    methode: axum::http::Method,
+    uri: Uri,
+    entetes: axum::http::HeaderMap,
+) -> Html<String> {
+    let lire = |nom: axum::http::HeaderName| {
+        entetes
+            .get(nom)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("?")
+            .to_string()
+    };
+    let _ = methode;
+    noter_visite(
+        &lire(axum::http::header::HOST),
+        uri.path(),
+        &lire(axum::http::header::USER_AGENT),
+    );
+
     let (whatsapp, bluetooth_nom) = {
         let state = app.state::<crate::db::DbState>();
         let Ok(conn) = state.0.lock() else {

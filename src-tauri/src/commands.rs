@@ -507,6 +507,19 @@ pub fn journal_des_telephones() -> Vec<String> {
     }
 
     lignes.push(String::new());
+    lignes.push("— Pages demandées reçues —".to_string());
+    let pages = crate::server::journal_pages();
+    if pages.is_empty() {
+        lignes.push(
+            "(aucune) Aucun téléphone n'est venu frapper à la porte du portail. Sans cette \
+             visite, aucune page ne peut s'ouvrir."
+                .to_string(),
+        );
+    } else {
+        lignes.extend(pages);
+    }
+
+    lignes.push(String::new());
     lignes.push("— Noms demandés reçus —".to_string());
     if noms.is_empty() {
         lignes.push(

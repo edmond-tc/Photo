@@ -106,7 +106,13 @@ async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
                 .map(|o| format!("{o:02X}"))
                 .collect::<Vec<_>>()
                 .join(":");
-            noter(format!("{type_demande} de {mac}"));
+            // L'adresse accordée est notée avec la demande : sans elle,
+            // impossible de relier un téléphone du journal des adresses à
+            // celui du journal des noms, et donc de voir lequel des deux
+            // s'est tu.
+            let [a, b, c, _] = adresse_serveur.octets();
+            let donnee = Ipv4Addr::new(a, b, c, adresse_pour(demande.chaddr()));
+            noter(format!("{type_demande} de {mac} → {donnee}"));
         }
 
         if let Some(reponse) = construire_reponse(&tampon[..taille], adresse_serveur) {
