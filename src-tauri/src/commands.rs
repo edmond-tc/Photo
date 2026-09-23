@@ -433,6 +433,15 @@ pub fn ouvrir_parametres_partage_connexion() -> Result<(), String> {
 #[derive(serde::Serialize)]
 pub struct ResultatActivationWifi {
     pub methode: String,
+    /// État de chaque service indispensable, réussite comprise.
+    ///
+    /// Les avertissements ci-dessous ne disent que ce qui a ÉCHOUÉ : quand
+    /// tout démarre, ils sont vides, et le gérant — comme le support — n'a
+    /// alors aucune idée de ce qui tourne réellement. Sur le terrain, cette
+    /// absence a coûté plusieurs allers-retours à chercher lequel des trois
+    /// services manquait. Ce récapitulatif est donc toujours affiché : une
+    /// photo de cet écran suffit désormais à situer la panne.
+    pub recapitulatif: Vec<String>,
     /// Vide quand tout a démarré normalement. Sinon, chaque entrée est un
     /// service qui n'a pas pu s'installer — DHCP et/ou DNS, chacun pouvant
     /// échouer indépendamment de l'autre (Windows fait parfois tourner ses
@@ -528,6 +537,10 @@ pub async fn activer_point_acces_local(
 
         return Ok(ResultatActivationWifi {
             methode: "réseau externe".to_string(),
+            recapitulatif: vec![
+                format!("Adresse de ce PC : {adresse}"),
+                "Réseau : créé par une box, un routeur ou un téléphone".to_string(),
+            ],
             avertissements,
         });
     }
@@ -541,6 +554,10 @@ pub async fn activer_point_acces_local(
     .map_err(|e| e.to_string())??;
 
     let mut nouvelles_taches = Vec::new();
+    let mut recapitulatif = vec![
+        format!("Méthode : {}", activation.methode),
+        format!("Adresse de ce PC : {}", activation.adresse),
+    ];
     // Les méthodes qui ont échoué AVANT celle qui a réussi comptent comme
     // des avertissements : sur un PC dont le pilote ne convient qu'à la
     // méthode 1, une "réussite" de la méthode 2 peut n'être qu'apparente,
@@ -548,19 +565,41 @@ pub async fn activer_point_acces_local(
     let mut avertissements = activation.avertissements.clone();
 
     match crate::dhcp::demarrer(activation.adresse).await {
-        Ok(tache) => nouvelles_taches.push(tache),
-        Err(e) => avertissements.push(e),
+        Ok(tache) => {
+            nouvelles_taches.push(tache);
+            recapitulatif.push("✅ Adresses distribuées aux téléphones".to_string());
+        }
+        Err(e) => {
+            recapitulatif
+                .push("❌ Adresses distribuées aux téléphones — NE TOURNE PAS".to_string());
+            avertissements.push(e);
+        }
     }
     match crate::dns::demarrer(activation.adresse).await {
-        Ok(tache) => nouvelles_taches.push(tache),
-        Err(e) => avertissements.push(e),
+        Ok(tache) => {
+            nouvelles_taches.push(tache);
+            recapitulatif.push("✅ Noms de domaine (détournement vers ce PC)".to_string());
+        }
+        Err(e) => {
+            recapitulatif.push("❌ Noms de domaine — NE TOURNE PAS".to_string());
+            avertissements.push(e);
+        }
     }
     // Le serveur qui fait s'ouvrir la page toute seule démarre au lancement
     // de l'application, bien avant ce bouton : son échec éventuel n'a aucune
     // autre occasion d'être dit au gérant qu'ici.
-    if let Some(probleme) = crate::server::probleme_portail_captif() {
-        avertissements.push(probleme);
+    match crate::server::probleme_portail_captif() {
+        Some(probleme) => {
+            recapitulatif.push("❌ Ouverture automatique de la page — NE TOURNE PAS".to_string());
+            avertissements.push(probleme);
+        }
+        None => recapitulatif.push("✅ Ouverture automatique de la page".to_string()),
     }
+    recapitulatif.push(if crate::pare_feu::regles_presentes() {
+        "✅ Pare-feu Windows ouvert (4 ports)".to_string()
+    } else {
+        "❌ Pare-feu Windows — règles absentes".to_string()
+    });
 
     // Une activation précédente laissée en cours (le gérant a cliqué deux
     // fois) ne doit pas faire tourner deux serveurs DHCP/DNS en même temps
@@ -575,6 +614,7 @@ pub async fn activer_point_acces_local(
 
     Ok(ResultatActivationWifi {
         methode: activation.methode.to_string(),
+        recapitulatif,
         avertissements,
     })
 }

@@ -811,6 +811,7 @@ document.querySelector("#btn-activer-wifi-local").addEventListener("click", asyn
   bouton.textContent = "Activation en cours… (une fenêtre Windows va demander une autorisation)";
   try {
     const resultat = await invoke("activer_point_acces_local");
+    const recap = (resultat.recapitulatif || []).join("\n");
     if (resultat.avertissements.length > 0) {
       // Le Wi-Fi lui-même a démarré, mais DHCP et/ou DNS n'ont pas pu
       // s'installer (souvent : Windows fait déjà tourner son propre service
@@ -819,14 +820,18 @@ document.querySelector("#btn-activer-wifi-local").addEventListener("click", asyn
       // seuls — un souci invisible si on ne le montre pas explicitement ici.
       afficherCompteRenduWifi(
         `⚠️ Wi-Fi local activé (${resultat.methode}), mais avec un problème :`,
-        resultat.avertissements.join("\n\n") +
+        `${recap}\n\n` +
+          resultat.avertissements.join("\n\n") +
           `\n\nSi les clients n'arrivent pas à se connecter ou si la page ne s'ouvre pas ` +
           `toute seule, c'est probablement la cause.`,
         "attention"
       );
     } else {
-      document.querySelector("#wifi-compte-rendu").hidden = true;
-      toast(`✓ Wi-Fi local activé (${resultat.methode}) — rafraîchissement du QR…`);
+      // Affiché même quand tout va bien : c'est la seule façon de savoir ce
+      // qui tourne vraiment, et une photo de cet écran situe une panne sans
+      // avoir à tout réessayer à l'aveugle.
+      afficherCompteRenduWifi(`✓ Wi-Fi local activé (${resultat.methode})`, recap, "ok");
+      toast("✓ Wi-Fi local activé — rafraîchissement du QR…");
     }
     await afficherQr();
   } catch (err) {

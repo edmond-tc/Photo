@@ -352,12 +352,25 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
             r#"<section class="carte carte-alternative">
       <h2><span>📱</span> Envoyer par WhatsApp</h2>
       <p class="aide">
-        Si l'envoi ci-dessus ne fonctionne pas, vous pouvez envoyer vos documents
-        directement au gérant sur WhatsApp. Cette solution consomme vos données mobiles.
+        Pour envoyer vos documents directement au gérant sur WhatsApp, avec vos
+        propres données mobiles.
       </p>
-      <a class="bouton bouton-secondaire" href="https://wa.me/{numero}" target="_blank" rel="noopener">
+      <p class="avertissement-reseau">
+        ⚠️ Le Wi-Fi de la boutique n'a pas internet : WhatsApp ne pourra pas
+        envoyer tant que votre téléphone y reste connecté.
+      </p>
+      <ol class="etapes">
+        <li><strong>Coupez le Wi-Fi</strong> de votre téléphone (ou oubliez ce réseau).</li>
+        <li>Vérifiez que vos <strong>données mobiles</strong> sont activées.</li>
+        <li>Touchez le bouton ci-dessous, puis joignez vos documents.</li>
+      </ol>
+      <a class="bouton bouton-secondaire" href="whatsapp://send?phone={numero}">
         Ouvrir la discussion WhatsApp
       </a>
+      <p class="rappel">
+        Si rien ne s'ouvre, WhatsApp n'est pas installé sur ce téléphone :
+        <a href="https://wa.me/{numero}" target="_blank" rel="noopener">essayez ce lien</a>.
+      </p>
     </section>"#
         ),
         None => String::new(),
@@ -527,6 +540,10 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     padding:0.85rem 0.6rem; margin:0 0 0.9rem; word-break:break-word; letter-spacing:0.02em;
   }}
   .rappel {{ font-size:0.78rem; color:var(--gris-texte); margin:0.75rem 0 0; }}
+  .avertissement-reseau {{
+    font-size:0.8rem; background:#fff4ce; border-left:3px solid #d29200;
+    padding:0.6rem 0.75rem; border-radius:0 6px 6px 0; margin:0 0 0.5rem;
+  }}
 </style>
 </head>
 <body>
@@ -617,8 +634,21 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
     // Le bouton Bluetooth n'apparaît que si le téléphone sait le faire
     // (surtout Android) et que des fichiers sont bien sélectionnés —
     // sinon les instructions manuelles restent le seul recours.
+    // Ce bouton N'EXISTE PAS quand aucun nom Bluetooth n'est configuré : sa
+    // carte affiche alors une consigne générale, sans bouton.
+    //
+    // Sans les gardes ci-dessous, le script levait une erreur ici même, et
+    // s'arrêtait AVANT d'installer l'interception du formulaire. Le
+    // navigateur retombait alors sur l'envoi classique d'un formulaire HTML :
+    // la page se rechargeait, vide, et les fichiers ne partaient jamais.
+    // Constaté sur le terrain, sur les deux téléphones à la fois.
+    //
+    // Règle qui en découle : tout élément facultatif de cette page doit être
+    // lu avec une garde. Un détail absent ne doit jamais pouvoir emporter
+    // l'envoi lui-même, qui est la seule chose indispensable ici.
     const btnBluetooth = document.getElementById('btn-partager-bluetooth');
     function majBoutonBluetooth() {{
+      if (!btnBluetooth) return;
       const fichiers = [...champFichiers.files];
       const peutPartager =
         fichiers.length > 0 &&
@@ -626,14 +656,16 @@ async fn page_accueil(State(app): State<AppHandle>) -> Html<String> {
         navigator.canShare({{ files: fichiers }});
       btnBluetooth.hidden = !peutPartager;
     }}
-    btnBluetooth.addEventListener('click', async () => {{
-      try {{
-        await navigator.share({{ files: [...champFichiers.files] }});
-      }} catch {{
-        // Annulé par le client, ou échec — pas grave, il peut toujours
-        // utiliser "Envoyer à la boutique" ou les instructions manuelles.
-      }}
-    }});
+    if (btnBluetooth) {{
+      btnBluetooth.addEventListener('click', async () => {{
+        try {{
+          await navigator.share({{ files: [...champFichiers.files] }});
+        }} catch {{
+          // Annulé par le client, ou échec — pas grave, il peut toujours
+          // utiliser "Envoyer à la boutique" ou les instructions manuelles.
+        }}
+      }});
+    }}
 
     // Créé ici, pendant le clic (geste utilisateur) — les téléphones
     // bloquent le son créé plus tard par du code, mais celui-ci reste
