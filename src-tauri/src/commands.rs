@@ -553,6 +553,12 @@ pub async fn activer_point_acces_local(
         Ok(tache) => nouvelles_taches.push(tache),
         Err(e) => avertissements.push(e),
     }
+    // Le serveur qui fait s'ouvrir la page toute seule démarre au lancement
+    // de l'application, bien avant ce bouton : son échec éventuel n'a aucune
+    // autre occasion d'être dit au gérant qu'ici.
+    if let Some(probleme) = crate::server::probleme_portail_captif() {
+        avertissements.push(probleme);
+    }
 
     // Une activation précédente laissée en cours (le gérant a cliqué deux
     // fois) ne doit pas faire tourner deux serveurs DHCP/DNS en même temps

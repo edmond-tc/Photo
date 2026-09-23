@@ -6,10 +6,11 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
 pub const PORT: u16 = 4173;
-const PORT_PORTAIL_CAPTIF: u16 = 80;
+pub const PORT_PORTAIL_CAPTIF: u16 = 80;
 
 /// Limite haute pour un fichier envoyé par un client (au-delà, on refuse
 /// proprement plutôt que de laisser le serveur consommer toute la mémoire).
@@ -149,19 +150,42 @@ fn construire_router(app: AppHandle) -> Router {
 /// inhabituel est un risque inutile. Servir directement la page supprime ce
 /// détour. Elle pèse ~19 Ko, bien en dessous des ~128 Ko au-delà desquels
 /// iOS refuse d'afficher un portail.
+/// Pourquoi le portail captif ne tourne pas, s'il ne tourne pas.
+///
+/// Ce défaut s'écrivait jusqu'ici dans un `eprintln!` — c'est-à-dire dans
+/// une console qui n'existe pas dans l'application installée. Or c'est
+/// exactement le genre de panne qui ne se voit pas : le Wi-Fi s'allume, le
+/// téléphone se connecte, tout a l'air normal, et la page ne s'ouvre
+/// simplement jamais. Trois pannes de ce projet ont déjà eu cette forme.
+static PROBLEME_PORTAIL_CAPTIF: Mutex<Option<String>> = Mutex::new(None);
+
+/// Le portail captif a-t-il échoué à démarrer ? Remonté au gérant parmi les
+/// avertissements d'activation du Wi-Fi.
+pub fn probleme_portail_captif() -> Option<String> {
+    PROBLEME_PORTAIL_CAPTIF.lock().ok().and_then(|g| g.clone())
+}
+
 fn demarrer_portail_captif(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let router = construire_router(app).fallback(rediriger_vers_accueil);
         let addr = format!("0.0.0.0:{PORT_PORTAIL_CAPTIF}");
         match tokio::net::TcpListener::bind(&addr).await {
             Ok(listener) => {
+                if let Ok(mut garde) = PROBLEME_PORTAIL_CAPTIF.lock() {
+                    *garde = None;
+                }
                 let _ = axum::serve(listener, router).await;
             }
             Err(e) => {
-                eprintln!(
-                    "Portail captif (port {PORT_PORTAIL_CAPTIF}) indisponible : {e}. \
-                     Pas grave : le client ouvrira la page manuellement après connexion au Wi-Fi."
-                );
+                if let Ok(mut garde) = PROBLEME_PORTAIL_CAPTIF.lock() {
+                    *garde = Some(format!(
+                        "L'ouverture automatique de la page est indisponible (port \
+                         {PORT_PORTAIL_CAPTIF} : {e}). Le Wi-Fi et l'envoi fonctionnent, mais le \
+                         client devra scanner le petit second QR pour ouvrir la page. Cause \
+                         habituelle : un autre logiciel occupe déjà ce port sur ce PC (serveur \
+                         web, Skype ancien, outil de développement)."
+                    ));
+                }
             }
         }
     });

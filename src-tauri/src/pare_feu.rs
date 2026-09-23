@@ -12,12 +12,21 @@
 //! de nos réseaux — celui que le PC crée lui-même, comme le partage de
 //! connexion d'un téléphone.
 //!
-//! Trois ports sont nécessaires, et aucun ne peut être laissé de côté :
+//! Quatre ports sont nécessaires, et aucun ne peut être laissé de côté :
 //!
 //! - TCP 4173 : la page d'envoi elle-même (voir `server.rs`).
 //! - UDP 67 : l'attribution d'adresse aux téléphones (voir `dhcp.rs`) —
 //!   sans elle, le téléphone rejoint le Wi-Fi puis reste sans adresse.
-//! - UDP 53 : l'ouverture automatique de la page (voir `dns.rs`).
+//! - UDP 53 : la question « quelle est l'adresse de ce nom ? » (voir
+//!   `dns.rs`).
+//! - TCP 80 : la question suivante, et c'est celle qui OUVRE la page.
+//!   Constaté sur le terrain : avec les trois premiers ports seulement, le
+//!   téléphone rejoignait le réseau, recevait son adresse... et rien ne
+//!   s'ouvrait. Un téléphone qui rejoint un Wi-Fi demande toujours
+//!   « est-ce que ce réseau a vraiment internet ? » en allant chercher une
+//!   page de contrôle — sur le port 80, jamais sur un autre. Sans réponse à
+//!   cette question précise, il en conclut « réseau sans internet » au lieu
+//!   de « réseau qui demande une connexion », et n'ouvre donc rien du tout.
 //!
 //! Les règles portent un nom fixe, sont recréées à l'identique à chaque
 //! appel (donc jamais en double), et n'ouvrent que ces trois ports — rien
@@ -32,7 +41,8 @@ pub const PREFIXE_REGLE: &str = "Photocopie Benin";
 
 const REGLE_PAGE: &str = "Photocopie Benin - page envoi";
 const REGLE_DHCP: &str = "Photocopie Benin - adresses DHCP";
-const REGLE_DNS: &str = "Photocopie Benin - ouverture automatique";
+const REGLE_DNS: &str = "Photocopie Benin - noms de domaine";
+const REGLE_PORTAIL: &str = "Photocopie Benin - ouverture automatique";
 
 /// Les commandes à insérer dans un script déjà élevé.
 ///
@@ -48,6 +58,7 @@ pub fn commandes_powershell() -> String {
         (REGLE_PAGE, "TCP", u32::from(PORT)),
         (REGLE_DHCP, "UDP", 67),
         (REGLE_DNS, "UDP", 53),
+        (REGLE_PORTAIL, "TCP", u32::from(crate::server::PORT_PORTAIL_CAPTIF)),
     ];
 
     regles
@@ -87,7 +98,7 @@ pub fn regles_presentes() -> bool {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS].iter().all(|nom| {
+    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL].iter().all(|nom| {
         std::process::Command::new("netsh")
             .args([
                 "advfirewall",
@@ -148,23 +159,32 @@ pub fn autoriser() -> Result<(), String> {
 mod tests {
     use super::*;
 
-    /// Les trois ports doivent y être : en oublier un ne se verrait pas à
+    /// Les quatre ports doivent y être : en oublier un ne se verrait pas à
     /// l'écran (le Wi-Fi s'allume, le bandeau est vert) mais casserait la
-    /// réception — sans adresse pour le téléphone, ou sans page joignable.
+    /// réception — sans adresse pour le téléphone, ou sans page qui s'ouvre.
+    ///
+    /// Le port 80 a justement été oublié une première fois, et le terrain
+    /// l'a payé : le téléphone rejoignait le réseau, recevait son adresse,
+    /// et aucune page ne s'ouvrait jamais.
     #[test]
-    fn ouvre_les_trois_ports_necessaires_et_rien_d_autre() {
+    fn ouvre_les_quatre_ports_necessaires_et_rien_d_autre() {
         let commandes = commandes_powershell();
         assert!(commandes.contains("protocol=TCP localport=4173"));
         assert!(commandes.contains("protocol=UDP localport=67"));
         assert!(commandes.contains("protocol=UDP localport=53"));
+        assert!(
+            commandes.contains("protocol=TCP localport=80"),
+            "sans le port 80, le téléphone ne peut pas poser la question qui \
+             déclenche l'ouverture de la page"
+        );
         assert_eq!(
             commandes.matches("add rule").count(),
-            3,
-            "exactement trois règles, pas une de plus : rien d'autre de ce PC \
+            4,
+            "exactement quatre règles, pas une de plus : rien d'autre de ce PC \
              ne doit être exposé"
         );
         // Entrant seulement, et jamais "autoriser tout".
-        assert_eq!(commandes.matches("dir=in action=allow").count(), 3);
+        assert_eq!(commandes.matches("dir=in action=allow").count(), 4);
         assert!(!commandes.contains("dir=out"));
     }
 
@@ -173,8 +193,8 @@ mod tests {
     #[test]
     fn remplace_les_regles_au_lieu_de_les_empiler() {
         let commandes = commandes_powershell();
-        assert_eq!(commandes.matches("delete rule").count(), 3);
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS] {
+        assert_eq!(commandes.matches("delete rule").count(), 4);
+        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL] {
             let suppression = commandes
                 .find(&format!("delete rule name=\"{regle}\""))
                 .expect("suppression attendue");
@@ -189,8 +209,16 @@ mod tests {
     /// les reconnaître comme les nôtres.
     #[test]
     fn toutes_les_regles_sont_identifiables_comme_les_notres() {
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS] {
+        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL] {
             assert!(regle.starts_with(PREFIXE_REGLE), "{regle}");
+        }
+        // Des noms distincts : deux règles de même nom se remplaceraient
+        // l'une l'autre, et un port resterait fermé sans que rien ne le dise.
+        let noms = [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL];
+        for (i, a) in noms.iter().enumerate() {
+            for b in noms.iter().skip(i + 1) {
+                assert_ne!(a, b);
+            }
         }
     }
 
@@ -208,7 +236,7 @@ mod tests {
 
         // Aucun nom de règle ne doit contenir d'apostrophe : il traverse
         // PowerShell puis netsh, et s'y ferait découper.
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS] {
+        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL] {
             assert!(!regle.contains('\''), "{regle}");
         }
     }
