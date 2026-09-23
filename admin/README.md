@@ -1,5 +1,25 @@
 # Admin Gestion Photocopie — tableau de bord du porteur du projet
 
+## Adresses en service
+
+| À quoi ça sert | Adresse |
+| --- | --- |
+| Télécharger la mise à jour légère (3,7 Mo) | <https://photocopie-admin.atinzed2.workers.dev/telecharger/leger> |
+| Télécharger l'installateur complet (209 Mo) | <https://photocopie-admin.atinzed2.workers.dev/telecharger> |
+| Tableau de bord | <https://photocopie-admin.atinzed2.workers.dev/> |
+| Lien direct de secours, dernière version | <https://github.com/edmond-tc/Photo/releases/latest> |
+
+Ces adresses sont écrites ici pour une raison précise : elles n'existaient
+jusqu'ici que dans les échanges avec le support. Le jour où ces échanges ont
+été résumés, l'adresse a été perdue, et une soirée de terrain a été gâchée à
+la chercher alors que l'application, elle, était prête. Une adresse que
+personne ne peut retrouver seul n'est pas une adresse.
+
+Le sous-domaine `atinzed2` est celui du compte Cloudflare du projet : il
+n'apparaît ni dans le code, ni dans les journaux de construction (l'identifiant
+de compte y est masqué). Il ne peut donc venir que d'ici.
+
+
 Petite appli web (Cloudflare Workers + D1), accessible depuis un téléphone
 ou un PC avec internet — pas depuis le PC d'une boutique, qui n'est jamais
 connecté. Sert à :
