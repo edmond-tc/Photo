@@ -767,26 +767,61 @@ async function pageParametres(env) {
 
 const CLE_INSTALLATEUR = "GestionPhotocopie-Installateur.exe";
 const CLE_EMPREINTE = "empreinte-sha256.txt";
+// Deuxième installateur, beaucoup plus léger, qui n'embarque PAS le moteur
+// d'affichage de Windows (WebView2). Il ne convient donc qu'aux PC qui l'ont
+// déjà — c'est-à-dire tous ceux où l'application a déjà été installée une
+// fois. Ajouté pour une raison très concrète : sur le terrain, la connexion
+// se paye au mégaoctet, et retélécharger 200 Mo à chaque correction est
+// souvent tout simplement impossible.
+const CLE_INSTALLATEUR_LEGER = "GestionPhotocopie-MiseAJour.exe";
+const CLE_EMPREINTE_LEGER = "empreinte-sha256-mise-a-jour.txt";
 
-function pageTelecharger(disponible, empreinte) {
+/// Taille lisible par un humain qui compte son forfait : c'est le chiffre
+/// qui décide s'il peut télécharger ou non.
+function tailleLisible(octets) {
+  if (!octets && octets !== 0) return "";
+  const mo = octets / (1024 * 1024);
+  return mo >= 100 ? `${Math.round(mo)} Mo` : `${mo.toFixed(1)} Mo`;
+}
+
+function blocVerification(empreinte, nomFichier) {
+  if (!empreinte) return "";
+  return `<div style="text-align:left; background:#f3f2f1; padding:0.8rem; border-radius:6px; margin-top:0.8rem">
+      <p style="font-size:0.78rem; margin:0 0 0.4rem; color:#605e5c">
+        Empreinte officielle de ce fichier :
+      </p>
+      <p class="cle-resultat" style="font-size:0.72rem; margin:0 0 0.5rem">${echapper(empreinte)}</p>
+      <p style="font-size:0.78rem; margin:0; color:#605e5c">
+        Pour vérifier, dans le dossier du fichier téléchargé :<br>
+        <code style="font-size:0.75rem">certutil -hashfile ${echapper(nomFichier)} SHA256</code><br>
+        Le résultat doit être identique, caractère pour caractère.
+      </p>
+    </div>`;
+}
+
+function pageTelecharger(disponible, empreinte, taille, leger) {
   // L'empreinte remplace ce qu'aurait apporté un certificat de signature :
   // elle ne supprime pas l'avertissement de Windows, mais elle permet de
   // vérifier que le fichier téléchargé est bien celui qui a été compilé, et
   // pas une version modifiée en route.
-  const blocEmpreinte = empreinte
-    ? `<div style="text-align:left; background:#f3f2f1; padding:0.8rem; border-radius:6px; margin-top:1rem">
-         <p style="font-size:0.8rem; margin:0 0 0.4rem"><strong>Vérifier que le fichier est authentique</strong> (recommandé)</p>
-         <p style="font-size:0.78rem; margin:0 0 0.4rem; color:#605e5c">
-           Empreinte officielle de cette version :
+  const blocEmpreinte = blocVerification(empreinte, CLE_INSTALLATEUR);
+
+  // Le second bloc n'apparaît que si la compilation a bien produit la
+  // version légère : la page reste utilisable sinon.
+  const blocLeger = leger && leger.disponible
+    ? `<div class="carte" style="text-align:left; margin-top:1.5rem; border:1px solid #d1d1d1">
+         <h2 style="font-size:1rem; margin:0 0 0.5rem">Déjà installé sur ce PC ? Prenez la version légère</h2>
+         <p style="font-size:0.82rem; color:#605e5c; margin:0 0 0.8rem">
+           Même application, même version — mais sans le moteur d'affichage de
+           Windows, que ce PC possède déjà. <strong>${echapper(tailleLisible(leger.taille))}</strong>
+           au lieu de ${echapper(taille ? tailleLisible(taille) : "200 Mo et plus")}.
+           À n'utiliser que sur un PC où l'application a DÉJÀ été installée au
+           moins une fois ; sur un PC neuf, prenez la version complète ci-dessus.
          </p>
-         <p class="cle-resultat" style="font-size:0.72rem; margin:0 0 0.5rem">${echapper(empreinte)}</p>
-         <p style="font-size:0.78rem; margin:0; color:#605e5c">
-           Sur le PC, ouvrez l'invite de commande dans le dossier du fichier
-           téléchargé et tapez :<br>
-           <code style="font-size:0.75rem">certutil -hashfile ${echapper(CLE_INSTALLATEUR)} SHA256</code><br>
-           Le résultat doit être identique, caractère pour caractère. S'il
-           diffère, n'installez pas le fichier.
-         </p>
+         <a class="btn secondaire" href="/telecharger/leger" style="display:block; padding:0.8rem; text-align:center">
+           ⬇️ Télécharger la mise à jour (${echapper(tailleLisible(leger.taille))})
+         </a>
+         ${blocVerification(leger.empreinte, CLE_INSTALLATEUR_LEGER)}
        </div>`
     : "";
 
@@ -800,7 +835,7 @@ function pageTelecharger(disponible, empreinte) {
       </p>
       ${
         disponible
-          ? `<a class="btn" href="/telecharger/exe" style="display:block; margin:1rem 0; padding:1rem;">⬇️ Télécharger pour Windows</a>
+          ? `<a class="btn" href="/telecharger/exe" style="display:block; margin:1rem 0; padding:1rem;">⬇️ Télécharger pour Windows${taille ? ` (${echapper(tailleLisible(taille))})` : ""}</a>
              <p style="font-size:0.8rem; color:#605e5c; text-align:left">
                Au premier lancement, Windows affichera un avertissement
                "éditeur inconnu". Il apparaît sur tout logiciel dont l'auteur
@@ -813,7 +848,8 @@ function pageTelecharger(disponible, empreinte) {
              ${blocEmpreinte}`
           : `<p style="color:#a4262c">Le fichier n'est pas encore disponible. Réessayez plus tard.</p>`
       }
-    </div>`,
+    </div>
+    ${blocLeger}`,
     { connecte: false }
   );
 }
@@ -874,7 +910,12 @@ async function router(request, env) {
     // gérant sur le terrain n'a rien à voir avec le mot de passe du porteur
     // du projet, et ne doit jamais se retrouver bloqué par un réglage qui ne
     // le concerne pas.
-    const PAGES_PUBLIQUES_SANS_MOT_DE_PASSE = ["/telecharger", "/telecharger/exe", "/renouveler"];
+    const PAGES_PUBLIQUES_SANS_MOT_DE_PASSE = [
+  "/telecharger",
+  "/telecharger/exe",
+  "/telecharger/leger",
+  "/renouveler",
+];
     if (!env.ADMIN_PASSWORD && !PAGES_PUBLIQUES_SANS_MOT_DE_PASSE.includes(pathname)) {
       return new Response(
         page(
@@ -987,6 +1028,7 @@ async function router(request, env) {
       // (privé) où est développé le code.
       if (pathname === "/telecharger" && method === "GET") {
         const objet = await env.TELECHARGEMENTS.head(CLE_INSTALLATEUR);
+        const objetLeger = await env.TELECHARGEMENTS.head(CLE_INSTALLATEUR_LEGER);
         // Petit fichier texte déposé à côté de l'installateur, produit par la
         // compilation. Absent tant qu'il n'a pas été téléversé : la page
         // fonctionne quand même, sans le bloc de vérification.
@@ -997,8 +1039,38 @@ async function router(request, env) {
         } catch {
           empreinte = null;
         }
-        return new Response(await pageTelecharger(!!objet, empreinte), {
+        let empreinteLeger = null;
+        try {
+          const fichier = await env.TELECHARGEMENTS.get(CLE_EMPREINTE_LEGER);
+          if (fichier) empreinteLeger = borner(await fichier.text(), 64);
+        } catch {
+          empreinteLeger = null;
+        }
+        const leger = {
+          disponible: !!objetLeger,
+          taille: objetLeger ? objetLeger.size : null,
+          empreinte: empreinteLeger,
+        };
+        // Pas nommée `page` : ce nom est déjà celui du gabarit HTML global,
+        // et le masquer ici serait un piège pour la prochaine modification.
+        const corps = await pageTelecharger(
+          !!objet,
+          empreinte,
+          objet ? objet.size : null,
+          leger
+        );
+        return new Response(corps, {
           headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      if (pathname === "/telecharger/leger" && method === "GET") {
+        const objet = await env.TELECHARGEMENTS.get(CLE_INSTALLATEUR_LEGER);
+        if (!objet) return new Response("Fichier indisponible pour l'instant.", { status: 404 });
+        return new Response(objet.body, {
+          headers: {
+            "content-type": "application/octet-stream",
+            "content-disposition": `attachment; filename="${CLE_INSTALLATEUR_LEGER}"`,
+          },
         });
       }
       if (pathname === "/telecharger/exe" && method === "GET") {

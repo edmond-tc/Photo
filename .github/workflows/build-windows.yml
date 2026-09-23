@@ -51,14 +51,66 @@ jobs:
       # moyen gratuit de prouver qu'un installateur n'a pas été remplacé en
       # route. Le gérant la compare avec `certutil -hashfile fichier.exe
       # SHA256` avant d'installer.
-      - name: Calculer l'empreinte de l'installateur
+      # Deux installateurs sont publiés, et la différence n'est pas cosmétique.
+      #
+      # Le complet embarque le moteur d'affichage de Windows (WebView2), ce qui
+      # le fait peser plus de 200 Mo mais le rend installable sur un PC de
+      # boutique qui n'a jamais vu internet — la raison d'être du projet.
+      #
+      # Le léger ne l'embarque pas : quelques dizaines de Mo, pour les PC qui
+      # l'ont déjà, c'est-à-dire ceux où l'application tourne déjà. Sur le
+      # terrain la connexion se paye au mégaoctet, et retélécharger 200 Mo à
+      # chaque correction est souvent impossible. C'est cette version-là qui
+      # sert aux mises à jour.
+      - name: Préparer les deux installateurs
         shell: pwsh
         run: |
-          $installateur = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
-          if (-not $installateur) { Write-Error "Installateur introuvable."; exit 1 }
-          $empreinte = (Get-FileHash -Path $installateur.FullName -Algorithm SHA256).Hash.ToLower()
-          Set-Content -Path "src-tauri/target/release/bundle/nsis/empreinte-sha256.txt" -Value $empreinte -NoNewline
-          Write-Host "SHA-256 de l'installateur : $empreinte"
+          $sortie = "installateurs"
+          New-Item -ItemType Directory -Force -Path $sortie | Out-Null
+
+          $complet = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
+          if (-not $complet) { Write-Error "Installateur complet introuvable."; exit 1 }
+          Copy-Item $complet.FullName "$sortie/GestionPhotocopie-Installateur.exe"
+
+          # Le binaire est déjà compilé : cette seconde passe ne refait que
+          # l'empaquetage, elle ne recompile pas le Rust.
+          #
+          # La surcharge passe par un FICHIER, pas par du JSON en ligne de
+          # commande : entre PowerShell, npm et cmd, les guillemets d'un JSON
+          # écrit à la main se font abîmer en route sous Windows, l'option
+          # serait silencieusement ignorée, et on publierait 200 Mo sous le
+          # nom "mise à jour". Le garde-fou de taille plus bas rattraperait le
+          # coup, mais autant ne pas créer le problème.
+          $confLeger = Join-Path (Get-Location).Path "tauri.leger.json"
+          Set-Content -Path $confLeger -Encoding utf8 -Value '{"bundle":{"windows":{"webviewInstallMode":{"type":"downloadBootstrapper"}}}}'
+          npm run tauri build -- --config $confLeger
+          Remove-Item $confLeger -Force
+
+          $leger = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
+          if (-not $leger) { Write-Error "Installateur léger introuvable."; exit 1 }
+          Copy-Item $leger.FullName "$sortie/GestionPhotocopie-MiseAJour.exe"
+
+          foreach ($paire in @(
+            @{ Fichier = "GestionPhotocopie-Installateur.exe"; Empreinte = "empreinte-sha256.txt" },
+            @{ Fichier = "GestionPhotocopie-MiseAJour.exe";    Empreinte = "empreinte-sha256-mise-a-jour.txt" }
+          )) {
+            $chemin = "$sortie/$($paire.Fichier)"
+            $hash = (Get-FileHash -Path $chemin -Algorithm SHA256).Hash.ToLower()
+            Set-Content -Path "$sortie/$($paire.Empreinte)" -Value $hash -NoNewline
+            $mo = [math]::Round((Get-Item $chemin).Length / 1MB, 1)
+            Write-Host "$($paire.Fichier) : $mo Mo — SHA-256 $hash"
+          }
+
+          # Garde-fou : si la version légère n'est pas nettement plus petite,
+          # c'est que la configuration n'a pas été prise en compte — et publier
+          # 200 Mo sous le nom "mise à jour" tromperait le gérant sur ce qu'il
+          # va payer en données.
+          $tailleComplet = (Get-Item "$sortie/GestionPhotocopie-Installateur.exe").Length
+          $tailleLeger = (Get-Item "$sortie/GestionPhotocopie-MiseAJour.exe").Length
+          if ($tailleLeger -ge $tailleComplet / 2) {
+            Write-Error "La version légère ($tailleLeger octets) n'est pas plus petite que la moitié de la complète ($tailleComplet octets) : le moteur d'affichage y est probablement encore embarqué."
+            exit 1
+          }
 
       # Le lien public /telecharger (page Cloudflare) sert le fichier depuis
       # ce stockage R2, pas depuis GitHub — c'est donc lui, et pas le dépôt
@@ -76,12 +128,17 @@ jobs:
       - name: Publier l'installateur sur le lien public de téléchargement
         shell: pwsh
         run: |
-          $installateur = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
-          if (-not $installateur) { Write-Error "Installateur introuvable."; exit 1 }
+          $racine = (Get-Location).Path
           Push-Location admin
           npm ci
-          npx wrangler r2 object put "photocopie-telechargements/GestionPhotocopie-Installateur.exe" --file="$($installateur.FullName)" --remote
-          npx wrangler r2 object put "photocopie-telechargements/empreinte-sha256.txt" --file="../src-tauri/target/release/bundle/nsis/empreinte-sha256.txt" --remote
+          foreach ($nom in @(
+            "GestionPhotocopie-Installateur.exe",
+            "GestionPhotocopie-MiseAJour.exe",
+            "empreinte-sha256.txt",
+            "empreinte-sha256-mise-a-jour.txt"
+          )) {
+            npx wrangler r2 object put "photocopie-telechargements/$nom" --file="$racine/installateurs/$nom" --remote
+          }
           Pop-Location
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -97,9 +154,7 @@ jobs:
         with:
           name: photocopie-benin-windows
           path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/empreinte-sha256.txt
-            src-tauri/target/release/bundle/msi/*.msi
+            installateurs/*
           if-no-files-found: error
           retention-days: 14
 
