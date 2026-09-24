@@ -427,6 +427,34 @@ fn composer_verdict(
 /// comprendre pourquoi les derniers « n'arrivent pas à se connecter ».
 ///
 /// Mieux vaut la lui dire le jour de l'installation.
+/// Ajoute au verdict le nombre de téléphones que ce PC accepte en même
+/// temps.
+///
+/// Vient d'une inquiétude qui n'a rien de théorique : les essais n'ont eu
+/// lieu que sur UNE machine, et l'application est destinée à être installée
+/// sur des dizaines d'autres. Or cette limite dépend du pilote Wi-Fi et
+/// change d'un PC à l'autre — souvent 8, parfois 32, parfois 100.
+///
+/// Elle appartient donc au diagnostic, et non au seul récapitulatif
+/// d'activation : le diagnostic se lance AVANT d'installer quoi que ce
+/// soit. Mieux vaut apprendre qu'un poste ne tiendra que quatre téléphones
+/// le jour de la visite, que devant la file de clients du gérant.
+#[cfg(windows)]
+fn ajouter_capacite_clients(verdict: String) -> String {
+    match nombre_max_de_clients() {
+        Some(maximum) => format!(
+            "{verdict}\n\nTéléphones acceptés en même temps sur ce PC : {maximum}.{}",
+            if maximum < 10 {
+                " C'est peu : conseillez aux clients de quitter le Wi-Fi une fois \
+                 leur envoi terminé, pour libérer la place au suivant."
+            } else {
+                ""
+            }
+        ),
+        None => verdict,
+    }
+}
+
 #[cfg(windows)]
 pub fn nombre_max_de_clients() -> Option<u32> {
     let sortie = executer_netsh(&["wlan", "show", "hostednetwork"]);
@@ -512,14 +540,14 @@ pub fn diagnostiquer() -> DiagnosticPoste {
         wdi_supporte,
         bluetooth_present,
         reseau_utilisable,
-        verdict: composer_verdict(
+        verdict: ajouter_capacite_clients(composer_verdict(
             carte_wifi_presente,
             reseau_heberge_supporte,
             wifi_direct_go_supporte,
             wdi_supporte,
             bluetooth_present,
             reseau_utilisable,
-        ),
+        )),
         details_bruts: format!(
             "--- pare-feu Windows ---\nRègles de réception en place : {}\
              \n--- netsh wlan show interfaces ---\n{}\n--- netsh wlan show drivers ---\n{}\
