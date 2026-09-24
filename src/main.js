@@ -807,18 +807,29 @@ async function afficherQr() {
       // une notification à toucher. L'adresse reste affichée pour que le
       // gérant puisse guider un client dont le téléphone ne réagit pas.
       // Ce que le gérant doit pouvoir dire à un client bloqué, sans
-      // réfléchir. Constaté sur le terrain : après le scan du 1, l'iPhone
-      // GARDE l'appareil photo ouvert au lieu de le refermer comme Android.
-      // Ce n'est pas une gêne, c'est un avantage — l'affiche est encore
-      // sous l'objectif, il n'y a qu'à glisser sur le 2 — mais un gérant
-      // qui l'ignore croira que le scan a échoué et refera le 1.
+      // réfléchir — et rien de plus, car le reste varie.
+      //
+      // Une version précédente affirmait ici que « sur iPhone l'appareil
+      // photo reste ouvert ». C'était tiré d'un seul essai, fait avec
+      // l'application Scanner et non avec l'appareil photo : rien ne dit
+      // que tous les iPhone se comportent ainsi. Une consigne fausse dans
+      // la main d'un gérant est pire que pas de consigne — il la répète à
+      // chaque client et se décrédibilise. Ce qui suit est vrai quel que
+      // soit le téléphone et quelle que soit l'application de scan.
+      //
+      // Les deux chemins de secours sont donnés séparément parce qu'ils
+      // n'ont rien à voir : sur iPhone, toucher le nom du réseau suffit ;
+      // sur Android, il faut descendre bien plus profond, ce qui en fait
+      // un dernier recours et non une consigne à donner d'emblée.
       urlEl.innerHTML =
         `<strong>Deux scans, rien à taper.</strong> Le client scanne le <strong>1</strong> et accepte de rejoindre le Wi-Fi, ` +
         `puis il scanne le <strong>2</strong> : la page d'envoi s'ouvre.` +
-        `<br><br><strong>Sur iPhone</strong>, l'appareil photo reste ouvert après le 1 — c'est normal, ` +
-        `il n'y a qu'à viser le 2 juste à côté.` +
-        `<br><strong>Si rien ne s'ouvre :</strong> Réglages → Wi-Fi → toucher le nom du réseau. ` +
-        `La page s'ouvre alors toute seule.`;
+        `<br><br>Selon le téléphone, l'écran revient ou non à l'appareil photo après le 1. ` +
+        `Ce n'est pas un échec : il suffit de rouvrir le scanner et de viser le <strong>2</strong>.` +
+        `<br><br><strong>Si le 2 ne donne rien non plus :</strong>` +
+        `<br>• <strong>iPhone</strong> — Réglages → Wi-Fi → toucher le nom du réseau.` +
+        `<br>• <strong>Android</strong> — ouvrir la notification « Se connecter au réseau ». ` +
+        `Sinon : Paramètres → Wi-Fi → le réseau → « Gérer le routeur ».`;
     } else if (info.mode === "point_acces_inactif") {
       urlEl.innerHTML =
         `⚠️ Ce QR fait rejoindre le Wi-Fi <strong>${echapperHtml(info.url)}</strong>… mais le Wi-Fi local n'est pas allumé. ` +
