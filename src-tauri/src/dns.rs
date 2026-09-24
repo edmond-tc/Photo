@@ -84,6 +84,47 @@ pub fn journal() -> Vec<String> {
     JOURNAL.lock().map(|j| j.clone()).unwrap_or_default()
 }
 
+/// Un téléphone qui nous parle depuis un réseau que nous refusons.
+///
+/// C'est le contraire d'un détail : ce téléphone A BIEN rejoint notre
+/// Wi-Fi et nous pose bien ses questions, mais il tient son adresse d'un
+/// autre serveur — le partage de connexion de Windows, le plus souvent, qui
+/// distribue du 192.168.137.x. Nous ne lui répondons pas, il conclut
+/// « pas d'internet », et la page ne s'ouvre jamais d'elle-même.
+///
+/// Jusqu'ici ce rejet ne laissait aucune trace. Le journal montrait un
+/// serveur de noms qui « ne reçoit rien », alors qu'il recevait et jetait.
+#[cfg(test)]
+fn vider_journal() {
+    if let Ok(mut journal) = JOURNAL.lock() {
+        journal.clear();
+    }
+}
+
+fn noter_refus(expediteur: Ipv4Addr, nom: &str, notre_adresse: Ipv4Addr) {
+    if let Ok(mut journal) = JOURNAL.lock() {
+        let ligne = format!(
+            "⛔ {expediteur} demande {nom} — REFUSÉ : ce téléphone a reçu son adresse \
+             d'un AUTRE serveur (le nôtre donne du {}.x). Coupez le partage de \
+             connexion Windows, puis réactivez le Wi-Fi de la boutique.",
+            notre_adresse
+                .octets()
+                .iter()
+                .take(3)
+                .map(|o| o.to_string())
+                .collect::<Vec<_>>()
+                .join(".")
+        );
+        if journal.iter().any(|existante| existante == &ligne) {
+            return;
+        }
+        if journal.len() >= MAX_JOURNAL {
+            journal.remove(0);
+        }
+        journal.push(ligne);
+    }
+}
+
 fn noter(expediteur: Ipv4Addr, nom: &str) {
     if let Ok(mut journal) = JOURNAL.lock() {
         // Les questions de vérification de réseau sont signalées : ce sont
@@ -168,14 +209,40 @@ pub async fn repond(adresse: Ipv4Addr) -> bool {
         })
 }
 
-/// L'expéditeur appartient-il au même réseau /24 que notre point d'accès ?
-/// Seul un paquet dans ce cas obtient une réponse — les autres sont
-/// ignorés en silence, comme s'ils avaient été reçus par un serveur DNS qui
-/// n'écoutait que sur cette carte précise. Le résultat pour le reste du
-/// réseau de la boutique est identique à l'ancienne approche (bind ciblé) ;
-/// seule la façon de l'obtenir a changé.
+/// L'expéditeur a-t-il droit à une réponse ?
+///
+/// Le filtre d'origine n'acceptait que le même réseau /24 que notre point
+/// d'accès, pour ne pas détourner les noms de toute la boutique quand le PC
+/// est aussi branché au réseau du patron. La règle reste, mais elle avait
+/// deux angles morts, et tous deux produisent la panne constatée : rien ne
+/// se déclenche à l'arrivée sur le réseau, alors que tout marche si l'on
+/// entre ensuite dans les réglages Wi-Fi.
+///
+/// 1. Un téléphone qui n'a pas ENCORE son adresse. Entre le moment où il
+///    rejoint le réseau et celui où le bail lui parvient, il peut émettre
+///    depuis 0.0.0.0 ou depuis une adresse qu'il s'est attribuée lui-même
+///    (169.254.x.x). Sa toute première vérification de réseau tombe
+///    précisément dans cette fenêtre — et c'est celle qui décide de
+///    l'ouverture de la page.
+///
+/// 2. Un téléphone servi par un AUTRE serveur d'adresses. Le partage de
+///    connexion de Windows distribue du 192.168.137.x, et il a été vu en
+///    train de tourner sur la machine d'essai. Un téléphone qui reçoit son
+///    adresse de lui parle bien à notre serveur de noms, mais depuis un
+///    réseau que nous rejetons.
+///
+/// Le cas 2 reste refusé — y répondre reviendrait à détourner les noms
+/// d'un réseau qui n'est pas le nôtre. Mais il n'est plus refusé EN
+/// SILENCE : il s'écrit dans le journal, parce qu'une panne qu'on ne voit
+/// pas est une panne qu'on cherche ailleurs pendant des jours.
 fn dans_le_bon_reseau(expediteur: Ipv4Addr, adresse: Ipv4Addr) -> bool {
-    expediteur.octets()[..3] == adresse.octets()[..3]
+    if expediteur.octets()[..3] == adresse.octets()[..3] {
+        return true;
+    }
+    // Sans adresse encore attribuée : c'est forcément un téléphone qui
+    // vient de rejoindre NOTRE réseau, puisque le paquet est arrivé sur
+    // cette carte.
+    expediteur.is_unspecified() || expediteur.octets()[..2] == [169, 254]
 }
 
 async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
@@ -188,13 +255,18 @@ async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
         let std::net::SocketAddr::V4(expediteur) = expediteur else {
             continue;
         };
-        if !dans_le_bon_reseau(*expediteur.ip(), adresse) {
-            continue;
-        }
+        let admis = dans_le_bon_reseau(*expediteur.ip(), adresse);
         if let Ok(demande) = hickory_proto::op::Message::from_vec(&tampon[..taille]) {
             if let Some(question) = demande.queries.first() {
-                noter(*expediteur.ip(), &question.name().to_string());
+                if admis {
+                    noter(*expediteur.ip(), &question.name().to_string());
+                } else {
+                    noter_refus(*expediteur.ip(), &question.name().to_string(), adresse);
+                }
             }
+        }
+        if !admis {
+            continue;
         }
         if let Some(reponse) = construire_reponse(&tampon[..taille], adresse) {
             let _ = socket.send_to(&reponse, expediteur).await;
@@ -250,6 +322,38 @@ mod tests {
         requete.metadata.recursion_desired = true;
         requete.add_query(Query::query(Name::from_str(nom).unwrap(), type_question));
         requete.to_vec().unwrap()
+    }
+
+    /// La toute première vérification de réseau d'un téléphone peut partir
+    /// AVANT que le bail lui soit parvenu — depuis 0.0.0.0 ou depuis une
+    /// adresse qu'il s'est attribuée lui-même. C'est elle qui décide de
+    /// l'ouverture de la page : la refuser, c'est garantir que rien ne
+    /// s'ouvrira à l'arrivée sur le réseau.
+    #[test]
+    fn repond_au_telephone_qui_n_a_pas_encore_son_adresse() {
+        let nous = Ipv4Addr::new(192, 168, 73, 1);
+        assert!(dans_le_bon_reseau(Ipv4Addr::new(0, 0, 0, 0), nous));
+        assert!(dans_le_bon_reseau(Ipv4Addr::new(169, 254, 12, 34), nous));
+    }
+
+    /// Un téléphone servi par un AUTRE serveur d'adresses reste refusé —
+    /// lui répondre détournerait les noms d'un réseau qui n'est pas le
+    /// nôtre. Mais ce refus doit laisser une trace : sans elle, le journal
+    /// montre un serveur qui « ne reçoit rien » alors qu'il reçoit et jette.
+    #[test]
+    fn refuse_un_autre_reseau_mais_le_consigne() {
+        let nous = Ipv4Addr::new(192, 168, 73, 1);
+        let intrus = Ipv4Addr::new(192, 168, 137, 45);
+        assert!(!dans_le_bon_reseau(intrus, nous));
+
+        vider_journal();
+        noter_refus(intrus, "captive.apple.com.", nous);
+        let journal = journal();
+        assert_eq!(journal.len(), 1);
+        assert!(journal[0].contains("REFUSÉ"), "{}", journal[0]);
+        assert!(journal[0].contains("192.168.137.45"), "{}", journal[0]);
+        assert!(journal[0].contains("192.168.73.x"), "{}", journal[0]);
+        vider_journal();
     }
 
     #[test]
