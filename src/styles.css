@@ -786,7 +786,32 @@ fieldset {
     position: static;
     background: none;
   }
+  /* Le titre et le pied n'apparaissent QUE sur le papier. */
+  body.impression-qr #qr-affiche-titre {
+    display: block !important;
+    text-align: center;
+    font-size: 2rem;
+    font-weight: 800;
+    margin: 0 0 0.2rem;
+  }
+  body.impression-qr #qr-affiche-pied {
+    display: block !important;
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-top: 1.2rem;
+  }
+  /* Le numéro doit se lire à deux mètres : c'est lui, et lui seul, qui dit
+     au client qu'il y a deux gestes et dans quel ordre. */
+  body.impression-qr .qr-numero {
+    font-size: 3rem;
+  }
+  body.impression-qr .qr-bloc figcaption {
+    font-size: 1.05rem;
+    max-width: 22ch;
+  }
   body.impression-qr #modal-qr .modal-entete,
+  body.impression-qr #modal-qr #qr-aide,
   body.impression-qr #modal-qr #btn-parametres-partage,
   body.impression-qr #modal-qr #btn-activer-wifi-local,
   body.impression-qr #modal-qr #wifi-compte-rendu,
@@ -815,7 +840,8 @@ fieldset {
   }
   body.impression-qr #qr-intro {
     text-align: center;
-    font-size: 1.1rem;
+    font-size: 1.25rem;
+    margin-bottom: 1.2rem;
   }
 }
 
@@ -885,4 +911,11 @@ fieldset {
    suffit alors à dire qu'il se passe quelque chose. */
 @media (prefers-reduced-motion: reduce) {
   .chargement-rond { animation: none; }
+}
+
+/* Affiche imprimée uniquement : à l'écran, le gérant connaît déjà son
+   application et ces deux lignes ne feraient qu'encombrer la fenêtre. */
+#qr-affiche-titre,
+#qr-affiche-pied {
+  display: none;
 }

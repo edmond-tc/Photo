@@ -745,7 +745,7 @@ async function afficherQr() {
     // seul geste, parce que c'est le cas normal — le second code n'est qu'un
     // filet, et l'annoncer d'emblée ferait croire qu'il faut deux scans.
     document.querySelector("#qr-intro").textContent = info.qr_page_data_uri
-      ? "Scannez le 1, puis le 2. Rien à taper."
+      ? "Avec l'appareil photo de votre téléphone : le 1, puis le 2."
       : "Scannez ce code avec l'appareil photo de votre téléphone";
 
     // DEUX scans, annoncés comme tels, et de même taille.
@@ -789,8 +789,12 @@ async function afficherQr() {
     };
 
     if (info.qr_page_data_uri) {
-      ajouterQr(info.qr_data_uri, "1", "Rejoindre le Wi-Fi de la boutique");
-      ajouterQr(info.qr_page_data_uri, "2", "Ouvrir la page pour envoyer");
+      // Les légendes disent le GESTE, pas le concept. « Rejoindre le Wi-Fi »
+      // décrit un état ; « appuyez sur Rejoindre » décrit ce que le client
+      // doit faire de son pouce — et c'est précisément le moment où il
+      // s'arrête, parce que le téléphone lui demande de confirmer.
+      ajouterQr(info.qr_data_uri, "1", "Scannez, puis appuyez sur « Rejoindre »");
+      ajouterQr(info.qr_page_data_uri, "2", "Scannez pour ouvrir la page d'envoi");
     } else {
       // Pas de point d'accès local : le premier code ouvre déjà la page.
       ajouterQr(info.qr_data_uri, null, "Scannez pour envoyer vos documents");

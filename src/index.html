@@ -95,12 +95,20 @@
           <h2>Recevoir un fichier client</h2>
           <button class="btn-icon btn-fermer-modal" data-cible="modal-qr" aria-label="Fermer">✕</button>
         </div>
+        <!-- Ces deux blocs n'existent que pour l'affiche imprimée (voir la
+             règle @media print). À l'écran, le gérant a déjà le contexte ;
+             sur un mur, le client n'a que ce papier, et personne à qui
+             demander. -->
+        <p id="qr-affiche-titre">Envoyez vos documents à imprimer</p>
         <p id="qr-intro">Scannez ce code avec l'appli Scanner de votre téléphone</p>
         <p id="qr-aide" class="qr-url">
           Introuvable ? Glissez l'écran du haut vers le bas (raccourcis) ou tapez
           « Scanner » dans la recherche d'applications de votre téléphone.
         </p>
         <div id="qr-conteneur" class="qr-conteneur"></div>
+        <p id="qr-affiche-pied">
+          Vous ne tapez rien. Aucune connexion internet n'est nécessaire.
+        </p>
         <p id="qr-url" class="qr-url"></p>
         <button id="btn-activer-wifi-local" class="btn-secondaire">
           📶 Activer le Wi-Fi local de la boutique
