@@ -71,6 +71,11 @@ pub fn journal() -> Vec<String> {
 pub async fn demarrer(
     adresse_serveur: Ipv4Addr,
 ) -> Result<tauri::async_runtime::JoinHandle<()>, String> {
+    // Un point d'accès qu'on rallume est un point d'accès neuf : les
+    // téléphones d'hier ne sont plus là, et leurs adresses retenues
+    // réserveraient la plage pour personne.
+    oublier_les_baux();
+
     let socket = UdpSocket::bind(format!("0.0.0.0:{PORT_SERVEUR}"))
         .await
         .map_err(|e| {
@@ -159,14 +164,69 @@ fn decoder_requete(brut: &[u8]) -> DecodeResult<DhcpMessage> {
     DhcpMessage::decode(&mut Decoder::new(brut))
 }
 
-/// Adresse offerte à ce téléphone précis : dérivée de son adresse matérielle
-/// (MAC), donc toujours la même pour lui d'une requête à l'autre, sans avoir
-/// besoin de mémoriser de table de baux entre deux paquets séparés.
+/// Qui a reçu quelle adresse. Vide au démarrage du Wi-Fi, ce qui est
+/// voulu : un nouveau point d'accès repart d'une feuille blanche.
+static BAUX: std::sync::Mutex<Vec<(Vec<u8>, u8)>> = std::sync::Mutex::new(Vec::new());
+
+/// Adresse offerte à ce téléphone précis, et à lui seul.
+///
+/// Elle était calculée en hachant l'adresse matérielle du téléphone, sans
+/// registre — « toujours la même pour lui d'une requête à l'autre, sans
+/// avoir à mémoriser de table de baux ». Élégant, et faux dès qu'il y a du
+/// monde : deux téléphones différents peuvent tomber sur le même nombre.
+///
+/// Ce n'est pas un risque théorique. Sur 200 adresses, la probabilité
+/// qu'au moins deux téléphones se heurtent est d'environ 20 % à partir de
+/// 10 appareils, et de 60 % à 20 — un jour de marché, c'est une certitude.
+/// Et une collision d'adresses ne se voit pas : les deux clients
+/// constatent seulement que « ça ne marche pas », chacun leur tour, sans
+/// rien de commun à raconter au gérant.
+///
+/// On tient donc un registre. Un téléphone déjà connu retrouve son adresse
+/// — c'est la propriété qu'on voulait au départ. Un nouveau reçoit la plus
+/// petite adresse encore libre, jamais celle d'un autre.
 fn adresse_pour(chaddr: &[u8]) -> u8 {
+    let Ok(mut baux) = BAUX.lock() else {
+        return adresse_de_secours(chaddr);
+    };
+
+    if let Some((_, deja)) = baux.iter().find(|(mac, _)| mac == chaddr) {
+        return *deja;
+    }
+
+    let derniere = PREMIERE_ADRESSE.saturating_add(NOMBRE_ADRESSES - 1);
+    let libre = (PREMIERE_ADRESSE..=derniere)
+        .find(|candidate| !baux.iter().any(|(_, attribuee)| attribuee == candidate));
+
+    match libre {
+        Some(adresse) => {
+            baux.push((chaddr.to_vec(), adresse));
+            adresse
+        }
+        // Plus de 200 téléphones en même temps : au-delà, on ne peut plus
+        // rien promettre, mais mieux vaut une adresse peut-être partagée
+        // que pas d'adresse du tout.
+        None => adresse_de_secours(chaddr),
+    }
+}
+
+/// Le calcul d'avant, gardé pour le seul cas où le registre est
+/// inutilisable : plage pleine, ou verrou empoisonné par un incident
+/// ailleurs. Mieux vaut une adresse imparfaite que pas de réseau.
+fn adresse_de_secours(chaddr: &[u8]) -> u8 {
     let empreinte = chaddr
         .iter()
         .fold(0u32, |acc, o| acc.wrapping_mul(31).wrapping_add(*o as u32));
     PREMIERE_ADRESSE.wrapping_add((empreinte % NOMBRE_ADRESSES as u32) as u8)
+}
+
+/// Repart d'une feuille blanche. Appelé quand le point d'accès est
+/// (ré)activé : les téléphones de la veille ne sont plus là, et garder
+/// leurs adresses réserverait la plage pour personne.
+pub fn oublier_les_baux() {
+    if let Ok(mut baux) = BAUX.lock() {
+        baux.clear();
+    }
 }
 
 /// L'adresse que le téléphone réclame : soit explicitement dans sa demande,
@@ -525,6 +585,75 @@ mod tests {
                  classique, seul mécanisme utilisable sans certificat reconnu"
             );
         }
+    }
+
+    /// Le registre des baux est un état partagé par tout le programme. Deux
+    /// tests qui le vident en même temps se détruisent mutuellement — et le
+    /// coupable apparent serait le code, pas les tests.
+    static VERROU_BAUX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// La question que pose le terrain : vingt clients en même temps un
+    /// jour de marché. L'ancien calcul par hachage donnait environ 60 % de
+    /// chances qu'au moins deux d'entre eux reçoivent la MÊME adresse — et
+    /// une collision d'adresses ne se voit pas : chacun constate seulement
+    /// que « ça ne marche pas », sans rien à raconter au gérant.
+    #[test]
+    fn vingt_telephones_recoivent_vingt_adresses_differentes() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
+        let serveur = Ipv4Addr::new(192, 168, 73, 1);
+
+        let mut donnees = Vec::new();
+        for n in 0u8..20 {
+            let mac = [0x02, 0x11, 0x22, 0x33, 0x44, n];
+            let brut = construire_reponse(&fabriquer_requete(MessageType::Request, &mac), serveur)
+                .expect("une réponse est attendue");
+            donnees.push(decoder_requete(&brut).unwrap().yiaddr());
+        }
+
+        let mut uniques = donnees.clone();
+        uniques.sort();
+        uniques.dedup();
+        assert_eq!(
+            uniques.len(),
+            20,
+            "deux téléphones ont reçu la même adresse : {donnees:?}"
+        );
+        oublier_les_baux();
+    }
+
+    /// L'autre moitié de la promesse : un téléphone qui revient — parce
+    /// qu'il renouvelle son bail ou s'est brièvement éloigné — doit
+    /// retrouver SON adresse, sinon ses envois en cours se coupent.
+    #[test]
+    fn un_telephone_qui_revient_retrouve_son_adresse() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
+        let serveur = Ipv4Addr::new(192, 168, 73, 1);
+        let mac = [0x02, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE];
+
+        let premiere = decoder_requete(
+            &construire_reponse(&fabriquer_requete(MessageType::Discover, &mac), serveur).unwrap(),
+        )
+        .unwrap()
+        .yiaddr();
+
+        // D'autres téléphones passent entre-temps.
+        for n in 0u8..5 {
+            let _ = construire_reponse(
+                &fabriquer_requete(MessageType::Discover, &[0x02, 0, 0, 0, 0, n]),
+                serveur,
+            );
+        }
+
+        let seconde = decoder_requete(
+            &construire_reponse(&fabriquer_requete(MessageType::Request, &mac), serveur).unwrap(),
+        )
+        .unwrap()
+        .yiaddr();
+
+        assert_eq!(premiere, seconde);
+        oublier_les_baux();
     }
 
     #[test]

@@ -416,6 +416,41 @@ fn composer_verdict(
         .to_string()
 }
 
+/// Combien de téléphones ce PC accepte EN MÊME TEMPS sur son réseau
+/// partagé, tel que Windows le déclare.
+///
+/// Question posée avant une journée de marché : « et si vingt personnes
+/// veulent envoyer en même temps ? ». La réponse ne dépend pas de notre
+/// logiciel mais du pilote Wi-Fi, et elle varie beaucoup d'un PC à
+/// l'autre — souvent 8, parfois 32, parfois 100. Un gérant qui ne la
+/// connaît pas découvrira la limite devant une file de clients, sans
+/// comprendre pourquoi les derniers « n'arrivent pas à se connecter ».
+///
+/// Mieux vaut la lui dire le jour de l'installation.
+#[cfg(windows)]
+pub fn nombre_max_de_clients() -> Option<u32> {
+    let sortie = executer_netsh(&["wlan", "show", "hostednetwork"]);
+    lire_nombre_max_de_clients(&sortie)
+}
+
+/// Séparée pour être testable sans Windows. Le libellé change avec la
+/// langue de l'installation : on cherche donc le nombre sur la ligne qui
+/// parle de clients, sans dépendre d'une formulation précise.
+fn lire_nombre_max_de_clients(sortie: &str) -> Option<u32> {
+    let normalisee = normaliser(sortie);
+    let ligne = normalisee
+        .lines()
+        .find(|ligne| ligne.contains("client") && ligne.contains(':'))?;
+    ligne
+        .rsplit(':')
+        .next()?
+        .trim()
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+}
+
 #[cfg(windows)]
 fn executer_netsh(arguments: &[&str]) -> String {
     use std::os::windows::process::CommandExt;
@@ -1897,5 +1932,20 @@ mod tests {
         // /F remplace la tâche existante au lieu d'échouer, sinon une
         // deuxième activation ne mettrait jamais le chemin à jour.
         assert!(script.contains("/F"));
+    }
+    /// Les deux langues qu'on rencontre sur le terrain, et une sortie qui
+    /// ne dit rien — auquel cas il vaut mieux ne rien afficher que
+    /// d'inventer un chiffre.
+    #[test]
+    fn lit_le_nombre_maximal_de_clients() {
+        assert_eq!(
+            lire_nombre_max_de_clients("    Max number of clients   : 8"),
+            Some(8)
+        );
+        assert_eq!(
+            lire_nombre_max_de_clients("    Nombre maximal de clients : 32"),
+            Some(32)
+        );
+        assert_eq!(lire_nombre_max_de_clients("Mode : autorisé"), None);
     }
 }

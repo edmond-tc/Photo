@@ -785,6 +785,24 @@ pub async fn activer_point_acces_local(
             "❌ Annonce du portail aux téléphones — NE RÉPOND PAS".to_string()
         },
     );
+    // Combien de téléphones EN MÊME TEMPS. Cela ne dépend pas de nous mais
+    // du pilote Wi-Fi, et cela varie beaucoup d'un PC à l'autre. Un gérant
+    // qui l'ignore découvrira la limite devant une file de clients, sans
+    // comprendre pourquoi les derniers « n'arrivent pas à se connecter ».
+    #[cfg(windows)]
+    if let Some(maximum) = crate::hotspot::nombre_max_de_clients() {
+        recapitulatif.push(format!(
+            "ℹ️ Ce PC accepte {maximum} téléphones connectés en même temps"
+        ));
+        if maximum < 10 {
+            avertissements.push(format!(
+                "Le Wi-Fi de ce PC n'accepte que {maximum} téléphones à la fois. Au-delà, \
+                 les clients suivants ne pourront pas se connecter tant qu'un autre ne \
+                 s'est pas déconnecté. Un client qui a fini d'envoyer devrait quitter le \
+                 réseau pour laisser la place."
+            ));
+        }
+    }
     recapitulatif.push(if crate::pare_feu::regles_presentes() {
         "✅ Pare-feu Windows ouvert (4 ports)".to_string()
     } else {
