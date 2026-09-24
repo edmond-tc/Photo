@@ -813,6 +813,7 @@ fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<Strin
   }}
 
   #confirmation {{ display:none; text-align:center; color:#107c10; font-weight:600; margin: 1rem 0 0; }}
+  .liberer-place {{ display:block; font-weight:400; font-size:0.92rem; margin-top:0.5rem; opacity:0.9; }}
   #statut-fidelite {{ display:none; text-align:center; background:#dff6dd; color:#107c10; font-weight:600; padding:0.8rem; border-radius:8px; margin: 0.8rem 0 0; }}
   #progression {{ display:none; height:8px; background:var(--gris-bord); border-radius:4px; overflow:hidden; margin: 0 0 0.5rem; }}
   #progression > div {{ height:100%; width:0%; background:var(--bleu); transition:width .15s; }}
@@ -885,7 +886,9 @@ fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<Strin
         <p class="note-prix">Le prix est à régler directement avec le gérant, sur place.</p>
       </form>
 
-      <p id="confirmation">Fichier(s) envoyé(s), merci ! Le gérant a été prévenu.</p>
+      <p id="confirmation">Fichier(s) envoyé(s), merci ! Le gérant a été prévenu.<br>
+        <span class="liberer-place">Vous pouvez maintenant <strong>quitter le Wi-Fi de la
+        boutique</strong> : cela libère une place pour le client suivant.</span></p>
       <p id="statut-fidelite"></p>
 
       <p class="note-confidentialite">
