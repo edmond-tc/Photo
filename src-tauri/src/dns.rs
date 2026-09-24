@@ -274,6 +274,37 @@ async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
     }
 }
 
+/// Les adresses du Relais privé iCloud, les seules auxquelles ce serveur
+/// refuse de répondre.
+///
+/// Tout le reste reçoit notre adresse : c'est ainsi qu'un téléphone
+/// découvre le portail. Mais pour celles-ci, répondre est précisément ce
+/// qui casse tout.
+///
+/// Le Relais privé fait passer TOUT le trafic de l'iPhone par deux relais
+/// d'Apple, sur internet. Sur un réseau sans internet — le nôtre — il ne
+/// peut pas les joindre. Or comme notre serveur répondait « 192.168.73.1 »
+/// à ces noms comme à tous les autres, l'iPhone croyait le relais
+/// disponible, tentait d'y monter son tunnel, recevait notre page HTML à la
+/// place, et Safari restait bloqué. Constaté en boutique : le second QR
+/// n'ouvre rien sur iPhone, alors qu'il marche sur Android — qui n'a pas de
+/// relais privé.
+///
+/// Refuser le nom (NXDOMAIN) est la méthode qu'Apple prescrit elle-même aux
+/// gestionnaires de réseau : l'iPhone en conclut que le relais n'est pas
+/// disponible ici, le désactive pour ce réseau, et parle de nouveau
+/// directement — donc à nous.
+const RELAIS_PRIVE_APPLE: &[&str] = &[
+    "mask.icloud.com",
+    "mask-h2.icloud.com",
+    "mask-api.icloud.com",
+];
+
+fn est_relais_prive_apple(nom: &str) -> bool {
+    let nom = nom.trim_end_matches('.').to_ascii_lowercase();
+    RELAIS_PRIVE_APPLE.contains(&nom.as_str())
+}
+
 fn construire_reponse(requete_brute: &[u8], adresse: Ipv4Addr) -> Option<Vec<u8>> {
     use hickory_proto::op::Message;
 
@@ -292,6 +323,13 @@ fn construire_reponse(requete_brute: &[u8], adresse: Ipv4Addr) -> Option<Vec<u8>
     reponse.metadata.recursion_desired = requete.metadata.recursion_desired;
     reponse.metadata.recursion_available = true;
     reponse.add_query(question.clone());
+
+    // Le Relais privé d'Apple est la seule chose à qui l'on REFUSE une
+    // adresse. Voir `EST_RELAIS_PRIVE_APPLE`.
+    if est_relais_prive_apple(&question.name().to_string()) {
+        reponse.metadata.response_code = hickory_proto::op::ResponseCode::NXDomain;
+        return reponse.to_vec().ok();
+    }
 
     // Seules les questions IPv4 (A) obtiennent une vraie réponse : renvoyer
     // "pas d'enregistrement" (plutôt que de fabriquer une fausse adresse
@@ -354,6 +392,48 @@ mod tests {
         assert!(journal[0].contains("192.168.137.45"), "{}", journal[0]);
         assert!(journal[0].contains("192.168.73.x"), "{}", journal[0]);
         vider_journal();
+    }
+
+    /// Les trois seuls noms auxquels ce serveur doit REFUSER une adresse.
+    ///
+    /// C'est le remède prescrit par Apple aux gestionnaires de réseau, et
+    /// il répare un symptôme constaté en boutique : le second QR n'ouvre
+    /// rien sur iPhone alors qu'il fonctionne sur Android. Répondre à ces
+    /// noms fait croire à l'iPhone que le Relais privé est utilisable ici,
+    /// il tente d'y faire passer tout son trafic, et Safari se bloque.
+    #[test]
+    fn refuse_le_relais_prive_apple() {
+        let adresse = Ipv4Addr::new(192, 168, 73, 1);
+        for nom in [
+            "mask.icloud.com.",
+            "mask-h2.icloud.com.",
+            "mask-api.icloud.com.",
+        ] {
+            let requete = fabriquer_requete(nom, RecordType::A);
+            let brut = construire_reponse(&requete, adresse).expect("une réponse est attendue");
+            let reponse = Message::from_vec(&brut).unwrap();
+            assert_eq!(
+                reponse.metadata.response_code,
+                hickory_proto::op::ResponseCode::NXDomain,
+                "{nom} doit être refusé"
+            );
+            assert!(
+                reponse.answers.is_empty(),
+                "{nom} ne doit porter aucune adresse"
+            );
+        }
+    }
+
+    /// La casse et le point final viennent du téléphone, pas de nous.
+    #[test]
+    fn reconnait_le_relais_prive_quelle_que_soit_l_ecriture() {
+        assert!(est_relais_prive_apple("MASK.ICLOUD.COM."));
+        assert!(est_relais_prive_apple("mask-h2.icloud.com"));
+        // Et surtout : rien d'autre ne doit être refusé, sans quoi le
+        // téléphone ne découvrirait plus le portail.
+        assert!(!est_relais_prive_apple("captive.apple.com."));
+        assert!(!est_relais_prive_apple("gateway.icloud.com."));
+        assert!(!est_relais_prive_apple("icloud.com."));
     }
 
     #[test]
