@@ -794,6 +794,17 @@ fieldset {
     font-weight: 800;
     margin: 0 0 0.2rem;
   }
+  /* Plus petit que le reste : c'est un recours, pas une consigne. Le
+     client qui n'en a pas besoin ne doit pas croire qu'il y a une
+     troisième étape. */
+  body.impression-qr #qr-affiche-secours {
+    display: block !important;
+    text-align: center;
+    font-size: 0.9rem;
+    margin-top: 0.8rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid #bbb;
+  }
   body.impression-qr #qr-affiche-pied {
     display: block !important;
     text-align: center;
@@ -916,6 +927,7 @@ fieldset {
 /* Affiche imprimée uniquement : à l'écran, le gérant connaît déjà son
    application et ces deux lignes ne feraient qu'encombrer la fenêtre. */
 #qr-affiche-titre,
-#qr-affiche-pied {
+#qr-affiche-pied,
+#qr-affiche-secours {
   display: none;
 }

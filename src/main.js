@@ -806,10 +806,19 @@ async function afficherQr() {
       // Sur iPhone la page s'ouvre seule ; sur Android le système affiche
       // une notification à toucher. L'adresse reste affichée pour que le
       // gérant puisse guider un client dont le téléphone ne réagit pas.
+      // Ce que le gérant doit pouvoir dire à un client bloqué, sans
+      // réfléchir. Constaté sur le terrain : après le scan du 1, l'iPhone
+      // GARDE l'appareil photo ouvert au lieu de le refermer comme Android.
+      // Ce n'est pas une gêne, c'est un avantage — l'affiche est encore
+      // sous l'objectif, il n'y a qu'à glisser sur le 2 — mais un gérant
+      // qui l'ignore croira que le scan a échoué et refera le 1.
       urlEl.innerHTML =
         `<strong>Deux scans, rien à taper.</strong> Le client scanne le <strong>1</strong> et accepte de rejoindre le Wi-Fi, ` +
-        `puis il scanne le <strong>2</strong> : la page d'envoi s'ouvre. ` +
-        `Si la page s'ouvre d'elle-même après le 1 — cela arrive sur certains téléphones — le 2 est inutile.`;
+        `puis il scanne le <strong>2</strong> : la page d'envoi s'ouvre.` +
+        `<br><br><strong>Sur iPhone</strong>, l'appareil photo reste ouvert après le 1 — c'est normal, ` +
+        `il n'y a qu'à viser le 2 juste à côté.` +
+        `<br><strong>Si rien ne s'ouvre :</strong> Réglages → Wi-Fi → toucher le nom du réseau. ` +
+        `La page s'ouvre alors toute seule.`;
     } else if (info.mode === "point_acces_inactif") {
       urlEl.innerHTML =
         `⚠️ Ce QR fait rejoindre le Wi-Fi <strong>${echapperHtml(info.url)}</strong>… mais le Wi-Fi local n'est pas allumé. ` +
