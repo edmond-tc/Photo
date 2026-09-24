@@ -817,19 +817,21 @@ async function afficherQr() {
       // chaque client et se décrédibilise. Ce qui suit est vrai quel que
       // soit le téléphone et quelle que soit l'application de scan.
       //
-      // Les deux chemins de secours sont donnés séparément parce qu'ils
-      // n'ont rien à voir : sur iPhone, toucher le nom du réseau suffit ;
-      // sur Android, il faut descendre bien plus profond, ce qui en fait
-      // un dernier recours et non une consigne à donner d'emblée.
+      // Le secours tient en une phrase, et j'avais écrit trois lignes de
+      // navigation inutile. Le scan du premier code OUVRE DÉJÀ l'écran des
+      // réseaux Wi-Fi : le client n'a aucun menu à chercher, le réseau est
+      // devant lui, il appuie sur le bouton à côté. Décrire un chemin
+      // « Réglages → Wi-Fi → … » envoyait le client ouvrir ce qui était
+      // déjà ouvert — la consigne la plus sûre est celle qui décrit le
+      // geste, pas l'itinéraire.
       urlEl.innerHTML =
         `<strong>Deux scans, rien à taper.</strong> Le client scanne le <strong>1</strong> et accepte de rejoindre le Wi-Fi, ` +
         `puis il scanne le <strong>2</strong> : la page d'envoi s'ouvre.` +
         `<br><br>Selon le téléphone, l'écran revient ou non à l'appareil photo après le 1. ` +
         `Ce n'est pas un échec : il suffit de rouvrir le scanner et de viser le <strong>2</strong>.` +
-        `<br><br><strong>Si le 2 ne donne rien non plus :</strong>` +
-        `<br>• <strong>iPhone</strong> — Réglages → Wi-Fi → toucher le nom du réseau.` +
-        `<br>• <strong>Android</strong> — ouvrir la notification « Se connecter au réseau ». ` +
-        `Sinon : Paramètres → Wi-Fi → le réseau → « Gérer le routeur ».`;
+        `<br><br><strong>Si le 2 ne donne rien non plus :</strong> le scan a déjà ouvert ` +
+        `l'écran des réseaux Wi-Fi. Il suffit d'appuyer sur le bouton à côté du nom du réseau — ` +
+        `aucun menu à chercher.`;
     } else if (info.mode === "point_acces_inactif") {
       urlEl.innerHTML =
         `⚠️ Ce QR fait rejoindre le Wi-Fi <strong>${echapperHtml(info.url)}</strong>… mais le Wi-Fi local n'est pas allumé. ` +
