@@ -1107,13 +1107,36 @@ fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<Strin
       barre.style.display = 'block';
       texte.style.display = 'block';
 
+      // L'iPhone SUSPEND la page dès que l'écran s'éteint ou que le client
+      // passe à une autre application : l'envoi en cours meurt, et au retour
+      // la page est parfois rechargée à vide — la liste des documents
+      // choisis a disparu. Constaté en boutique, sur iPhone seulement ;
+      // Android laisse la page vivre.
+      //
+      // On ne peut pas empêcher iOS de le faire (le verrou d'écran demande
+      // une page en https, impossible ici). On peut en revanche le DIRE
+      // avant, et le NOMMER après — au lieu d'un « échec d'envoi » qui ne
+      // dit rien et qu'on croit venir du logiciel.
+      let passeEnArrierePlan = false;
+      const guetteur = () => {{ if (document.hidden) passeEnArrierePlan = true; }};
+      document.addEventListener('visibilitychange', guetteur);
+      // Certains navigateurs l'accordent malgré tout : on essaie, sans en
+      // dépendre.
+      let veille = null;
+      try {{
+        if (navigator.wakeLock) {{
+          navigator.wakeLock.request('screen').then((v) => {{ veille = v; }}).catch(() => {{}});
+        }}
+      }} catch {{}}
+
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/envoyer');
       xhr.upload.addEventListener('progress', (ev) => {{
         if (!ev.lengthComputable) return;
         const pourcent = Math.round((ev.loaded / ev.total) * 100);
         remplissage.style.width = pourcent + '%';
-        texte.textContent = `Envoi… ${{pourcent}}%  (patientez si le fichier est volumineux)`;
+        texte.textContent =
+          `Envoi… ${{pourcent}}%  — gardez l'écran allumé jusqu'à la fin`;
       }});
       xhr.addEventListener('load', () => {{
         if (xhr.status >= 200 && xhr.status < 300) {{
@@ -1131,10 +1154,21 @@ fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<Strin
           alert("L'envoi a échoué, réessayez.");
         }}
       }});
+      const terminer = () => {{
+        document.removeEventListener('visibilitychange', guetteur);
+        try {{ if (veille) veille.release(); }} catch {{}}
+      }};
+      xhr.addEventListener('loadend', terminer);
       xhr.addEventListener('error', () => {{
         bouton.disabled = false;
         bouton.textContent = 'Envoyer à la boutique';
-        alert("L'envoi a échoué, réessayez.");
+        alert(
+          passeEnArrierePlan
+            ? "L'envoi s'est arrêté parce que le téléphone s'est verrouillé ou "
+              + "que vous avez changé d'application. Appuyez de nouveau sur "
+              + "Envoyer, et gardez l'écran allumé jusqu'à la fin."
+            : "L'envoi a échoué, réessayez."
+        );
       }});
       xhr.send(donnees);
     }});
