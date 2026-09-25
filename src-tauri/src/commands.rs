@@ -711,86 +711,111 @@ pub async fn activer_point_acces_local(
         "❌ Adresse du PC — TOUJOURS PAS UTILISABLE".to_string()
     });
 
-    match demarrer_avec_reessais(|| crate::dhcp::demarrer(activation.adresse)).await {
-        Ok(tache) => {
-            nouvelles_taches.push(tache);
-            recapitulatif.push("✅ Adresses distribuées aux téléphones".to_string());
-        }
-        Err(e) => {
-            recapitulatif
-                .push("❌ Adresses distribuées aux téléphones — NE TOURNE PAS".to_string());
-            avertissements.push(e);
-        }
-    }
-    let mut dns_demarre = false;
-    match demarrer_avec_reessais(|| crate::dns::demarrer(activation.adresse)).await {
-        Ok(tache) => {
-            nouvelles_taches.push(tache);
-            dns_demarre = true;
-        }
-        Err(e) => {
-            recapitulatif.push("❌ Noms de domaine — NE TOURNE PAS".to_string());
-            avertissements.push(e);
-        }
-    }
-
-    // « Démarré » n'est pas « répond ». On pose donc au serveur la question
-    // exacte que pose un téléphone, et on n'annonce vert que si la réponse
-    // arrive. Plusieurs déplacements sur le terrain ont été perdus devant un
-    // écran tout vert alors que rien ne répondait.
-    if dns_demarre {
+    // Méthode 3 (point d'accès mobile) : c'est Windows qui distribue les
+    // adresses et répond aux noms de domaine sur ce réseau. Démarrer les
+    // nôtres par-dessus créerait deux distributeurs d'adresses qui se
+    // contredisent — des téléphones sans adresse. On ne les lance donc pas,
+    // et on le dit : la page ne s'ouvre pas seule, le second QR sert.
+    let windows_distribue =
+        activation.methode == crate::hotspot::METHODE_POINT_ACCES_MOBILE;
+    if windows_distribue {
         recapitulatif.push(
-            if reessayer(|| crate::dns::repond(activation.adresse)).await {
-                "✅ Noms de domaine — testé, répond".to_string()
+            "ℹ️ Adresses et noms distribués par Windows (point d'accès mobile)".to_string(),
+        );
+        recapitulatif.push(
+            "ℹ️ La page ne s'ouvre pas toute seule : le client scanne le 1er QR (Wi-Fi) puis \
+             le 2e QR (page)"
+                .to_string(),
+        );
+        recapitulatif.push(
+            "ℹ️ Point d'accès mobile de Windows : 8 téléphones connectés en même temps au \
+             maximum"
+                .to_string(),
+        );
+    } else {
+        match demarrer_avec_reessais(|| crate::dhcp::demarrer(activation.adresse)).await {
+            Ok(tache) => {
+                nouvelles_taches.push(tache);
+                recapitulatif.push("✅ Adresses distribuées aux téléphones".to_string());
+            }
+            Err(e) => {
+                recapitulatif
+                    .push("❌ Adresses distribuées aux téléphones — NE TOURNE PAS".to_string());
+                avertissements.push(e);
+            }
+        }
+        let mut dns_demarre = false;
+        match demarrer_avec_reessais(|| crate::dns::demarrer(activation.adresse)).await {
+            Ok(tache) => {
+                nouvelles_taches.push(tache);
+                dns_demarre = true;
+            }
+            Err(e) => {
+                recapitulatif.push("❌ Noms de domaine — NE TOURNE PAS".to_string());
+                avertissements.push(e);
+            }
+        }
+
+        // « Démarré » n'est pas « répond ». On pose donc au serveur la question
+        // exacte que pose un téléphone, et on n'annonce vert que si la réponse
+        // arrive. Plusieurs déplacements sur le terrain ont été perdus devant un
+        // écran tout vert alors que rien ne répondait.
+        if dns_demarre {
+            recapitulatif.push(
+                if reessayer(|| crate::dns::repond(activation.adresse)).await {
+                    "✅ Noms de domaine — testé, répond".to_string()
+                } else {
+                    let message = "Le serveur de noms a démarré mais NE RÉPOND PAS à la question \
+                               que pose un téléphone en rejoignant le réseau. La page ne \
+                               pourra pas s'ouvrir toute seule."
+                        .to_string();
+                    avertissements.push(message);
+                    "❌ Noms de domaine — démarré mais NE RÉPOND PAS".to_string()
+                },
+            );
+        }
+        // Le serveur qui fait s'ouvrir la page toute seule démarre au lancement
+        // de l'application, bien avant ce bouton : son échec éventuel n'a aucune
+        // autre occasion d'être dit au gérant qu'ici.
+        match crate::server::probleme_portail_captif() {
+            Some(probleme) => {
+                recapitulatif.push("❌ Ouverture automatique de la page — NE TOURNE PAS".to_string());
+                avertissements.push(probleme);
+            }
+            None => recapitulatif.push(
+                if reessayer(|| crate::server::portail_repond(activation.adresse)).await {
+                    "✅ Ouverture automatique — testée, répond".to_string()
+                } else {
+                    let message = "Le portail a démarré mais NE RÉPOND PAS sur le port 80. La \
+                                   page ne pourra pas s'ouvrir toute seule ; le client devra \
+                                   scanner le petit second QR."
+                        .to_string();
+                    avertissements.push(message);
+                    "❌ Ouverture automatique — démarrée mais NE RÉPOND PAS".to_string()
+                },
+            ),
+        }
+        recapitulatif.push(
+            if reessayer(|| crate::server::api_portail_repond(activation.adresse)).await {
+                "✅ Annonce du portail aux téléphones — testée, répond".to_string()
             } else {
-                let message = "Le serveur de noms a démarré mais NE RÉPOND PAS à la question \
-                           que pose un téléphone en rejoignant le réseau. La page ne \
-                           pourra pas s'ouvrir toute seule."
+                let message = "L'annonce normalisée du portail (celle qui fait ouvrir la page \
+                               toute seule sur les téléphones récents) ne répond pas. La page \
+                               ne s'ouvrira pas d'elle-même."
                     .to_string();
                 avertissements.push(message);
-                "❌ Noms de domaine — démarré mais NE RÉPOND PAS".to_string()
+                "❌ Annonce du portail aux téléphones — NE RÉPOND PAS".to_string()
             },
         );
     }
-    // Le serveur qui fait s'ouvrir la page toute seule démarre au lancement
-    // de l'application, bien avant ce bouton : son échec éventuel n'a aucune
-    // autre occasion d'être dit au gérant qu'ici.
-    match crate::server::probleme_portail_captif() {
-        Some(probleme) => {
-            recapitulatif.push("❌ Ouverture automatique de la page — NE TOURNE PAS".to_string());
-            avertissements.push(probleme);
-        }
-        None => recapitulatif.push(
-            if reessayer(|| crate::server::portail_repond(activation.adresse)).await {
-                "✅ Ouverture automatique — testée, répond".to_string()
-            } else {
-                let message = "Le portail a démarré mais NE RÉPOND PAS sur le port 80. La \
-                               page ne pourra pas s'ouvrir toute seule ; le client devra \
-                               scanner le petit second QR."
-                    .to_string();
-                avertissements.push(message);
-                "❌ Ouverture automatique — démarrée mais NE RÉPOND PAS".to_string()
-            },
-        ),
-    }
-    recapitulatif.push(
-        if reessayer(|| crate::server::api_portail_repond(activation.adresse)).await {
-            "✅ Annonce du portail aux téléphones — testée, répond".to_string()
-        } else {
-            let message = "L'annonce normalisée du portail (celle qui fait ouvrir la page \
-                           toute seule sur les téléphones récents) ne répond pas. La page \
-                           ne s'ouvrira pas d'elle-même."
-                .to_string();
-            avertissements.push(message);
-            "❌ Annonce du portail aux téléphones — NE RÉPOND PAS".to_string()
-        },
-    );
     // Combien de téléphones EN MÊME TEMPS. Cela ne dépend pas de nous mais
     // du pilote Wi-Fi, et cela varie beaucoup d'un PC à l'autre. Un gérant
     // qui l'ignore découvrira la limite devant une file de clients, sans
     // comprendre pourquoi les derniers « n'arrivent pas à se connecter ».
     #[cfg(windows)]
-    if let Some(maximum) = crate::hotspot::nombre_max_de_clients() {
+    if windows_distribue {
+        // Déjà dit plus haut (limite fixe de Windows : 8).
+    } else if let Some(maximum) = crate::hotspot::nombre_max_de_clients() {
         recapitulatif.push(format!(
             "ℹ️ Ce PC accepte {maximum} téléphones connectés en même temps"
         ));

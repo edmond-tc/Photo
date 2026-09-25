@@ -500,6 +500,20 @@ fn composer_verdict(
             .to_string();
     }
 
+    // Carte récente (pilote WDI) qui refuse les deux anciennes méthodes :
+    // c'est exactement le cas des cartes Intel et Realtek d'aujourd'hui, et
+    // celui que la méthode 3 (point d'accès mobile de Windows) couvre. Le
+    // déclarer incapable serait faux ; promettre la réussite aussi.
+    if carte_wifi_presente == Some(true) && wdi_supporte != Some(false) {
+        return "⚠️ La carte Wi-Fi de ce PC est d'un modèle récent : elle refuse les deux \
+                anciennes façons de créer un Wi-Fi. L'application passera par le « Point \
+                d'accès mobile » de Windows. Appuyez sur « Activer le Wi-Fi local de la \
+                boutique » et cliquez « Oui » sur la fenêtre Windows. Sur ce réseau, le client \
+                scanne le 1er QR (Wi-Fi) puis le 2e QR (page), et 8 téléphones au plus \
+                peuvent être connectés en même temps."
+            .to_string();
+    }
+
     if bluetooth_present == Some(true) {
         return "⚠️ Ce PC ne peut pas créer de Wi-Fi et n'est branché à aucun réseau, mais il a \
                 le Bluetooth. Les clients Android peuvent envoyer par Bluetooth (les iPhone ne \
@@ -576,6 +590,29 @@ fn lire_nombre_max_de_clients(sortie: &str) -> Option<u32> {
         .next()?
         .parse()
         .ok()
+}
+
+/// Vrai quand le service de partage de connexion de Windows tourne : c'est
+/// lui qui distribue les adresses du point d'accès mobile (méthode 3). La
+/// méthode 1 le désactive ; le voir en marche signifie donc que le réseau
+/// en place est celui de Windows, pas le nôtre.
+#[cfg(windows)]
+fn partage_windows_actif() -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    std::process::Command::new("sc")
+        .args(["query", "SharedAccess"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        // « RUNNING » n'est pas traduit, même sur un Windows en français.
+        .map(|sortie| String::from_utf8_lossy(&sortie.stdout).contains("RUNNING"))
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn partage_windows_actif() -> bool {
+    false
 }
 
 #[cfg(windows)]
@@ -1284,6 +1321,23 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
         }
     }
 
+    // Méthode 3 : le « Point d'accès mobile » de Windows, seule voie que
+    // les cartes récentes (Intel, Realtek…) acceptent encore. Voir
+    // `point_acces_mobile.rs` pour le pourquoi.
+    match activer_point_acces_mobile(ssid, mot_de_passe) {
+        Ok(adresse) => {
+            if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
+                *garde = Some(adresse);
+            }
+            return Ok(Activation {
+                methode: METHODE_POINT_ACCES_MOBILE,
+                adresse,
+                avertissements: echecs,
+            });
+        }
+        Err(e) => echecs.push(format!("Méthode 3 (point d'accès mobile) : {e}")),
+    }
+
     Err(format!(
         "Aucune des méthodes disponibles n'a pu créer le réseau Wi-Fi sur ce PC.\n\n{}",
         echecs.join("\n")
@@ -1344,6 +1398,69 @@ fn choisir_adresse_point_acces(lignes: &str) -> Option<Ipv4Addr> {
                 .find(|(adresse, _)| adresse.octets()[..3] == [192, 168, 137])
         })
         .map(|(adresse, _)| *adresse)
+}
+
+/// Nom de la méthode 3, tel que `Activation::methode` le porte. Les autres
+/// modules le comparent pour savoir que Windows distribue lui-même les
+/// adresses (et qu'il ne faut donc pas lancer les nôtres).
+pub const METHODE_POINT_ACCES_MOBILE: &str = "point d'accès mobile";
+
+/// Méthode 3 complète : préparation élevée (services, carte factice), puis
+/// allumage, puis lecture de l'adresse réellement apparue.
+#[cfg(windows)]
+fn activer_point_acces_mobile(ssid: &str, mot_de_passe: &str) -> Result<Ipv4Addr, String> {
+    // Un premier essai SANS préparation : sur un PC qui a déjà une
+    // connexion (Ethernet, ou préparation faite lors d'une activation
+    // précédente), aucune fenêtre d'autorisation n'est nécessaire.
+    if let Err(premier) = crate::point_acces_mobile::activer(ssid, mot_de_passe) {
+        let fichier_resultat = std::env::temp_dir().join("photocopie-benin-hotspot-resultat.txt");
+        let sortie = executer_script_eleve(&crate::point_acces_mobile::script_preparation(
+            &fichier_resultat,
+        ))?;
+        crate::point_acces_mobile::lire_preparation(&sortie)
+            .map_err(|e| format!("{e} Premier essai : {premier}"))?;
+
+        // Windows met quelques secondes à reconnaître la nouvelle carte comme
+        // une connexion partageable.
+        let mut derniere_erreur = premier;
+        let mut allume = false;
+        for _ in 0..4 {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            match crate::point_acces_mobile::activer(ssid, mot_de_passe) {
+                Ok(()) => {
+                    allume = true;
+                    break;
+                }
+                Err(e) => derniere_erreur = e,
+            }
+        }
+        if !allume {
+            return Err(derniere_erreur);
+        }
+    }
+
+    // Windows donne toujours 192.168.137.1 à son point d'accès mobile ; on
+    // relit quand même l'adresse réelle plutôt que de la supposer.
+    for tentative in 0..20 {
+        if tentative > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        if let Some(adresse) = adresse_point_acces_detectee() {
+            if !crate::point_acces_mobile::est_adresse_factice(adresse) {
+                return Ok(adresse);
+            }
+        }
+    }
+    let _ = crate::point_acces_mobile::desactiver();
+    Err(
+        "Windows dit avoir allumé le point d'accès mobile, mais aucune adresse n'est apparue          sur sa carte Wi-Fi. Le réseau a été coupé pour ne pas laisser un Wi-Fi inutilisable."
+            .to_string(),
+    )
+}
+
+#[cfg(not(windows))]
+fn activer_point_acces_mobile(_ssid: &str, _mot_de_passe: &str) -> Result<Ipv4Addr, String> {
+    Err("Disponible uniquement sur Windows".to_string())
 }
 
 /// Toutes les adresses IPv4 réellement en service, chacune suivie du nom de
@@ -1446,6 +1563,18 @@ pub fn reprendre_point_acces_existant(app: tauri::AppHandle) {
                 .ok()
                 .flatten();
             let Some(adresse) = trouvee else { continue };
+
+            // Point d'accès mobile de Windows (méthode 3) : Windows distribue
+            // lui-même les adresses. Lancer les nôtres ferait deux
+            // distributeurs qui se contredisent ; on retient seulement
+            // l'adresse, pour que le QR soit juste.
+            let windows_distribue = tauri::async_runtime::spawn_blocking(partage_windows_actif)
+                .await
+                .unwrap_or(false);
+            if windows_distribue {
+                definir_adresse_active(Some(adresse));
+                return;
+            }
 
             let mut taches = Vec::new();
             if let Ok(tache) = crate::dhcp::demarrer(adresse).await {
@@ -1573,10 +1702,11 @@ pub fn desactiver_par_tous_les_moyens() -> Result<(), String> {
         *garde = None;
     }
     let arret_wifi_direct = crate::wifi_direct::desactiver();
+    let arret_mobile = crate::point_acces_mobile::desactiver();
     let arret_reseau_heberge = desactiver();
-    // Sur un PC donné, une seule des deux était active : l'échec de l'autre
-    // est normal et ne doit pas être remonté comme une erreur.
-    if arret_reseau_heberge.is_ok() || arret_wifi_direct.is_ok() {
+    // Sur un PC donné, une seule était active : l'échec des autres est
+    // normal et ne doit pas être remonté comme une erreur.
+    if arret_reseau_heberge.is_ok() || arret_wifi_direct.is_ok() || arret_mobile.is_ok() {
         Ok(())
     } else {
         arret_reseau_heberge
@@ -1798,13 +1928,26 @@ mod tests {
         );
         assert!(cree_son_wifi.contains("Activer le Wi-Fi local"));
 
-        // Portable dont le pilote refuse les deux méthodes : reste le
-        // Bluetooth, et il faut dire qu'il ne couvre pas les iPhone.
+        // Carte récente qui refuse les deux anciennes méthodes : la
+        // méthode 3 (point d'accès mobile) reste possible, il faut le dire.
+        let carte_recente = composer_verdict(
+            Some(true),
+            Some(false),
+            Some(false),
+            Some(true),
+            Some(true),
+            false,
+        );
+        assert!(carte_recente.contains("Point d'accès mobile"), "obtenu : {carte_recente}");
+        assert!(carte_recente.contains("Activer le Wi-Fi local"));
+
+        // Vieux pilote qui refuse tout, sans WDI : reste le Bluetooth, et
+        // il faut dire qu'il ne couvre pas les iPhone.
         let bluetooth_seul = composer_verdict(
             Some(true),
             Some(false),
             Some(false),
-            Some(true),
+            Some(false),
             Some(true),
             false,
         );
