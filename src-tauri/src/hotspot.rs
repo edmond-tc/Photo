@@ -340,6 +340,25 @@ fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
     {
         return Some(false);
     }
+    // Défaut trouvé sur le terrain : quand le service Wi-Fi de Windows
+    // (wlansvc) est ARRÊTÉ, `netsh wlan show interfaces` ne répond ni
+    // « no wireless interface » ni une liste d'interfaces — il répond que
+    // le service lui-même ne tourne pas. Ce texte ne correspondait à aucun
+    // des deux cas ci-dessus et tombait dans le "sinon" : la carte était
+    // donc déclarée présente, alors qu'on n'en sait STRICTEMENT rien. Un PC
+    // de bureau sans aucune carte Wi-Fi, avec ce service désactivé, se
+    // voyait ainsi annoncer « ce PC sait créer du Wi-Fi » — un faux espoir
+    // qui ne se découvre qu'au moment d'activer, pour de vrai, devant le
+    // gérant.
+    //
+    // On ne sait pas s'il y a une carte : on le dit, plutôt que d'inventer
+    // une réponse.
+    if normalisee.contains("autoconfig service") && normalisee.contains("not running")
+        || normalisee.contains("service de configuration automatique")
+            && normalisee.contains("n'est pas")
+    {
+        return None;
+    }
     Some(true)
 }
 
@@ -422,7 +441,17 @@ fn composer_verdict(
         wifi_direct_go_supporte != Some(false) && wdi_supporte != Some(false);
     // Une seule des deux méthodes suffit à créer le réseau : exiger les deux
     // déclarerait incapable un PC parfaitement capable.
-    let sait_creer_un_wifi = carte_wifi_presente != Some(false)
+    //
+    // La présence de la carte, elle, doit être CONFIRMÉE et non simplement
+    // "pas prouvée absente". Trouvé sur le terrain : quand le service Wi-Fi
+    // de Windows (wlansvc) est arrêté, on ne peut pas savoir s'il y a une
+    // carte — `lire_presence_carte_wifi` répond alors `None`. Avec `!=
+    // Some(false)`, ce `None` valait "oui" : le diagnostic annonçait "ce PC
+    // sait créer du Wi-Fi" à un poste qui, à l'essai, refusait — contredit
+    // en boutique le jour même par le message d'activation. On exige donc
+    // une confirmation positive, pas seulement l'absence de preuve du
+    // contraire.
+    let sait_creer_un_wifi = carte_wifi_presente == Some(true)
         && (reseau_heberge_supporte != Some(false) || wifi_direct_utilisable);
 
     if reseau_utilisable {
@@ -442,6 +471,21 @@ fn composer_verdict(
     if sait_creer_un_wifi {
         return "✅ Ce PC sait créer le Wi-Fi de la boutique. Appuyez sur « Activer le Wi-Fi \
                 local de la boutique », puis montrez le QR au client."
+            .to_string();
+    }
+
+    // La carte n'a pas pu être confirmée : le service Wi-Fi de Windows est
+    // arrêté sur ce poste, et ce diagnostic ne le relance pas (contrairement
+    // à la vraie tentative d'activation, qui le fait). On ne peut donc PAS
+    // affirmer que ce PC est incapable — seulement qu'on ne sait pas encore.
+    // Dire "incapable" ici serait le même mensonge que celui qu'on vient de
+    // corriger, à l'envers.
+    if carte_wifi_presente.is_none() {
+        return "❓ Ce PC ne peut pas être vérifié pour l'instant : son service Wi-Fi de \
+                Windows est arrêté. Essayez quand même « Activer le Wi-Fi local de la \
+                boutique » — cette tentative relance ce service automatiquement, et ce PC a \
+                peut-être bien une carte Wi-Fi malgré ce message. Si l'activation échoue \
+                elle aussi, revenez ici : le pare-feu ou une clé USB restent des solutions."
             .to_string();
     }
 
@@ -1616,6 +1660,28 @@ mod tests {
         );
     }
 
+    /// Défaut relevé en boutique : quand le service Wi-Fi de Windows
+    /// (wlansvc) est arrêté, `netsh wlan show interfaces` ne répond ni
+    /// « no wireless interface » ni une liste — il répond que le service
+    /// ne tourne pas. Ce texte ne matchait aucun des deux cas et tombait
+    /// dans le "sinon" : Some(true), une carte déclarée présente sans
+    /// aucune preuve. Le diagnostic annonçait "ce PC sait créer du Wi-Fi"
+    /// à un poste qui refusait ensuite, pour de vrai, devant le gérant.
+    #[test]
+    fn ne_devine_pas_quand_le_service_wifi_est_arrete() {
+        assert_eq!(
+            lire_presence_carte_wifi("The Wireless AutoConfig Service (wlansvc) is not running."),
+            None
+        );
+        assert_eq!(
+            lire_presence_carte_wifi(
+                "Le service de configuration automatique des réseaux locaux \
+                 sans fil n'est pas en cours d'exécution."
+            ),
+            None
+        );
+    }
+
     #[test]
     fn lit_la_capacite_wifi_direct_sans_confondre_supported_et_not_supported() {
         // "not supported" contient "supported" : c'est le piège exact que
@@ -1746,11 +1812,36 @@ mod tests {
     fn dans_le_doute_on_propose_d_essayer_plutot_que_de_renoncer() {
         // Windows ne dit rien de clair (`None` partout) : l'application sait
         // essayer les deux méthodes, donc le verdict ne doit pas envoyer le
-        // gérant vers la clé USB par excès de prudence.
+        // gérant vers la clé USB par excès de prudence, même quand la
+        // présence de la carte elle-même n'est pas confirmée. C'est la
+        // seule chose que ce message a le droit d'affirmer : "essayez",
+        // jamais "ça va marcher" ni "c'est fichu".
         let indetermine = composer_verdict(None, None, None, None, None, false);
         assert!(
             indetermine.contains("Activer le Wi-Fi local"),
             "obtenu : {indetermine}"
+        );
+        assert!(
+            !indetermine.starts_with('✅'),
+            "sans confirmation de la carte, le verdict ne doit pas se dire sûr : {indetermine}"
+        );
+    }
+
+    /// Le cas exact relevé en boutique : le service Wi-Fi de Windows est
+    /// arrêté (donc `carte_wifi_presente` vaut `None`), le PC n'est branché
+    /// à aucun réseau. Avant la correction, ce cas passait par la branche
+    /// "✅ Ce PC sait créer le Wi-Fi" — une promesse que l'activation, le
+    /// jour même, a démentie devant le gérant.
+    #[test]
+    fn n_affirme_plus_pouvoir_creer_du_wifi_quand_le_service_est_arrete() {
+        let verdict = composer_verdict(None, Some(true), Some(true), Some(true), None, false);
+        assert!(
+            !verdict.starts_with("✅ Ce PC sait créer le Wi-Fi"),
+            "promesse non tenue : {verdict}"
+        );
+        assert!(
+            verdict.contains("Activer le Wi-Fi local"),
+            "obtenu : {verdict}"
         );
     }
 
