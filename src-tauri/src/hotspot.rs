@@ -460,11 +460,22 @@ fn composer_verdict(
         } else {
             ""
         };
+        // Signalé sur le terrain : un PC branché par câble au réseau d'une
+        // IMPRIMANTE (ou de tout autre appareil qui distribue des
+        // adresses) obtient une passerelle valide sans qu'il y ait le
+        // moindre Wi-Fi dans la pièce. Ce test mesure "Windows voit une
+        // passerelle sur une carte active" — pas "il existe un Wi-Fi ici
+        // qu'un téléphone peut rejoindre". Affirmer que "ça va marcher"
+        // dans ce cas est un mensonge : un câble ne se scanne pas.
         return format!(
-            "✅ Ce PC est déjà sur un réseau. Montrez simplement le QR : la page d'envoi \
-             s'ouvrira directement sur le téléphone du client, à condition qu'il soit connecté \
-             au même Wi-Fi (celui de la box ou du routeur de la boutique). C'est le cas le plus \
-             simple, rien d'autre à faire.{complement}"
+            "✅ Ce PC est déjà sur un réseau. IMPORTANT : cela ne prouve pas qu'un Wi-Fi \
+             existe pour autant dans la boutique — seulement que ce PC voit une passerelle \
+             (box, routeur, OU un simple câble entre appareils, comme une imprimante). \
+             Vérifiez d'abord sur un téléphone, dans la boutique : un réseau Wi-Fi \
+             apparaît-il dans sa liste ? Si oui, connectez-le à CE MÊME réseau puis montrez \
+             le QR — la page d'envoi s'ouvrira directement, sans rien créer. Si aucun Wi-Fi \
+             n'apparaît, ce réseau est purement filaire et un téléphone ne peut pas le \
+             rejoindre : passez par le Bluetooth ou la clé USB.{complement}"
         );
     }
 
@@ -1768,8 +1779,13 @@ mod tests {
             Some(true),
             true,
         );
-        assert!(deja_en_reseau.contains("Montrez simplement le QR"));
+        assert!(deja_en_reseau.contains("montrez le QR"));
         assert!(deja_en_reseau.contains("pas nécessaire ici"));
+        assert!(
+            deja_en_reseau.contains("ne prouve pas"),
+            "le message doit prévenir qu'une passerelle trouvée n'est pas la preuve \
+             qu'un Wi-Fi existe : {deja_en_reseau}"
+        );
 
         // Portable capable de créer son Wi-Fi, hors de tout réseau.
         let cree_son_wifi = composer_verdict(
