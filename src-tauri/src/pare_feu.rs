@@ -44,6 +44,20 @@ const REGLE_DHCP: &str = "Photocopie Benin - adresses DHCP";
 const REGLE_DNS: &str = "Photocopie Benin - noms de domaine";
 const REGLE_PORTAIL: &str = "Photocopie Benin - ouverture automatique";
 
+/// Le port des sites sécurisés (443), que nous n'utilisons pourtant pas.
+///
+/// Un téléphone qui vérifie son réseau fait DEUX essais : un en http, un en
+/// https. Notre serveur de noms répondant notre adresse à tout, l'essai
+/// https arrive ici. Sans cette règle, Windows le fait disparaître en
+/// silence : le téléphone n'obtient ni réponse ni refus, il attend son
+/// délai d'expiration, et conclut « pas d'internet » au lieu de « portail à
+/// ouvrir ».
+///
+/// Ouvrir le port permet à `server::refuser_le_port_securise` de fermer la
+/// connexion immédiatement. Un refus net dit la vérité tout de suite ; un
+/// silence fait attendre.
+const REGLE_TLS: &str = "Photocopie Benin - refus rapide du port securise";
+
 /// Les commandes à insérer dans un script déjà élevé.
 ///
 /// Rendues séparément du script qui les exécute pour qu'un seul et même
@@ -63,6 +77,7 @@ pub fn commandes_powershell() -> String {
             "TCP",
             u32::from(crate::server::PORT_PORTAIL_CAPTIF),
         ),
+        (REGLE_TLS, "TCP", u32::from(crate::server::PORT_SECURISE)),
     ];
 
     regles
@@ -102,7 +117,7 @@ pub fn regles_presentes() -> bool {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL]
+    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS]
         .iter()
         .all(|nom| {
             std::process::Command::new("netsh")
@@ -171,7 +186,7 @@ mod tests {
     /// l'a payé : le téléphone rejoignait le réseau, recevait son adresse,
     /// et aucune page ne s'ouvrait jamais.
     #[test]
-    fn ouvre_les_quatre_ports_necessaires_et_rien_d_autre() {
+    fn ouvre_les_cinq_ports_necessaires_et_rien_d_autre() {
         let commandes = commandes_powershell();
         assert!(commandes.contains("protocol=TCP localport=4173"));
         assert!(commandes.contains("protocol=UDP localport=67"));
@@ -181,14 +196,20 @@ mod tests {
             "sans le port 80, le téléphone ne peut pas poser la question qui \
              déclenche l'ouverture de la page"
         );
+        assert!(
+            commandes.contains("protocol=TCP localport=443"),
+            "sans le port 443, l'essai https du téléphone reste sans réponse \
+             jusqu'à expiration, et il conclut « pas d'internet » au lieu de \
+             « portail à ouvrir »"
+        );
         assert_eq!(
             commandes.matches("add rule").count(),
-            4,
-            "exactement quatre règles, pas une de plus : rien d'autre de ce PC \
+            5,
+            "exactement cinq règles, pas une de plus : rien d'autre de ce PC \
              ne doit être exposé"
         );
         // Entrant seulement, et jamais "autoriser tout".
-        assert_eq!(commandes.matches("dir=in action=allow").count(), 4);
+        assert_eq!(commandes.matches("dir=in action=allow").count(), 5);
         assert!(!commandes.contains("dir=out"));
     }
 
@@ -197,8 +218,8 @@ mod tests {
     #[test]
     fn remplace_les_regles_au_lieu_de_les_empiler() {
         let commandes = commandes_powershell();
-        assert_eq!(commandes.matches("delete rule").count(), 4);
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL] {
+        assert_eq!(commandes.matches("delete rule").count(), 5);
+        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS] {
             let suppression = commandes
                 .find(&format!("delete rule name=\"{regle}\""))
                 .expect("suppression attendue");
@@ -213,12 +234,12 @@ mod tests {
     /// les reconnaître comme les nôtres.
     #[test]
     fn toutes_les_regles_sont_identifiables_comme_les_notres() {
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL] {
+        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS] {
             assert!(regle.starts_with(PREFIXE_REGLE), "{regle}");
         }
         // Des noms distincts : deux règles de même nom se remplaceraient
         // l'une l'autre, et un port resterait fermé sans que rien ne le dise.
-        let noms = [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL];
+        let noms = [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS];
         for (i, a) in noms.iter().enumerate() {
             for b in noms.iter().skip(i + 1) {
                 assert_ne!(a, b);
@@ -242,7 +263,7 @@ mod tests {
 
         // Aucun nom de règle ne doit contenir d'apostrophe : il traverse
         // PowerShell puis netsh, et s'y ferait découper.
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL] {
+        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS] {
             assert!(!regle.contains('\''), "{regle}");
         }
     }

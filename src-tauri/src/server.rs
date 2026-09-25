@@ -12,6 +12,10 @@ use tauri::{AppHandle, Manager};
 pub const PORT: u16 = 4173;
 pub const PORT_PORTAIL_CAPTIF: u16 = 80;
 
+/// Le port des sites sécurisés. Nous n'y servons rien — nous y REFUSONS,
+/// tout de suite.
+pub const PORT_SECURISE: u16 = 443;
+
 /// Limite haute pour un fichier envoyé par un client (au-delà, on refuse
 /// proprement plutôt que de laisser le serveur consommer toute la mémoire).
 const TAILLE_MAX_ENVOI: usize = 200 * 1024 * 1024; // 200 Mo
@@ -93,6 +97,10 @@ pub fn normalize_phone(raw: &str) -> Option<String> {
 /// asynchrone. Sert la boutique en Wi-Fi local, sans passer par internet.
 pub fn start(app: AppHandle) {
     demarrer_portail_captif(app.clone());
+    // Sans cela, l'essai https du téléphone reste sans réponse jusqu'à
+    // expiration, et la détection du portail échoue. Voir
+    // `refuser_le_port_securise`.
+    refuser_le_port_securise();
 
     tauri::async_runtime::spawn(async move {
         let app_pour_etat = app.clone();
@@ -221,6 +229,41 @@ static PROBLEME_PORTAIL_CAPTIF: Mutex<Option<String>> = Mutex::new(None);
 /// réseau — le chemin de contrôle de Google, avec son nom d'hôte — et on
 /// exige un 200 portant notre page. C'est cette réponse-là, et pas une
 /// autre, qui fait conclure au téléphone « ce réseau demande une connexion ».
+/// Ferme immédiatement toute connexion arrivant sur le port sécurisé.
+///
+/// Un téléphone qui vérifie son réseau fait DEUX essais : un en http, un en
+/// https. Notre serveur de noms répondant notre adresse à tous les noms,
+/// l'essai https atterrit ici.
+///
+/// Sans rien pour l'accueillir, Windows laissait tomber ces paquets en
+/// silence. Le téléphone n'obtenait alors ni réponse ni refus : il attendait
+/// son délai d'expiration — plusieurs dizaines de secondes — puis concluait
+/// « pas d'internet » au lieu de « ce réseau demande une connexion ». La
+/// notification n'est jamais apparue en boutique, sur aucun des deux
+/// téléphones d'essai.
+///
+/// On accepte donc la connexion pour la refermer aussitôt. Le téléphone sait
+/// en quelques millisecondes que rien ne l'attend là, et se fie à l'essai
+/// http — celui qui, lui, reçoit notre page et déclenche le portail.
+///
+/// Rien n'est lu de ce qui arrive : cette écoute ne sert qu'à répondre
+/// « non » vite.
+pub fn refuser_le_port_securise() {
+    tauri::async_runtime::spawn(async move {
+        let Ok(ecoute) = tokio::net::TcpListener::bind(("0.0.0.0", PORT_SECURISE)).await else {
+            // Un autre programme occupe déjà 443. Il refusera ou répondra à
+            // notre place — dans les deux cas, plus de silence.
+            return;
+        };
+        loop {
+            match ecoute.accept().await {
+                Ok((flux, _)) => drop(flux),
+                Err(_) => continue,
+            }
+        }
+    });
+}
+
 pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
