@@ -85,6 +85,37 @@ pub fn build_server_info(
         crate::hotspot::point_acces_actif(),
     );
 
+    // Quand le réseau vient d'ailleurs, ce PC ne crée AUCUN Wi-Fi. Le nom
+    // enregistré dans les réglages est alors celui que l'application aurait
+    // créé — un réseau qui n'existe nulle part. Proposer un QR pour le
+    // rejoindre envoie le client dans le vide : constaté en boutique, les
+    // codes se génèrent, aucun message d'erreur, et les téléphones
+    // n'arrivent pas à rejoindre.
+    //
+    // On n'annonce donc que le réseau auquel ce PC est RÉELLEMENT connecté.
+    // S'il est sur un câble, il n'y a aucun nom à donner : le client est
+    // déjà censé être sur le réseau de la boutique, et un seul code — celui
+    // de la page — suffit.
+    if mode == MODE_ROUTEUR_ACTIF || mode == MODE_ROUTEUR_INACTIF {
+        return Ok(match crate::hotspot::ssid_connecte() {
+            Some(reel) => ServerInfo {
+                qr_data_uri: build_qr_data_uri(&wifi_qr_payload(
+                    &reel,
+                    wifi_mot_de_passe.as_deref(),
+                ))?,
+                qr_page_data_uri: Some(build_qr_data_uri(&url)?),
+                url,
+                mode,
+            },
+            None => ServerInfo {
+                qr_data_uri: build_qr_data_uri(&url)?,
+                qr_page_data_uri: None,
+                url,
+                mode,
+            },
+        });
+    }
+
     Ok(ServerInfo {
         qr_data_uri: build_qr_data_uri(&wifi_qr_payload(&ssid, wifi_mot_de_passe.as_deref()))?,
         qr_page_data_uri: Some(build_qr_data_uri(&url)?),

@@ -284,6 +284,50 @@ fn lire_prise_en_charge_wdi(sortie: &str) -> Option<bool> {
     }
 }
 
+/// Le nom du réseau Wi-Fi auquel ce PC est RÉELLEMENT connecté, s'il l'est.
+///
+/// Sert au cas où le PC est déjà sur un réseau et où l'application ne crée
+/// donc pas le sien. Elle continuait alors d'afficher un QR « rejoindre le
+/// Wi-Fi » portant le nom qu'elle AURAIT créé — un réseau qui n'existe
+/// nulle part. Constaté en boutique : les codes se génèrent, aucun message
+/// d'erreur, et les téléphones n'arrivent pas à rejoindre. Ils cherchaient
+/// un réseau inexistant.
+///
+/// Renvoie None si le PC est sur un câble : il n'y a alors aucun nom de
+/// réseau à proposer, et il vaut mieux ne pas en inventer.
+#[cfg(windows)]
+pub fn ssid_connecte() -> Option<String> {
+    lire_ssid_connecte(&executer_netsh(&["wlan", "show", "interfaces"]))
+}
+
+#[cfg(not(windows))]
+pub fn ssid_connecte() -> Option<String> {
+    None
+}
+
+/// Séparée pour être vérifiable sans Windows.
+///
+/// La ligne du profil est écartée : `netsh` affiche « SSID » et « profil »
+/// l'un sous l'autre, souvent avec la même valeur, et attraper le profil
+/// donnerait un nom qui n'est pas celui diffusé. On exige donc une ligne
+/// qui commence par « ssid ».
+fn lire_ssid_connecte(sortie: &str) -> Option<String> {
+    let brut = sortie.replace('\r', "");
+    for ligne in brut.lines() {
+        let nettoyee = ligne.trim();
+        let minuscule = normaliser(nettoyee);
+        if !minuscule.starts_with("ssid") || minuscule.starts_with("ssid bssid") {
+            continue;
+        }
+        let (_, valeur) = nettoyee.split_once(':')?;
+        let valeur = valeur.trim();
+        if !valeur.is_empty() {
+            return Some(valeur.to_string());
+        }
+    }
+    None
+}
+
 /// `netsh wlan show interfaces` annonce explicitement l'absence de carte
 /// sans fil ; toute autre réponse non vide signifie qu'il y en a une.
 fn lire_presence_carte_wifi(sortie: &str) -> Option<bool> {
@@ -1997,5 +2041,23 @@ mod tests {
             Some(32)
         );
         assert_eq!(lire_nombre_max_de_clients("Mode : autorisé"), None);
+    }
+    /// Le PC branché en câble n'a AUCUN nom de réseau à proposer : en
+    /// inventer un envoie le client rejoindre un réseau qui n'existe pas,
+    /// ce qui a été constaté en boutique.
+    #[test]
+    fn lit_le_reseau_auquel_le_pc_est_connecte() {
+        let sortie = "    Nom                    : Wi-Fi\r\n                          SSID                   : BOUTIQUE-PAUL\r\n                          Profil                 : BOUTIQUE-PAUL\r\n";
+        assert_eq!(
+            lire_ssid_connecte(sortie),
+            Some("BOUTIQUE-PAUL".to_string())
+        );
+
+        // Aucune interface connectée : rien à proposer.
+        assert_eq!(
+            lire_ssid_connecte("Il n'y a aucune interface sans fil."),
+            None
+        );
+        assert_eq!(lire_ssid_connecte(""), None);
     }
 }
