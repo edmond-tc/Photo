@@ -459,10 +459,10 @@ fn adresse_detectee_en_cache() -> Option<Ipv4Addr> {
 /// que le téléphone du client ne peut évidemment jamais joindre. Le QR
 /// annonçait donc une page inaccessible, sans que rien ne le signale.
 ///
-/// On demande plutôt à Windows quelle carte porte une vraie passerelle ET
-/// est réellement en service : c'est celle par laquelle le téléphone du
-/// client arrivera, que le réseau vienne d'une box, d'un routeur ou du
-/// partage de connexion d'un téléphone.
+/// On demande plutôt à Windows quelles cartes portent une vraie passerelle
+/// ET sont réellement en service, puis on choisit parmi elles celle par
+/// laquelle le téléphone du client arrivera (voir
+/// `choisir_adresse_reseau_connecte`).
 #[cfg(windows)]
 pub fn adresse_du_reseau_connecte() -> Option<Ipv4Addr> {
     use std::os::windows::process::CommandExt;
@@ -472,15 +472,49 @@ pub fn adresse_du_reseau_connecte() -> Option<Ipv4Addr> {
         .args([
             "-NoProfile",
             "-Command",
-            "(Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { \
-              $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } | \
-              Select-Object -First 1).IPv4Address.IPAddress",
+            "Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { \
+              $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } | ForEach-Object { \
+              foreach ($a in $_.IPv4Address) { \
+              \"$($a.IPAddress)|$($_.NetAdapter.PhysicalMediaType)|$($_.NetAdapter.InterfaceDescription)\" } }",
         ])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
 
-    premiere_adresse_utilisable(&String::from_utf8_lossy(&sortie.stdout))
+    choisir_adresse_reseau_connecte(&String::from_utf8_lossy(&sortie.stdout))
+}
+
+/// Parmi les cartes reliées à un réseau (lignes `adresse|média|description`),
+/// celle que le téléphone du client peut joindre.
+///
+/// Signalé sur le terrain : une imprimante ou un disque réseau branché par
+/// câble au PC. Ces appareils peuvent donner au PC une adresse ET une
+/// passerelle — Windows voit alors DEUX réseaux. L'ancienne détection
+/// prenait le premier venu : si c'était celui du câble de l'imprimante, le
+/// QR annonçait une adresse que le téléphone, sur le Wi-Fi, ne pouvait pas
+/// joindre. Un téléphone n'arrive QUE par le Wi-Fi : la carte Wi-Fi passe
+/// donc en premier. À défaut (PC relié par câble au routeur dont le Wi-Fi
+/// sert les téléphones), la première carte câblée reste le bon choix.
+fn choisir_adresse_reseau_connecte(sortie: &str) -> Option<Ipv4Addr> {
+    let cartes: Vec<(Ipv4Addr, bool)> = sortie
+        .lines()
+        .filter_map(|ligne| {
+            let mut morceaux = ligne.trim().splitn(3, '|');
+            let adresse = premiere_adresse_utilisable(morceaux.next()?)?;
+            let media = morceaux.next().unwrap_or("").to_lowercase();
+            let description = morceaux.next().unwrap_or("").to_lowercase();
+            let sans_fil = media.contains("802.11")
+                || ["wi-fi", "wifi", "wireless", "wlan", "802.11"]
+                    .iter()
+                    .any(|mot| description.contains(mot));
+            Some((adresse, sans_fil))
+        })
+        .collect();
+    cartes
+        .iter()
+        .find(|(_, sans_fil)| *sans_fil)
+        .or_else(|| cartes.first())
+        .map(|(adresse, _)| *adresse)
 }
 
 #[cfg(not(windows))]
@@ -1971,7 +2005,24 @@ mod tests {
     /// y joindre. On ne retient donc que ce qui désigne un réseau réel.
     #[test]
     fn ne_retient_que_les_adresses_joignables_par_un_telephone() {
-        use super::premiere_adresse_utilisable;
+        use super::{choisir_adresse_reseau_connecte, premiere_adresse_utilisable};
+
+        // Imprimante branchée par câble ET Wi-Fi de la boutique : c'est
+        // l'adresse Wi-Fi que le téléphone peut joindre, même si Windows
+        // cite la carte câblée en premier.
+        assert_eq!(
+            choisir_adresse_reseau_connecte(
+                "192.168.223.10|802.3|Intel(R) Ethernet Connection I217-LM\n\
+                 192.168.1.20|Native 802.11|Broadcom 802.11n Network Adapter\n"
+            ),
+            Some(std::net::Ipv4Addr::new(192, 168, 1, 20))
+        );
+        // Seulement un câble (relié au routeur) : on le garde.
+        assert_eq!(
+            choisir_adresse_reseau_connecte("192.168.0.5|802.3|Realtek PCIe GbE\n"),
+            Some(std::net::Ipv4Addr::new(192, 168, 0, 5))
+        );
+        assert_eq!(choisir_adresse_reseau_connecte("169.254.3.3|802.3|x\n"), None);
         use std::net::Ipv4Addr;
 
         assert_eq!(

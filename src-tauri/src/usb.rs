@@ -100,6 +100,8 @@ pub fn importer_documents_usb(app: AppHandle, chemins: Vec<String>) -> usize {
 pub fn watch_usb_drives(app: AppHandle) {
     thread::spawn(move || {
         let mut deja_vus: HashSet<PathBuf> = HashSet::new();
+        // Le lecteur dont la liste est affichée en ce moment.
+        let mut propose: Option<PathBuf> = None;
 
         loop {
             let disks = Disks::new_with_refreshed_list();
@@ -116,6 +118,7 @@ pub fn watch_usb_drives(app: AppHandle) {
                 if let Ok(mut proposes) = DOCUMENTS_PROPOSES.lock() {
                     *proposes = trouves.clone();
                 }
+                propose = Some(mount.clone());
                 // L'interface ouvre la liste : le gérant n'a pas à deviner
                 // qu'il s'est passé quelque chose ni à aller la chercher.
                 let _ = app.emit("cle-usb-inseree", trouves.len());
@@ -123,7 +126,13 @@ pub fn watch_usb_drives(app: AppHandle) {
 
             // Clé retirée : on oublie ce qu'elle proposait, sinon le gérant
             // pourrait importer plus tard depuis une clé qui n'est plus là.
-            if !deja_vus.is_empty() && amovibles.is_empty() {
+            //
+            // On regarde CE lecteur-là, pas « plus aucun lecteur amovible » :
+            // avec un disque dur USB ou un lecteur de cartes branché en
+            // permanence, il reste toujours un lecteur, et le retrait de la
+            // clé du client n'était jamais vu.
+            if propose.as_ref().is_some_and(|m| !amovibles.contains(m)) {
+                propose = None;
                 if let Ok(mut proposes) = DOCUMENTS_PROPOSES.lock() {
                     proposes.clear();
                 }
