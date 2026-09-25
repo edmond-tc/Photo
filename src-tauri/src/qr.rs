@@ -124,26 +124,26 @@ pub fn build_server_info(
     })
 }
 
-/// Le port à écrire dans l'adresse du QR : aucun quand le portail répond
-/// sur le port 80, faute de quoi le port 4173.
+/// Le port à écrire dans l'adresse du QR : toujours {PORT}, jamais absent.
 ///
-/// La même page est servie sur les deux (voir `server::construire_router`).
-/// Mais une adresse sans port — « http://192.168.73.1/ » — est plus courte,
-/// donc le QR a moins de carrés et se lit de plus loin et plus vite ; et
-/// c'est la forme ordinaire qu'attendent les appareils photo des
-/// téléphones, alors qu'un port inhabituel est le genre de détail qu'un
-/// système peut traiter autrement. Signalé sur le terrain : l'iPhone
-/// n'arrivait pas à ouvrir ce second code.
+/// Il y a eu une version de cette fonction qui omettait le port quand le
+/// portail répondait sur 80 au moment de la lecture. Défaut grave qu'elle
+/// causait, découvert sur le terrain : `probleme_portail_captif()` reflète
+/// le résultat d'UNE SEULE tentative de connexion au port 80, faite au
+/// DÉMARRAGE du serveur — port notoirement disputé (IIS, un vieux Skype,
+/// un outil de développement). Selon que cette tentative précise réussit ou
+/// échoue, l'adresse écrite dans le QR change d'une activation à l'autre,
+/// SUR LE MÊME PC. Un QR imprimé ou affiché à un instant devenait donc
+/// injoignable après un simple redémarrage de l'application ou une
+/// nouvelle activation du Wi-Fi — le pire défaut possible pour un code
+/// destiné à rester affiché en boutique.
 ///
-/// On ne prend le port 80 que si le portail y répond vraiment : quand il
-/// n'a pas pu s'y installer (port déjà pris), pointer dessus donnerait un
-/// QR qui ne mène nulle part, alors que 4173, lui, répond.
+/// Le port 4173, lui, ne dépend d'aucune contention connue et sert la MÊME
+/// page (voir `server::construire_router`). On perd quelques caractères de
+/// raccourci ; on gagne la garantie qu'un QR généré une fois reste valide
+/// tant que l'adresse du point d'accès ne change pas — et elle est fixe.
 fn suffixe_port() -> String {
-    if crate::server::probleme_portail_captif().is_none() {
-        String::new()
-    } else {
-        format!(":{PORT}")
-    }
+    format!(":{PORT}")
 }
 
 /// Séparée de `build_server_info` pour être testable sans toucher à l'état
