@@ -16,27 +16,38 @@ pub const PORT_PORTAIL_CAPTIF: u16 = 80;
 /// tout de suite.
 pub const PORT_SECURISE: u16 = 443;
 
-/// Limite haute pour un fichier envoyé par un client (au-delà, on refuse
-/// proprement plutôt que de laisser le serveur consommer toute la mémoire).
-const TAILLE_MAX_ENVOI: usize = 200 * 1024 * 1024; // 200 Mo
+/// Limite haute d'un envoi (tous ses fichiers ensemble).
+///
+/// Elle était de 200 Mo, et un fichier de 220 Mo échouait sur le terrain
+/// sans explication. Elle existait parce que chaque fichier était chargé
+/// entièrement en mémoire. Ce n'est plus le cas : les fichiers vont
+/// directement sur le disque, morceau par morceau (voir `lire_envoi`). La
+/// seule vraie limite est donc l'espace libre du disque, vérifié pendant la
+/// réception ; celle-ci ne vise qu'une requête forgée sans fin.
+const TAILLE_MAX_ENVOI: u64 = 4 * 1024 * 1024 * 1024; // 4 Go
 
-/// Envois traités en même temps. Chaque fichier est entièrement chargé en
-/// mémoire avant d'être écrit sur le disque : sans cette limite, quelques
-/// envois simultanés de 200 Mo suffisent à épuiser la mémoire d'un PC de
-/// boutique — et c'est alors Windows entier qui rame, pas seulement
-/// l'application. Les envois au-delà attendent leur tour (la connexion
-/// reste ouverte) au lieu d'être refusés : un client ne doit jamais voir
-/// "échec" simplement parce qu'un autre envoyait au même moment.
-const ENVOIS_SIMULTANES_MAX: usize = 3;
+/// Envois traités en même temps. La mémoire n'est plus en jeu (quelques
+/// dizaines de Ko par envoi) ; la limite protège seulement le disque d'une
+/// avalanche. Les envois au-delà attendent leur tour (la connexion reste
+/// ouverte) au lieu d'être refusés : un client ne doit jamais voir "échec"
+/// simplement parce qu'un autre envoyait au même moment.
+const ENVOIS_SIMULTANES_MAX: usize = 10;
 
 static ENVOIS_EN_COURS: std::sync::LazyLock<tokio::sync::Semaphore> =
     std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(ENVOIS_SIMULTANES_MAX));
 
-/// Au-delà, un envoi est abandonné. Large exprès (un gros PDF sur un Wi-Fi
-/// de téléphone peut être lent), mais borné : sans délai, trois connexions
-/// laissées ouvertes volontairement bloqueraient la réception pour tout le
-/// monde.
-const DELAI_MAX_ENVOI: std::time::Duration = std::time::Duration::from_secs(600);
+/// Un envoi est abandonné s'il ne fait plus AUCUN progrès pendant ce délai.
+///
+/// Auparavant, c'était la durée TOTALE qui était bornée (10 minutes) : un
+/// gros fichier sur un Wi-Fi lent échouait alors qu'il avançait très bien.
+/// Ce qui doit être coupé, c'est une connexion qui ne transmet plus rien
+/// (téléphone verrouillé, client parti), pas un envoi lent mais vivant.
+const DELAI_SANS_PROGRES: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// Dossier des fichiers en cours de réception. Séparé de `recus` : un envoi
+/// interrompu y laisse un fichier incomplet, qui ne doit jamais apparaître
+/// dans la file du gérant.
+const DOSSIER_EN_COURS: &str = "envois-en-cours";
 
 /// Nombre de documents acceptés en un seul envoi. Le formulaire n'en propose
 /// jamais autant ; la limite vise une requête forgée à la main qui
@@ -96,6 +107,9 @@ pub fn normalize_phone(raw: &str) -> Option<String> {
 /// Démarre le serveur HTTP local (page de réception QR) dans une tâche
 /// asynchrone. Sert la boutique en Wi-Fi local, sans passer par internet.
 pub fn start(app: AppHandle) {
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        purger_envois_interrompus(&data_dir);
+    }
     demarrer_portail_captif(app.clone());
     // Sans cela, l'essai https du téléphone reste sans réponse jusqu'à
     // expiration, et la détection du portail échoue. Voir
@@ -187,7 +201,9 @@ fn construire_router(app: AppHandle) -> Router {
         .route(CHEMIN_API_PORTAIL, get(api_portail))
         // Toute autre adresse, `/` comprise : la page d'envoi, en 200.
         .fallback(page_accueil)
-        .layer(DefaultBodyLimit::max(TAILLE_MAX_ENVOI))
+        // La limite est gérée pendant la lecture (voir `lire_envoi`), sur
+        // l'espace disque réel ; celle d'axum, fixe, refuserait à tort.
+        .layer(DefaultBodyLimit::disable())
         .with_state(app)
 }
 
@@ -1151,7 +1167,12 @@ fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<Strin
         }} else {{
           bouton.disabled = false;
           bouton.textContent = 'Envoyer à la boutique';
-          alert("L'envoi a échoué, réessayez.");
+          // Le serveur explique la cause (fichier trop gros pour le disque,
+          // envoi interrompu…) : la montrer plutôt qu'un échec muet.
+          const raison = (xhr.responseText || '').trim();
+          alert(raison && raison.length < 300 && raison[0] !== '{{' && raison[0] !== '<'
+            ? raison
+            : "L'envoi a échoué, réessayez.");
         }}
       }});
       const terminer = () => {{
@@ -1226,23 +1247,51 @@ fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<Strin
 
 struct FichierRecu {
     original_name: String,
-    bytes: Vec<u8>,
+    /// Déjà écrit en entier sur le disque, dans `DOSSIER_EN_COURS`.
+    chemin_temporaire: std::path::PathBuf,
 }
 
 /// Marge sous laquelle on refuse d'écrire un nouveau fichier reçu.
 const ESPACE_DISQUE_MINIMUM: u64 = 500 * 1024 * 1024; // 500 Mo
 
 fn espace_disque_insuffisant(data_dir: &std::path::Path) -> bool {
+    espace_disque_libre(data_dir).is_some_and(|libre| libre < ESPACE_DISQUE_MINIMUM)
+}
+
+/// Espace libre du disque qui porte le dossier de données. On retient le
+/// disque dont le point de montage correspond le plus précisément à ce
+/// dossier (sur Windows : la bonne lettre de lecteur). `None` si on n'arrive
+/// pas à le déterminer : on laisse alors passer plutôt que de bloquer à tort
+/// un client qui attend son document.
+fn espace_disque_libre(data_dir: &std::path::Path) -> Option<u64> {
     let disques = sysinfo::Disks::new_with_refreshed_list();
-    // On retient le disque dont le point de montage correspond le plus
-    // précisément au dossier de données (sur Windows : la bonne lettre de
-    // lecteur). Si on n'arrive pas à le déterminer, on laisse passer plutôt
-    // que de bloquer à tort un client qui attend son document.
     disques
         .iter()
         .filter(|d| data_dir.starts_with(d.mount_point()))
         .max_by_key(|d| d.mount_point().as_os_str().len())
-        .is_some_and(|d| d.available_space() < ESPACE_DISQUE_MINIMUM)
+        .map(|d| d.available_space())
+}
+
+/// Ce qu'un envoi a le droit d'occuper : la limite haute, ou moins si le
+/// disque n'a pas la place (en gardant toujours la marge de sécurité).
+fn budget_envoi(espace_libre: Option<u64>) -> u64 {
+    match espace_libre {
+        Some(libre) => libre.saturating_sub(ESPACE_DISQUE_MINIMUM).min(TAILLE_MAX_ENVOI),
+        None => TAILLE_MAX_ENVOI,
+    }
+}
+
+/// Pourquoi un envoi n'a pas pu être lu jusqu'au bout.
+#[derive(Debug, PartialEq)]
+enum EchecLecture {
+    /// Rien d'exploitable dans la requête.
+    AucunFichier,
+    /// Plus rien n'arrivait depuis `DELAI_SANS_PROGRES`.
+    Interrompu,
+    /// Le disque du PC n'a pas la place (ou la limite haute est dépassée).
+    TropGros,
+    /// Écriture sur le disque impossible.
+    Disque,
 }
 
 /// Ne garde que le nom de fichier, sans le chemin — un client malveillant
@@ -1313,15 +1362,84 @@ async fn recevoir_fichier(State(app): State<AppHandle>, multipart: Multipart) ->
             .into_response();
     }
 
-    match tokio::time::timeout(DELAI_MAX_ENVOI, lire_envoi(multipart)).await {
-        Ok(Some(envoi)) => enregistrer_envoi(&app, &data_dir, envoi).await,
-        Ok(None) => (StatusCode::BAD_REQUEST, "aucun fichier reçu").into_response(),
-        Err(_) => (
+    let dossier_en_cours = data_dir.join(DOSSIER_EN_COURS);
+    if tokio::fs::create_dir_all(&dossier_en_cours).await.is_err() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response();
+    }
+    let budget = budget_envoi(espace_disque_libre(&data_dir));
+
+    match lire_envoi(multipart, &dossier_en_cours, budget).await {
+        Ok(envoi) => enregistrer_envoi(&app, &data_dir, envoi).await,
+        Err(EchecLecture::AucunFichier) => {
+            (StatusCode::BAD_REQUEST, "Aucun fichier reçu, réessayez.").into_response()
+        }
+        Err(EchecLecture::Interrompu) => (
             StatusCode::REQUEST_TIMEOUT,
-            "L'envoi a pris trop de temps, réessayez.",
+            "L'envoi s'est arrêté en route (téléphone verrouillé ou Wi-Fi perdu). \
+             Réessayez en gardant l'écran allumé.",
+        )
+            .into_response(),
+        Err(EchecLecture::TropGros) => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Le fichier est trop gros pour l'espace libre de l'ordinateur de la boutique. \
+             Prévenez le gérant.",
+        )
+            .into_response(),
+        Err(EchecLecture::Disque) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "L'ordinateur de la boutique n'a pas pu enregistrer le fichier. Réessayez.",
         )
             .into_response(),
     }
+}
+
+/// Efface les fichiers d'un envoi qui n'ira pas jusqu'au bout.
+async fn effacer_temporaires(fichiers: &std::collections::HashMap<usize, FichierRecu>) {
+    for fichier in fichiers.values() {
+        let _ = tokio::fs::remove_file(&fichier.chemin_temporaire).await;
+    }
+}
+
+/// Au démarrage : les restes d'envois coupés net (application fermée,
+/// PC éteint pendant une réception). Rien ne les réclamera jamais.
+pub fn purger_envois_interrompus(data_dir: &std::path::Path) {
+    let _ = std::fs::remove_dir_all(data_dir.join(DOSSIER_EN_COURS));
+}
+
+/// Écrit un fichier du client sur le disque au fur et à mesure qu'il arrive,
+/// sans jamais le garder en entier en mémoire. `deja_recu` cumule la taille
+/// de tout l'envoi, pour respecter `budget`.
+async fn ecrire_champ_fichier(
+    field: &mut axum::extract::multipart::Field<'_>,
+    chemin: &std::path::Path,
+    deja_recu: &mut u64,
+    budget: u64,
+) -> Result<u64, EchecLecture> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut sortie = tokio::fs::File::create(chemin)
+        .await
+        .map_err(|_| EchecLecture::Disque)?;
+    let mut taille = 0u64;
+    loop {
+        let morceau = match tokio::time::timeout(DELAI_SANS_PROGRES, field.chunk()).await {
+            Err(_) => return Err(EchecLecture::Interrompu),
+            Ok(Err(_)) => return Err(EchecLecture::Interrompu),
+            Ok(Ok(None)) => break,
+            Ok(Ok(Some(morceau))) => morceau,
+        };
+        taille += morceau.len() as u64;
+        *deja_recu += morceau.len() as u64;
+        if *deja_recu > budget {
+            return Err(EchecLecture::TropGros);
+        }
+        sortie
+            .write_all(&morceau)
+            .await
+            .map_err(|_| EchecLecture::Disque)?;
+    }
+    sortie.flush().await.map_err(|_| EchecLecture::Disque)?;
+    Ok(taille)
 }
 
 struct EnvoiClient {
@@ -1331,19 +1449,61 @@ struct EnvoiClient {
     options: std::collections::HashMap<usize, OptionsImpression>,
 }
 
-/// Lit la requête du client. Renvoie `None` si elle ne contient aucun
-/// fichier exploitable. Tout ce qui vient d'ici est saisi par un inconnu
+/// Lit la requête du client. Les fichiers sont écrits dans
+/// `dossier_en_cours` au fil de l'eau ; en cas d'échec, tout ce qui a été
+/// écrit est effacé. Tout ce qui vient d'ici est saisi par un inconnu
 /// connecté au Wi-Fi de la boutique : chaque champ est borné, jamais repris
 /// tel quel.
-async fn lire_envoi(mut multipart: Multipart) -> Option<EnvoiClient> {
-    let mut nom: Option<String> = None;
-    let mut telephone: Option<String> = None;
+async fn lire_envoi(
+    multipart: Multipart,
+    dossier_en_cours: &std::path::Path,
+    budget: u64,
+) -> Result<EnvoiClient, EchecLecture> {
     let mut fichiers: std::collections::HashMap<usize, FichierRecu> =
         std::collections::HashMap::new();
+    let resultat = lire_champs(multipart, dossier_en_cours, budget, &mut fichiers).await;
+    match resultat {
+        Ok((nom, telephone, options)) if !fichiers.is_empty() => Ok(EnvoiClient {
+            nom,
+            telephone,
+            fichiers,
+            options,
+        }),
+        Ok(_) => Err(EchecLecture::AucunFichier),
+        Err(e) => {
+            effacer_temporaires(&fichiers).await;
+            Err(e)
+        }
+    }
+}
+
+type ChampsTexte = (
+    Option<String>,
+    Option<String>,
+    std::collections::HashMap<usize, OptionsImpression>,
+);
+
+async fn lire_champs(
+    mut multipart: Multipart,
+    dossier_en_cours: &std::path::Path,
+    budget: u64,
+    fichiers: &mut std::collections::HashMap<usize, FichierRecu>,
+) -> Result<ChampsTexte, EchecLecture> {
+    let mut nom: Option<String> = None;
+    let mut telephone: Option<String> = None;
     let mut options: std::collections::HashMap<usize, OptionsImpression> =
         std::collections::HashMap::new();
+    let mut deja_recu = 0u64;
 
-    while let Ok(Some(field)) = multipart.next_field().await {
+    loop {
+        let mut field = match tokio::time::timeout(DELAI_SANS_PROGRES, multipart.next_field()).await {
+            Err(_) => return Err(EchecLecture::Interrompu),
+            // Requête coupée en plein milieu : les fichiers déjà complets
+            // ne sont pas gardés, le client verra un échec et renverra.
+            Ok(Err(_)) => return Err(EchecLecture::Interrompu),
+            Ok(Ok(None)) => break,
+            Ok(Ok(Some(field))) => field,
+        };
         let name = field.name().unwrap_or("").to_string();
 
         if name == "nom" {
@@ -1385,15 +1545,32 @@ async fn lire_envoi(mut multipart: Multipart) -> Option<EnvoiClient> {
                     .file_name()
                     .map(nom_fichier_sans_chemin)
                     .unwrap_or_else(|| "fichier_recu".to_string());
-                if let Ok(bytes) = field.bytes().await {
-                    if !bytes.is_empty() {
-                        fichiers.insert(
+                let chemin_temporaire = dossier_en_cours.join(format!(
+                    "{}-{indice}.part",
+                    rand::random::<u64>()
+                ));
+                match ecrire_champ_fichier(&mut field, &chemin_temporaire, &mut deja_recu, budget)
+                    .await
+                {
+                    Ok(0) => {
+                        let _ = tokio::fs::remove_file(&chemin_temporaire).await;
+                    }
+                    Ok(_) => {
+                        // Même indice envoyé deux fois (requête forgée) :
+                        // l'ancien fichier ne doit pas rester orphelin.
+                        if let Some(ancien) = fichiers.insert(
                             indice,
                             FichierRecu {
                                 original_name,
-                                bytes: bytes.to_vec(),
+                                chemin_temporaire,
                             },
-                        );
+                        ) {
+                            let _ = tokio::fs::remove_file(&ancien.chemin_temporaire).await;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tokio::fs::remove_file(&chemin_temporaire).await;
+                        return Err(e);
                     }
                 }
             }
@@ -1430,15 +1607,7 @@ async fn lire_envoi(mut multipart: Multipart) -> Option<EnvoiClient> {
         }
     }
 
-    if fichiers.is_empty() {
-        return None;
-    }
-    Some(EnvoiClient {
-        nom,
-        telephone,
-        fichiers,
-        options,
-    })
+    Ok((nom, telephone, options))
 }
 
 async fn enregistrer_envoi(
@@ -1455,6 +1624,7 @@ async fn enregistrer_envoi(
 
     let recus_dir = data_dir.join("recus");
     if std::fs::create_dir_all(&recus_dir).is_err() {
+        effacer_temporaires(&fichiers).await;
         return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response();
     }
 
@@ -1465,7 +1635,10 @@ async fn enregistrer_envoi(
         let horodatage = chrono::Local::now().format("%Y%m%d-%H%M%S%3f");
         let nom_fichier_sur_disque = format!("{horodatage}_{}_{}", indice, fichier.original_name);
         let chemin = recus_dir.join(&nom_fichier_sur_disque);
-        if std::fs::write(&chemin, &fichier.bytes).is_err() {
+        // Même disque : un simple renommage, instantané même pour un
+        // fichier de plusieurs centaines de Mo.
+        if tokio::fs::rename(&fichier.chemin_temporaire, &chemin).await.is_err() {
+            let _ = tokio::fs::remove_file(&fichier.chemin_temporaire).await;
             continue;
         }
         let opts = options.remove(&indice).unwrap_or_default();
@@ -1606,6 +1779,111 @@ async fn statut_fichier(
         paye,
         message,
     })
+}
+
+#[cfg(test)]
+mod tests_envoi_volumineux {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// Serveur de test : la même réception que la vraie, avec la même
+    /// absence de limite fixe d'axum ; il répond ce que `lire_envoi` a lu.
+    async fn serveur_de_test(dossier: std::path::PathBuf, budget: u64) -> std::net::SocketAddr {
+        let router = Router::new()
+            .route(
+                "/envoyer",
+                post(move |multipart: Multipart| {
+                    let dossier = dossier.clone();
+                    async move {
+                        match lire_envoi(multipart, &dossier, budget).await {
+                            Ok(envoi) => {
+                                let fichier = envoi.fichiers.values().next().unwrap();
+                                let taille = std::fs::metadata(&fichier.chemin_temporaire)
+                                    .unwrap()
+                                    .len();
+                                format!("OK {taille} {}", fichier.original_name)
+                            }
+                            Err(e) => format!("ECHEC {e:?}"),
+                        }
+                    }
+                }),
+            )
+            .layer(DefaultBodyLimit::disable());
+        let ecoute = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let adresse = ecoute.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(ecoute, router).await.unwrap() });
+        adresse
+    }
+
+    /// Envoie un fichier de `taille` octets, morceau par morceau, comme le
+    /// navigateur du téléphone, et rend la réponse du serveur.
+    async fn envoyer(adresse: std::net::SocketAddr, taille: u64) -> String {
+        let frontiere = "----frontiere-de-test";
+        let debut = format!(
+            "--{frontiere}\r\nContent-Disposition: form-data; name=\"nom\"\r\n\r\nAwa\r\n\
+             --{frontiere}\r\nContent-Disposition: form-data; name=\"fichier_0\"; \
+             filename=\"memoire.pdf\"\r\nContent-Type: application/pdf\r\n\r\n"
+        );
+        let fin = format!("\r\n--{frontiere}--\r\n");
+        let longueur = debut.len() as u64 + taille + fin.len() as u64;
+
+        let mut flux = tokio::net::TcpStream::connect(adresse).await.unwrap();
+        let entete = format!(
+            "POST /envoyer HTTP/1.1\r\nHost: test\r\nContent-Type: multipart/form-data; \
+             boundary={frontiere}\r\nContent-Length: {longueur}\r\nConnection: close\r\n\r\n"
+        );
+        flux.write_all(entete.as_bytes()).await.unwrap();
+        flux.write_all(debut.as_bytes()).await.unwrap();
+        let morceau = vec![b'x'; 64 * 1024];
+        let mut restant = taille;
+        while restant > 0 {
+            let n = restant.min(morceau.len() as u64) as usize;
+            // Le serveur peut couper net (budget dépassé) : ce n'est pas
+            // une erreur du test, sa réponse dira pourquoi.
+            if flux.write_all(&morceau[..n]).await.is_err() {
+                break;
+            }
+            restant -= n as u64;
+        }
+        let _ = flux.write_all(fin.as_bytes()).await;
+        let mut reponse = String::new();
+        let _ = flux.read_to_string(&mut reponse).await;
+        reponse
+    }
+
+    /// Le cas du terrain : un fichier de 220 Mo échouait (limite de 200 Mo).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn un_fichier_de_220_mo_passe() {
+        let dossier = tempfile::tempdir().unwrap();
+        let adresse = serveur_de_test(dossier.path().to_path_buf(), TAILLE_MAX_ENVOI).await;
+        let taille = 220 * 1024 * 1024;
+        let reponse = envoyer(adresse, taille).await;
+        assert!(
+            reponse.contains(&format!("OK {taille} memoire.pdf")),
+            "réponse : {}",
+            reponse.lines().last().unwrap_or_default()
+        );
+    }
+
+    /// Disque trop petit : refus clair, et rien d'incomplet laissé derrière.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn un_envoi_plus_gros_que_le_disque_est_refuse_sans_laisser_de_reste() {
+        let dossier = tempfile::tempdir().unwrap();
+        let adresse = serveur_de_test(dossier.path().to_path_buf(), 1024 * 1024).await;
+        let reponse = envoyer(adresse, 5 * 1024 * 1024).await;
+        assert!(reponse.contains("ECHEC TropGros"), "réponse : {reponse}");
+        assert_eq!(std::fs::read_dir(dossier.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn le_budget_garde_la_marge_du_disque() {
+        assert_eq!(budget_envoi(None), TAILLE_MAX_ENVOI);
+        assert_eq!(budget_envoi(Some(ESPACE_DISQUE_MINIMUM / 2)), 0);
+        assert_eq!(
+            budget_envoi(Some(ESPACE_DISQUE_MINIMUM + 300 * 1024 * 1024)),
+            300 * 1024 * 1024
+        );
+    }
 }
 
 #[cfg(test)]

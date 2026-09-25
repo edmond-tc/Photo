@@ -17,9 +17,12 @@ const PROFONDEUR_MAX: u32 = 2;
 /// retrouve son document, assez courte pour rester lisible.
 const DOCUMENTS_LISTES_MAX: usize = 300;
 
-/// Au-delà, on ne recopie pas le fichier localement : ce n'est de toute
-/// façon pas un document à photocopier.
-const TAILLE_MAX_COPIE: u64 = 100 * 1024 * 1024;
+/// Au-delà, on ne recopie pas le fichier localement. Elle était de 100 Mo :
+/// trop bas — un mémoire ou un PDF plein de photos dépasse souvent 200 Mo,
+/// et la même limite a fait échouer l'envoi par QR sur le terrain. La copie
+/// se fait sur le disque, sans passer par la mémoire : seule une vidéo ou
+/// une image disque dépasse 4 Go.
+const TAILLE_MAX_COPIE: u64 = 4 * 1024 * 1024 * 1024;
 
 /// Dossiers système présents sur presque toutes les clés : les scanner ne
 /// donne jamais un document de client.
