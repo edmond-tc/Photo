@@ -795,10 +795,21 @@ try {{
     #        marche. On le repasse en démarrage automatique, faute de quoi il
     #        retomberait au prochain allumage du PC et le gérant verrait la
     #        panne revenir sans comprendre.
+    #        Et on VÉRIFIE que le démarrage a pris. Un service peut être
+    #        verrouillé par une stratégie d'entreprise ou par l'administrateur
+    #        du poste : `sc start` échoue alors en silence, l'activation
+    #        repart et rend le même message incompréhensible qu'avant. Le
+    #        gérant doit savoir dans laquelle des deux situations il est.
     $sortie += "=== SERVICE WI-FI ==="
     $sortie += (sc.exe config WlanSvc start= auto 2>&1 | Out-String)
     $sortie += (sc.exe start WlanSvc 2>&1 | Out-String)
     Start-Sleep -Milliseconds 800
+    $etatWlan = (Get-Service WlanSvc -ErrorAction SilentlyContinue).Status
+    if ($etatWlan -eq 'Running') {{
+        $sortie += "Service Wi-Fi de Windows : EN MARCHE."
+    }} else {{
+        $sortie += "Service Wi-Fi de Windows : ARRETE (etat : $etatWlan). Il est verrouille sur ce poste, probablement par une strategie d'entreprise ou par l'administrateur. Aucun reseau ne pourra etre cree tant qu'il le restera : faites-le debloquer, ou passez par le Bluetooth ou la cle USB."
+    }}
 
     $sortie += (netsh wlan stop hostednetwork 2>&1 | Out-String)
 
