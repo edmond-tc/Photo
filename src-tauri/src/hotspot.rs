@@ -734,6 +734,28 @@ fn script_activation(
 $ErrorActionPreference = 'Continue'
 $sortie = @()
 try {{
+    # 0-bis. Réveiller le service Wi-Fi de Windows.
+    #
+    #        Relevé en boutique, sur le premier PC autre que celui de mise au
+    #        point : « Le service Configuration automatique des réseaux locaux
+    #        sans fil (wlansvc) n'est pas en cours d'exécution. Le réseau
+    #        hébergé n'a pas pu démarrer. » Les deux méthodes échouaient d'un
+    #        coup, et le diagnostic concluait à un PC incapable — alors que
+    #        rien ne lui manquait.
+    #
+    #        Ce service est parfois désactivé : par un utilitaire de
+    #        « nettoyage », par un technicien sur un poste sans Wi-Fi, ou par
+    #        une stratégie d'entreprise. Il ne se rallume pas tout seul.
+    #
+    #        Ce script tourne en administrateur : il peut le remettre en
+    #        marche. On le repasse en démarrage automatique, faute de quoi il
+    #        retomberait au prochain allumage du PC et le gérant verrait la
+    #        panne revenir sans comprendre.
+    $sortie += "=== SERVICE WI-FI ==="
+    $sortie += (sc.exe config WlanSvc start= auto 2>&1 | Out-String)
+    $sortie += (sc.exe start WlanSvc 2>&1 | Out-String)
+    Start-Sleep -Milliseconds 800
+
     $sortie += (netsh wlan stop hostednetwork 2>&1 | Out-String)
 
     # 0. Écarter le « Partage de connexion Internet » de Windows.

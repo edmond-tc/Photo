@@ -931,3 +931,61 @@ fieldset {
 #qr-affiche-secours {
   display: none;
 }
+
+/* Choix des documents d'une clé USB. La liste peut compter des dizaines de
+   lignes : elle défile dans la fenêtre au lieu de la faire grandir hors de
+   l'écran. */
+.usb-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
+
+.usb-actions input[type="search"] {
+  flex: 1 1 10rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--bordure, #ccc);
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.usb-liste {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  max-height: 45vh;
+  overflow-y: auto;
+  border: 1px solid var(--bordure, #ddd);
+  border-radius: 8px;
+}
+
+.usb-liste li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--bordure, #eee);
+}
+
+.usb-liste li:last-child {
+  border-bottom: none;
+}
+
+.usb-liste input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+
+.usb-nom {
+  flex: 1;
+  word-break: break-word;
+}
+
+.usb-detail {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  white-space: nowrap;
+}

@@ -88,6 +88,28 @@
       <ul id="liste-fichiers" class="liste-fichiers"></ul>
     </main>
 
+    <!-- Choix des documents sur une clé USB.
+         L'application importait auparavant tout le contenu de la clé. Un
+         client tend la sienne, et ses centaines de documents personnels
+         s'affichaient dans la boutique. On lui montre désormais la liste et
+         c'est lui — ou le gérant avec lui — qui choisit. -->
+    <div id="modal-usb" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2>Documents sur la clé USB</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-usb" aria-label="Fermer">✕</button>
+        </div>
+        <p id="usb-intro">Choisissez les documents à imprimer. Rien n'est ajouté sans votre choix.</p>
+        <div class="usb-actions">
+          <button id="btn-usb-tout" class="btn-secondaire">Tout cocher</button>
+          <button id="btn-usb-rien" class="btn-secondaire">Tout décocher</button>
+          <input id="usb-recherche" type="search" placeholder="Rechercher un nom…" />
+        </div>
+        <ul id="usb-liste" class="usb-liste"></ul>
+        <button id="btn-usb-importer" class="btn-principal">Ajouter les documents cochés</button>
+      </div>
+    </div>
+
     <!-- Panneau QR (réception client) -->
     <div id="modal-qr" class="modal" hidden>
       <div class="modal-carte">

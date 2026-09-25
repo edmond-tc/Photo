@@ -2640,6 +2640,25 @@ async function demarrerApplication() {
 
   // Clé USB contenant un fichier "licence.txt" : évite au gérant de retaper
   // à la main une clé signée de plus de 100 caractères.
+  // Une clé branchée ne verse plus son contenu dans la file : elle ouvre
+  // cette liste, et rien n'entre sans un choix. Voir `usb.rs`.
+  await listen("cle-usb-inseree", async (event) => {
+    const nombre = event.payload ?? 0;
+    if (!nombre) {
+      toast("Clé USB branchée, mais aucun document imprimable dessus.", "attention");
+      return;
+    }
+    await afficherDocumentsUsb();
+  });
+
+  await listen("cle-usb-retiree", () => {
+    const modal = document.querySelector("#modal-usb");
+    if (modal && !modal.hidden) {
+      modal.hidden = true;
+      toast("Clé USB retirée.", "attention");
+    }
+  });
+
   await listen("licence-usb", async (event) => {
     if (event.payload.reussi) {
       toast("✓ Licence activée depuis la clé USB — merci !");
@@ -2655,7 +2674,90 @@ async function demarrerApplication() {
   });
 }
 
+/// Liste les documents de la clé et laisse choisir. Rien n'est importé
+/// avant l'appui sur le bouton.
+async function afficherDocumentsUsb() {
+  const documents = await invoke("documents_cle_usb");
+  const liste = document.querySelector("#usb-liste");
+  const intro = document.querySelector("#usb-intro");
+  liste.innerHTML = "";
+
+  intro.textContent =
+    documents.length === 1
+      ? "1 document trouvé sur la clé. Cochez-le pour l'ajouter."
+      : `${documents.length} documents trouvés sur la clé. Cochez ceux à imprimer.`;
+
+  documents.forEach((doc, index) => {
+    const li = document.createElement("li");
+
+    const case_ = document.createElement("input");
+    case_.type = "checkbox";
+    case_.id = `usb-doc-${index}`;
+    case_.value = doc.chemin;
+
+    const etiquette = document.createElement("label");
+    etiquette.className = "usb-nom";
+    etiquette.htmlFor = case_.id;
+    etiquette.textContent = doc.nom;
+
+    const detail = document.createElement("span");
+    detail.className = "usb-detail";
+    // Les kilo-octets ne parlent à personne au-delà du millier : au-dessus
+    // d'un méga-octet, on l'écrit en méga-octets.
+    detail.textContent =
+      doc.taille_ko >= 1024
+        ? `${(doc.taille_ko / 1024).toFixed(1)} Mo`
+        : `${doc.taille_ko} Ko`;
+
+    li.append(case_, etiquette, detail);
+    liste.appendChild(li);
+  });
+
+  ouvrirModal("modal-usb");
+}
+
+function casesUsb() {
+  return Array.from(document.querySelectorAll("#usb-liste input[type=checkbox]"));
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
+  document.querySelector("#btn-usb-tout").addEventListener("click", () => {
+    casesUsb().forEach((c) => {
+      if (c.closest("li").hidden) return;
+      c.checked = true;
+    });
+  });
+  document.querySelector("#btn-usb-rien").addEventListener("click", () => {
+    casesUsb().forEach((c) => (c.checked = false));
+  });
+  document.querySelector("#usb-recherche").addEventListener("input", (ev) => {
+    const terme = ev.target.value.trim().toLowerCase();
+    casesUsb().forEach((c) => {
+      const nom = c.closest("li").querySelector(".usb-nom").textContent.toLowerCase();
+      c.closest("li").hidden = terme !== "" && !nom.includes(terme);
+    });
+  });
+  document.querySelector("#btn-usb-importer").addEventListener("click", async () => {
+    const chemins = casesUsb().filter((c) => c.checked).map((c) => c.value);
+    if (!chemins.length) {
+      toast("Cochez d'abord au moins un document.", "attention");
+      return;
+    }
+    const bouton = document.querySelector("#btn-usb-importer");
+    bouton.disabled = true;
+    try {
+      const importes = await invoke("importer_documents_usb", { chemins });
+      document.querySelector("#modal-usb").hidden = true;
+      toast(
+        importes === 1
+          ? "1 document ajouté à la file."
+          : `${importes} documents ajoutés à la file.`
+      );
+    } finally {
+      bouton.disabled = false;
+    }
+  });
+
   document.querySelector("#btn-menu").addEventListener("click", ouvrirPanneauMenu);
   document.querySelector("#btn-fermer-menu").addEventListener("click", fermerPanneauMenu);
   document.querySelector("#btn-aide").addEventListener("click", ouvrirAide);

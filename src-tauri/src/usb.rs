@@ -5,15 +5,17 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 use sysinfo::Disks;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 const PROFONDEUR_MAX: u32 = 2;
 
-/// Nombre maximum de fichiers pris sur une même clé. Une clé de client peut
-/// contenir des centaines de photos personnelles : sans cette limite, elles
-/// rempliraient la file d'attente du gérant (et feraient sonner l'appli à
-/// chaque fichier), noyant les vraies commandes.
-const FICHIERS_MAX_PAR_CLE: usize = 40;
+/// Nombre maximum de documents PROPOSÉS pour une même clé.
+///
+/// Rien n'entre plus dans la file sans qu'on l'ait choisi, donc cette limite
+/// ne protège plus le gérant d'une invasion : elle empêche seulement une
+/// liste interminable à faire défiler. Assez large pour qu'un client
+/// retrouve son document, assez courte pour rester lisible.
+const DOCUMENTS_LISTES_MAX: usize = 300;
 
 /// Au-delà, on ne recopie pas le fichier localement : ce n'est de toute
 /// façon pas un document à photocopier.
@@ -36,9 +38,62 @@ const DOSSIERS_IGNORES: [&str; 6] = [
 /// depuis n'importe quel PC connecté) et la remet sur une clé USB.
 const NOM_FICHIER_LICENCE: &str = "licence.txt";
 
-/// Surveille en continu l'apparition de clés USB (disques amovibles) et met en
-/// file d'attente tout fichier de format reconnu trouvé dessus. Simple par
-/// design : on ne demande rien au gérant, on scanne juste le contenu.
+/// Un document trouvé sur la clé, PROPOSÉ et non importé.
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct DocumentUsb {
+    pub chemin: String,
+    pub nom: String,
+    /// Le dossier d'où il vient, pour distinguer deux fichiers de même nom.
+    pub dossier: String,
+    pub taille_ko: u64,
+    pub type_doc: String,
+}
+
+/// Ce que la clé actuellement branchée contient, en attente du choix.
+static DOCUMENTS_PROPOSES: std::sync::Mutex<Vec<DocumentUsb>> = std::sync::Mutex::new(Vec::new());
+
+/// Les documents trouvés sur la dernière clé branchée.
+#[tauri::command]
+pub fn documents_cle_usb() -> Vec<DocumentUsb> {
+    DOCUMENTS_PROPOSES
+        .lock()
+        .map(|d| d.clone())
+        .unwrap_or_default()
+}
+
+/// Met en file d'attente UNIQUEMENT les documents choisis, et rien d'autre.
+#[tauri::command]
+pub fn importer_documents_usb(app: AppHandle, chemins: Vec<String>) -> usize {
+    // On ne prend que des chemins qui étaient réellement proposés : sans
+    // cette vérification, cette commande permettrait de faire lire n'importe
+    // quel fichier du PC depuis la page.
+    let proposes: HashSet<String> = documents_cle_usb().into_iter().map(|d| d.chemin).collect();
+
+    let mut importes = 0;
+    for chemin in chemins {
+        if !proposes.contains(&chemin) {
+            continue;
+        }
+        let source = PathBuf::from(&chemin);
+        let chemin_a_enregistrer = copier_en_local(&app, &source).unwrap_or(source);
+        if enqueue_file(&app, &chemin_a_enregistrer, "usb", None, None).is_some() {
+            importes += 1;
+        }
+    }
+    importes
+}
+
+/// Surveille l'apparition de clés USB et PROPOSE ce qu'elles contiennent.
+///
+/// Elle importait tout automatiquement, dans la limite de quarante fichiers.
+/// Le terrain a montré ce que cela donne : un client tend sa clé, et les
+/// centaines de documents qu'elle contient — ses papiers, ses photos —
+/// s'affichent dans l'application de la boutique. Ce n'était pas seulement
+/// encombrant, c'était une atteinte à sa vie privée, dans un logiciel qui
+/// promet par ailleurs que ses documents ne sont vus par personne.
+///
+/// La clé est donc lue, mais rien n'entre dans la file tant que quelqu'un
+/// n'a pas choisi. Le gérant tend l'écran au client, ou choisit avec lui.
 pub fn watch_usb_drives(app: AppHandle) {
     thread::spawn(move || {
         let mut deja_vus: HashSet<PathBuf> = HashSet::new();
@@ -52,8 +107,24 @@ pub fn watch_usb_drives(app: AppHandle) {
                 .collect();
 
             for mount in amovibles.difference(&deja_vus) {
-                let mut restants = FICHIERS_MAX_PAR_CLE;
-                scanner_dossier(&app, mount, 0, &mut restants);
+                let mut trouves = Vec::new();
+                scanner_dossier(&app, mount, 0, &mut trouves);
+
+                if let Ok(mut proposes) = DOCUMENTS_PROPOSES.lock() {
+                    *proposes = trouves.clone();
+                }
+                // L'interface ouvre la liste : le gérant n'a pas à deviner
+                // qu'il s'est passé quelque chose ni à aller la chercher.
+                let _ = app.emit("cle-usb-inseree", trouves.len());
+            }
+
+            // Clé retirée : on oublie ce qu'elle proposait, sinon le gérant
+            // pourrait importer plus tard depuis une clé qui n'est plus là.
+            if !deja_vus.is_empty() && amovibles.is_empty() {
+                if let Ok(mut proposes) = DOCUMENTS_PROPOSES.lock() {
+                    proposes.clear();
+                }
+                let _ = app.emit("cle-usb-retiree", ());
             }
 
             deja_vus = amovibles;
@@ -62,12 +133,18 @@ pub fn watch_usb_drives(app: AppHandle) {
     });
 }
 
-fn scanner_dossier(app: &AppHandle, dossier: &Path, profondeur: u32, restants: &mut usize) {
+/// Parcourt la clé et DRESSE LA LISTE, sans rien mettre en file.
+fn scanner_dossier(
+    app: &AppHandle,
+    dossier: &Path,
+    profondeur: u32,
+    trouves: &mut Vec<DocumentUsb>,
+) {
     let Ok(entries) = std::fs::read_dir(dossier) else {
         return;
     };
     for entry in entries.flatten() {
-        if *restants == 0 {
+        if trouves.len() >= DOCUMENTS_LISTES_MAX {
             return;
         }
         let path = entry.path();
@@ -78,7 +155,7 @@ fn scanner_dossier(app: &AppHandle, dossier: &Path, profondeur: u32, restants: &
                 continue;
             }
             if profondeur < PROFONDEUR_MAX {
-                scanner_dossier(app, &path, profondeur + 1, restants);
+                scanner_dossier(app, &path, profondeur + 1, trouves);
             }
             continue;
         }
@@ -87,20 +164,29 @@ fn scanner_dossier(app: &AppHandle, dossier: &Path, profondeur: u32, restants: &
             .to_string_lossy()
             .eq_ignore_ascii_case(NOM_FICHIER_LICENCE)
         {
-            // Interceptée avant classify() : un .txt serait sinon mis en
-            // file d'attente comme un document à imprimer.
+            // Seule exception qui agit toute seule : ce n'est pas un
+            // document de client mais une clé de licence que le porteur du
+            // projet a déposée lui-même. La faire choisir n'aurait pas de
+            // sens, et le gérant ne saurait pas de quoi il s'agit.
             if let Ok(contenu) = std::fs::read_to_string(&path) {
                 crate::license::tenter_activation_depuis_usb(app, contenu.trim());
             }
             continue;
         }
-        if files::classify(&path) == "inconnu" {
+        let type_doc = files::classify(&path);
+        if type_doc == "inconnu" {
             continue;
         }
-        let chemin_a_enregistrer = copier_en_local(app, &path).unwrap_or(path);
-        if enqueue_file(app, &chemin_a_enregistrer, "usb", None, None).is_some() {
-            *restants -= 1;
-        }
+        let taille_ko = std::fs::metadata(&path)
+            .map(|m| m.len() / 1024)
+            .unwrap_or(0);
+        trouves.push(DocumentUsb {
+            chemin: path.to_string_lossy().to_string(),
+            nom: nom.to_string_lossy().to_string(),
+            dossier: dossier.to_string_lossy().to_string(),
+            taille_ko,
+            type_doc: type_doc.to_string(),
+        });
     }
 }
 
