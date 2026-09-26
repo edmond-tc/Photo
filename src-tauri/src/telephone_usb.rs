@@ -38,8 +38,112 @@ pub struct DocumentTelephone {
     pub taille_ko: u64,
     /// Date de réception telle que le téléphone la donne (peut être vide).
     pub date: String,
+    /// Arrivé depuis le dernier import fait depuis ce téléphone.
+    pub nouveau: bool,
+    /// Déjà mis en file une fois : ne pas l'imprimer deux fois par erreur.
+    pub deja_ajoute: bool,
+    /// Coché d'office dans la liste.
+    pub coche: bool,
     #[serde(skip)]
     emplacement: Emplacement,
+}
+
+/// Ce que l'application retient d'un branchement à l'autre, pour que le
+/// gérant n'ait plus qu'à appuyer sur « Ajouter » :
+/// - `importes` : les fichiers déjà mis en file ;
+/// - `vus` : pour chaque téléphone, la date du plus récent fichier déjà
+///   présenté lors d'un import. Tout fichier plus récent est « nouveau ».
+///
+/// On compare aux dates DU TÉLÉPHONE, jamais à l'horloge du PC : les deux
+/// sont souvent décalées, et un fichier reçu il y a une minute paraîtrait
+/// sinon ancien.
+#[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq)]
+struct Memoire {
+    importes: Vec<String>,
+    vus: std::collections::HashMap<String, String>,
+}
+
+/// Au-delà, les plus anciennes entrées sont oubliées : le fichier reste
+/// petit, et un document vieux de plusieurs milliers d'envois ne reviendra
+/// pas au comptoir.
+const IMPORTES_MAX: usize = 3000;
+
+/// Empreinte d'un fichier, et non son nom : la mémoire posée sur le disque
+/// du PC ne doit pas devenir une liste lisible des documents des clients.
+fn cle(e: &Emplacement, date: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let empreinte = Sha256::digest(format!("{}|{}|{}|{}", e.appareil, e.nom, e.taille, date));
+    empreinte.iter().map(|o| format!("{o:02x}")).collect()
+}
+
+/// Marque nouveaux, déjà ajoutés et cochés. Séparée pour être testable.
+fn marquer(lecture: &mut LectureTelephone, memoire: &Memoire) {
+    let mut premier_coche_par_appareil = std::collections::HashSet::new();
+    for document in &mut lecture.documents {
+        let appareil = &document.emplacement.appareil;
+        document.deja_ajoute = memoire
+            .importes
+            .contains(&cle(&document.emplacement, &document.date));
+        match memoire.vus.get(appareil) {
+            Some(deja_vu) => {
+                document.nouveau = !document.deja_ajoute && document.date > *deja_vu;
+                document.coche = document.nouveau;
+            }
+            // Premier branchement de ce téléphone : rien n'est « nouveau »,
+            // mais le plus récent est presque toujours celui du client qui
+            // attend. Les documents sont déjà triés du plus récent au plus
+            // ancien.
+            None => {
+                document.coche = !document.deja_ajoute
+                    && premier_coche_par_appareil.insert(appareil.clone());
+            }
+        }
+    }
+    // Les nouveaux en haut, puis le reste, chacun du plus récent au plus
+    // ancien (le tri est stable).
+    lecture.documents.sort_by_key(|d| !d.nouveau);
+}
+
+/// Après un import : retient ce qui a été ajouté, et tout ce qui a été
+/// présenté devient « déjà vu ».
+fn retenir(memoire: &mut Memoire, presentes: &[DocumentTelephone], ajoutes: &[&DocumentTelephone]) {
+    for document in ajoutes {
+        memoire.importes.push(cle(&document.emplacement, &document.date));
+    }
+    if memoire.importes.len() > IMPORTES_MAX {
+        let surplus = memoire.importes.len() - IMPORTES_MAX;
+        memoire.importes.drain(..surplus);
+    }
+    for document in presentes {
+        let entree = memoire
+            .vus
+            .entry(document.emplacement.appareil.clone())
+            .or_default();
+        if document.date > *entree {
+            *entree = document.date.clone();
+        }
+    }
+}
+
+fn chemin_memoire(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("telephone_memoire.json"))
+}
+
+fn charger_memoire(app: &tauri::AppHandle) -> Memoire {
+    chemin_memoire(app)
+        .and_then(|c| std::fs::read_to_string(c).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn enregistrer_memoire(app: &tauri::AppHandle, memoire: &Memoire) {
+    if let (Some(chemin), Ok(texte)) = (chemin_memoire(app), serde_json::to_string(memoire)) {
+        let _ = std::fs::write(chemin, texte);
+    }
 }
 
 /// De quoi retrouver le fichier sur le téléphone au moment de le copier.
@@ -59,6 +163,11 @@ pub struct LectureTelephone {
     pub telephones: usize,
     /// Nombre de dossiers WhatsApp trouvés dessus.
     pub dossiers_whatsapp: usize,
+    /// Un import a déjà été fait depuis ce téléphone : c'est celui du
+    /// gérant. Seul un téléphone connu ouvre la liste tout seul — celui d'un
+    /// client branché pour se recharger ne doit JAMAIS afficher ses fichiers
+    /// à l'écran de la boutique.
+    pub connu: bool,
     pub documents: Vec<DocumentTelephone>,
 }
 
@@ -184,6 +293,9 @@ fn lire_sortie(sortie: &str) -> LectureTelephone {
                     genre: genre.to_string(),
                     taille_ko: taille.div_ceil(1024),
                     date: date.trim().to_string(),
+                    nouveau: false,
+                    deja_ajoute: false,
+                    coche: false,
                     emplacement,
                 });
             }
@@ -285,11 +397,19 @@ fn executer_powershell(_script: &str) -> Result<String, String> {
 
 /// Lit le téléphone branché et PROPOSE ses derniers fichiers WhatsApp.
 #[tauri::command]
-pub async fn documents_whatsapp_telephone() -> Result<LectureTelephone, String> {
+pub async fn documents_whatsapp_telephone(
+    app: tauri::AppHandle,
+) -> Result<LectureTelephone, String> {
     let sortie = tauri::async_runtime::spawn_blocking(|| executer_powershell(&script_lecture()))
         .await
         .map_err(|e| e.to_string())??;
-    let lecture = lire_sortie(&sortie);
+    let mut lecture = lire_sortie(&sortie);
+    let memoire = charger_memoire(&app);
+    lecture.connu = lecture
+        .documents
+        .iter()
+        .any(|d| memoire.vus.contains_key(&d.emplacement.appareil));
+    marquer(&mut lecture, &memoire);
     if let Ok(mut proposes) = PROPOSES.lock() {
         *proposes = lecture.documents.clone();
     }
@@ -306,10 +426,13 @@ pub async fn importer_documents_telephone(
     use tauri::Manager;
 
     // Seulement des fichiers réellement proposés par la dernière lecture.
-    let choisis: Vec<DocumentTelephone> = PROPOSES
-        .lock()
-        .map(|p| p.iter().filter(|d| ids.contains(&d.id)).cloned().collect())
-        .unwrap_or_default();
+    let presentes: Vec<DocumentTelephone> =
+        PROPOSES.lock().map(|p| p.clone()).unwrap_or_default();
+    let choisis: Vec<DocumentTelephone> = presentes
+        .iter()
+        .filter(|d| ids.contains(&d.id))
+        .cloned()
+        .collect();
     if choisis.is_empty() {
         return Ok(0);
     }
@@ -332,16 +455,64 @@ pub async fn importer_documents_telephone(
     // La copie depuis un téléphone continue APRÈS la fin du script (Windows
     // la fait en arrière-plan). On attend que chaque fichier soit là, à sa
     // taille complète — sans quoi on mettrait en file un fichier tronqué.
-    let mut ajoutes = 0;
+    let mut ajoutes = Vec::new();
     for document in &choisis {
         let chemin = destination.join(&document.emplacement.nom);
         if attendre_copie_complete(&chemin, document.emplacement.taille).await
             && crate::watcher::enqueue_file(&app, &chemin, "telephone", None, None).is_some()
         {
-            ajoutes += 1;
+            ajoutes.push(document);
         }
     }
-    Ok(ajoutes)
+    let mut memoire = charger_memoire(&app);
+    retenir(&mut memoire, &presentes, &ajoutes);
+    enregistrer_memoire(&app, &memoire);
+    Ok(ajoutes.len())
+}
+
+/// Surveille le branchement des téléphones (mode « Transfert de fichiers »)
+/// et prévient l'interface, qui ouvre la liste toute seule : le gérant n'a
+/// même plus à appuyer sur 📱.
+///
+/// Une clé USB apparaît aussi comme « appareil portable » pour Windows :
+/// l'interface ne dit rien quand la lecture ne trouve aucun téléphone.
+pub fn surveiller_telephones(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use tauri::Emitter;
+        let mut connus = identifiants_telephones().unwrap_or_default();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let Some(actuels) = identifiants_telephones() else { continue };
+            if actuels.difference(&connus).next().is_some() {
+                let _ = app.emit("telephone-branche", ());
+            }
+            connus = actuels;
+        }
+    });
+}
+
+#[cfg(windows)]
+fn identifiants_telephones() -> Option<std::collections::HashSet<String>> {
+    use windows::Devices::Enumeration::DeviceInformation;
+    use windows::Devices::Portable::StorageDevice;
+
+    let selecteur = StorageDevice::GetDeviceSelector().ok()?;
+    let appareils = DeviceInformation::FindAllAsyncAqsFilter(&selecteur)
+        .ok()?
+        .get()
+        .ok()?;
+    let mut ids = std::collections::HashSet::new();
+    for indice in 0..appareils.Size().unwrap_or(0) {
+        if let Ok(id) = appareils.GetAt(indice).and_then(|a| a.Id()) {
+            ids.insert(id.to_string());
+        }
+    }
+    Some(ids)
+}
+
+#[cfg(not(windows))]
+fn identifiants_telephones() -> Option<std::collections::HashSet<String>> {
+    None
 }
 
 /// Vrai quand le fichier est arrivé en entier. Si le téléphone n'a pas
@@ -387,6 +558,57 @@ mod tests {
         assert_eq!(lecture.documents[0].nom, "cv d'Awa.docx");
         assert_eq!(lecture.documents[0].id, "0");
         assert_eq!(lecture.documents[1].taille_ko, 225_280);
+    }
+
+    fn fichier(nom: &str, date: &str) -> String {
+        format!("FICHIER\tTel\tInterne\tWhatsApp\\Media\\WhatsApp Documents\tDocument\t{nom}\t100\t{date}\n")
+    }
+
+    #[test]
+    fn premier_branchement_seul_le_plus_recent_est_coche() {
+        let mut lecture = lire_sortie(&(fichier("ancien.pdf", "2026-09-20 10:00")
+            + &fichier("client.pdf", "2026-09-26 09:00")));
+        marquer(&mut lecture, &Memoire::default());
+        assert_eq!(lecture.documents[0].nom, "client.pdf");
+        assert!(lecture.documents[0].coche);
+        assert!(!lecture.documents[1].coche);
+        assert!(lecture.documents.iter().all(|d| !d.nouveau));
+    }
+
+    #[test]
+    fn les_fichiers_arrives_depuis_le_dernier_import_sont_nouveaux_et_coches() {
+        // Premier passage : on importe client1.pdf.
+        let sortie1 = fichier("ancien.pdf", "2026-09-20 10:00") + &fichier("client1.pdf", "2026-09-26 09:00");
+        let mut lecture1 = lire_sortie(&sortie1);
+        marquer(&mut lecture1, &Memoire::default());
+        let mut memoire = Memoire::default();
+        let importe = lecture1.documents.iter().find(|d| d.nom == "client1.pdf").unwrap();
+        retenir(&mut memoire, &lecture1.documents, &[importe]);
+
+        // Deuxième branchement : deux fichiers d'un nouveau client.
+        let sortie2 = sortie1 + &fichier("client2-a.pdf", "2026-09-26 11:02")
+            + &fichier("client2-b.jpg", "2026-09-26 11:03");
+        let mut lecture2 = lire_sortie(&sortie2);
+        marquer(&mut lecture2, &memoire);
+        let noms_coches: Vec<&str> = lecture2
+            .documents
+            .iter()
+            .filter(|d| d.coche)
+            .map(|d| d.nom.as_str())
+            .collect();
+        assert_eq!(noms_coches, vec!["client2-b.jpg", "client2-a.pdf"]);
+        assert!(lecture2.documents[0].nouveau && lecture2.documents[1].nouveau);
+        let deja = lecture2.documents.iter().find(|d| d.nom == "client1.pdf").unwrap();
+        assert!(deja.deja_ajoute && !deja.coche && !deja.nouveau);
+    }
+
+    #[test]
+    fn la_memoire_se_relit_telle_quelle() {
+        let mut memoire = Memoire::default();
+        memoire.importes.push("0f3a".to_string());
+        memoire.vus.insert("Tel".to_string(), "2026-09-26 09:00".to_string());
+        let texte = serde_json::to_string(&memoire).unwrap();
+        assert_eq!(serde_json::from_str::<Memoire>(&texte).unwrap(), memoire);
     }
 
     #[test]

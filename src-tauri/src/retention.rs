@@ -103,7 +103,7 @@ pub fn purger(conn: &rusqlite::Connection, data_dir: &Path, limite: &str) -> (us
 }
 
 fn fichier_de_lapplication(data_dir: &Path, chemin: &Path) -> bool {
-    ["recus", "recus_usb"]
+    ["recus", "recus_usb", "recus_telephone"]
         .iter()
         .any(|dossier| chemin.starts_with(data_dir.join(dossier)))
 }

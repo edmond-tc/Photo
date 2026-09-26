@@ -2688,6 +2688,10 @@ async function demarrerApplication() {
     await afficherDocumentsUsb();
   });
 
+  // Téléphone du gérant branché en « Transfert de fichiers » : la liste
+  // s'ouvre seule (voir `telephone_usb::surveiller_telephones`).
+  await listen("telephone-branche", () => afficherDocumentsTelephone({ auto: true }));
+
   await listen("cle-usb-retiree", () => {
     const modal = document.querySelector("#modal-usb");
     // La même fenêtre sert au téléphone : ne la fermer que si c'est bien la
@@ -2764,16 +2768,20 @@ async function afficherDocumentsUsb() {
 /// Le client a envoyé son document au gérant par WhatsApp : le téléphone
 /// est branché par câble, et on montre ses derniers fichiers reçus, le plus
 /// récent en haut. Un clic, une case, et le fichier est dans la file.
-async function afficherDocumentsTelephone() {
+async function afficherDocumentsTelephone(options) {
+  // `auto` : ouverture déclenchée par le branchement, pas par le bouton.
+  const auto = Boolean(options && options.auto === true);
   const bouton = document.querySelector("#btn-telephone");
   if (bouton.disabled) return;
+  const modal = document.querySelector("#modal-usb");
+  if (auto && modal && !modal.hidden) return;
   bouton.disabled = true;
-  toast("Lecture du téléphone… (quelques secondes)", "succes", 6000);
+  if (!auto) toast("Lecture du téléphone… (quelques secondes)", "succes", 6000);
   let lecture;
   try {
     lecture = await invoke("documents_whatsapp_telephone");
   } catch (e) {
-    toast(String(e), "attention", 9000);
+    if (!auto) toast(String(e), "attention", 9000);
     return;
   } finally {
     bouton.disabled = false;
@@ -2782,6 +2790,18 @@ async function afficherDocumentsTelephone() {
   const conseil =
     "Branchez le câble, DÉVERROUILLEZ le téléphone, puis dans la notification « USB » " +
     "du téléphone choisissez « Transfert de fichiers ». Réappuyez ensuite sur 📱.";
+  if (auto) {
+    // Une clé USB déclenche aussi la détection : sans téléphone, silence.
+    if (!lecture.telephones || !lecture.documents.length) return;
+    // VIE PRIVÉE. Le téléphone d'un client branché pour se recharger ne
+    // doit jamais étaler ses fichiers sur l'écran de la boutique. Seul le
+    // téléphone du gérant — celui depuis lequel un import a déjà été
+    // fait — ouvre la liste tout seul.
+    if (!lecture.connu) {
+      toast("Téléphone branché. Si c'est celui du gérant, appuyez sur 📱 pour voir ses fichiers WhatsApp.", "succes", 8000);
+      return;
+    }
+  }
   if (!lecture.telephones) {
     toast("Aucun téléphone branché n'est visible. " + conseil +
       " (Un iPhone ne montre que ses photos au PC, pas les documents WhatsApp.)", "attention", 12000);
@@ -2798,16 +2818,32 @@ async function afficherDocumentsTelephone() {
 
   modeListe = "telephone";
   document.querySelector("#usb-titre").textContent = "Fichiers WhatsApp du téléphone";
-  document.querySelector("#usb-intro").textContent =
-    "Les plus récents en haut. Cochez ceux du client, puis « Ajouter ».";
+  const nouveaux = lecture.documents.filter((d) => d.nouveau).length;
+  document.querySelector("#usb-intro").textContent = nouveaux
+    ? `${nouveaux} nouveau(x) fichier(s) depuis le dernier ajout, déjà coché(s). Appuyez sur « Ajouter ».`
+    : "Le plus récent est coché. Vérifiez que c'est celui du client, puis « Ajouter ».";
   const liste = document.querySelector("#usb-liste");
   liste.innerHTML = "";
+  // VIE PRIVÉE, leçon de la clé USB : ne pas étaler tout le téléphone à
+  // l'écran. Les nouveaux, plus les 5 plus récents ; le reste seulement si
+  // le gérant le demande.
+  let autresAffiches = 0;
+  let caches = 0;
   lecture.documents.forEach((doc, index) => {
     const li = document.createElement("li");
+    if (!doc.nouveau) {
+      autresAffiches += 1;
+      if (autresAffiches > 5) {
+        li.hidden = true;
+        li.classList.add("tel-ancien");
+        caches += 1;
+      }
+    }
     const case_ = document.createElement("input");
     case_.type = "checkbox";
     case_.id = `tel-doc-${index}`;
     case_.value = doc.id;
+    case_.checked = doc.coche;
     const etiquette = document.createElement("label");
     etiquette.className = "usb-nom";
     etiquette.htmlFor = case_.id;
@@ -2816,12 +2852,29 @@ async function afficherDocumentsTelephone() {
     detail.className = "usb-detail";
     const taille =
       doc.taille_ko >= 1024 ? `${(doc.taille_ko / 1024).toFixed(1)} Mo` : `${doc.taille_ko} Ko`;
-    detail.textContent = [doc.genre, doc.date, doc.taille_ko ? taille : ""]
+    detail.textContent = [
+      doc.nouveau ? "🆕 Nouveau" : doc.deja_ajoute ? "✓ déjà ajouté" : "",
+      doc.genre,
+      doc.date,
+      doc.taille_ko ? taille : "",
+    ]
       .filter(Boolean)
       .join(" · ");
     li.append(case_, etiquette, detail);
     liste.appendChild(li);
   });
+  if (caches) {
+    const li = document.createElement("li");
+    const plus = document.createElement("button");
+    plus.className = "btn-secondaire";
+    plus.textContent = `Afficher ${caches} fichier(s) plus ancien(s)`;
+    plus.addEventListener("click", () => {
+      liste.querySelectorAll("li.tel-ancien").forEach((l) => (l.hidden = false));
+      li.remove();
+    });
+    li.appendChild(plus);
+    liste.appendChild(li);
+  }
   ouvrirModal("modal-usb");
 }
 

@@ -89,6 +89,7 @@ pub fn run() {
                 watcher::watch_folder(app.handle().clone(), PathBuf::from(folder));
             }
             usb::watch_usb_drives(app.handle().clone());
+            telephone_usb::surveiller_telephones(app.handle().clone());
             server::start(app.handle().clone());
             backup::start(app.handle().clone());
             retention::start(app.handle().clone());
