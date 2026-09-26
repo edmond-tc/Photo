@@ -328,8 +328,10 @@ fn script_copie(documents: &[DocumentTelephone], destination: &std::path::Path) 
                  if (-not (Test-Path -LiteralPath $cible)) {{ continue }}\n\
                  $t = (Get-Item -LiteralPath $cible).Length\n\
                  if ($taille -gt 0 -and $t -ge $taille) {{ return $true }}\n\
-                 if ($t -gt 0 -and $t -eq $precedente) {{ $stable++ }} else {{ $stable = 0 }}\n\
-                 if ($taille -le 0 -and $stable -ge 4) {{ return $true }}\n\
+                 if ($t -eq $precedente) {{ $stable++ }} else {{ $stable = 0 }}\n\
+                 if ($taille -le 0 -and $t -gt 0 -and $stable -ge 4) {{ return $true }}\n\
+                 # Plus rien n'arrive depuis 10 s : téléphone débranché.\n\
+                 if ($stable -ge 20) {{ return $false }}\n\
                  $precedente = $t\n\
              }}\n\
              return $false\n\
@@ -458,9 +460,13 @@ pub async fn importer_documents_telephone(
     let mut ajoutes = Vec::new();
     for document in &choisis {
         let chemin = destination.join(&document.emplacement.nom);
-        if attendre_copie_complete(&chemin, document.emplacement.taille).await
-            && crate::watcher::enqueue_file(&app, &chemin, "telephone", None, None).is_some()
-        {
+        if !attendre_copie_complete(&chemin, document.emplacement.taille).await {
+            // Copie coupée (téléphone débranché) : un morceau de fichier ne
+            // doit ni rester sur le PC, ni partir à l'impression.
+            let _ = std::fs::remove_file(&chemin);
+            continue;
+        }
+        if crate::watcher::enqueue_file(&app, &chemin, "telephone", None, None).is_some() {
             ajoutes.push(document);
         }
     }
@@ -485,6 +491,10 @@ pub fn surveiller_telephones(app: tauri::AppHandle) {
             let Some(actuels) = identifiants_telephones() else { continue };
             if actuels.difference(&connus).next().is_some() {
                 let _ = app.emit("telephone-branche", ());
+            }
+            // Débranché : la liste affichée ne correspond plus à rien.
+            if connus.difference(&actuels).next().is_some() {
+                let _ = app.emit("telephone-debranche", ());
             }
             connus = actuels;
         }
@@ -523,16 +533,18 @@ async fn attendre_copie_complete(chemin: &std::path::Path, taille_attendue: u64)
     let mut precedente = None;
     let mut stable_depuis = 0u32;
     while debut.elapsed() < DELAI_MAX {
+        // Plus rien n'arrive depuis 10 s : le téléphone a été débranché.
+        if stable_depuis >= 20 {
+            return false;
+        }
         if let Ok(meta) = std::fs::metadata(chemin) {
             let taille = meta.len();
             if taille_attendue > 0 && taille >= taille_attendue {
                 return true;
             }
-            if taille_attendue == 0 && taille > 0 {
-                stable_depuis = if precedente == Some(taille) { stable_depuis + 1 } else { 0 };
-                if stable_depuis >= 4 {
-                    return true;
-                }
+            stable_depuis = if precedente == Some(taille) { stable_depuis + 1 } else { 0 };
+            if taille_attendue == 0 && taille > 0 && stable_depuis >= 4 {
+                return true;
             }
             precedente = Some(taille);
         }

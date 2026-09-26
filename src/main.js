@@ -2691,6 +2691,16 @@ async function demarrerApplication() {
   // Téléphone du gérant branché en « Transfert de fichiers » : la liste
   // s'ouvre seule (voir `telephone_usb::surveiller_telephones`).
   await listen("telephone-branche", () => afficherDocumentsTelephone({ auto: true }));
+  await listen("telephone-debranche", () => {
+    const modal = document.querySelector("#modal-usb");
+    const copieEnCours = document.querySelector("#btn-usb-importer").disabled;
+    // Pendant une copie, on laisse le résultat s'afficher : il dira ce qui
+    // est arrivé en entier et ce qui manque.
+    if (modal && !modal.hidden && modeListe === "telephone" && !copieEnCours) {
+      modal.hidden = true;
+      toast("Téléphone débranché. Rien n'a été copié.", "attention");
+    }
+  });
 
   await listen("cle-usb-retiree", () => {
     const modal = document.querySelector("#modal-usb");
