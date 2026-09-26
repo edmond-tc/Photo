@@ -382,8 +382,17 @@ pub fn verifier_et_marquer_affichage_du_jour(
 }
 
 #[tauri::command]
-pub fn get_server_info(app: AppHandle) -> Result<qr::ServerInfo, String> {
-    if !crate::server::est_actif(&app) {
+pub async fn get_server_info(app: AppHandle) -> Result<qr::ServerInfo, String> {
+    // Hors du fil principal : sans point d'accès actif, trouver l'adresse
+    // interroge Windows (1 à 3 s). La fenêtre du QR se revérifie désormais
+    // toutes les 5 s ; sur le fil principal, l'écran se figerait à chaque fois.
+    tauri::async_runtime::spawn_blocking(move || lire_server_info(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn lire_server_info(app: &AppHandle) -> Result<qr::ServerInfo, String> {
+    if !crate::server::est_actif(app) {
         return Err(
             "Le service de réception QR n'a pas pu démarrer (port 4173 déjà utilisé par un \
              autre programme ?). Les autres canaux (dossier surveillé, clé USB) fonctionnent \

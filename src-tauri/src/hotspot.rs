@@ -96,7 +96,15 @@ pub const NOM_TACHE_DEMARRAGE: &str = "Photocopie Benin - Wi-Fi boutique";
 /// reste là, et lui dira ce qui ne va pas.
 const SCRIPT_DEMARRAGE: &str = r#"
 $ErrorActionPreference = 'SilentlyContinue'
-netsh wlan start hostednetwork | Out-Null
+# À l'ouverture de session, le service Wi-Fi et la carte ne sont souvent
+# pas encore prêts : un seul essai échouait en silence, et le gérant
+# trouvait le Wi-Fi éteint (trouvé à l'audit). On insiste 2 minutes.
+for ($i = 0; $i -lt 40; $i++) {
+    Start-Service WlanSvc
+    netsh wlan start hostednetwork | Out-Null
+    if ($LASTEXITCODE -eq 0) { break }
+    Start-Sleep -Seconds 3
+}
 $adaptateur = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*Hosted Network Virtual Adapter*' } | Select-Object -First 1
 if ($adaptateur) {
     Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
@@ -903,6 +911,22 @@ try {{
         $sortie += "Service Wi-Fi de Windows : ARRETE (etat : $etatWlan). Il est verrouille sur ce poste, probablement par une strategie d'entreprise ou par l'administrateur. Aucun reseau ne pourra etre cree tant qu'il le restera : faites-le debloquer, ou passez par le Bluetooth ou la cle USB."
     }}
 
+    # 0-ter. Rallumer la carte Wi-Fi elle-même si elle est DÉSACTIVÉE dans
+    #        « Connexions réseau ». Cas fréquent sur un PC de bureau relié
+    #        par câble : quelqu'un a coupé le Wi-Fi « qui ne servait à rien ».
+    #        Windows répond alors qu'il n'y a « aucune interface sans fil »,
+    #        comme sur un PC qui n'a pas de carte du tout.
+    $sortie += "===CARTE_WIFI==="
+    Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+        Where-Object {{ $_.PhysicalMediaType -eq 'Native 802.11' -or $_.InterfaceDescription -match 'Wireless|Wi-?Fi|WLAN|802\.11' }} |
+        ForEach-Object {{
+            if ($_.Status -eq 'Disabled') {{
+                Enable-NetAdapter -Name $_.Name -Confirm:$false -ErrorAction SilentlyContinue
+                $sortie += ("Carte Wi-Fi reactivee : " + $_.InterfaceDescription)
+                Start-Sleep -Seconds 4
+            }}
+        }}
+
     $sortie += (netsh wlan stop hostednetwork 2>&1 | Out-String)
 
     # 0. Écarter le « Partage de connexion Internet » de Windows.
@@ -1073,9 +1097,17 @@ pub fn activer(ssid: &str, mot_de_passe: &str) -> Result<(), String> {
         let normalise = normaliser(&demarrage);
         if normalise.contains("non pris en charge") || normalise.contains("not supported") {
             return Err(
-                "La carte Wi-Fi de ce PC ne supporte pas la création d'un point d'accès \
-                 autonome. Utilisez plutôt la solution de secours (paramètres Windows), qui \
-                 nécessite une connexion internet ou Ethernet active."
+                "le pilote Wi-Fi installé sur ce PC ne propose pas cette méthode. Sur un PC \
+                 ancien, c'est souvent que Windows Update a remplacé le pilote du fabricant \
+                 par un pilote générique : réinstaller le pilote d'origine de la carte la \
+                 rétablit. Les autres méthodes sont essayées ci-dessous."
+                    .to_string(),
+            );
+        }
+        if normalise.contains("hors tension") || normalise.contains("powered down") {
+            return Err(
+                "le Wi-Fi de ce PC est éteint. Désactivez le « mode avion », allumez le Wi-Fi \
+                 (icône réseau en bas à droite, ou touche Fn + antenne), puis réessayez."
                     .to_string(),
             );
         }
@@ -1207,6 +1239,91 @@ fn echec_wifi_direct_sans_adresse(wdi_supporte: Option<bool>) -> String {
     constat.to_string()
 }
 
+/// Vrai si ce PC a une carte Wi-Fi physique DÉSACTIVÉE dans Windows.
+#[cfg(windows)]
+pub fn carte_wifi_desactivee() -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "@(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { \
+              ($_.PhysicalMediaType -eq 'Native 802.11' -or $_.InterfaceDescription -match \
+              'Wireless|Wi-?Fi|WLAN|802\\.11') -and $_.Status -eq 'Disabled' }).Count",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|s| {
+            String::from_utf8_lossy(&s.stdout)
+                .trim()
+                .parse::<u32>()
+                .unwrap_or(0)
+                > 0
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+pub fn carte_wifi_desactivee() -> bool {
+    false
+}
+
+/// Rallume la radio Wi-Fi si elle est coupée depuis Windows (mode avion,
+/// bouton Wi-Fi du panneau des notifications). Rend un message seulement
+/// quand c'est impossible depuis le logiciel : interrupteur ou touche du PC.
+///
+/// Trouvé à l'audit : un Wi-Fi simplement éteint donnait l'erreur brute de
+/// Windows « l'interface est hors tension », que personne ne comprend.
+#[cfg(windows)]
+fn allumer_radio_wifi() -> Option<String> {
+    use windows::Devices::Radios::{Radio, RadioKind, RadioState};
+
+    let _ = Radio::RequestAccessAsync().ok()?.get();
+    let radios = Radio::GetRadiosAsync().ok()?.get().ok()?;
+    let mut bloque = None;
+    for indice in 0..radios.Size().unwrap_or(0) {
+        let Ok(radio) = radios.GetAt(indice) else { continue };
+        if radio.Kind() != Ok(RadioKind::WiFi) {
+            continue;
+        }
+        match radio.State() {
+            Ok(RadioState::On) => return None,
+            Ok(RadioState::Off) => {
+                if let Ok(operation) = radio.SetStateAsync(RadioState::On) {
+                    let _ = operation.get();
+                }
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                if radio.State() == Ok(RadioState::On) {
+                    return None;
+                }
+                bloque = Some(
+                    "Le Wi-Fi de ce PC est éteint et Windows refuse de le rallumer. Désactivez le \
+                     « mode avion » et allumez le Wi-Fi (icône réseau en bas à droite de \
+                     l'écran), puis réessayez."
+                        .to_string(),
+                );
+            }
+            Ok(RadioState::Disabled) => {
+                bloque = Some(
+                    "Le Wi-Fi de ce PC est coupé par son interrupteur ou sa touche (souvent Fn + \
+                     une touche avec une antenne, ou un petit interrupteur sur le côté). Un \
+                     logiciel ne peut pas le rallumer : actionnez-le, puis réessayez."
+                        .to_string(),
+                );
+            }
+            _ => {}
+        }
+    }
+    bloque
+}
+
+#[cfg(not(windows))]
+fn allumer_radio_wifi() -> Option<String> {
+    None
+}
+
 /// Essaie TOUTES les façons connues de créer un Wi-Fi depuis ce PC, dans
 /// l'ordre de ce qui a le plus de chances de marcher, et ne renonce qu'après
 /// les avoir toutes épuisées.
@@ -1245,8 +1362,18 @@ fn garantir_pare_feu() -> Result<(), String> {
 }
 
 fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activation, String> {
+    // Wi-Fi coupé depuis Windows (mode avion, bouton Wi-Fi du panneau) :
+    // on le rallume. Coupé par l'interrupteur du PC : seul le gérant peut.
+    if let Some(bloque) = allumer_radio_wifi() {
+        return Err(bloque);
+    }
+
     let diagnostic = diagnostiquer();
-    if diagnostic.carte_wifi_presente == Some(false) {
+    // « Aucune interface sans fil » veut dire deux choses très différentes :
+    // pas de carte du tout, ou une carte DÉSACTIVÉE dans Windows. Trouvé à
+    // l'audit : dans le second cas, on abandonnait ici sans rien essayer,
+    // alors que le script de la méthode 1 sait la réactiver.
+    if diagnostic.carte_wifi_presente == Some(false) && !carte_wifi_desactivee() {
         return Err(diagnostic.verdict);
     }
 

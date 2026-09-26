@@ -40,6 +40,11 @@ pub struct ServerInfo {
     /// deuxième visite, puisque le téléphone retient le Wi-Fi.
     pub qr_page_data_uri: Option<String>,
     pub mode: &'static str,
+    /// Nom et mot de passe du Wi-Fi, affichés en clair sous les QR : le
+    /// chemin SANS scan, pour un téléphone dont l'appareil photo ne lit pas
+    /// les QR (vieux modèles) — il choisit le réseau dans sa liste.
+    pub reseau: Option<String>,
+    pub mot_de_passe: Option<String>,
 }
 
 /// Construit le QR à montrer aux clients, en fonction de ce qui tourne
@@ -77,6 +82,8 @@ pub fn build_server_info(
             qr_page_data_uri: None,
             url,
             mode: MODE_RESEAU_PARTAGE,
+            reseau: None,
+            mot_de_passe: None,
         });
     };
 
@@ -106,12 +113,18 @@ pub fn build_server_info(
                 qr_page_data_uri: Some(build_qr_data_uri(&url)?),
                 url,
                 mode,
+                reseau: Some(reel),
+                // Le mot de passe de CE réseau est celui du routeur ou du
+                // téléphone, que l'application ne connaît pas forcément.
+                mot_de_passe: None,
             },
             None => ServerInfo {
                 qr_data_uri: build_qr_data_uri(&url)?,
                 qr_page_data_uri: None,
                 url,
                 mode,
+                reseau: None,
+                mot_de_passe: None,
             },
         });
     }
@@ -121,6 +134,8 @@ pub fn build_server_info(
         qr_page_data_uri: Some(build_qr_data_uri(&url)?),
         url,
         mode,
+        reseau: Some(ssid),
+        mot_de_passe: wifi_mot_de_passe.filter(|m| !m.is_empty()),
     })
 }
 

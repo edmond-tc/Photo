@@ -859,8 +859,44 @@ async function afficherQr() {
         `Il faut que son téléphone soit sur le même réseau que ce PC — c'est le cas s'il est connecté au Wi-Fi de la box ou du routeur de la boutique. ` +
         `C'est le parcours le plus simple : un seul scan, rien à taper.`;
     }
+    // Le chemin SANS scan, pour un téléphone qui ne lit pas les QR : le
+    // client choisit le réseau dans sa liste Wi-Fi, puis ouvre l'adresse.
+    if (info.reseau) {
+      urlEl.innerHTML +=
+        `<br><br><strong>Sans scanner :</strong> Wi-Fi « ${echapperHtml(info.reseau)} »` +
+        (info.mot_de_passe ? `, mot de passe « ${echapperHtml(info.mot_de_passe)} »` : "") +
+        `, puis ouvrir <strong>${echapperHtml(info.url)}</strong>`;
+    }
+    signatureQr = signatureInfoQr(info);
   } catch (e) {
     conteneur.innerHTML = `<p class="avertissement">${echapperHtml(e)}</p>`;
+  }
+}
+
+/// Ce qui, s'il change, rend le QR affiché faux.
+function signatureInfoQr(info) {
+  return [info.url, info.mode, info.qr_data_uri, info.qr_page_data_uri || "", info.reseau || ""].join("|");
+}
+
+/// Trouvé à l'audit : le QR était calculé UNE fois, à l'ouverture de la
+/// fenêtre. Ouverte avant que le Wi-Fi soit prêt (juste après le démarrage
+/// du PC, ou avant l'activation), elle gardait une adresse fausse — le
+/// client scannait un QR mort tant que le gérant ne rafraîchissait pas à la
+/// main. Tant qu'elle est ouverte, on revérifie donc toutes les 5 secondes,
+/// et on ne redessine que si quelque chose a réellement changé.
+let signatureQr = "";
+let verificationQrEnCours = false;
+async function verifierQrAJour() {
+  const modal = document.querySelector("#modal-qr");
+  if (!modal || modal.hidden || verificationQrEnCours) return;
+  verificationQrEnCours = true;
+  try {
+    const info = await invoke("get_server_info");
+    if (signatureInfoQr(info) !== signatureQr) await afficherQr();
+  } catch {
+    // Le prochain passage réessaiera.
+  } finally {
+    verificationQrEnCours = false;
   }
 }
 
@@ -2885,6 +2921,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     btn.addEventListener("click", () => fermerModal(btn.dataset.cible));
   });
   document.querySelector("#btn-recevoir-qr").addEventListener("click", afficherQr);
+  setInterval(verifierQrAJour, 5000);
   document.querySelector("#btn-telephone").addEventListener("click", afficherDocumentsTelephone);
   document.querySelector("#form-licence-blocage").addEventListener("submit", async (e) => {
     e.preventDefault();
