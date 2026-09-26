@@ -72,7 +72,12 @@ const DOCUMENTS_MAX: usize = 60;
 /// `Android/media/…` ; avant, à la racine. WhatsApp Business a ses propres
 /// dossiers. Les sous-dossiers (`Sent`, `Private`) sont ignorés : ce sont
 /// les fichiers ENVOYÉS par le gérant, pas reçus.
-const DOSSIERS_WHATSAPP: [(&str, &str); 8] = [
+const DOSSIERS_WHATSAPP: [(&str, &str); 9] = [
+    // Les téléchargements du téléphone : un fichier reçu par un autre
+    // moyen (navigateur, Telegram « Enregistrer », Bluetooth sur certains
+    // modèles) arrive souvent là. Le PC n'a toujours besoin d'aucune
+    // connexion : tout passe par le câble.
+    ("Download", "Téléchargement"),
     (r"Android\media\com.whatsapp\WhatsApp\Media\WhatsApp Documents", "Document"),
     (r"Android\media\com.whatsapp\WhatsApp\Media\WhatsApp Images", "Photo"),
     (
