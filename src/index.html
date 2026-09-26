@@ -16,6 +16,7 @@
         <span id="badge-abonnement" class="badge-abonnement" hidden></span>
         <span id="badge-maj" class="badge-maj" hidden></span>
         <button id="btn-recevoir-qr" class="btn-icon" title="Recevoir un fichier par QR">📶</button>
+        <button id="btn-telephone" class="btn-icon" title="Fichiers WhatsApp du téléphone branché par câble" aria-label="Fichiers WhatsApp du téléphone">📱</button>
         <button id="btn-aide" class="btn-icon" title="Aide — à quoi sert cet écran" aria-label="Aide">?</button>
         <button id="btn-menu" class="btn-icon" title="Menu" aria-label="Ouvrir le menu">⋮</button>
       </div>
@@ -96,7 +97,7 @@
     <div id="modal-usb" class="modal" hidden>
       <div class="modal-carte">
         <div class="modal-entete">
-          <h2>Documents sur la clé USB</h2>
+          <h2 id="usb-titre">Documents sur la clé USB</h2>
           <button class="btn-icon btn-fermer-modal" data-cible="modal-usb" aria-label="Fermer">✕</button>
         </div>
         <p id="usb-intro">Choisissez les documents à imprimer. Rien n'est ajouté sans votre choix.</p>

@@ -1432,6 +1432,7 @@ const LIBELLES_SOURCE = {
   qr: "QR client",
   glisser: "glissé sur la fenêtre",
   bluetooth: "Bluetooth",
+  telephone: "téléphone (WhatsApp)",
 };
 
 // Une ligne = une impression réussie ; les erreurs (bourrage, hors ligne...)
@@ -2653,7 +2654,9 @@ async function demarrerApplication() {
 
   await listen("cle-usb-retiree", () => {
     const modal = document.querySelector("#modal-usb");
-    if (modal && !modal.hidden) {
+    // La même fenêtre sert au téléphone : ne la fermer que si c'est bien la
+    // liste de la clé qui est affichée.
+    if (modal && !modal.hidden && modeListe === "usb") {
       modal.hidden = true;
       toast("Clé USB retirée.", "attention");
     }
@@ -2674,6 +2677,10 @@ async function demarrerApplication() {
   });
 }
 
+/// La fenêtre de choix sert à deux sources : la clé USB du client, et les
+/// fichiers WhatsApp du téléphone du gérant (voir `telephone_usb.rs`).
+let modeListe = "usb";
+
 /// Liste les documents de la clé et laisse choisir. Rien n'est importé
 /// avant l'appui sur le bouton.
 async function afficherDocumentsUsb() {
@@ -2681,6 +2688,8 @@ async function afficherDocumentsUsb() {
   const liste = document.querySelector("#usb-liste");
   const intro = document.querySelector("#usb-intro");
   liste.innerHTML = "";
+  modeListe = "usb";
+  document.querySelector("#usb-titre").textContent = "Documents sur la clé USB";
 
   intro.textContent =
     documents.length === 1
@@ -2716,6 +2725,70 @@ async function afficherDocumentsUsb() {
   ouvrirModal("modal-usb");
 }
 
+/// Le client a envoyé son document au gérant par WhatsApp : le téléphone
+/// est branché par câble, et on montre ses derniers fichiers reçus, le plus
+/// récent en haut. Un clic, une case, et le fichier est dans la file.
+async function afficherDocumentsTelephone() {
+  const bouton = document.querySelector("#btn-telephone");
+  if (bouton.disabled) return;
+  bouton.disabled = true;
+  toast("Lecture du téléphone… (quelques secondes)", "succes", 6000);
+  let lecture;
+  try {
+    lecture = await invoke("documents_whatsapp_telephone");
+  } catch (e) {
+    toast(String(e), "attention", 9000);
+    return;
+  } finally {
+    bouton.disabled = false;
+  }
+
+  const conseil =
+    "Branchez le câble, DÉVERROUILLEZ le téléphone, puis dans la notification « USB » " +
+    "du téléphone choisissez « Transfert de fichiers ». Réappuyez ensuite sur 📱.";
+  if (!lecture.telephones) {
+    toast("Aucun téléphone branché n'est visible. " + conseil +
+      " (Un iPhone ne montre que ses photos au PC, pas les documents WhatsApp.)", "attention", 12000);
+    return;
+  }
+  if (!lecture.dossiers_whatsapp) {
+    toast("Le téléphone est vu, mais ses fichiers ne sont pas accessibles. " + conseil, "attention", 12000);
+    return;
+  }
+  if (!lecture.documents.length) {
+    toast("Aucun fichier reçu sur WhatsApp sur ce téléphone.", "attention", 6000);
+    return;
+  }
+
+  modeListe = "telephone";
+  document.querySelector("#usb-titre").textContent = "Fichiers WhatsApp du téléphone";
+  document.querySelector("#usb-intro").textContent =
+    "Les plus récents en haut. Cochez ceux du client, puis « Ajouter ».";
+  const liste = document.querySelector("#usb-liste");
+  liste.innerHTML = "";
+  lecture.documents.forEach((doc, index) => {
+    const li = document.createElement("li");
+    const case_ = document.createElement("input");
+    case_.type = "checkbox";
+    case_.id = `tel-doc-${index}`;
+    case_.value = doc.id;
+    const etiquette = document.createElement("label");
+    etiquette.className = "usb-nom";
+    etiquette.htmlFor = case_.id;
+    etiquette.textContent = doc.nom;
+    const detail = document.createElement("span");
+    detail.className = "usb-detail";
+    const taille =
+      doc.taille_ko >= 1024 ? `${(doc.taille_ko / 1024).toFixed(1)} Mo` : `${doc.taille_ko} Ko`;
+    detail.textContent = [doc.genre, doc.date, doc.taille_ko ? taille : ""]
+      .filter(Boolean)
+      .join(" · ");
+    li.append(case_, etiquette, detail);
+    liste.appendChild(li);
+  });
+  ouvrirModal("modal-usb");
+}
+
 function casesUsb() {
   return Array.from(document.querySelectorAll("#usb-liste input[type=checkbox]"));
 }
@@ -2745,16 +2818,36 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
     const bouton = document.querySelector("#btn-usb-importer");
     bouton.disabled = true;
+    const texteBouton = bouton.textContent;
     try {
-      const importes = await invoke("importer_documents_usb", { chemins });
+      let importes;
+      if (modeListe === "telephone") {
+        // La copie depuis un téléphone prend quelques secondes par fichier.
+        bouton.textContent = "Copie depuis le téléphone…";
+        importes = await invoke("importer_documents_telephone", { ids: chemins });
+        if (importes < chemins.length) {
+          toast(
+            `${importes} ajouté(s), ${chemins.length - importes} non copié(s). Gardez le ` +
+              "téléphone branché et déverrouillé, puis réessayez pour ceux qui manquent.",
+            "attention",
+            9000
+          );
+          return;
+        }
+      } else {
+        importes = await invoke("importer_documents_usb", { chemins });
+      }
       document.querySelector("#modal-usb").hidden = true;
       toast(
         importes === 1
           ? "1 document ajouté à la file."
           : `${importes} documents ajoutés à la file.`
       );
+    } catch (e) {
+      toast(String(e), "attention", 9000);
     } finally {
       bouton.disabled = false;
+      bouton.textContent = texteBouton;
     }
   });
 
@@ -2792,6 +2885,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     btn.addEventListener("click", () => fermerModal(btn.dataset.cible));
   });
   document.querySelector("#btn-recevoir-qr").addEventListener("click", afficherQr);
+  document.querySelector("#btn-telephone").addEventListener("click", afficherDocumentsTelephone);
   document.querySelector("#form-licence-blocage").addEventListener("submit", async (e) => {
     e.preventDefault();
     const champ = document.querySelector("#cle-licence-blocage");

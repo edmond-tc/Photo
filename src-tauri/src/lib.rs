@@ -17,6 +17,7 @@ pub mod qr;
 pub mod retention;
 pub mod routeur_externe;
 pub mod server;
+pub mod telephone_usb;
 pub mod updates;
 pub mod usb;
 pub mod watcher;
@@ -122,6 +123,8 @@ pub fn run() {
             commands::diagnostiquer_poste,
             usb::documents_cle_usb,
             usb::importer_documents_usb,
+            telephone_usb::documents_whatsapp_telephone,
+            telephone_usb::importer_documents_telephone,
             commands::journal_des_telephones,
             commands::generer_rapport_diagnostic,
             commands::sauvegarder_maintenant,
