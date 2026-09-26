@@ -1,6 +1,8 @@
+pub mod activite;
 pub mod backup;
 pub mod bluetooth;
 pub mod commands;
+pub mod controle_impressions;
 pub mod db;
 pub mod dhcp;
 pub mod dns;
@@ -17,6 +19,7 @@ pub mod qr;
 pub mod retention;
 pub mod routeur_externe;
 pub mod server;
+pub mod snmp;
 pub mod telephone_usb;
 pub mod updates;
 pub mod usb;
@@ -90,6 +93,7 @@ pub fn run() {
             }
             usb::watch_usb_drives(app.handle().clone());
             telephone_usb::surveiller_telephones(app.handle().clone());
+            activite::surveiller(app.handle().clone());
             server::start(app.handle().clone());
             backup::start(app.handle().clone());
             retention::start(app.handle().clone());
@@ -126,6 +130,9 @@ pub fn run() {
             usb::importer_documents_usb,
             telephone_usb::documents_whatsapp_telephone,
             telephone_usb::importer_documents_telephone,
+            controle_impressions::controle_impressions,
+            controle_impressions::activer_controle_impressions,
+            activite::activite_du_jour,
             commands::journal_des_telephones,
             commands::generer_rapport_diagnostic,
             commands::sauvegarder_maintenant,

@@ -113,6 +113,25 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
             feuilles_depuis_entretien INTEGER NOT NULL DEFAULT 0,
             seuil_entretien           INTEGER NOT NULL DEFAULT 2000
         );
+
+        -- Ce que font les machines, au fil de la journée (voir activite.rs).
+        CREATE TABLE IF NOT EXISTS activite (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            heure     TEXT NOT NULL,     -- AAAA-MM-JJTHH:MM:SS, heure locale
+            machine   TEXT NOT NULL,
+            genre     TEXT NOT NULL,     -- 'impression_pc' | 'sur_la_machine'
+            document  TEXT,
+            pages     INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_activite_heure ON activite(heure);
+
+        -- Dernier compteur lu sur chaque machine réseau : permet de compter
+        -- aussi ce qui a été fait pendant que l'application était fermée.
+        CREATE TABLE IF NOT EXISTS compteurs_machines (
+            machine TEXT PRIMARY KEY,
+            valeur  INTEGER NOT NULL,
+            lu_le   TEXT NOT NULL
+        );
         ",
     )?;
 

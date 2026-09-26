@@ -1037,6 +1037,7 @@ const TITRES_SECTION = {
   recherche: "Documents reçus / Recherche client",
   rapports: "Rapports",
   reglages: "Réglages",
+  activite: "Activité des machines (en direct)",
 };
 
 // Une phrase en haut de chaque écran : un gérant qui découvre l'application
@@ -1049,6 +1050,7 @@ const AIDES_SECTION = {
   recherche: "Retrouver un document par nom de client, numéro de téléphone ou nom de fichier — même vieux de plusieurs semaines.",
   rapports: "L'argent du jour, les impayés à relancer, le stock, et le rapport imprimable à garder ou à montrer au propriétaire.",
   reglages: "Le nom de la boutique, le dossier surveillé, les tarifs, les employés et la sauvegarde. À régler une fois, rarement retouché ensuite.",
+  activite: "Ce que font les imprimantes et photocopieurs, à chaque instant : chaque impression partie du PC, et les photocopies faites sur la vitre des machines branchées en réseau. Mis à jour tout seul.",
 };
 
 // Écran actuellement affiché, pour que le bouton "?" parle du bon écran.
@@ -1069,6 +1071,7 @@ async function ouvrirSection(section) {
     recherche: rendreRecherche,
     rapports: rendreRapports,
     reglages: rendreReglages,
+    activite: rendreActivite,
   };
   await rendus[section]?.(corps);
 
@@ -1581,6 +1584,142 @@ function carteRapportImprimable() {
   return carte;
 }
 
+/// Pages imprimées par ce PC (selon Windows, y compris hors application)
+/// contre pages encaissées : ce qui intéresse un patron absent.
+/// Voir `controle_impressions.rs`.
+async function carteControleImpressions() {
+  const carte = document.createElement("div");
+  carte.className = "carte-rapport";
+  let c;
+  try {
+    c = await invoke("controle_impressions", { date: null });
+  } catch (e) {
+    carte.innerHTML = `<h3>Contrôle des impressions</h3><p>${echapperHtml(String(e))}</p>`;
+    return carte;
+  }
+  if (!c.journal_actif) {
+    carte.innerHTML = `
+      <h3>Contrôle des impressions</h3>
+      <p>Pour comparer les pages <strong>imprimées</strong> par ce PC à l'argent
+         <strong>encaissé</strong> — y compris ce qui est imprimé directement depuis Word,
+         sans passer par l'application — il faut l'activer une seule fois.</p>`;
+    carte.appendChild(
+      bouton("Activer le contrôle (une fois)", "btn-secondaire", async () => {
+        try {
+          await invoke("activer_controle_impressions");
+          toast("✓ Contrôle activé. Les impressions sont comptées à partir de maintenant.");
+          await ouvrirSection("rapports");
+        } catch (err) {
+          toast(`Activation impossible : ${err}`, "attention", 8000);
+        }
+      })
+    );
+    return carte;
+  }
+  const alerte = c.pages_sans_paiement > 0;
+  const lignes = c.hors_application
+    .map(
+      (i) =>
+        `<li>${echapperHtml(i.heure)} — ${echapperHtml(i.document)} : <strong>${i.pages} page(s)</strong>` +
+        ` <span style="color:var(--gris-texte-discret)">(${echapperHtml(i.imprimante)})</span></li>`
+    )
+    .join("");
+  carte.innerHTML = `
+    <h3>Contrôle des impressions — aujourd'hui</h3>
+    <p>Pages imprimées par ce PC : <strong>${c.pages_imprimees}</strong> ·
+       Pages encaissées : <strong>${c.pages_encaissees}</strong></p>
+    <p style="font-size:1.05rem">${
+      alerte
+        ? `⚠️ <strong>${c.pages_sans_paiement} page(s) imprimée(s) sans encaissement.</strong>`
+        : "✅ Toutes les pages imprimées ont été encaissées."
+    }</p>
+    ${
+      lignes
+        ? `<p style="margin-bottom:0.2rem">Imprimé <strong>hors de l'application</strong> :</p>
+           <ul style="margin:0; padding-left:1.2rem; font-size:0.85rem">${lignes}</ul>`
+        : ""
+    }
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin-top:0.5rem">
+      Compté par Windows lui-même, sans internet. Ne compte pas les photocopies faites
+      directement sur la machine. Selon l'imprimante, un document tiré en plusieurs
+      exemplaires peut n'être compté qu'une fois.
+    </p>`;
+  return carte;
+}
+
+/// Ce que font les machines, à chaque instant (voir `activite.rs`).
+async function rendreActivite(corps) {
+  const a = await invoke("activite_du_jour");
+  corps.innerHTML = "";
+
+  if (!a.journal_actif) {
+    const carte = document.createElement("div");
+    carte.className = "carte-rapport";
+    carte.innerHTML = `<p>Pour voir les impressions parties du PC, Windows doit noter chaque
+      impression. Il faut l'activer une seule fois.</p>`;
+    carte.appendChild(
+      bouton("Activer (une fois)", "btn-secondaire", async () => {
+        try {
+          await invoke("activer_controle_impressions");
+          toast("✓ Activé. Les impressions apparaîtront ici dans les secondes qui suivent.");
+        } catch (err) {
+          toast(`Activation impossible : ${err}`, "attention", 8000);
+        }
+      })
+    );
+    corps.appendChild(carte);
+  }
+
+  const resume = document.createElement("div");
+  resume.className = "carte-rapport";
+  resume.innerHTML = `
+    <h3>Aujourd'hui</h3>
+    <p>Pages parties du PC : <strong>${a.pages_depuis_pc}</strong> ·
+       Pages faites sur les machines : <strong>${a.pages_sur_machines}</strong></p>`;
+  corps.appendChild(resume);
+
+  const machines = document.createElement("div");
+  machines.className = "carte-rapport";
+  const lignesMachines = a.machines.length
+    ? a.machines
+        .map((m) => {
+          let etat;
+          if (m.compteur != null) {
+            etat = `✅ tout est visible, photocopies comprises (compteur : ${m.compteur})`;
+          } else if (m.branchement === "réseau") {
+            etat = "⚠️ en réseau, mais la machine ne donne pas son compteur : photocopies invisibles";
+          } else if (m.branchement === "USB") {
+            etat = "ℹ️ USB : impressions du PC visibles, photocopies sur la vitre invisibles";
+          } else {
+            etat = "ℹ️ impressions du PC visibles";
+          }
+          return `<li><strong>${echapperHtml(m.nom)}</strong> — ${etat}</li>`;
+        })
+        .join("")
+    : "<li>Recherche des machines… (quelques secondes)</li>";
+  machines.innerHTML = `<h3>Machines</h3>
+    <ul style="margin:0; padding-left:1.2rem; font-size:0.9rem">${lignesMachines}</ul>`;
+  corps.appendChild(machines);
+
+  const liste = document.createElement("section");
+  liste.innerHTML = "<h3>En direct</h3>";
+  if (!a.evenements.length) {
+    liste.innerHTML += "<p>Rien pour l'instant aujourd'hui.</p>";
+  }
+  for (const e of a.evenements) {
+    const ligne = document.createElement("div");
+    ligne.className = "ligne-liste";
+    const heure = (e.heure.split("T")[1] || "").slice(0, 5);
+    const quoi =
+      e.genre === "sur_la_machine"
+        ? `📠 ${e.document ?? "Sur la machine"}`
+        : `🖨️ Depuis le PC : ${e.document ?? ""}`;
+    ligne.textContent = `${heure} — ${e.machine} : ${e.pages} page(s) · ${quoi}`;
+    liste.appendChild(ligne);
+  }
+  corps.appendChild(liste);
+}
+
 async function rendreRapports(corps) {
   corps.innerHTML = "";
 
@@ -1614,6 +1753,7 @@ async function rendreRapports(corps) {
     </p>
   `;
   corps.appendChild(carteReconciliation);
+  corps.appendChild(await carteControleImpressions());
 
   const impayes = await invoke("list_impayes");
   if (impayes.length) {
@@ -2691,6 +2831,12 @@ async function demarrerApplication() {
   // Téléphone du gérant branché en « Transfert de fichiers » : la liste
   // s'ouvre seule (voir `telephone_usb::surveiller_telephones`).
   await listen("telephone-branche", () => afficherDocumentsTelephone({ auto: true }));
+
+  // Nouvelle activité des machines : l'écran se met à jour tout seul s'il
+  // est ouvert.
+  await listen("activite-nouvelle", async () => {
+    if (sectionOuverte === "activite") await ouvrirSection("activite");
+  });
   await listen("telephone-debranche", () => {
     const modal = document.querySelector("#modal-usb");
     const copieEnCours = document.querySelector("#btn-usb-importer").disabled;

@@ -985,6 +985,11 @@ try {{
     $sortie += "===PARE_FEU==="
 {pare_feu}
 
+    # 5-bis. Allumer le journal des impressions de Windows, éteint par
+    #        défaut : c'est lui qui permet au patron de comparer les pages
+    #        imprimées à l'argent encaissé (voir controle_impressions.rs).
+{journal_impressions}
+
     # 6. Rallumer ce réseau à chaque démarrage du PC, sans rien demander.
     #    Créée dans le même accord administrateur : une tâche planifiée "au
     #    plus haut niveau de privilèges" ne redemande jamais d'autorisation
@@ -1023,6 +1028,7 @@ $sortie -join "`n" | Out-File -FilePath "{res}" -Encoding utf8
         marqueur_debut = MARQUEUR_DEBUT_DEMARRAGE,
         marqueur_fin = MARQUEUR_FIN_DEMARRAGE,
         pare_feu = crate::pare_feu::commandes_powershell(),
+        journal_impressions = crate::controle_impressions::commandes_activation(),
         nom_tache = NOM_TACHE_DEMARRAGE,
         script_demarrage = script_demarrage.display(),
         res = resultat.display(),

@@ -368,7 +368,7 @@ fn script_copie(documents: &[DocumentTelephone], destination: &std::path::Path) 
 }
 
 #[cfg(windows)]
-fn executer_powershell(script: &str) -> Result<String, String> {
+pub(crate) fn executer_powershell(script: &str) -> Result<String, String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -393,7 +393,7 @@ fn executer_powershell(script: &str) -> Result<String, String> {
 }
 
 #[cfg(not(windows))]
-fn executer_powershell(_script: &str) -> Result<String, String> {
+pub(crate) fn executer_powershell(_script: &str) -> Result<String, String> {
     Err("Disponible uniquement sur Windows".to_string())
 }
 
