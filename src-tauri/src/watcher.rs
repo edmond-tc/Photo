@@ -2,7 +2,7 @@ use crate::db::DbState;
 use crate::files;
 use crate::models::QueueItem;
 use chrono::Local;
-use notify::{Event, EventKind, RecursiveMode, Watcher};
+use notify::{Event, RecursiveMode, Watcher};
 use rusqlite::params;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
@@ -10,44 +10,163 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// Le dossier surveillé en ce moment. Changer de dossier dans Réglages
+/// arrête la surveillance de l'ancien (son fil le voit et s'arrête).
+static DOSSIER_ACTIF: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// Temps pendant lequel la taille d'un fichier doit rester la même avant
+/// qu'on le prenne : un envoi Bluetooth ou une copie en cours n'est pas un
+/// document fini.
+const DELAI_STABILITE: Duration = Duration::from_millis(1500);
+
+/// Fichiers qui ne sont jamais des documents de client : fichiers en cours
+/// d'écriture (Bluetooth, navigateurs, Word) et fichiers système.
+fn est_temporaire(chemin: &std::path::Path) -> bool {
+    let nom = chemin
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let extension = chemin
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    nom.starts_with("~$")
+        || nom.starts_with('.')
+        || nom == "desktop.ini"
+        || nom == "thumbs.db"
+        || ["tmp", "temp", "part", "partial", "crdownload", "download", "!ut"]
+            .contains(&extension.as_str())
+}
+
+/// Depuis quand ce dossier est surveillé (secondes Unix). Les fichiers qui
+/// s'y trouvaient déjà avant ne sont PAS importés : ce sont les documents
+/// du gérant, pas des envois de clients — même leçon que la clé USB.
+fn surveille_depuis(app: &AppHandle, dossier: &std::path::Path) -> u64 {
+    let maintenant = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let state = app.state::<DbState>();
+    let Ok(conn) = state.0.lock() else { return maintenant };
+    let chemin = dossier.to_string_lossy().to_string();
+    let meme_dossier = crate::db::get_setting(&conn, "dossier_surveille_depuis_chemin")
+        .is_some_and(|c| c == chemin);
+    if meme_dossier {
+        if let Some(depuis) = crate::db::get_setting(&conn, "dossier_surveille_depuis")
+            .and_then(|v| v.parse().ok())
+        {
+            return depuis;
+        }
+    }
+    let _ = crate::db::set_setting(&conn, "dossier_surveille_depuis_chemin", &chemin);
+    let _ = crate::db::set_setting(&conn, "dossier_surveille_depuis", &maintenant.to_string());
+    maintenant
+}
+
 /// Démarre la surveillance du dossier de réception dans un thread dédié.
-/// À chaque fichier nouvellement créé, on l'enregistre en base et on
-/// prévient l'interface via un événement Tauri — sans rechargement de page.
+///
+/// Trouvé sur le terrain : les fichiers reçus par Bluetooth n'apparaissaient
+/// jamais. La surveillance ne réagissait qu'à l'événement Windows « fichier
+/// créé ». Or Windows écrit un fichier reçu par Bluetooth sous un nom
+/// temporaire, puis le RENOMME (ou le déplace) : événement différent, jamais
+/// traité — et le fichier temporaire, lui, était pris puis disparaissait.
+///
+/// Désormais, le dossier est simplement RELU toutes les 3 secondes (et
+/// aussitôt qu'un événement Windows, quel qu'il soit, arrive). Un fichier
+/// est pris quand sa taille ne bouge plus, quelle que soit la façon dont il
+/// est arrivé : création, renommage, déplacement, copie, ou pendant que
+/// l'application était fermée.
 pub fn watch_folder(app: AppHandle, folder: PathBuf) {
+    if let Ok(mut actif) = DOSSIER_ACTIF.lock() {
+        *actif = Some(folder.clone());
+    }
+    let depuis = surveille_depuis(&app, &folder);
+
     thread::spawn(move || {
         let (tx, rx) = channel::<notify::Result<Event>>();
+        // Les événements ne servent qu'à réagir plus vite : si Windows
+        // refuse de les fournir, la relecture régulière suffit.
+        let mut _watcher = notify::recommended_watcher(tx).ok();
+        if let Some(w) = _watcher.as_mut() {
+            let _ = w.watch(&folder, RecursiveMode::NonRecursive);
+        }
 
-        let mut watcher = match notify::recommended_watcher(tx) {
-            Ok(w) => w,
-            Err(e) => {
-                eprintln!("Impossible de démarrer la surveillance du dossier : {e}");
+        let mut en_observation: std::collections::HashMap<PathBuf, (u64, std::time::Instant)> =
+            std::collections::HashMap::new();
+        loop {
+            let _ = rx.recv_timeout(Duration::from_secs(3));
+            while rx.try_recv().is_ok() {}
+
+            let toujours_actif = DOSSIER_ACTIF
+                .lock()
+                .map(|a| a.as_deref() == Some(folder.as_path()))
+                .unwrap_or(false);
+            if !toujours_actif {
                 return;
             }
-        };
-
-        if let Err(e) = watcher.watch(&folder, RecursiveMode::NonRecursive) {
-            eprintln!(
-                "Impossible de surveiller le dossier {} : {e}",
-                folder.display()
-            );
-            return;
-        }
-
-        for res in rx {
-            let Ok(event) = res else { continue };
-            if !matches!(event.kind, EventKind::Create(_)) {
-                continue;
-            }
-            for path in event.paths {
-                if !path.is_file() {
-                    continue;
-                }
-                // Laisse le temps à une copie de fichier de se terminer avant de la traiter.
-                thread::sleep(Duration::from_millis(600));
-                enqueue_file(&app, &path, "dossier_surveille", None, None);
-            }
+            relire_dossier(&app, &folder, depuis, &mut en_observation);
         }
     });
+}
+
+fn relire_dossier(
+    app: &AppHandle,
+    dossier: &std::path::Path,
+    depuis: u64,
+    en_observation: &mut std::collections::HashMap<PathBuf, (u64, std::time::Instant)>,
+) {
+    let Ok(entrees) = std::fs::read_dir(dossier) else { return };
+    let mut vus = std::collections::HashSet::new();
+    for entree in entrees.flatten() {
+        let chemin = entree.path();
+        let Ok(meta) = entree.metadata() else { continue };
+        if !meta.is_file() || est_temporaire(&chemin) {
+            continue;
+        }
+        // Arrivé avant le début de la surveillance : document du gérant.
+        let arrive = meta
+            .created()
+            .or_else(|_| meta.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(u64::MAX);
+        if arrive + 5 < depuis {
+            continue;
+        }
+        vus.insert(chemin.clone());
+        let taille = meta.len();
+        match en_observation.get(&chemin) {
+            Some((precedente, depuis_quand))
+                if *precedente == taille && depuis_quand.elapsed() >= DELAI_STABILITE =>
+            {
+                // `enqueue_file` ignore un chemin déjà connu : relire le même
+                // fichier à chaque passage ne crée jamais de doublon.
+                enqueue_file(app, &chemin, "dossier_surveille", None, None);
+            }
+            Some((precedente, _)) if *precedente == taille => {}
+            _ => {
+                en_observation.insert(chemin, (taille, std::time::Instant::now()));
+            }
+        }
+    }
+    en_observation.retain(|chemin, _| vus.contains(chemin));
+}
+
+#[cfg(test)]
+mod tests_dossier {
+    use super::est_temporaire;
+    use std::path::Path;
+
+    #[test]
+    fn les_fichiers_en_cours_d_ecriture_sont_ignores() {
+        for nom in ["recu.pdf.tmp", "~$memoire.docx", "photo.jpg.part", "x.crdownload", "Thumbs.db", "desktop.ini", ".cache"] {
+            assert!(est_temporaire(Path::new(nom)), "{nom}");
+        }
+        for nom in ["memoire.pdf", "CV Awa.docx", "IMG-2026.jpg"] {
+            assert!(!est_temporaire(Path::new(nom)), "{nom}");
+        }
+    }
 }
 
 /// Préférences d'impression indiquées par le client lui-même (ex: via le

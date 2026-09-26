@@ -211,8 +211,14 @@ mod implementation {
         };
 
         let nom = crate::obex::nom_de_fichier_sur(fichier.nom.as_deref());
-        if let Err(e) = enregistrer_fichier(&dossier, &nom, &fichier.donnees) {
-            eprintln!("Impossible d'enregistrer le fichier reçu par Bluetooth : {e}");
+        match enregistrer_fichier(&dossier, &nom, &fichier.donnees) {
+            // Mis en file tout de suite, sans attendre que la surveillance
+            // du dossier le remarque : c'est un envoi Bluetooth, et la file
+            // doit le dire.
+            Ok(chemin) => {
+                crate::watcher::enqueue_file(app, &chemin, "bluetooth", None, None);
+            }
+            Err(e) => eprintln!("Impossible d'enregistrer le fichier reçu par Bluetooth : {e}"),
         }
 
         // Le même téléphone peut enchaîner plusieurs fichiers sur une seule
