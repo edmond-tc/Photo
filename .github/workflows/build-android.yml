@@ -30,14 +30,34 @@ jobs:
       - name: Compiler l'envoyeur (APK)
         run: gradle -p android assembleRelease --no-daemon
 
-      - name: Publier l'APK
+      # Même stockage que l'installateur Windows : la page publique
+      # /telecharger (admin/src/index.js, CLE_APK) sert l'APK depuis là.
+      - name: Installer Node.js 22 (requis par wrangler)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Publier l'APK sur la page de téléchargement
+        shell: bash
+        run: |
+          mkdir -p sortie
+          cp android/app/build/outputs/apk/release/app-release.apk sortie/EnvoyeurKiosque.apk
+          (cd sortie && sha256sum EnvoyeurKiosque.apk > empreinte-sha256-envoyeur.txt)
+          cd admin
+          npm ci
+          for nom in EnvoyeurKiosque.apk empreinte-sha256-envoyeur.txt; do
+            npx wrangler r2 object put "photocopie-telechargements/$nom" --file="../sortie/$nom" --remote
+          done
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Publier l'APK (secours GitHub)
+        continue-on-error: true
         shell: bash
         run: |
           version=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
           tag="envoyeur-v$version"
-          mkdir -p sortie
-          cp android/app/build/outputs/apk/release/app-release.apk sortie/EnvoyeurKiosque.apk
-          (cd sortie && sha256sum EnvoyeurKiosque.apk > empreinte-sha256-envoyeur.txt)
           # --latest=false : la « dernière version » du dépôt doit rester
           # celle du logiciel du PC.
           if gh release view "$tag" >/dev/null 2>&1; then

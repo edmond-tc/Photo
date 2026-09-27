@@ -776,6 +776,11 @@ const CLE_EMPREINTE = "empreinte-sha256.txt";
 const CLE_INSTALLATEUR_LEGER = "GestionPhotocopie-MiseAJour.exe";
 const CLE_EMPREINTE_LEGER = "empreinte-sha256-mise-a-jour.txt";
 
+// Version téléphone : l'envoyeur Android (voir android/ à la racine du
+// dépôt). Déposée par le workflow build-android.yml.
+const CLE_APK = "EnvoyeurKiosque.apk";
+const CLE_EMPREINTE_APK = "empreinte-sha256-envoyeur.txt";
+
 /// Taille lisible par un humain qui compte son forfait : c'est le chiffre
 /// qui décide s'il peut télécharger ou non.
 function tailleLisible(octets) {
@@ -799,7 +804,39 @@ function blocVerification(empreinte, nomFichier) {
     </div>`;
 }
 
-function pageTelecharger(disponible, empreinte, taille, leger) {
+function blocTelephone(telephone) {
+  if (!telephone || !telephone.disponible) return "";
+  return `<div class="carte" style="text-align:left; margin-top:1.5rem; border:2px solid #107c10">
+      <h2 style="font-size:1rem; margin:0 0 0.5rem">
+        📱 Version téléphone (Android) — ${echapper(tailleLisible(telephone.taille))}
+        <span style="font-size:0.75rem; background:#fff4ce; padding:0.1rem 0.4rem; border-radius:4px">essai</span>
+      </h2>
+      <p style="font-size:0.85rem; margin:0 0 0.6rem">
+        <strong>Envoyeur Kiosque</strong> : le client envoie ses documents au PC du
+        kiosque sans internet et sans forfait. Près du guichet, le téléphone le
+        propose tout seul.
+      </p>
+      <p style="font-size:0.82rem; color:#605e5c; margin:0 0 0.8rem">
+        Android 10 ou plus récent. À l'installation, Android demande une seule
+        fois d'autoriser l'installation depuis le navigateur. Pour iPhone, il
+        n'y a pas d'application à installer : c'est un raccourci.
+      </p>
+      <a class="btn" href="/telecharger/apk" style="display:block; padding:0.9rem; text-align:center; background:#107c10">
+        ⬇️ Télécharger pour Android (${echapper(tailleLisible(telephone.taille))})
+      </a>
+      <p style="font-size:0.78rem; color:#a4262c; margin:0.8rem 0 0">
+        Version d'essai : à installer seulement sur les téléphones de test.
+      </p>
+      ${
+        telephone.empreinte
+          ? `<p style="font-size:0.72rem; color:#605e5c; margin:0.6rem 0 0">Empreinte SHA-256 :<br>
+               <span class="cle-resultat">${echapper(telephone.empreinte)}</span></p>`
+          : ""
+      }
+    </div>`;
+}
+
+function pageTelecharger(disponible, empreinte, taille, leger, telephone) {
   // L'empreinte remplace ce qu'aurait apporté un certificat de signature :
   // elle ne supprime pas l'avertissement de Windows, mais elle permet de
   // vérifier que le fichier téléchargé est bien celui qui a été compilé, et
@@ -873,7 +910,8 @@ function pageTelecharger(disponible, empreinte, taille, leger) {
           : `<p style="color:#a4262c">Le fichier n'est pas encore disponible. Réessayez plus tard.</p>`
       }
     </div>
-    ${blocLeger}`,
+    ${blocLeger}
+    ${blocTelephone(telephone)}`,
     { connecte: false }
   );
 }
@@ -938,6 +976,7 @@ async function router(request, env) {
   "/telecharger",
   "/telecharger/exe",
   "/telecharger/leger",
+  "/telecharger/apk",
   "/renouveler",
 ];
     if (!env.ADMIN_PASSWORD && !PAGES_PUBLIQUES_SANS_MOT_DE_PASSE.includes(pathname)) {
@@ -1075,13 +1114,29 @@ async function router(request, env) {
           taille: objetLeger ? objetLeger.size : null,
           empreinte: empreinteLeger,
         };
+        const objetApk = await env.TELECHARGEMENTS.head(CLE_APK);
+        let empreinteApk = null;
+        try {
+          const fichier = await env.TELECHARGEMENTS.get(CLE_EMPREINTE_APK);
+          // Le fichier produit par sha256sum contient « empreinte  nom » :
+          // seule l'empreinte est affichée.
+          if (fichier) empreinteApk = borner((await fichier.text()).split(/\s+/)[0], 64);
+        } catch {
+          empreinteApk = null;
+        }
+        const telephone = {
+          disponible: !!objetApk,
+          taille: objetApk ? objetApk.size : null,
+          empreinte: empreinteApk,
+        };
         // Pas nommée `page` : ce nom est déjà celui du gabarit HTML global,
         // et le masquer ici serait un piège pour la prochaine modification.
         const corps = await pageTelecharger(
           !!objet,
           empreinte,
           objet ? objet.size : null,
-          leger
+          leger,
+          telephone
         );
         return new Response(corps, {
           headers: { "content-type": "text/html; charset=utf-8" },
@@ -1094,6 +1149,18 @@ async function router(request, env) {
           headers: {
             "content-type": "application/octet-stream",
             "content-disposition": `attachment; filename="${CLE_INSTALLATEUR_LEGER}"`,
+          },
+        });
+      }
+      if (pathname === "/telecharger/apk" && method === "GET") {
+        const objet = await env.TELECHARGEMENTS.get(CLE_APK);
+        if (!objet) return new Response("Fichier indisponible pour l'instant.", { status: 404 });
+        return new Response(objet.body, {
+          headers: {
+            // Type officiel : sans lui, certains navigateurs Android
+            // enregistrent un fichier qu'ils ne proposent pas d'installer.
+            "content-type": "application/vnd.android.package-archive",
+            "content-disposition": `attachment; filename="${CLE_APK}"`,
           },
         });
       }
