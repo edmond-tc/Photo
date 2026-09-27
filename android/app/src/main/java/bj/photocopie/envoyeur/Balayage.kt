@@ -100,7 +100,8 @@ class BalayageRecepteur : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(ctx, "kiosque")
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFF1F4FD1.toInt())
             .setContentTitle("Kiosque photocopie à côté")
             .setContentText("Touchez pour envoyer un document au kiosque.")
             .setSubText("signal $rssi dBm")

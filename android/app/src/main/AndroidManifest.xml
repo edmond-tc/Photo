@@ -50,7 +50,8 @@
 
     <application
         android:label="Envoyeur Kiosque"
-        android:icon="@android:drawable/stat_sys_upload"
+        android:icon="@mipmap/ic_lanceur"
+        android:roundIcon="@mipmap/ic_lanceur_rond"
         android:allowBackup="false"
         android:usesCleartextTraffic="true">
 

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Une feuille (le document) et une pastille « envoyer ». Tout tient dans
+     la zone sûre des icônes adaptatives (cercle de 66 au centre de 108). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Feuille -->
+    <path android:fillColor="#FFFFFF" android:pathData="M33,25 H59 L71,37 V81 H33 Z" />
+    <!-- Coin plié -->
+    <path android:fillColor="#C9D6F5" android:pathData="M59,25 V37 H71 Z" />
+    <!-- Lignes de texte -->
+    <path android:fillColor="#8FA7E8" android:pathData="M39,45 H65 V48.5 H39 Z" />
+    <path android:fillColor="#8FA7E8" android:pathData="M39,53 H65 V56.5 H39 Z" />
+    <path android:fillColor="#8FA7E8" android:pathData="M39,61 H55 V64.5 H39 Z" />
+    <!-- Pastille « envoyer » -->
+    <path android:fillColor="#FF9F1C" android:pathData="M72,61 A15,15 0 1,1 71.99,61 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M72,66 L80.5,75 H75 V84 H69 V75 H63.5 Z" />
+</vector>
