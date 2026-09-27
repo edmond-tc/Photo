@@ -26,6 +26,10 @@
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="31" />
+    <!-- Proposer d'allumer le Bluetooth (fenêtre d'Android, un seul geste). -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_CONNECT"
+        tools:targetApi="31" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Message vocal joint à un document (demandé seulement quand il sert). -->

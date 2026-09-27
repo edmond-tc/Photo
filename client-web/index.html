@@ -138,6 +138,12 @@ p { margin: 0; }
 .suivi div.fait { background: var(--ok-doux); color: var(--ok); }
 .suivi div.attente { color: var(--discret); font-weight: 400; }
 .pret { background: var(--ok); color: #fff; border-radius: 16px; padding: 16px; text-align: center; font-size: 1.2rem; font-weight: 800; }
+.bandeau { border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+.bandeau p { font-size: 0.95rem; }
+.bandeau.bloquant { background: var(--erreur-doux); color: var(--erreur); }
+.bandeau.bloquant .btn { background: var(--erreur); color: #fff; }
+.bandeau.doux { background: var(--attente-doux); color: var(--attente); }
+.bandeau.doux .btn { background: var(--surface); color: var(--encre); padding: 10px 14px; font-size: 0.95rem; }
 .pied { text-align: center; font-size: 0.8rem; color: var(--discret); padding: 8px 18px 18px; }
 .pied a { color: inherit; }
 </style>
@@ -179,6 +185,14 @@ p { margin: 0; }
     <div class="entete"><h1 data-boutique>Photocopie</h1></div>
     <div class="contenu">
       <span class="puce" data-puce><span class="point"></span><span data-puce-texte>Connexion au guichet…</span></span>
+      <div class="bandeau bloquant" data-bandeau-wifi hidden>
+        <p><strong>Le Wi-Fi de votre téléphone est éteint.</strong> Il sert à envoyer vos documents au guichet, sans internet et sans forfait.</p>
+        <button type="button" class="btn" data-allumer="wifi">Allumer le Wi-Fi</button>
+      </div>
+      <div class="bandeau doux" data-bandeau-bluetooth hidden>
+        <p><strong>Bluetooth éteint.</strong> Allumez-le pour être prévenu tout seul en arrivant au guichet. Il n'est pas nécessaire pour envoyer.</p>
+        <button type="button" class="btn" data-allumer="bluetooth">Allumer le Bluetooth</button>
+      </div>
       <p>Bonjour <strong data-prenom></strong>. Choisissez vos documents<span data-mode-app> : la connexion se fait pendant ce temps</span>.</p>
       <div style="display:grid; gap:8px">
         <label class="btn" for="fichiers">Choisir mes documents</label>
@@ -194,6 +208,10 @@ p { margin: 0; }
     <div class="entete"><button class="retour" data-aller="accueil" aria-label="Retour">‹</button><h1>Vos documents</h1></div>
     <div class="contenu">
       <span class="puce" data-puce><span class="point"></span><span data-puce-texte>Connexion au guichet…</span></span>
+      <div class="bandeau bloquant" data-bandeau-wifi hidden>
+        <p><strong>Le Wi-Fi de votre téléphone est éteint.</strong> Allumez-le pour pouvoir envoyer (sans internet, sans forfait).</p>
+        <button type="button" class="btn" data-allumer="wifi">Allumer le Wi-Fi</button>
+      </div>
       <div id="docs" style="display:grid; gap:14px"></div>
       <div class="ajout">
         <label class="btn second" style="font-size:0.95rem" for="fichiers">+ Ajouter</label>
@@ -302,7 +320,14 @@ p { margin: 0; }
         connexion = { etat: e.etat, base: e.pc ? `http://${e.pc}:${PORT}` : connexion.base, message: e.message };
         majPuces();
         if (e.etat === "ok") chargerInfos();
-        if (attenteConnexion && (e.etat === "ok" || e.etat === "echec")) { const r = attenteConnexion; attenteConnexion = null; r(e.etat === "ok"); }
+        if (attenteConnexion && ["ok", "echec", "wifi"].includes(e.etat)) { const r = attenteConnexion; attenteConnexion = null; r(e.etat === "ok"); }
+      } else if (e.type === "radios") {
+        radios = { wifi: e.wifi !== false, bluetooth: e.bluetooth };
+        majRadios();
+        if (radios.wifi && connexion.etat === "wifi") {
+          connexion = { etat: "aucune" };
+          if (["accueil", "documents", "quand"].includes(courant)) demarrerConnexion();
+        }
       } else if (e.type === "partages") {
         chargerPartages();
       } else if (e.type === "autorisations") {
@@ -318,6 +343,17 @@ p { margin: 0; }
     aller(precedent);
     return true;
   };
+  // Wi-Fi et Bluetooth du téléphone (application seulement).
+  let radios = { wifi: true, bluetooth: true };
+  function majRadios() {
+    $$("[data-bandeau-wifi]").forEach((b) => (b.hidden = !app || radios.wifi));
+    $$("[data-bandeau-bluetooth]").forEach((b) => (b.hidden = !app || radios.bluetooth !== false));
+  }
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-allumer]");
+    if (!b || !app) return;
+    try { b.dataset.allumer === "wifi" ? app.allumerWifi() : app.allumerBluetooth(); } catch (_) {}
+  });
   let attenteConnexion = null;
   function demarrerConnexion() {
     if (!app || connexion.etat === "encours" || connexion.etat === "ok") return;
@@ -326,10 +362,10 @@ p { margin: 0; }
     try { app.demarrer(); } catch (_) {}
   }
   function majPuces() {
-    const textes = { aucune: "Pas encore relié", encours: "Connexion au guichet…", ok: "Relié au guichet", echec: "Guichet introuvable, nouvel essai à l'envoi" };
+    const textes = { aucune: "Pas encore relié", encours: "Connexion au guichet…", ok: "Relié au guichet", echec: "Guichet introuvable, nouvel essai à l'envoi", wifi: "Wi-Fi éteint" };
     $$("[data-puce]").forEach((p) => {
       p.classList.toggle("ok", connexion.etat === "ok");
-      p.classList.toggle("echec", connexion.etat === "echec");
+      p.classList.toggle("echec", connexion.etat === "echec" || connexion.etat === "wifi");
       p.querySelector("[data-puce-texte]").textContent = textes[connexion.etat] || textes.encours;
     });
   }
@@ -655,7 +691,9 @@ p { margin: 0; }
         if (app) {
           if (connexion.etat !== "encours") { connexion = { etat: "aucune" }; demarrerConnexion(); }
           const ok = await new Promise((r) => { attenteConnexion = r; setTimeout(() => { if (attenteConnexion === r) { attenteConnexion = null; r(false); } }, 95000); });
-          if (!ok) throw new Error("L'ordinateur de la boutique ne s'est pas relié au téléphone. Approchez-vous du guichet et vérifiez que le logiciel est ouvert.");
+          if (!ok) throw new Error(connexion.etat === "wifi"
+            ? "Le Wi-Fi du téléphone est éteint. Allumez-le (bouton sur l'écran précédent), puis réessayez."
+            : "L'ordinateur de la boutique ne s'est pas relié au téléphone. Approchez-vous du guichet et vérifiez que le logiciel est ouvert.");
         }
       }
       etape(0, "fait", "Relié au guichet.");
@@ -782,6 +820,8 @@ p { margin: 0; }
 
   // ─── Démarrage ───
   afficherBoutique();
+  if (app) { try { const r = JSON.parse(app.radios()); radios = { wifi: r.wifi !== false, bluetooth: r.bluetooth }; } catch (_) {} }
+  majRadios();
   majPuces();
   if (!app) chargerInfos();
   let premier = "accueil";

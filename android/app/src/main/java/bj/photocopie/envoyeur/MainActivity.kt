@@ -3,7 +3,12 @@ package bj.photocopie.envoyeur
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -49,6 +54,8 @@ class MainActivity : Activity() {
         private const val DEMANDE_AUTORISATIONS = 11
         private const val DEMANDE_MICRO = 12
         private const val DEMANDE_PHOTO = 13
+        private const val DEMANDE_BLUETOOTH = 14
+        private const val DEMANDE_ACTIVER_BLUETOOTH = 15
 
         /** Adresse imaginaire, servie par l'application elle-même (voir [ClientWeb]). */
         private const val HOTE = "envoyeur.kiosque"
@@ -76,6 +83,14 @@ class MainActivity : Activity() {
     private var enregistreur: MediaRecorder? = null
     private val vocaux = mutableListOf<java.io.File>()
 
+    /** Wi-Fi ou Bluetooth allumé ou éteint pendant que l'application est ouverte. */
+    private val recepteurRadios = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            if (bluetoothAllume() == true) Balayage.demarrer(this@MainActivity)
+            signalerRadios()
+        }
+    }
+
     @Volatile private var liaison: Liaison? = null
     @Volatile private var adressePc: String? = null
     private val fermeture = Runnable { fermerLiaison() }
@@ -98,6 +113,12 @@ class MainActivity : Activity() {
         web.webChromeClient = ChromeWeb()
         web.addJavascriptInterface(Pont(), "KiosqueApp")
         setContentView(web)
+        val filtre = IntentFilter().apply {
+            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(recepteurRadios, filtre, Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(recepteurRadios, filtre)
         traiter(intent)
         web.loadUrl("https://$HOTE/index.html")
     }
@@ -116,10 +137,12 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         visible = true
+        signalerRadios()
         if (autorisationsManquantes().isEmpty()) Balayage.demarrer(this)
     }
 
     override fun onDestroy() {
+        try { unregisterReceiver(recepteurRadios) } catch (_: Exception) {}
         enregistreur?.let { try { it.release() } catch (_: Exception) {} }
         enregistreur = null
         vocaux.forEach { it.delete() }
@@ -290,6 +313,39 @@ class MainActivity : Activity() {
             }
         }
 
+        /** Wi-Fi et Bluetooth allumés ? (`bluetooth` : null si le téléphone n'en a pas.) */
+        @JavascriptInterface
+        fun radios(): String = etatRadios().toString()
+
+        /**
+         * Android ne laisse plus une application allumer le Wi-Fi elle-même :
+         * on ouvre son panneau, le client n'a qu'un bouton à toucher.
+         */
+        @JavascriptInterface
+        fun allumerWifi() {
+            principal.post {
+                try {
+                    startActivity(Intent(Settings.Panel.ACTION_WIFI))
+                } catch (_: ActivityNotFoundException) {
+                    startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                }
+            }
+        }
+
+        /** Android demande « Autoriser l'activation du Bluetooth ? » : un seul geste. */
+        @JavascriptInterface
+        fun allumerBluetooth() {
+            principal.post {
+                if (Build.VERSION.SDK_INT >= 31 &&
+                    checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), DEMANDE_BLUETOOTH)
+                } else {
+                    demanderBluetooth()
+                }
+            }
+        }
+
         /** Documents reçus par « Partager » depuis la dernière demande. */
         @JavascriptInterface
         fun partages(): String {
@@ -329,9 +385,12 @@ class MainActivity : Activity() {
                 .put("message", "Autorisations manquantes."))
             return
         }
-        val wifi = applicationContext.getSystemService(WifiManager::class.java)
-        if (wifi?.isWifiEnabled == false) {
-            try { startActivity(Intent(Settings.Panel.ACTION_WIFI)) } catch (_: ActivityNotFoundException) {}
+        // Wi-Fi éteint : l'interface le dit au client et lui propose de
+        // l'allumer ; la connexion repart d'elle-même une fois allumé.
+        if (!wifiAllume()) {
+            signaler(JSONObject().put("type", "connexion").put("etat", "wifi"))
+            signalerRadios()
+            return
         }
         val l = Liaison(this, ::journal)
         liaison = l
@@ -352,6 +411,27 @@ class MainActivity : Activity() {
                         .put("message", l.raison ?: "Guichet introuvable."))
                 }
             }
+        }
+    }
+
+    private fun wifiAllume(): Boolean =
+        applicationContext.getSystemService(WifiManager::class.java)?.isWifiEnabled ?: true
+
+    private fun bluetoothAllume(): Boolean? =
+        getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled
+
+    private fun etatRadios(): JSONObject =
+        JSONObject().put("type", "radios").put("wifi", wifiAllume())
+            .put("bluetooth", bluetoothAllume() ?: JSONObject.NULL)
+
+    private fun signalerRadios() = signaler(etatRadios())
+
+    private fun demanderBluetooth() {
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), DEMANDE_ACTIVER_BLUETOOTH)
+        } catch (_: Exception) {
+            try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (_: Exception) {}
         }
     }
 
@@ -401,6 +481,10 @@ class MainActivity : Activity() {
                             "Autorisation refusée. Sans elle, l'application ne peut pas joindre la boutique. " +
                                 "Touchez « Autoriser » à nouveau, ou ouvrez les réglages de l'application.")
                 )
+            }
+            DEMANDE_BLUETOOTH -> {
+                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) demanderBluetooth()
+                else try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (_: Exception) {}
             }
             DEMANDE_MICRO -> {
                 // Demande venue du bouton vocal de l'application : le client touche de nouveau.
