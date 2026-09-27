@@ -56,6 +56,8 @@ class MainActivity : Activity() {
         private const val DEMANDE_PHOTO = 13
         private const val DEMANDE_BLUETOOTH = 14
         private const val DEMANDE_ACTIVER_BLUETOOTH = 15
+        private const val DEMANDE_REGLAGE_WIFI = 16
+        private const val DEMANDE_REGLAGE_BLUETOOTH = 17
 
         /** Adresse imaginaire, servie par l'application elle-même (voir [ClientWeb]). */
         private const val HOTE = "envoyeur.kiosque"
@@ -86,7 +88,14 @@ class MainActivity : Activity() {
     /** Wi-Fi ou Bluetooth allumé ou éteint pendant que l'application est ouverte. */
     private val recepteurRadios = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
-            if (bluetoothAllume() == true) Balayage.demarrer(this@MainActivity)
+            // Le client vient d'allumer le Wi-Fi (ou le Bluetooth) dans le
+            // panneau ouvert par l'application : on referme ce panneau, il
+            // revient tout seul à l'application, sans toucher « retour ».
+            if (wifiAllume()) finishActivity(DEMANDE_REGLAGE_WIFI)
+            if (bluetoothAllume() == true) {
+                finishActivity(DEMANDE_REGLAGE_BLUETOOTH)
+                Balayage.demarrer(this@MainActivity)
+            }
             signalerRadios()
         }
     }
@@ -325,9 +334,9 @@ class MainActivity : Activity() {
         fun allumerWifi() {
             principal.post {
                 try {
-                    startActivity(Intent(Settings.Panel.ACTION_WIFI))
+                    startActivityForResult(Intent(Settings.Panel.ACTION_WIFI), DEMANDE_REGLAGE_WIFI)
                 } catch (_: ActivityNotFoundException) {
-                    startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                    try { startActivityForResult(Intent(Settings.ACTION_WIFI_SETTINGS), DEMANDE_REGLAGE_WIFI) } catch (_: Exception) {}
                 }
             }
         }
@@ -431,7 +440,15 @@ class MainActivity : Activity() {
             @Suppress("DEPRECATION")
             startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), DEMANDE_ACTIVER_BLUETOOTH)
         } catch (_: Exception) {
-            try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (_: Exception) {}
+            ouvrirReglagesBluetooth()
+        }
+    }
+
+    private fun ouvrirReglagesBluetooth() {
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(Intent(Settings.ACTION_BLUETOOTH_SETTINGS), DEMANDE_REGLAGE_BLUETOOTH)
+        } catch (_: Exception) {
         }
     }
 
@@ -484,7 +501,7 @@ class MainActivity : Activity() {
             }
             DEMANDE_BLUETOOTH -> {
                 if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) demanderBluetooth()
-                else try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (_: Exception) {}
+                else ouvrirReglagesBluetooth()
             }
             DEMANDE_MICRO -> {
                 // Demande venue du bouton vocal de l'application : le client touche de nouveau.
