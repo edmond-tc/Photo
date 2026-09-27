@@ -230,8 +230,12 @@ p { margin: 0; }
     <div class="contenu">
       <div class="choix-quand" id="choix-quand">
         <label class="carte-choix"><input type="radio" name="quand" id="q-attends" value="J'attends sur place" checked><span><strong>J'attends sur place</strong><small>La boutique le fait tout de suite.</small></span></label>
-        <label class="carte-choix"><input type="radio" name="quand" id="q-repasse" value="Je repasse"><span><strong>Je repasse à <select id="q-heure" class="saisie" style="display:inline; width:auto; padding:4px 8px"></select></strong><small>Votre commande vous attendra.</small></span></label>
-        <label class="carte-choix"><input type="radio" name="quand" id="q-demain" value="Demain"><span><strong>Demain</strong><small>Retrait le lendemain.</small></span></label>
+        <label class="carte-choix"><input type="radio" name="quand" id="q-repasse" value="Je repasse"><span style="display:grid; gap:8px"><strong>Je repasse plus tard</strong>
+          <span style="display:flex; gap:8px; flex-wrap:wrap">
+            <select id="q-jour" class="saisie" style="width:auto; padding:8px 10px" aria-label="Jour"></select>
+            <select id="q-heure" class="saisie" style="width:auto; padding:8px 10px" aria-label="Heure"></select>
+          </span>
+          <small>Votre commande vous attendra.</small></span></label>
       </div>
       <label class="carte-choix" id="carte-urgent"><input type="checkbox" id="urgent"><span><strong>Urgent</strong><small>Passe avant les autres. Supplément éventuel fixé par la boutique.</small></span></label>
       <div class="recap" id="recap"></div>
@@ -622,16 +626,52 @@ p { margin: 0; }
   function alerteCourte(texte) { const p = document.createElement("div"); p.className = "alerte"; p.textContent = texte; docsEl.prepend(p); setTimeout(() => p.remove(), 5000); }
 
   // ─── Pour quand ───
-  function remplirHeures() {
-    const sel = $("#q-heure");
-    if (sel.options.length) return;
-    const h = new Date().getHours();
-    for (let i = Math.min(h + 1, 21); i <= 21; i++) sel.add(new Option(`${String(i).padStart(2, "0")}:00`));
-    if (!sel.options.length) sel.add(new Option("21:00"));
+  // Jour et heure de passage, sur une semaine. Constaté à l'essai : à 21 h,
+  // la liste ne proposait plus que « 21:00 », sans pouvoir choisir un
+  // autre jour.
+  const OUVERTURE = 7, FERMETURE = 21; // heures proposées, de 7:00 à 21:00
+  const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+  const MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  function creneaux(decalageJours) {
+    const liste = [];
+    const maintenant = new Date();
+    const minimum = decalageJours === 0 ? maintenant.getHours() * 60 + maintenant.getMinutes() + 30 : 0;
+    for (let m = OUVERTURE * 60; m <= FERMETURE * 60; m += 30) {
+      if (m >= minimum) liste.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${m % 60 ? "30" : "00"}`);
+    }
+    return liste;
   }
+  function nomDuJour(decalage) {
+    if (decalage === 0) return "aujourd'hui";
+    if (decalage === 1) return "demain";
+    const d = new Date(); d.setDate(d.getDate() + decalage);
+    return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]}`;
+  }
+  function remplirHeures() {
+    const jour = $("#q-jour");
+    if (!jour.options.length) {
+      for (let i = 0; i < 7; i++) {
+        if (i === 0 && !creneaux(0).length) continue; // trop tard pour aujourd'hui
+        const nom = nomDuJour(i);
+        jour.add(new Option(nom.charAt(0).toUpperCase() + nom.slice(1), String(i)));
+      }
+    }
+    remplirCreneaux();
+  }
+  function remplirCreneaux() {
+    const sel = $("#q-heure");
+    const avant = sel.value;
+    sel.innerHTML = "";
+    creneaux(Number($("#q-jour").value)).forEach((h) => sel.add(new Option(h)));
+    if ([...sel.options].some((o) => o.value === avant)) sel.value = avant;
+  }
+  $("#q-jour").addEventListener("change", () => { remplirCreneaux(); $("#q-repasse").checked = true; rendreRecap(); });
+  $("#q-heure").addEventListener("change", () => { $("#q-repasse").checked = true; });
   function quandTexte() {
     const r = document.querySelector("input[name=quand]:checked");
-    return r.id === "q-repasse" ? `Je repasse à ${$("#q-heure").value}` : r.value;
+    return r.id === "q-repasse"
+      ? `Je repasse ${nomDuJour(Number($("#q-jour").value))} à ${$("#q-heure").value}`
+      : r.value;
   }
   function rendreRecap() {
     $$("#choix-quand .carte-choix").forEach((c) => c.classList.toggle("actif", c.querySelector("input").checked));
