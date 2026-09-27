@@ -40,9 +40,13 @@ const ATTENTE_PREMIER_ENVOI: Duration = Duration::from_secs(120);
 /// Après le dernier envoi, on laisse ce délai au client pour un autre
 /// fichier, puis on libère pour le suivant.
 const CALME_APRES_ENVOI: Duration = Duration::from_secs(20);
-/// Un réseau refusé (mauvais mot de passe : ce n'est pas un client) ou déjà
-/// servi n'est pas retenté pendant ce délai.
+/// Un client déjà servi n'est pas repris pendant ce délai.
 const MISE_A_L_ECART: Duration = Duration::from_secs(180);
+/// Un réseau qui a refusé notre mot de passe n'est pas un client (box d'un
+/// voisin, partage d'un inconnu) : inutile de perdre 25 s à le retenter
+/// avant longtemps. Constaté à l'essai : sans cela, le PC passait son temps
+/// sur les box HUAWEI et Celtiis du voisinage.
+const MISE_A_L_ECART_ECHEC: Duration = Duration::from_secs(30 * 60);
 const PAUSE_ENTRE_TOURS: Duration = Duration::from_secs(4);
 
 // ───────────────────────────── Journal de diagnostic ─────────────────────────────
@@ -91,6 +95,11 @@ pub struct Reseau {
     pub wpa3: bool,
     /// Protégé par mot de passe (WPA2 ou WPA3 personnel).
     pub protege: bool,
+    /// Réseau que ce PC connaît déjà (Wi-Fi de la boutique, box) ou auquel
+    /// il est connecté : jamais un client, on n'y touche pas.
+    pub connu: bool,
+    /// Sécurité annoncée, pour le journal (diagnostic).
+    pub securite: String,
 }
 
 /// Le réseau à rejoindre : protégé, au-dessus du seuil, pas mis à l'écart,
@@ -104,7 +113,7 @@ pub fn choisir<'a>(
 ) -> Option<&'a Reseau> {
     reseaux
         .iter()
-        .filter(|r| r.protege && r.signal >= seuil && !r.ssid.is_empty())
+        .filter(|r| r.protege && !r.connu && r.signal >= seuil && !r.ssid.is_empty())
         .filter(|r| !a_l_ecart(&r.ssid) && !ignorer.iter().any(|i| i == &r.ssid))
         // L'envoyeur Android d'abord : c'est à coup sûr un client qui veut
         // envoyer, avec notre mot de passe.
@@ -178,6 +187,19 @@ pub fn profil_xml(ssid: &str, mot_de_passe: &str, wpa3: bool) -> String {
         ssid = echapper_xml(ssid),
         mdp = echapper_xml(mot_de_passe),
     )
+}
+
+/// Ce que Windows raconte pendant une tentative de connexion.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Evenement {
+    /// Étape franchie (association, authentification, connecté…).
+    Etape(&'static str),
+    /// Connexion réussie selon Windows.
+    Reussie,
+    /// Connexion refusée, avec la raison donnée par Windows.
+    Echec { code: u32, texte: String },
+    /// Déconnecté, avec la raison.
+    Deconnecte { code: u32, texte: String },
 }
 
 /// L'adresse apparue après la connexion : celle que le téléphone du client
@@ -379,7 +401,7 @@ fn garder_eveille(oui: bool) {
 fn garder_eveille(_oui: bool) {}
 
 fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<String, Instant>) {
-    mis_a_l_ecart.retain(|_, depuis| depuis.elapsed() < MISE_A_L_ECART);
+    mis_a_l_ecart.retain(|_, jusqu_a| *jusqu_a > Instant::now());
 
     let client = match wlan::Client::ouvrir() {
         Ok(c) => c,
@@ -426,21 +448,50 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         return;
     };
 
-    noter(format!("📶 Téléphone vu : « {} » (signal {} %)", cible.ssid, cible.signal));
+    noter(format!(
+        "📶 Téléphone vu : « {} » (signal {} %, {})",
+        cible.ssid, cible.signal, cible.securite
+    ));
     etat(format!("Connexion à « {} »…", cible.ssid));
     let avant = adresses_ipv4();
     if let Err(e) = client.rejoindre(&cible.ssid, &reglages.mot_de_passe, cible.wpa3) {
         noter(format!("❌ Connexion refusée à « {} » : {e}", cible.ssid));
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now());
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART_ECHEC);
         return;
     }
 
-    // Connexion, puis adresse donnée par le téléphone.
+    // Connexion, puis adresse donnée par le téléphone. Windows raconte
+    // chaque étape (voir `Evenement`) : en cas d'échec, le journal dit
+    // POURQUOI, au lieu d'un simple « pas de connexion ».
     let debut = Instant::now();
     let mut adresse = None;
-    while debut.elapsed() < Duration::from_secs(25) {
-        std::thread::sleep(Duration::from_millis(700));
-        if client.connecte_a().as_deref() == Some(cible.ssid.as_str()) {
+    let mut etapes: Vec<&'static str> = Vec::new();
+    let mut connecte = false;
+    let mut echec: Option<String> = None;
+    while debut.elapsed() < Duration::from_secs(if connecte { 45 } else { 25 }) {
+        std::thread::sleep(Duration::from_millis(500));
+        for evenement in client.evenements() {
+            match evenement {
+                Evenement::Etape(e) => {
+                    if etapes.last() != Some(&e) {
+                        etapes.push(e);
+                    }
+                }
+                Evenement::Reussie => connecte = true,
+                Evenement::Echec { code, texte } => {
+                    echec = Some(format!("Windows refuse : {texte} (code {code})"))
+                }
+                Evenement::Deconnecte { code, texte } if code != 0 => {
+                    echec = Some(format!("déconnecté par Windows : {texte} (code {code})"))
+                }
+                Evenement::Deconnecte { .. } => {}
+            }
+        }
+        if echec.is_some() {
+            break;
+        }
+        if connecte || client.connecte_a().as_deref() == Some(cible.ssid.as_str()) {
+            connecte = true;
             adresse = nouvelle_adresse(&avant, &adresses_ipv4());
             if adresse.is_some() {
                 break;
@@ -448,12 +499,22 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         }
     }
     let Some(adresse) = adresse else {
+        let parcours = if etapes.is_empty() { "aucune".to_string() } else { etapes.join(" → ") };
+        let pourquoi = match echec {
+            Some(e) => e,
+            None if connecte => format!(
+                "connecté, mais le téléphone n'a donné aucune adresse au PC en 45 s. Adresses du PC : {}",
+                adresses_ipv4().iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ")
+            ),
+            None => "aucune réponse du réseau en 25 s".to_string(),
+        };
         noter(format!(
-            "❌ « {} » : pas de connexion en 25 s (mot de passe différent, ou ce n'est pas un client).",
-            cible.ssid
+            "❌ « {} » : {pourquoi}. Étapes : {parcours}. {:.0} s.",
+            cible.ssid,
+            debut.elapsed().as_secs_f32()
         ));
         client.deconnecter();
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now());
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART_ECHEC);
         return;
     };
 
@@ -505,17 +566,96 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
     if let Ok(mut a) = ADRESSE.lock() {
         *a = None;
     }
-    mis_a_l_ecart.insert(cible.ssid, Instant::now());
+    mis_a_l_ecart.insert(cible.ssid, Instant::now() + MISE_A_L_ECART);
 }
 
 // ───────────────────────────── API Wi-Fi de Windows ─────────────────────────────
 
 #[cfg(windows)]
 mod wlan {
-    use super::Reseau;
+    use super::{Evenement, Reseau};
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::{BOOL, HANDLE};
     use windows::Win32::NetworkManagement::WiFi::*;
+
+    /// Messages reçus de Windows (sur un de ses fils à lui), lus par la boucle.
+    static EVENEMENTS: Mutex<VecDeque<Evenement>> = Mutex::new(VecDeque::new());
+
+    fn pousser(e: Evenement) {
+        if let Ok(mut liste) = EVENEMENTS.lock() {
+            liste.push_back(e);
+            while liste.len() > 100 {
+                liste.pop_front();
+            }
+        }
+    }
+
+    /// Texte de Windows pour un code de raison (dans la langue du PC).
+    pub fn raison_en_texte(code: u32) -> String {
+        // Déclarée ici avec un tampon MODIFIABLE : la version du paquet
+        // `windows` le prend en lecture seule, alors que Windows y écrit.
+        #[link(name = "wlanapi")]
+        extern "system" {
+            fn WlanReasonCodeToString(
+                code: u32,
+                taille: u32,
+                tampon: *mut u16,
+                reserve: *const core::ffi::c_void,
+            ) -> u32;
+        }
+        let mut tampon = [0u16; 512];
+        // SAFETY : tampon local de 512 caractères, taille transmise à Windows.
+        let r = unsafe {
+            WlanReasonCodeToString(code, tampon.len() as u32, tampon.as_mut_ptr(), std::ptr::null())
+        };
+        if r != 0 {
+            return format!("raison {code}");
+        }
+        let fin = tampon.iter().position(|&c| c == 0).unwrap_or(tampon.len());
+        String::from_utf16_lossy(&tampon[..fin]).trim().to_string()
+    }
+
+    unsafe extern "system" fn rappel(donnees: *mut L2_NOTIFICATION_DATA, _contexte: *mut core::ffi::c_void) {
+        let Some(d) = donnees.as_ref() else { return };
+        let code = d.NotificationCode as i32;
+        if d.NotificationSource == WLAN_NOTIFICATION_SOURCE_ACM {
+            let raison = if !d.pData.is_null()
+                && d.dwDataSize as usize >= std::mem::offset_of!(WLAN_CONNECTION_NOTIFICATION_DATA, dwFlags)
+            {
+                (*(d.pData as *const WLAN_CONNECTION_NOTIFICATION_DATA)).wlanReasonCode
+            } else {
+                0
+            };
+            if code == wlan_notification_acm_connection_complete.0 {
+                pousser(if raison == 0 {
+                    Evenement::Reussie
+                } else {
+                    Evenement::Echec { code: raison, texte: raison_en_texte(raison) }
+                });
+            } else if code == wlan_notification_acm_connection_attempt_fail.0 {
+                pousser(Evenement::Echec { code: raison, texte: raison_en_texte(raison) });
+            }
+        } else if d.NotificationSource == WLAN_NOTIFICATION_SOURCE_MSM {
+            match code {
+                c if c == wlan_notification_msm_associating.0 => pousser(Evenement::Etape("association")),
+                c if c == wlan_notification_msm_authenticating.0 => pousser(Evenement::Etape("authentification")),
+                c if c == wlan_notification_msm_connected.0 => pousser(Evenement::Etape("connecté")),
+                c if c == wlan_notification_msm_disconnected.0 => {
+                    let raison = if !d.pData.is_null()
+                        && d.dwDataSize as usize >= std::mem::size_of::<WLAN_MSM_NOTIFICATION_DATA>()
+                    {
+                        (*(d.pData as *const WLAN_MSM_NOTIFICATION_DATA)).wlanReasonCode
+                    } else {
+                        0
+                    };
+                    pousser(Evenement::Deconnecte { code: raison, texte: raison_en_texte(raison) });
+                }
+                _ => {}
+            }
+        }
+    }
 
     pub struct Client {
         poignee: HANDLE,
@@ -548,7 +688,29 @@ mod wlan {
                 unsafe { WlanCloseHandle(poignee, None) };
                 return Err("ce PC n'a aucune carte Wi-Fi active.".to_string());
             }
+            // Être prévenu de chaque étape d'une connexion et de la raison
+            // d'un refus. Sans cela, un échec n'est qu'un délai dépassé.
+            // SAFETY : `rappel` est une fonction statique, sans contexte.
+            unsafe {
+                WlanRegisterNotification(
+                    poignee,
+                    WLAN_NOTIFICATION_SOURCES(WLAN_NOTIFICATION_SOURCE_ACM.0 | WLAN_NOTIFICATION_SOURCE_MSM.0),
+                    BOOL(1),
+                    Some(rappel),
+                    None,
+                    None,
+                    None,
+                );
+            }
+            if let Ok(mut liste) = EVENEMENTS.lock() {
+                liste.clear();
+            }
             Ok(Client { poignee, interface })
+        }
+
+        /// Les messages de Windows reçus depuis le dernier appel.
+        pub fn evenements(&self) -> Vec<Evenement> {
+            EVENEMENTS.lock().map(|mut l| l.drain(..).collect()).unwrap_or_default()
         }
 
         pub fn scanner(&self) {
@@ -577,15 +739,34 @@ mod wlan {
                     let longueur = (n.dot11Ssid.uSSIDLength as usize).min(32);
                     let ssid = String::from_utf8_lossy(&n.dot11Ssid.ucSSID[..longueur]).to_string();
                     let auth = n.dot11DefaultAuthAlgorithm;
+                    let fin = n.strProfileName.iter().position(|&c| c == 0).unwrap_or(0);
+                    let profil = String::from_utf16_lossy(&n.strProfileName[..fin]);
+                    // Connu = un profil existe et ce n'est pas l'un des
+                    // nôtres (« PB-client-… »), ou le PC y est connecté.
+                    let connu = n.dwFlags & WLAN_AVAILABLE_NETWORK_CONNECTED != 0
+                        || (n.dwFlags & WLAN_AVAILABLE_NETWORK_HAS_PROFILE != 0
+                            && !profil.starts_with("PB-client-"));
                     reseaux.push(Reseau {
                         ssid,
                         signal: n.wlanSignalQuality,
                         wpa3: auth == DOT11_AUTH_ALGO_WPA3_SAE,
                         protege: n.bSecurityEnabled.as_bool()
                             && (auth == DOT11_AUTH_ALGO_RSNA_PSK || auth == DOT11_AUTH_ALGO_WPA3_SAE),
+                        connu,
+                        securite: format!(
+                            "sécurité {}/{}",
+                            auth.0, n.dot11DefaultCipherAlgorithm.0
+                        ),
                     });
                 }
                 WlanFreeMemory(liste as *const _);
+            }
+            // Windows liste parfois deux fois le même réseau (avec et sans
+            // profil) : connu pour l'un, connu pour tous.
+            let connus: Vec<String> =
+                reseaux.iter().filter(|r| r.connu).map(|r| r.ssid.clone()).collect();
+            for r in &mut reseaux {
+                r.connu |= connus.contains(&r.ssid);
             }
             Ok(reseaux)
         }
@@ -681,9 +862,12 @@ mod wlan {
 
 #[cfg(not(windows))]
 mod wlan {
-    use super::Reseau;
+    use super::{Evenement, Reseau};
     pub struct Client;
     impl Client {
+        pub fn evenements(&self) -> Vec<Evenement> {
+            Vec::new()
+        }
         pub fn ouvrir() -> Result<Self, String> {
             Err("disponible uniquement sur Windows".to_string())
         }
@@ -706,7 +890,19 @@ mod tests {
     use super::*;
 
     fn r(ssid: &str, signal: u32) -> Reseau {
-        Reseau { ssid: ssid.into(), signal, wpa3: false, protege: true }
+        Reseau { ssid: ssid.into(), signal, wpa3: false, protege: true, connu: false, securite: String::new() }
+    }
+
+    /// Constaté à l'essai : le PC tentait la box Celtiis de la maison.
+    #[test]
+    fn ne_touche_jamais_un_reseau_deja_connu_du_pc() {
+        let mut box_maison = r("Celtiis_bfbd", 99);
+        box_maison.connu = true;
+        let reseaux = vec![box_maison, r("DIRECT-KQ-K4G7", 80)];
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[]).unwrap().ssid, "DIRECT-KQ-K4G7");
+        let mut seul = r("Celtiis_bfbd", 99);
+        seul.connu = true;
+        assert!(choisir(&[seul], 60, &|_| false, &[]).is_none());
     }
 
     #[test]
