@@ -273,6 +273,7 @@ p { margin: 0; }
         <div class="attente" data-suivi="pret">Prêt à retirer</div>
       </div>
       <div class="pret" id="pret" hidden></div>
+      <p class="bandeau doux" id="hors-ligne" hidden></p>
       <p class="aide" id="recap-final"></p>
       <p class="aide" id="message-fidelite" hidden></p>
     </div>
@@ -320,7 +321,11 @@ p { margin: 0; }
   window.kiosque = {
     // Appelé par l'application Android.
     evenement(e) {
-      if (e.type === "connexion") {
+      if (e.type === "nouvelle-visite") {
+        // Notification du guichet touchée : on repart pour une nouvelle commande.
+        if (courant === "recu" && !envoiEnCours) nouvelleCommande();
+      } else if (e.type === "connexion") {
+        if (e.etat === "aucune" && courant === "recu") passerHorsLigne();
         connexion = { etat: e.etat, base: e.pc ? `http://${e.pc}:${PORT}` : connexion.base, message: e.message };
         majPuces();
         if (e.etat === "ok") chargerInfos();
@@ -870,7 +875,27 @@ p { margin: 0; }
   // ─── Reçu et suivi ───
   let suivi = null;
   let pretAnnonce = false;
+  // Le PC s'est libéré pour le client suivant : le téléphone n'apprendra
+  // plus la suite. On le dit franchement, au lieu de laisser croire que
+  // l'écran va encore changer.
+  function passerHorsLigne() {
+    if (pretAnnonce) return;
+    const numero = $("#numero-commande").textContent;
+    document.querySelectorAll('[data-suivi]').forEach((d) => (d.hidden = true));
+    const p = $("#hors-ligne");
+    p.textContent = `Votre commande ${numero} est entre les mains du guichet. Présentez ce numéro pour la retirer.`;
+    p.hidden = false;
+  }
+  let heureRecu = 0;
+  // Rouverte plus de 10 minutes après : l'application repart de l'accueil.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && courant === "recu" && Date.now() - heureRecu > 10 * 60 * 1000) nouvelleCommande();
+  });
+
   function montrerRecu(r) {
+    heureRecu = Date.now();
+    $("#hors-ligne").hidden = true;
+    document.querySelectorAll('[data-suivi]').forEach((d) => (d.hidden = false));
     $("#numero-commande").textContent = r.numero || "✓";
     const total = docs.reduce((s, d) => s + prix(d), 0);
     $("#recap-final").textContent = `${docs.length} document${docs.length > 1 ? "s" : ""} · ${quandTexte()}${$("#urgent").checked ? " · Urgent" : ""} · ${f(total)} estimés`;
@@ -914,11 +939,12 @@ p { margin: 0; }
         if (s.message) { const m = $("#message-fidelite"); m.textContent = s.message; m.hidden = false; }
         if (s.paye) clearInterval(suivi);
       } catch (_) {
-        if (++echecs >= 3) clearInterval(suivi);
+        if (++echecs >= 3) { clearInterval(suivi); passerHorsLigne(); }
       }
     }, 3000);
   }
-  $("#btn-nouvelle").addEventListener("click", () => {
+  $("#btn-nouvelle").addEventListener("click", () => nouvelleCommande());
+  function nouvelleCommande() {
     clearInterval(suivi);
     docs.forEach((d) => { if (d.apercu) URL.revokeObjectURL(d.apercu); });
     docs = [];
@@ -926,7 +952,7 @@ p { margin: 0; }
     $("#q-attends").checked = true;
     if (app) connexion = { etat: "aucune" };
     aller("accueil");
-  });
+  }
 
   // ─── Démarrage ───
   afficherBoutique();

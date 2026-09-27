@@ -272,6 +272,20 @@ body {
   font-size: 0.82rem;
   color: var(--gris-texte-discret);
 }
+.carte-commande.a-remettre {
+  border-color: #e08a00;
+  box-shadow: 0 0 0 2px #ffd59a;
+}
+.carte-commande.a-remettre .tete-commande {
+  background: #fff1dc;
+}
+.rappel-commande {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #8a4b00;
+}
 .ligne-temps {
   font-size: 0.78rem;
   color: var(--bleu-office);

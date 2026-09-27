@@ -301,6 +301,16 @@ pub fn finaliser_commande(
         );
     }
 
+    // Encaisser vaut « prêt et remis » : le gérant qui encaisse a servi le
+    // client, qu'il ait touché « Prêt » ou non. Toute la commande passe à
+    // « prêt » (le client le voit s'il est encore relié).
+    let _ = conn.execute(
+        "UPDATE files_queue SET etape = 'pret', pret_le = COALESCE(pret_le, ?2)
+         WHERE commande_jeton IS NOT NULL
+           AND commande_jeton = (SELECT commande_jeton FROM files_queue WHERE id = ?1)",
+        params![id, chrono::Local::now().to_rfc3339()],
+    );
+
     conn.execute(
         "INSERT INTO transactions
             (file_queue_id, description, montant_calcule, montant, raison_ecart,

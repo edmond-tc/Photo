@@ -624,11 +624,14 @@ function creerCarteCommande(item) {
     droite.appendChild(pret);
   }
 
-  tete.append(code, qui, etiquettes, droite);
+  const rappel = document.createElement("p");
+  rappel.className = "rappel-commande";
+  rappel.hidden = true;
+  tete.append(code, qui, etiquettes, droite, rappel);
   const docs = document.createElement("ul");
   docs.className = "docs-commande";
   carte.append(tete, docs);
-  if (item.commande_jeton) appliquerEtape(carte, item.etape || "recu");
+  if (item.commande_jeton) appliquerEtape(carte, item.etape || "recu", false);
   majLigneTemps(carte);
   return carte;
 }
@@ -648,16 +651,54 @@ function majLigneTemps(carte) {
     .join(" → ");
 }
 
-function appliquerEtape(carte, etape) {
+// `vientDeChanger` : faux à l'affichage d'une carte existante, dont les
+// heures viennent de la base (une ancienne commande n'en a pas).
+function appliquerEtape(carte, etape, vientDeChanger = true) {
   const maintenant = new Date().toISOString();
-  if (etape === "impression" && !carte.dataset.impression) carte.dataset.impression = maintenant;
-  if (etape === "pret" && !carte.dataset.pret) carte.dataset.pret = maintenant;
+  if (vientDeChanger && etape === "impression" && !carte.dataset.impression) carte.dataset.impression = maintenant;
+  if (vientDeChanger && etape === "pret" && !carte.dataset.pret) carte.dataset.pret = maintenant;
   majLigneTemps(carte);
   carte.dataset.etape = etape;
   const e = carte.querySelector(".etape-commande");
   if (e) e.textContent = `Client : ${LIBELLES_ETAPE[etape] ?? "Reçu"}`;
   const b = carte.querySelector(".bouton-pret");
   if (b) b.hidden = etape === "pret";
+}
+
+// Windows confirme que TOUS les documents de la commande sont sortis de
+// l'imprimante : la commande est prête, sans que le gérant ait à le dire.
+// (Un document ouvert dans Word et imprimé de là n'est pas confirmé : pour
+// lui, « Prêt » ou « Encaisser ».)
+async function verifierPretAutomatique(id) {
+  const carte = document.querySelector(`.ligne-fichier[data-id="${id}"]`)?.closest(".carte-commande");
+  if (!carte?.dataset.commande || carte.dataset.etape === "pret") return;
+  const toutImprime = [...carte.querySelectorAll(".ligne-fichier")].every(
+    (li) => confirmationsImpression.get(Number(li.dataset.id))?.confirmee
+  );
+  if (!toutImprime) return;
+  await definirEtape(id, "pret");
+  appliquerEtape(carte, "pret");
+}
+
+// Imprimée ou prête depuis plus de 15 minutes, mais pas encaissée : le
+// gérant a peut-être remis le document sans rien toucher. Rappel doux.
+const RAPPEL_APRES_MS = 15 * 60 * 1000;
+function verifierRappels() {
+  document.querySelectorAll(".carte-commande[data-commande]").forEach((carte) => {
+    const depuis = carte.dataset.pret || carte.dataset.impression;
+    const rappel = carte.querySelector(".rappel-commande");
+    const ecoule = depuis ? Date.now() - new Date(depuis).getTime() : 0;
+    const actif = ecoule > RAPPEL_APRES_MS;
+    carte.classList.toggle("a-remettre", actif);
+    if (rappel) {
+      rappel.hidden = !actif;
+      if (actif) {
+        rappel.textContent = `${carte.dataset.pret ? "Prête" : "Imprimée"} il y a ${Math.round(
+          ecoule / 60000
+        )} min — remise au client ? Touchez « Encaisser ».`;
+      }
+    }
+  });
 }
 
 function majCarteCommande(carte) {
@@ -677,6 +718,7 @@ function ajouterFichier(item, enTete = false) {
   }
   carte.querySelector(".docs-commande").appendChild(creerLigne(item));
   majCarteCommande(carte);
+  verifierRappels();
 }
 
 function retirerFichier(id) {
@@ -975,6 +1017,11 @@ document.querySelector("#form-encaissement").addEventListener("submit", async (e
       employe: document.querySelector("#enc-employe").value || null,
     });
     fermerModal("modal-encaissement");
+    // Encaisser vaut « prêt et remis » (voir gestion::finaliser_commande).
+    const carteEncaissee = document
+      .querySelector(`.ligne-fichier[data-id="${idEncaissementEnCours}"]`)
+      ?.closest(".carte-commande");
+    if (carteEncaissee?.dataset.commande) appliquerEtape(carteEncaissee, "pret");
     retirerFichier(idEncaissementEnCours);
     jouerSonEncaissement();
     // Le reçu n'est plus proposé à chaque encaissement : dans les boutiques
@@ -3321,7 +3368,9 @@ async function demarrerApplication() {
   await listen("impression-confirmee", (event) => {
     confirmationsImpression.set(event.payload.id, event.payload);
     appliquerStatutImpression(event.payload.id, event.payload);
+    verifierPretAutomatique(event.payload.id);
   });
+  setInterval(verifierRappels, 60000);
 
   // Clé USB contenant un fichier "licence.txt" : évite au gérant de retaper
   // à la main une clé signée de plus de 100 caractères.

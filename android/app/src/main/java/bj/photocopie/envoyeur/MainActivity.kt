@@ -545,6 +545,8 @@ class MainActivity : Activity() {
     // ───────────────────────────── Documents ─────────────────────────────
 
     private fun traiter(intent: Intent?) {
+        // Notification « Kiosque à côté » : nouvelle visite, nouvelle commande.
+        if (intent?.action == ACTION_CHOISIR) signaler(JSONObject().put("type", "nouvelle-visite"))
         val uris: List<Uri> = when (intent?.action) {
             Intent.ACTION_SEND -> listOfNotNull(documentPartage(intent))
             Intent.ACTION_SEND_MULTIPLE -> documentsPartages(intent)
