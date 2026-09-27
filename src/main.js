@@ -1052,7 +1052,7 @@ const AIDES_SECTION = {
   rapports: "L'argent du jour, les impayés à relancer, le stock, et le rapport imprimable à garder ou à montrer au propriétaire.",
   reglages: "Le nom de la boutique, le dossier surveillé, les tarifs, les employés et la sauvegarde. À régler une fois, rarement retouché ensuite.",
   reception:
-    "Le PC rejoint tout seul le partage de connexion du téléphone du client, reçoit le document, puis se libère pour le suivant. Version d'essai : chaque étape est notée ci-dessous.",
+    "Le PC rejoint tout seul le réseau « DIRECT-KQ-… » créé par l'application Envoyeur Kiosque du client, reçoit le document, puis se libère pour le suivant. Les autres Wi-Fi (box, partages de connexion) ne sont jamais tentés : un client sans l'application utilise le QR du guichet. Version d'essai : chaque étape est notée ci-dessous.",
   activite: "Ce que font les imprimantes et photocopieurs, à chaque instant : chaque impression partie du PC, et les photocopies faites sur la vitre des machines branchées en réseau. Mis à jour tout seul.",
 };
 
@@ -1740,13 +1740,13 @@ async function rendreReceptionDirecte(corps) {
       <input type="checkbox" id="rd-active" ${e.reglages.active ? "checked" : ""}>
       <strong>Réception directe active</strong>
     </label>
-    <p style="margin:0.6rem 0 0.2rem">Mot de passe que le client met sur son partage de connexion :</p>
+    <p style="margin:0.6rem 0 0.2rem">Mot de passe du réseau créé par l'application du téléphone (le même des deux côtés) :</p>
     <input id="rd-mdp" type="text" value="${echapperHtml(e.reglages.mot_de_passe)}" style="width:14rem">
     <p style="margin:0.6rem 0 0.2rem">Force de signal minimale (téléphone au guichet), de 1 à 100 :</p>
     <input id="rd-seuil" type="number" min="1" max="100" value="${e.reglages.seuil}" style="width:6rem">
     <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
-      Si le PC rejoint le téléphone d'un voisin, montez ce chiffre. S'il ne voit jamais le
-      téléphone posé au guichet, baissez-le. Le journal montre le signal de chaque téléphone vu.
+      S'il ne voit jamais le téléphone posé au guichet, baissez ce chiffre. Le journal montre
+      le signal de chaque téléphone vu.
     </p>`;
   reglages.appendChild(
     bouton("Enregistrer", "btn-primaire", async () => {
@@ -1797,15 +1797,16 @@ async function rendreReceptionDirecte(corps) {
   const carteQr = document.createElement("div");
   carteQr.className = "carte-rapport";
   carteQr.innerHTML = `
-    <h3>QR du guichet</h3>
-    <p style="font-size:0.9rem">Le client partage sa connexion, puis scanne ce code avec l'appareil
-      photo : la page d'envoi s'ouvre. Le même code sert pour tous les clients — imprimez-le et
-      collez-le au guichet.</p>
+    <h3>Affiche du guichet</h3>
+    <p style="font-size:0.9rem">Le client installe une fois l'application « Envoyeur Kiosque ».
+      Au guichet, une notification lui propose d'envoyer : il choisit ses documents, c'est tout.
+      Ce code-ci ouvre la page d'envoi seulement quand le téléphone est déjà relié au PC
+      (secours) — les clients sans l'application utilisent les QR habituels de l'écran principal.</p>
     <img src="${qr.fixe}" alt="QR du guichet" style="width:180px; height:180px; image-rendering:pixelated">
     <p style="font-size:0.8rem; color:var(--gris-texte-discret)">${echapperHtml(qr.fixe_url)}</p>`;
   carteQr.appendChild(
     bouton("Imprimer l'affiche du guichet", "btn-secondaire", () =>
-      imprimerAfficheReception(qr.fixe, e.reglages.mot_de_passe)
+      imprimerAfficheReception()
     )
   );
   corps.appendChild(carteQr);
@@ -1875,22 +1876,21 @@ async function rendreReceptionDirecte(corps) {
   }, 2000);
 }
 
-/// Affiche A4 du guichet : les deux gestes du client, et le QR fixe.
-function imprimerAfficheReception(qrFixe, motDePasse) {
+/// Affiche A4 du guichet : les deux gestes du client avec l'application.
+/// (Le PC ne rejoint plus que le réseau créé par l'application : l'ancienne
+/// consigne « allumez le partage de connexion » ne marcherait plus.)
+function imprimerAfficheReception() {
   const affiche = document.querySelector("#affiche-reception");
   affiche.innerHTML = `
-    <h1>Envoyez votre document ici</h1>
+    <h1>Envoyez votre document sans câble</h1>
     <ol>
-      <li>Allumez le <strong>partage de connexion</strong> de votre téléphone<br>
-        avec ce mot de passe :</li>
+      <li>Une seule fois : installez l'application<br>
+        <strong>Envoyeur Kiosque</strong> (demandez-la au guichet).</li>
+      <li>Au guichet, touchez la notification<br>
+        <strong>« Kiosque photocopie à côté »</strong> et choisissez vos documents.</li>
     </ol>
-    <p class="mdp">${echapperHtml(motDePasse)}</p>
-    <ol start="2">
-      <li><strong>Scannez ce code</strong> avec l'appareil photo.</li>
-    </ol>
-    <div><img src="${qrFixe}" alt=""></div>
     <p class="pied">Sans internet : votre forfait n'est pas utilisé.<br>
-      iPhone : Réglages → Partage de connexion. Android : Point d'accès mobile (sécurité WPA2).</p>`;
+      Pas l'application ? Scannez le QR code du guichet.</p>`;
   imprimerPage("impression-reception");
 }
 

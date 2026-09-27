@@ -42,75 +42,9 @@ const ATTENTE_PREMIER_ENVOI: Duration = Duration::from_secs(120);
 const CALME_APRES_ENVOI: Duration = Duration::from_secs(20);
 /// Un client déjà servi n'est pas repris pendant ce délai.
 const MISE_A_L_ECART: Duration = Duration::from_secs(180);
-/// Un réseau qui a refusé notre mot de passe n'est pas un client (box d'un
-/// voisin, partage d'un inconnu) : inutile de perdre 25 s à le retenter
-/// avant longtemps. Constaté à l'essai : sans cela, le PC passait son temps
-/// sur les box HUAWEI et Celtiis du voisinage.
+/// Un réseau d'envoyeur qui a échoué n'est pas retenté avant ce délai (le
+/// téléphone crée un nouveau nom à chaque envoi).
 const MISE_A_L_ECART_ECHEC: Duration = Duration::from_secs(30 * 60);
-/// Un réseau qui n'est pas celui de notre envoyeur (box, partage) et qui a
-/// échoué une fois n'acceptera pas mieux notre mot de passe plus tard.
-const MISE_A_L_ECART_ECHEC_AUTRE: Duration = Duration::from_secs(6 * 3600);
-
-fn ecart_apres_echec(ssid: &str) -> Duration {
-    if est_envoyeur(ssid) { MISE_A_L_ECART_ECHEC } else { MISE_A_L_ECART_ECHEC_AUTRE }
-}
-
-/// Temps d'attente d'une connexion, avant d'abandonner. Un réseau autre que
-/// notre envoyeur (box, partage d'un inconnu) a droit à moins : pendant
-/// qu'on l'essaie, le PC ne voit pas le téléphone d'un vrai client arriver.
-fn attente_connexion(ssid: &str) -> Duration {
-    Duration::from_secs(if est_envoyeur(ssid) { 25 } else { 12 })
-}
-
-/// Les réseaux écartés survivent au redémarrage du logiciel (sinon, à
-/// chaque ouverture, le PC retente toutes les box du voisinage).
-/// Format : JSON { ssid: fin de l'écart en secondes depuis 1970 }.
-pub fn ecartes_depuis_texte(texte: &str, maintenant: u64) -> HashMap<String, u64> {
-    serde_json::from_str::<HashMap<String, u64>>(texte)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|(_, fin)| *fin > maintenant)
-        .collect()
-}
-
-fn secondes_depuis_1970() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-fn charger_ecartes(app: &AppHandle) -> HashMap<String, Instant> {
-    let state = app.state::<crate::db::DbState>();
-    let conn = state.0.lock();
-    let texte = conn.as_ref().ok().and_then(|c| crate::db::get_setting(c, CLE_ECARTES)).unwrap_or_default();
-    drop(conn);
-    let maintenant = secondes_depuis_1970();
-    ecartes_depuis_texte(&texte, maintenant)
-        .into_iter()
-        .map(|(ssid, fin)| (ssid, Instant::now() + Duration::from_secs(fin - maintenant)))
-        .collect()
-}
-
-/// N'enregistre que les longs écarts (réseaux étrangers) : les courts
-/// n'ont pas besoin de survivre à un redémarrage.
-fn enregistrer_ecartes(app: &AppHandle, mis_a_l_ecart: &HashMap<String, Instant>) {
-    let maintenant = secondes_depuis_1970();
-    let longs: HashMap<&String, u64> = mis_a_l_ecart
-        .iter()
-        .filter(|(ssid, _)| !est_envoyeur(ssid))
-        .map(|(ssid, fin)| (ssid, maintenant + fin.saturating_duration_since(Instant::now()).as_secs()))
-        .collect();
-    let Ok(texte) = serde_json::to_string(&longs) else { return };
-    let state = app.state::<crate::db::DbState>();
-    let conn = state.0.lock();
-    if let Ok(c) = conn.as_ref() {
-        let _ = crate::db::set_setting(c, CLE_ECARTES, &texte);
-    }
-}
-
-const CLE_ECARTES: &str = "reception_directe_ecartes";
-
 fn envoi_recu() -> bool {
     DERNIER_ENVOI.lock().ok().and_then(|d| *d).is_some()
 }
@@ -169,9 +103,14 @@ pub struct Reseau {
     pub securite: String,
 }
 
-/// Le réseau à rejoindre : protégé, au-dessus du seuil, pas mis à l'écart,
-/// et le plus fort. `ignorer` : nos propres réseaux (celui que le PC crée
-/// éventuellement) et ceux qu'on ne doit jamais tenter.
+/// Le réseau à rejoindre : celui de notre envoyeur Android (« DIRECT-KQ-… »),
+/// protégé, au-dessus du seuil, pas mis à l'écart, et le plus fort.
+/// `ignorer` : nos propres réseaux et ceux qu'on ne doit jamais tenter.
+///
+/// Les partages de connexion ordinaires ne sont plus tentés : constaté à
+/// l'essai, le PC perdait son temps sur les box et partages du voisinage
+/// (HUAWEI, CPE, TECNO…) et manquait le vrai client pendant ce temps. Un
+/// client sans l'application passe par le QR du guichet.
 pub fn choisir<'a>(
     reseaux: &'a [Reseau],
     seuil: u32,
@@ -180,11 +119,9 @@ pub fn choisir<'a>(
 ) -> Option<&'a Reseau> {
     reseaux
         .iter()
-        .filter(|r| r.protege && !r.connu && r.signal >= seuil && !r.ssid.is_empty())
+        .filter(|r| est_envoyeur(&r.ssid) && r.protege && !r.connu && r.signal >= seuil)
         .filter(|r| !a_l_ecart(&r.ssid) && !ignorer.iter().any(|i| i == &r.ssid))
-        // L'envoyeur Android d'abord : c'est à coup sûr un client qui veut
-        // envoyer, avec notre mot de passe.
-        .max_by_key(|r| (est_envoyeur(&r.ssid), r.signal))
+        .max_by_key(|r| r.signal)
 }
 
 /// Réseau créé par notre envoyeur Android (voir `android/`, `Reglages.kt`).
@@ -441,7 +378,7 @@ fn adresses_ipv4() -> Vec<Ipv4Addr> {
 /// Elle ne fait rien tant que la réception directe n'est pas activée.
 pub fn demarrer(app: AppHandle) {
     std::thread::spawn(move || {
-        let mut mis_a_l_ecart = charger_ecartes(&app);
+        let mut mis_a_l_ecart: HashMap<String, Instant> = HashMap::new();
         let mut empeche_veille = false;
         etat("Arrêtée");
         loop {
@@ -535,8 +472,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
     let avant = adresses_ipv4();
     if let Err(e) = client.rejoindre(&cible.ssid, &reglages.mot_de_passe, cible.wpa3) {
         noter(format!("❌ Connexion refusée à « {} » : {e}", cible.ssid));
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
-        enregistrer_ecartes(app, mis_a_l_ecart);
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART_ECHEC);
         return;
     }
 
@@ -548,7 +484,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
     let mut etapes: Vec<&'static str> = Vec::new();
     let mut connecte = false;
     let mut echec: Option<String> = None;
-    while debut.elapsed() < if connecte { Duration::from_secs(45) } else { attente_connexion(&cible.ssid) } {
+    while debut.elapsed() < Duration::from_secs(if connecte { 45 } else { 25 }) {
         std::thread::sleep(Duration::from_millis(500));
         for evenement in client.evenements() {
             match evenement {
@@ -607,7 +543,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         let pourquoi = match echec {
             Some(e) => e,
             None if connecte => "connecté, mais aucune adresse reçue du téléphone en 45 s".to_string(),
-            None => format!("aucune réponse du réseau en {} s", attente_connexion(&cible.ssid).as_secs()),
+            None => "aucune réponse du réseau en 25 s".to_string(),
         };
         let pourquoi = if connecte {
             let liste = |l: &[Ipv4Addr]| l.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
@@ -621,8 +557,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
             debut.elapsed().as_secs_f32()
         ));
         client.deconnecter();
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
-        enregistrer_ecartes(app, mis_a_l_ecart);
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART_ECHEC);
         return;
     };
 
@@ -1012,28 +947,32 @@ mod tests {
     }
 
     #[test]
-    fn prend_le_telephone_le_plus_fort_au_dessus_du_seuil() {
-        let reseaux = vec![r("iPhone de Koffi", 55), r("TECNO SPARK", 92), r("Voisin", 71)];
+    fn prend_l_envoyeur_le_plus_fort_au_dessus_du_seuil() {
+        let reseaux = vec![r("DIRECT-KQ-AAAA", 55), r("DIRECT-KQ-BBBB", 92), r("DIRECT-KQ-CCCC", 71)];
         let choisi = choisir(&reseaux, 60, &|_| false, &[]).unwrap();
-        assert_eq!(choisi.ssid, "TECNO SPARK");
+        assert_eq!(choisi.ssid, "DIRECT-KQ-BBBB");
     }
 
     #[test]
     fn ignore_les_faibles_les_ouverts_les_mis_a_l_ecart_et_notre_propre_wifi() {
         let mut ouvert = r("Ouvert", 99);
         ouvert.protege = false;
-        let reseaux = vec![ouvert, r("Faible", 40), r("Deja", 95), r("Photocopie-Awa", 98)];
-        let a_l_ecart = |s: &str| s == "Deja";
-        assert!(choisir(&reseaux, 60, &a_l_ecart, &["Photocopie-Awa".to_string()]).is_none());
+        ouvert.ssid = "DIRECT-KQ-OUVE".into();
+        let reseaux = vec![ouvert, r("DIRECT-KQ-FAIB", 40), r("DIRECT-KQ-DEJA", 95), r("DIRECT-KQ-NOUS", 98)];
+        let a_l_ecart = |s: &str| s == "DIRECT-KQ-DEJA";
+        assert!(choisir(&reseaux, 60, &a_l_ecart, &["DIRECT-KQ-NOUS".to_string()]).is_none());
     }
 
+    /// Constaté à l'essai : le PC perdait son temps sur les box et partages
+    /// du voisinage pendant que le vrai client attendait.
     #[test]
-    fn l_envoyeur_android_passe_avant_un_partage_plus_fort() {
-        let reseaux = vec![r("TECNO SPARK", 95), r("DIRECT-KQ-7H2M", 70)];
+    fn ne_tente_jamais_un_reseau_qui_n_est_pas_notre_envoyeur() {
+        let reseaux = vec![r("TECNO SPARK 6 Go", 95), r("HUAWEI-5G-2WdT", 89), r("DIRECT-KQ-7H2M", 70)];
         assert_eq!(choisir(&reseaux, 60, &|_| false, &[]).unwrap().ssid, "DIRECT-KQ-7H2M");
-        // Mais jamais sous le seuil : la cage voisine reste exclue.
-        let reseaux = vec![r("TECNO SPARK", 95), r("DIRECT-KQ-7H2M", 50)];
-        assert_eq!(choisir(&reseaux, 60, &|_| false, &[]).unwrap().ssid, "TECNO SPARK");
+        let voisins = vec![r("TECNO SPARK 6 Go", 95), r("CPE_R0516_3F92", 82), r("M022_B6BE", 78)];
+        assert!(choisir(&voisins, 60, &|_| false, &[]).is_none());
+        // Et jamais sous le seuil.
+        assert!(choisir(&[r("DIRECT-KQ-7H2M", 50)], 60, &|_| false, &[]).is_none());
     }
 
     #[test]
@@ -1056,21 +995,6 @@ mod tests {
             Ipv4Addr::new(172, 20, 10, 3),
         ];
         assert_eq!(nouvelle_adresse(&avant, &apres), Some(Ipv4Addr::new(172, 20, 10, 3)));
-    }
-
-    #[test]
-    fn les_ecarts_expires_ou_illisibles_sont_oublies() {
-        let texte = r#"{"HUAWEI-5G-2WdT": 2000, "CPE_R0516_3F92": 500}"#;
-        let e = ecartes_depuis_texte(texte, 1000);
-        assert_eq!(e.len(), 1);
-        assert_eq!(e["HUAWEI-5G-2WdT"], 2000);
-        assert!(ecartes_depuis_texte("pas du json", 0).is_empty());
-        assert!(ecartes_depuis_texte("", 0).is_empty());
-    }
-
-    #[test]
-    fn un_reseau_etranger_est_attendu_moins_longtemps() {
-        assert!(attente_connexion("TECNO SPARK 6 Go") < attente_connexion("DIRECT-KQ-9DKT"));
     }
 
     #[test]
