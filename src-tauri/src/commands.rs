@@ -48,6 +48,10 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         impression_imprimante_reelle: row.get(29)?,
         impression_ecarts: row.get(30)?,
         pages_document: row.get(31)?,
+        commande_numero: row.get(32)?,
+        etape: row.get(33)?,
+        demande_client: row.get(34)?,
+        vocal: row.get::<_, Option<String>>(35)?.is_some(),
     })
 }
 
@@ -56,7 +60,8 @@ const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telep
      plage_pages, finitions, prix, employe, raison_ignore, document_supprime,
      impression_confirmee, pages_imprimees, impression_erreur,
      recto_verso, impression_couleur_reelle, impression_recto_verso_reelle, impression_format_reel,
-     impression_poste, impression_imprimante_reelle, impression_ecarts, pages_document";
+     impression_poste, impression_imprimante_reelle, impression_ecarts, pages_document,
+     commande_numero, etape, demande_client, vocal_chemin";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {
@@ -993,4 +998,63 @@ fn queue_item_path(state: &State<DbState>, id: i64) -> Result<PathBuf, String> {
     )
     .map(PathBuf::from)
     .map_err(|_| "Fichier introuvable dans la file d'attente".to_string())
+}
+
+/// Fait avancer la commande du client (`recu` → `impression` → `pret`).
+/// S'applique à tous les documents envoyés ensemble : le client suit une
+/// commande, pas un fichier.
+#[tauri::command]
+pub fn definir_etape(state: State<DbState>, id: i64, etape: String) -> Result<(), String> {
+    if !["recu", "impression", "pret"].contains(&etape.as_str()) {
+        return Err("Étape inconnue".to_string());
+    }
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let jeton: Option<String> = conn
+        .query_row(
+            "SELECT commande_jeton FROM files_queue WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Document introuvable".to_string())?;
+    match jeton {
+        Some(j) => conn.execute(
+            "UPDATE files_queue SET etape = ?1 WHERE commande_jeton = ?2",
+            params![etape, j],
+        ),
+        None => conn.execute(
+            "UPDATE files_queue SET etape = ?1 WHERE id = ?2",
+            params![etape, id],
+        ),
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Le message vocal joint par le client, prêt à être lu dans l'interface.
+#[tauri::command]
+pub fn lire_vocal(state: State<DbState>, id: i64) -> Result<String, String> {
+    use base64::Engine;
+    let chemin: Option<String> = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT vocal_chemin FROM files_queue WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Document introuvable".to_string())?
+    };
+    let chemin = chemin.ok_or("Pas de message vocal")?;
+    let octets = std::fs::read(&chemin).map_err(|_| "Message vocal introuvable".to_string())?;
+    let type_mime = match chemin.rsplit_once('.').map(|(_, e)| e) {
+        Some("webm") => "audio/webm",
+        Some("ogg") => "audio/ogg",
+        Some("m4a") => "audio/mp4",
+        Some("wav") => "audio/wav",
+        Some("3gp") => "audio/3gpp",
+        _ => "application/octet-stream",
+    };
+    Ok(format!(
+        "data:{type_mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(octets)
+    ))
 }

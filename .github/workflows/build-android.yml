@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "android/**"
+      - "client-web/**"
       - ".github/workflows/build-android.yml"
   workflow_dispatch: {}
 

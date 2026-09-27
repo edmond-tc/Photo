@@ -176,8 +176,22 @@ mod tests_dossier {
 pub struct OptionsImpression {
     pub couleur: bool,
     pub format_papier: Option<String>,
+    /// Nombre d'exemplaires demandé par le client.
     pub copies: Option<i64>,
     pub plage_pages: Option<String>,
+    pub recto_verso: bool,
+    /// Pages à imprimer, estimées par l'application du client (à vérifier
+    /// par le gérant dans « Détails »). Sans elle, le document compte pour
+    /// une page, comme avant.
+    pub pages_document: Option<i64>,
+    /// Services de la grille tarifaire (`agrafage`, `reliure_spirale`…).
+    pub finitions: Vec<String>,
+    /// Ce qui ne se facture pas mais guide le gérant (JSON : orientation,
+    /// papier, description, quand, urgent…).
+    pub demande_client: Option<String>,
+    /// Numéro annoncé au client (« A-27 ») et jeton commun à la commande.
+    pub commande: Option<(String, String)>,
+    pub vocal_chemin: Option<String>,
 }
 
 /// Enregistre un fichier reçu (quel que soit le canal) dans la file d'attente
@@ -262,7 +276,14 @@ pub fn enqueue_file_avec_options(
 
     // Borné aussi ici (pas seulement côté serveur HTTP) : ce point d'entrée
     // sert à tous les canaux de réception, pas seulement le QR.
-    let copies = options.copies.unwrap_or(1).clamp(1, 500);
+    // `copies` porte le total de feuilles facturées (pages × exemplaires),
+    // `pages_document` les pages du document (voir la migration 6).
+    let pages_document = options.pages_document.unwrap_or(1).clamp(1, 5000);
+    let copies = (options.copies.unwrap_or(1).clamp(1, 500) * pages_document).clamp(1, 100_000);
+    let finitions_json = (!options.finitions.is_empty())
+        .then(|| serde_json::to_string(&options.finitions).ok())
+        .flatten();
+    let (commande_numero, commande_jeton) = options.commande.clone().unzip();
     let format_papier = options
         .format_papier
         .clone()
@@ -279,8 +300,10 @@ pub fn enqueue_file_avec_options(
         "INSERT INTO files_queue
             (original_name, path, client_name, client_telephone, source, kind, status,
              received_at, taille_octets, protege, format_detecte, couleur, format_papier,
-             copies, plage_pages, jeton)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'en_attente', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+             copies, plage_pages, jeton, recto_verso, pages_document, finitions,
+             demande_client, commande_numero, commande_jeton, vocal_chemin, etape)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'en_attente', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
         params![
             original_name,
             path.to_string_lossy(),
@@ -296,7 +319,15 @@ pub fn enqueue_file_avec_options(
             format_papier,
             copies,
             options.plage_pages,
-            jeton
+            jeton,
+            options.recto_verso,
+            pages_document,
+            finitions_json,
+            options.demande_client,
+            commande_numero,
+            commande_jeton,
+            options.vocal_chemin,
+            commande_numero.as_ref().map(|_| "recu"),
         ],
     );
 
@@ -324,7 +355,7 @@ pub fn enqueue_file_avec_options(
         couleur: options.couleur,
         format_papier,
         plage_pages: options.plage_pages,
-        finitions: vec![],
+        finitions: options.finitions,
         prix: None,
         employe: None,
         raison_ignore: None,
@@ -332,7 +363,7 @@ pub fn enqueue_file_avec_options(
         impression_confirmee: false,
         pages_imprimees: None,
         impression_erreur: None,
-        recto_verso: false,
+        recto_verso: options.recto_verso,
         impression_couleur_reelle: None,
         impression_recto_verso_reelle: None,
         impression_format_reel: None,
@@ -342,7 +373,11 @@ pub fn enqueue_file_avec_options(
         // Un fichier qui arrive n'a pas encore été détaillé par le gérant :
         // le total de feuilles vaut le nombre d'exemplaires demandé, pour
         // un document dont on ne connaît pas encore le nombre de pages.
-        pages_document: 1,
+        pages_document,
+        etape: commande_numero.as_ref().map(|_| "recu".to_string()),
+        commande_numero,
+        demande_client: options.demande_client,
+        vocal: options.vocal_chemin.is_some(),
     };
 
     let _ = app.emit("nouveau-fichier", item);

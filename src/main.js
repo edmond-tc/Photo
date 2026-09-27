@@ -259,12 +259,52 @@ function appliquerStatutImpression(id, payload) {
   }
 }
 
+const LIBELLES_ETAPE = { recu: "Reçu", impression: "En impression", pret: "Prêt à retirer" };
+const LIBELLES_FINITION = {
+  agrafage: "agrafage",
+  perforation: "perforation",
+  reliure_spirale: "reliure spirale",
+  reliure_dos_carre: "reliure dos carré",
+  plastification: "plastification",
+  pliage: "pliage",
+  decoupe: "découpe",
+  saisie: "saisie",
+};
+
+function lireDemande(item) {
+  try {
+    return item.demande_client ? JSON.parse(item.demande_client) : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+async function definirEtape(id, etape) {
+  try {
+    await invoke("definir_etape", { id, etape });
+  } catch (e) {
+    toast(`${e}`, "attention", 6000);
+  }
+}
+
+async function ecouterVocal(id) {
+  try {
+    const source = await invoke("lire_vocal", { id });
+    await new Audio(source).play();
+  } catch (e) {
+    toast(`Message vocal illisible : ${e}`, "attention", 6000);
+  }
+}
+
 function creerLigne(item) {
   const noeud = tplLigne.content.cloneNode(true);
   const li = noeud.querySelector(".ligne-fichier");
   li.dataset.id = item.id;
 
-  noeud.querySelector(".nom-fichier").textContent = item.original_name;
+  noeud.querySelector(".nom-fichier").textContent = item.commande_numero
+    ? `${item.commande_numero} · ${item.original_name}`
+    : item.original_name;
+  const demande = lireDemande(item);
   const meta = [
     item.client_name ? `Client : ${item.client_name}` : null,
     formatHeure(item.received_at),
@@ -272,9 +312,12 @@ function creerLigne(item) {
     item.couleur ? "Couleur" : null,
     item.recto_verso ? "Recto-verso" : null,
     item.format_papier && item.format_papier !== "A4" ? item.format_papier : null,
-    item.copies > 1 ? `${item.copies} copies` : null,
+    item.copies > 1 ? `${item.copies} feuille${item.copies > 1 ? "s" : ""}` : null,
     item.plage_pages ? `pages ${item.plage_pages}` : null,
-    item.finitions?.length ? item.finitions.length + " finition(s)" : null,
+    item.finitions?.length ? item.finitions.map((f) => LIBELLES_FINITION[f] ?? f).join(", ") : null,
+    demande.orientation && demande.orientation !== "Auto" ? demande.orientation : null,
+    demande.par_feuille && demande.par_feuille !== "1" ? `${demande.par_feuille} pages par feuille` : null,
+    demande.papier && demande.papier !== "Ordinaire" ? `papier ${demande.papier}` : null,
     item.taille_octets > 20 * 1024 * 1024
       ? `${(item.taille_octets / 1024 / 1024).toFixed(1)} Mo — fichier volumineux`
       : null,
@@ -282,6 +325,33 @@ function creerLigne(item) {
     .filter(Boolean)
     .join(" · ");
   noeud.querySelector(".meta-fichier").textContent = meta;
+
+  // Commande envoyée depuis l'application du client : quand il la veut, ce
+  // qu'il a écrit, son message vocal, et l'étape qu'il voit sur son écran.
+  if (item.commande_numero) {
+    const bloc = document.createElement("div");
+    bloc.className = "demande-client";
+    const quand = [demande.urgent ? "⚡ URGENT" : null, demande.quand ?? null].filter(Boolean).join(" · ");
+    if (quand) {
+      const q = document.createElement("span");
+      q.className = "meta-fichier";
+      q.style.fontWeight = "700";
+      if (demande.urgent) q.style.color = "var(--rouge-alerte)";
+      q.textContent = quand;
+      bloc.appendChild(q);
+    }
+    if (demande.description) {
+      const d = document.createElement("span");
+      d.className = "meta-fichier";
+      d.textContent = `« ${demande.description} »`;
+      bloc.appendChild(d);
+    }
+    const ligneEtape = document.createElement("span");
+    ligneEtape.className = "meta-fichier etape-commande";
+    ligneEtape.textContent = `Le client voit : ${LIBELLES_ETAPE[item.etape] ?? "Reçu"}`;
+    bloc.appendChild(ligneEtape);
+    noeud.querySelector(".info-fichier").appendChild(bloc);
+  }
 
   if (item.protege || item.format_detecte) {
     const alertes = document.createElement("span");
@@ -297,6 +367,18 @@ function creerLigne(item) {
   }
 
   const actions = noeud.querySelector(".actions-fichier");
+  if (item.vocal) {
+    actions.appendChild(bouton("🔊 Vocal", "btn-secondaire", () => ecouterVocal(item.id)));
+  }
+  if (item.commande_numero && item.etape !== "pret") {
+    actions.appendChild(
+      bouton("Prêt ✓", "btn-secondaire", async () => {
+        await definirEtape(item.id, "pret");
+        toast(`${item.commande_numero} : le client voit « Prêt à retirer ».`);
+        await chargerFile();
+      })
+    );
+  }
 
   // Le bouton Imprimer/Ouvrir passe toujours en premier et va droit au but
   // (boîte de dialogue Windows native) — les détails de facturation sont
@@ -417,6 +499,12 @@ async function imprimer(id) {
   try {
     await invoke("print_file", { id, imprimante: imprimanteChoisie() });
     jouerSonImpression();
+    // Le client suit sa commande sur son téléphone : elle passe « En impression ».
+    const ligne = document.querySelector(`[data-id="${id}"] .etape-commande`);
+    if (ligne && ligne.textContent.endsWith(LIBELLES_ETAPE.recu)) {
+      await definirEtape(id, "impression");
+      ligne.textContent = `Le client voit : ${LIBELLES_ETAPE.impression}`;
+    }
   } catch (e) {
     alert(`⚠️ L'impression n'a pas pu démarrer. Vérifiez que l'imprimante est allumée et connectée, puis réessayez.\n\nDétail : ${e}`);
   }
@@ -1052,7 +1140,7 @@ const AIDES_SECTION = {
   rapports: "L'argent du jour, les impayés à relancer, le stock, et le rapport imprimable à garder ou à montrer au propriétaire.",
   reglages: "Le nom de la boutique, le dossier surveillé, les tarifs, les employés et la sauvegarde. À régler une fois, rarement retouché ensuite.",
   reception:
-    "Le PC rejoint tout seul le réseau « DIRECT-KQ-… » créé par l'application Envoyeur Kiosque du client, reçoit le document, puis se libère pour le suivant. Les autres Wi-Fi (box, partages de connexion) ne sont jamais tentés : un client sans l'application utilise le QR du guichet. Version d'essai : chaque étape est notée ci-dessous.",
+    "Le PC rejoint tout seul le réseau du téléphone du client (application Envoyeur Kiosque sur Android, partage de connexion allumé au guichet sur iPhone), reçoit la commande, puis se libère pour le suivant. Les Wi-Fi du voisinage, repérés au démarrage, ne sont jamais tentés. Version d'essai : chaque étape est notée ci-dessous.",
   activite: "Ce que font les imprimantes et photocopieurs, à chaque instant : chaque impression partie du PC, et les photocopies faites sur la vitre des machines branchées en réseau. Mis à jour tout seul.",
 };
 
@@ -1798,15 +1886,15 @@ async function rendreReceptionDirecte(corps) {
   carteQr.className = "carte-rapport";
   carteQr.innerHTML = `
     <h3>Affiche du guichet</h3>
-    <p style="font-size:0.9rem">Le client installe une fois l'application « Envoyeur Kiosque ».
-      Au guichet, une notification lui propose d'envoyer : il choisit ses documents, c'est tout.
-      Ce code-ci ouvre la page d'envoi seulement quand le téléphone est déjà relié au PC
-      (secours) — les clients sans l'application utilisent les QR habituels de l'écran principal.</p>
+    <p style="font-size:0.9rem">Android : le client installe une fois l'application « Envoyeur Kiosque » ;
+      au guichet, une notification lui propose d'envoyer. iPhone : il allume son partage de connexion
+      avec le mot de passe ci-dessus, garde l'écran du partage ouvert jusqu'à la connexion du PC,
+      puis scanne ce code.</p>
     <img src="${qr.fixe}" alt="QR du guichet" style="width:180px; height:180px; image-rendering:pixelated">
     <p style="font-size:0.8rem; color:var(--gris-texte-discret)">${echapperHtml(qr.fixe_url)}</p>`;
   carteQr.appendChild(
     bouton("Imprimer l'affiche du guichet", "btn-secondaire", () =>
-      imprimerAfficheReception()
+      imprimerAfficheReception(qr.fixe, e.reglages.mot_de_passe)
     )
   );
   corps.appendChild(carteQr);
@@ -1876,21 +1964,27 @@ async function rendreReceptionDirecte(corps) {
   }, 2000);
 }
 
-/// Affiche A4 du guichet : les deux gestes du client avec l'application.
-/// (Le PC ne rejoint plus que le réseau créé par l'application : l'ancienne
-/// consigne « allumez le partage de connexion » ne marcherait plus.)
-function imprimerAfficheReception() {
+/// Affiche A4 du guichet : Android (application) et iPhone (partage de connexion).
+function imprimerAfficheReception(qrFixe, motDePasse) {
   const affiche = document.querySelector("#affiche-reception");
   affiche.innerHTML = `
     <h1>Envoyez votre document sans câble</h1>
+    <p class="pied" style="margin-top:0">Sans internet : votre forfait n'est pas utilisé.</p>
+    <h2>Android</h2>
     <ol>
-      <li>Une seule fois : installez l'application<br>
-        <strong>Envoyeur Kiosque</strong> (demandez-la au guichet).</li>
-      <li>Au guichet, touchez la notification<br>
-        <strong>« Kiosque photocopie à côté »</strong> et choisissez vos documents.</li>
+      <li>Une seule fois : installez l'application <strong>Envoyeur Kiosque</strong> (demandez-la au guichet).</li>
+      <li>Au guichet, touchez la notification <strong>« Kiosque photocopie à côté »</strong>.</li>
     </ol>
-    <p class="pied">Sans internet : votre forfait n'est pas utilisé.<br>
-      Pas l'application ? Scannez le QR code du guichet.</p>`;
+    <h2>iPhone</h2>
+    <ol>
+      <li>Réglages → <strong>Partage de connexion</strong>, avec ce mot de passe :</li>
+    </ol>
+    <p class="mdp">${echapperHtml(motDePasse)}</p>
+    <ol start="2">
+      <li>Gardez cet écran ouvert jusqu'à ce qu'un appareil soit connecté.</li>
+      <li><strong>Scannez ce code</strong> avec l'appareil photo.</li>
+    </ol>
+    <div><img src="${qrFixe}" alt=""></div>`;
   imprimerPage("impression-reception");
 }
 

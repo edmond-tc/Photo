@@ -113,6 +113,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_queue,
+            commands::definir_etape,
+            commands::lire_vocal,
             commands::get_historique,
             commands::rechercher_client,
             commands::get_thumbnail,

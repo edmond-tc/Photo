@@ -63,20 +63,26 @@ pub fn purger_une_fois(app: &AppHandle) -> (usize, u64) {
 /// rester vérifiable avec une vraie base et de vrais fichiers.
 pub fn purger(conn: &rusqlite::Connection, data_dir: &Path, limite: &str) -> (usize, u64) {
     let Ok(mut stmt) = conn.prepare(
-        "SELECT id, path FROM files_queue
+        "SELECT id, path, vocal_chemin FROM files_queue
          WHERE status = 'traite' AND received_at < ?1 AND document_supprime = 0",
     ) else {
         return (0, 0);
     };
     let Ok(lignes) = stmt.query_map(rusqlite::params![limite], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?))
     }) else {
         return (0, 0);
     };
 
     let mut nombre = 0usize;
     let mut octets = 0u64;
-    for (id, chemin) in lignes.flatten() {
+    for (id, chemin, vocal) in lignes.flatten() {
+        // Le message vocal du client part avec son document.
+        if let Some(vocal) = vocal.map(PathBuf::from) {
+            if fichier_de_lapplication(data_dir, &vocal) {
+                let _ = std::fs::remove_file(&vocal);
+            }
+        }
         let chemin = PathBuf::from(chemin);
         // Garde-fou : on ne supprime que ce que l'application a elle-même
         // recopié dans ses propres dossiers. Jamais le dossier surveillé du

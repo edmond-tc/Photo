@@ -19,7 +19,7 @@
 //! affiché à l'écran. Une photo de cet écran dit ce qui a marché et ce qui
 //! a échoué, sans avoir à refaire les essais au hasard.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::Ipv4Addr;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -103,25 +103,45 @@ pub struct Reseau {
     pub securite: String,
 }
 
-/// Le réseau à rejoindre : celui de notre envoyeur Android (« DIRECT-KQ-… »),
-/// protégé, au-dessus du seuil, pas mis à l'écart, et le plus fort.
-/// `ignorer` : nos propres réseaux et ceux qu'on ne doit jamais tenter.
+/// Le réseau à rejoindre : protégé, au-dessus du seuil, pas mis à l'écart,
+/// et le plus fort. `ignorer` : nos propres réseaux et ceux qu'on ne doit
+/// jamais tenter.
 ///
-/// Les partages de connexion ordinaires ne sont plus tentés : constaté à
-/// l'essai, le PC perdait son temps sur les box et partages du voisinage
-/// (HUAWEI, CPE, TECNO…) et manquait le vrai client pendant ce temps. Un
-/// client sans l'application passe par le QR du guichet.
+/// Deux sortes de clients :
+/// - l'application Android, dont le réseau « DIRECT-KQ-… » passe toujours
+///   en premier ;
+/// - l'iPhone (ou un Android sans l'application), qui allume son partage de
+///   connexion à la main. Constaté à l'essai : tenter tous les réseaux fait
+///   perdre son temps au PC sur les box et partages du voisinage (HUAWEI,
+///   CPE, TECNO…). Seul un réseau qui n'était pas là au démarrage (`fond`)
+///   est donc tenté : un téléphone qu'on vient d'allumer au guichet.
 pub fn choisir<'a>(
     reseaux: &'a [Reseau],
     seuil: u32,
     a_l_ecart: &dyn Fn(&str) -> bool,
     ignorer: &[String],
+    fond: &HashSet<String>,
 ) -> Option<&'a Reseau> {
     reseaux
         .iter()
-        .filter(|r| est_envoyeur(&r.ssid) && r.protege && !r.connu && r.signal >= seuil)
+        .filter(|r| r.protege && !r.connu && r.signal >= seuil && !r.ssid.is_empty())
+        .filter(|r| est_envoyeur(&r.ssid) || !fond.contains(&r.ssid))
         .filter(|r| !a_l_ecart(&r.ssid) && !ignorer.iter().any(|i| i == &r.ssid))
-        .max_by_key(|r| r.signal)
+        .max_by_key(|r| (est_envoyeur(&r.ssid), r.signal))
+}
+
+/// Temps laissé à une connexion. Un réseau qui n'est pas notre envoyeur a
+/// droit à moins : pendant qu'on l'essaie, le PC ne voit pas un vrai client
+/// arriver.
+fn attente_connexion(ssid: &str) -> Duration {
+    Duration::from_secs(if est_envoyeur(ssid) { 25 } else { 12 })
+}
+
+/// Un réseau qui a échoué n'est pas retenté avant ce délai. Celui de
+/// l'envoyeur change de nom à chaque envoi ; un autre (box, partage d'un
+/// inconnu) n'acceptera pas mieux notre mot de passe plus tard.
+fn ecart_apres_echec(ssid: &str) -> Duration {
+    if est_envoyeur(ssid) { MISE_A_L_ECART_ECHEC } else { Duration::from_secs(6 * 3600) }
 }
 
 /// Réseau créé par notre envoyeur Android (voir `android/`, `Reglages.kt`).
@@ -379,6 +399,8 @@ fn adresses_ipv4() -> Vec<Ipv4Addr> {
 pub fn demarrer(app: AppHandle) {
     std::thread::spawn(move || {
         let mut mis_a_l_ecart: HashMap<String, Instant> = HashMap::new();
+        // Réseaux du voisinage, appris au premier balayage (voir `choisir`).
+        let mut fond: Option<HashSet<String>> = None;
         let mut empeche_veille = false;
         etat("Arrêtée");
         loop {
@@ -388,7 +410,7 @@ pub fn demarrer(app: AppHandle) {
                 empeche_veille = reglages.active;
             }
             if reglages.active {
-                un_tour(&app, &reglages, &mut mis_a_l_ecart);
+                un_tour(&app, &reglages, &mut mis_a_l_ecart, &mut fond);
             } else {
                 etat("Arrêtée");
             }
@@ -413,7 +435,12 @@ fn garder_eveille(oui: bool) {
 #[cfg(not(windows))]
 fn garder_eveille(_oui: bool) {}
 
-fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<String, Instant>) {
+fn un_tour(
+    app: &AppHandle,
+    reglages: &Reglages,
+    mis_a_l_ecart: &mut HashMap<String, Instant>,
+    fond: &mut Option<HashSet<String>>,
+) {
     mis_a_l_ecart.retain(|_, jusqu_a| *jusqu_a > Instant::now());
 
     let client = match wlan::Client::ouvrir() {
@@ -456,8 +483,20 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
             .into_iter()
             .collect()
     };
+    let fond = fond.get_or_insert_with(|| {
+        let appris: HashSet<String> = reseaux
+            .iter()
+            .filter(|r| !est_envoyeur(&r.ssid))
+            .map(|r| r.ssid.clone())
+            .collect();
+        noter(format!(
+            "🧭 {} réseau(x) du voisinage appris : ils ne seront jamais tentés.",
+            appris.len()
+        ));
+        appris
+    });
     let a_l_ecart = |ssid: &str| mis_a_l_ecart.contains_key(ssid);
-    let Some(cible) = choisir(&reseaux, reglages.seuil, &a_l_ecart, &ignorer).cloned() else {
+    let Some(cible) = choisir(&reseaux, reglages.seuil, &a_l_ecart, &ignorer, fond).cloned() else {
         return;
     };
 
@@ -472,7 +511,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
     let avant = adresses_ipv4();
     if let Err(e) = client.rejoindre(&cible.ssid, &reglages.mot_de_passe, cible.wpa3) {
         noter(format!("❌ Connexion refusée à « {} » : {e}", cible.ssid));
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART_ECHEC);
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
         return;
     }
 
@@ -484,7 +523,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
     let mut etapes: Vec<&'static str> = Vec::new();
     let mut connecte = false;
     let mut echec: Option<String> = None;
-    while debut.elapsed() < Duration::from_secs(if connecte { 45 } else { 25 }) {
+    while debut.elapsed() < if connecte { Duration::from_secs(45) } else { attente_connexion(&cible.ssid) } {
         std::thread::sleep(Duration::from_millis(500));
         for evenement in client.evenements() {
             match evenement {
@@ -543,7 +582,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         let pourquoi = match echec {
             Some(e) => e,
             None if connecte => "connecté, mais aucune adresse reçue du téléphone en 45 s".to_string(),
-            None => "aucune réponse du réseau en 25 s".to_string(),
+            None => format!("aucune réponse du réseau en {} s", attente_connexion(&cible.ssid).as_secs()),
         };
         let pourquoi = if connecte {
             let liste = |l: &[Ipv4Addr]| l.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
@@ -557,7 +596,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
             debut.elapsed().as_secs_f32()
         ));
         client.deconnecter();
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART_ECHEC);
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
         return;
     };
 
@@ -940,16 +979,16 @@ mod tests {
         let mut box_maison = r("Celtiis_bfbd", 99);
         box_maison.connu = true;
         let reseaux = vec![box_maison, r("DIRECT-KQ-K4G7", 80)];
-        assert_eq!(choisir(&reseaux, 60, &|_| false, &[]).unwrap().ssid, "DIRECT-KQ-K4G7");
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &HashSet::new()).unwrap().ssid, "DIRECT-KQ-K4G7");
         let mut seul = r("Celtiis_bfbd", 99);
         seul.connu = true;
-        assert!(choisir(&[seul], 60, &|_| false, &[]).is_none());
+        assert!(choisir(&[seul], 60, &|_| false, &[], &HashSet::new()).is_none());
     }
 
     #[test]
     fn prend_l_envoyeur_le_plus_fort_au_dessus_du_seuil() {
         let reseaux = vec![r("DIRECT-KQ-AAAA", 55), r("DIRECT-KQ-BBBB", 92), r("DIRECT-KQ-CCCC", 71)];
-        let choisi = choisir(&reseaux, 60, &|_| false, &[]).unwrap();
+        let choisi = choisir(&reseaux, 60, &|_| false, &[], &HashSet::new()).unwrap();
         assert_eq!(choisi.ssid, "DIRECT-KQ-BBBB");
     }
 
@@ -960,19 +999,33 @@ mod tests {
         ouvert.ssid = "DIRECT-KQ-OUVE".into();
         let reseaux = vec![ouvert, r("DIRECT-KQ-FAIB", 40), r("DIRECT-KQ-DEJA", 95), r("DIRECT-KQ-NOUS", 98)];
         let a_l_ecart = |s: &str| s == "DIRECT-KQ-DEJA";
-        assert!(choisir(&reseaux, 60, &a_l_ecart, &["DIRECT-KQ-NOUS".to_string()]).is_none());
+        assert!(choisir(&reseaux, 60, &a_l_ecart, &["DIRECT-KQ-NOUS".to_string()], &HashSet::new()).is_none());
     }
 
     /// Constaté à l'essai : le PC perdait son temps sur les box et partages
     /// du voisinage pendant que le vrai client attendait.
     #[test]
-    fn ne_tente_jamais_un_reseau_qui_n_est_pas_notre_envoyeur() {
-        let reseaux = vec![r("TECNO SPARK 6 Go", 95), r("HUAWEI-5G-2WdT", 89), r("DIRECT-KQ-7H2M", 70)];
-        assert_eq!(choisir(&reseaux, 60, &|_| false, &[]).unwrap().ssid, "DIRECT-KQ-7H2M");
-        let voisins = vec![r("TECNO SPARK 6 Go", 95), r("CPE_R0516_3F92", 82), r("M022_B6BE", 78)];
-        assert!(choisir(&voisins, 60, &|_| false, &[]).is_none());
+    fn ne_tente_jamais_un_reseau_du_voisinage() {
+        let fond: HashSet<String> = ["TECNO SPARK 6 Go", "HUAWEI-5G-2WdT", "CPE_R0516_3F92"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let voisins = vec![r("TECNO SPARK 6 Go", 95), r("HUAWEI-5G-2WdT", 89), r("CPE_R0516_3F92", 82)];
+        assert!(choisir(&voisins, 60, &|_| false, &[], &fond).is_none());
+        // L'envoyeur Android passe toujours, même devant un partage plus fort.
+        let reseaux = vec![r("iPhone de Koffi", 95), r("DIRECT-KQ-7H2M", 70)];
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &fond).unwrap().ssid, "DIRECT-KQ-7H2M");
+        // Un partage de connexion apparu depuis (iPhone au guichet) est tenté.
+        let reseaux = vec![r("TECNO SPARK 6 Go", 95), r("iPhone de Koffi", 80)];
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &fond).unwrap().ssid, "iPhone de Koffi");
         // Et jamais sous le seuil.
-        assert!(choisir(&[r("DIRECT-KQ-7H2M", 50)], 60, &|_| false, &[]).is_none());
+        assert!(choisir(&[r("iPhone de Koffi", 50)], 60, &|_| false, &[], &fond).is_none());
+    }
+
+    #[test]
+    fn un_reseau_etranger_est_attendu_moins_et_ecarte_plus_longtemps() {
+        assert!(attente_connexion("iPhone de Koffi") < attente_connexion("DIRECT-KQ-9DKT"));
+        assert!(ecart_apres_echec("iPhone de Koffi") > ecart_apres_echec("DIRECT-KQ-9DKT"));
     }
 
     #[test]

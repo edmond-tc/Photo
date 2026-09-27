@@ -142,7 +142,7 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// Version du schéma attendue par cette version du logiciel.
-const VERSION_SCHEMA: i64 = 6;
+const VERSION_SCHEMA: i64 = 7;
 
 /// Les boutiques déjà installées ont une base créée par une version
 /// antérieure : les `CREATE TABLE IF NOT EXISTS` ci-dessus ne leur ajoutent
@@ -265,6 +265,23 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
             "files_queue",
             "pages_document",
             "INTEGER NOT NULL DEFAULT 1",
+        )?;
+    }
+
+    if version < 7 {
+        // Commande du client (application Envoyeur Kiosque ou page du PC) :
+        // un numéro à annoncer au guichet (« A-27 »), commun à tous les
+        // fichiers envoyés ensemble, l'étape que le gérant fait avancer
+        // (reçu → en impression → prêt), ce que le client a demandé au-delà
+        // de ce qui se facture (orientation, papier, description, quand…),
+        // et son message vocal.
+        ajouter_colonne_si_absente(conn, "files_queue", "commande_numero", "TEXT")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "commande_jeton", "TEXT")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "etape", "TEXT")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "demande_client", "TEXT")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "vocal_chemin", "TEXT")?;
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_files_queue_commande ON files_queue(commande_jeton);",
         )?;
     }
 

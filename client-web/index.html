@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f4fd1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kiosque">
+<title>Envoyer au kiosque</title>
+<!--
+  Interface du client, en un seul fichier, sans aucune ressource extérieure :
+  ni le PC ni le téléphone n'ont internet.
+
+  Deux façons de l'ouvrir, un seul code :
+  - dans l'application Android Envoyeur Kiosque (android/), qui fournit
+    `window.KiosqueApp` : création du réseau, adresse du PC, autorisations ;
+  - servie par le PC lui-même (src-tauri/src/server.rs, page `/`), pour
+    l'iPhone et les téléphones sans l'application.
+-->
+<style>
+:root {
+  --fond: #eef1f5; --surface: #ffffff; --surface-2: #f3f5f9; --encre: #15202d;
+  --discret: #5a6577; --trait: #d9dfe7; --accent: #1f4fd1; --accent-doux: #e6ecfb;
+  --sur-accent: #ffffff; --ok: #1d7f47; --ok-doux: #e3f3ea; --attente: #9a6412;
+  --attente-doux: #fbf0dc; --erreur: #b3261e; --erreur-doux: #fbe7e5;
+  --police: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --fond: #0e131a; --surface: #171f29; --surface-2: #1d2733; --encre: #e7ecf2;
+    --discret: #9aa6b6; --trait: #2b3644; --accent: #7d9cff; --accent-doux: #22305a;
+    --sur-accent: #0e131a; --ok: #5cc98a; --ok-doux: #173726; --attente: #e2b35c;
+    --attente-doux: #3a2d15; --erreur: #ff8a80; --erreur-doux: #3d1d1b;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--surface); color: var(--encre); font-family: var(--police); font-size: 16px; line-height: 1.45; -webkit-text-size-adjust: 100%; }
+h1, h2 { margin: 0; line-height: 1.2; text-wrap: balance; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.appli { max-width: 560px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+.ecran { flex: 1; display: flex; flex-direction: column; }
+.entete { padding: calc(env(safe-area-inset-top, 0px) + 14px) 18px 10px; display: flex; align-items: center; gap: 12px; }
+.entete h1 { font-size: 1.25rem; }
+.retour { border: 0; background: var(--surface-2); width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 1.3rem; flex: none; }
+.contenu { padding: 4px 18px 20px; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+.bas { position: sticky; bottom: 0; padding: 12px 18px calc(env(safe-area-inset-bottom, 0px) + 14px); border-top: 1px solid var(--trait); display: grid; gap: 8px; background: var(--surface); }
+.btn { border: 0; border-radius: 14px; padding: 15px 18px; font-weight: 700; cursor: pointer; background: var(--accent); color: var(--sur-accent); font-size: 1.05rem; width: 100%; text-align: center; display: block; }
+.btn.second { background: var(--surface-2); color: var(--encre); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.lien { border: 0; background: none; color: var(--accent); font-weight: 700; cursor: pointer; padding: 6px 0; text-align: left; }
+.aide { font-size: 0.9rem; color: var(--discret); margin: 0; }
+p { margin: 0; }
+
+.puce { display: inline-flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 700; padding: 7px 12px; border-radius: 999px; background: var(--attente-doux); color: var(--attente); align-self: flex-start; }
+.puce.ok { background: var(--ok-doux); color: var(--ok); }
+.puce.echec { background: var(--erreur-doux); color: var(--erreur); }
+.puce .point { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.puce:not(.ok):not(.echec) .point { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .puce .point { animation: none; } }
+
+.champ { display: grid; gap: 6px; }
+.champ label { font-weight: 700; }
+.saisie { border: 1.5px solid var(--trait); border-radius: 12px; padding: 12px 14px; background: var(--surface); width: 100%; }
+.saisie:focus { border-color: var(--accent); outline: none; }
+
+.permissions { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.permissions li { display: flex; gap: 12px; align-items: flex-start; background: var(--surface-2); border-radius: 12px; padding: 12px; }
+.permissions .ico { font-weight: 800; width: 34px; height: 34px; border-radius: 10px; background: var(--accent-doux); color: var(--accent); display: grid; place-items: center; flex: none; font-size: 0.8rem; }
+.permissions strong { display: block; }
+.permissions span span { font-size: 0.9rem; color: var(--discret); }
+
+.doc { border: 1px solid var(--trait); border-radius: 16px; padding: 14px; display: grid; gap: 12px; background: var(--surface); }
+.doc-tete { display: flex; gap: 12px; align-items: center; }
+.vignette { width: 46px; height: 58px; border-radius: 6px; background: var(--surface-2) center / cover no-repeat; border: 1px solid var(--trait); display: grid; place-items: center; font-size: 0.7rem; font-weight: 800; color: var(--discret); flex: none; }
+.doc-nom { font-weight: 700; overflow-wrap: anywhere; }
+.doc-info { font-size: 0.85rem; color: var(--discret); }
+.retirer { margin-left: auto; border: 0; background: none; color: var(--discret); cursor: pointer; font-size: 1.5rem; padding: 4px 8px; }
+.ligne { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ligne > span:first-child { font-weight: 700; font-size: 0.95rem; }
+.segment { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; flex-wrap: wrap; }
+.segment button { border: 0; background: transparent; padding: 8px 11px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+.segment button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,0.14); font-weight: 700; color: var(--accent); }
+.compteur { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border-radius: 10px; padding: 3px; }
+.compteur button { border: 0; width: 38px; height: 36px; border-radius: 8px; background: var(--surface); cursor: pointer; font-size: 1.15rem; font-weight: 700; }
+.compteur output { min-width: 2.2em; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.plage { width: 8em; padding: 8px 10px; border-radius: 8px; }
+.plus { border-top: 1px dashed var(--trait); padding-top: 12px; display: grid; gap: 12px; }
+.services { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.services label { display: flex; gap: 8px; align-items: center; background: var(--surface-2); border-radius: 10px; padding: 10px; font-size: 0.9rem; cursor: pointer; }
+.services input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.services small { display: block; color: var(--discret); font-size: 0.78rem; }
+.vocal { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
+.vocal button.rond { border: 0; width: 46px; height: 46px; border-radius: 50%; background: var(--accent); color: var(--sur-accent); cursor: pointer; font-weight: 800; flex: none; font-size: 1.1rem; }
+.vocal.enreg button.rond { background: var(--erreur); color: #fff; }
+.vocal audio { width: 100%; height: 36px; }
+.prix-doc { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid var(--trait); padding-top: 10px; font-variant-numeric: tabular-nums; }
+.ajout { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.total { display: flex; justify-content: space-between; align-items: baseline; font-variant-numeric: tabular-nums; }
+.total strong { font-size: 1.35rem; }
+.total small { color: var(--discret); }
+.vide { text-align: center; color: var(--discret); padding: 24px 8px; border: 2px dashed var(--trait); border-radius: 16px; }
+
+.choix-quand { display: grid; gap: 10px; }
+.carte-choix { display: flex; gap: 12px; align-items: center; border: 1.5px solid var(--trait); border-radius: 14px; padding: 14px; cursor: pointer; background: var(--surface); }
+.carte-choix.actif { border-color: var(--accent); background: var(--accent-doux); }
+.carte-choix input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.carte-choix strong { display: block; }
+.carte-choix small { color: var(--discret); }
+.recap { background: var(--surface-2); border-radius: 14px; padding: 14px; display: grid; gap: 6px; font-size: 0.93rem; }
+.recap div { display: flex; justify-content: space-between; gap: 10px; font-variant-numeric: tabular-nums; }
+.recap span:first-child { overflow-wrap: anywhere; }
+
+.etapes { list-style: none; margin: 0; padding: 0; display: grid; }
+.etapes li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding-bottom: 18px; position: relative; }
+.etapes li:not(:last-child)::before { content: ""; position: absolute; left: 16px; top: 34px; bottom: 2px; width: 2px; background: var(--trait); }
+.etapes .rond { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--trait); display: grid; place-items: center; font-weight: 700; background: var(--surface); font-size: 0.9rem; color: var(--discret); }
+.etapes li.fait .rond { background: var(--ok); border-color: var(--ok); color: #fff; }
+.etapes li.encours .rond { border-color: var(--accent); color: var(--accent); }
+.etapes li.erreur .rond { border-color: var(--erreur); color: var(--erreur); }
+.etapes strong { display: block; padding-top: 5px; }
+.etapes small { color: var(--discret); }
+.barre { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin-top: 8px; }
+.barre > div { height: 100%; width: 0; background: var(--accent); transition: width 0.2s linear; }
+.chiffres { font-size: 0.85rem; color: var(--discret); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.alerte { background: var(--erreur-doux); color: var(--erreur); border-radius: 12px; padding: 12px 14px; font-weight: 700; }
+
+.ticket { text-align: center; border: 2px dashed var(--trait); border-radius: 18px; padding: 22px 16px; display: grid; gap: 4px; }
+.ticket .num { font-size: 4.2rem; font-weight: 800; letter-spacing: 0.02em; color: var(--accent); line-height: 1.05; font-variant-numeric: tabular-nums; }
+.ticket small { color: var(--discret); }
+.suivi { display: grid; gap: 8px; }
+.suivi div { display: flex; gap: 10px; align-items: center; padding: 12px; border-radius: 12px; background: var(--surface-2); font-weight: 700; }
+.suivi div.fait { background: var(--ok-doux); color: var(--ok); }
+.suivi div.attente { color: var(--discret); font-weight: 400; }
+.pret { background: var(--ok); color: #fff; border-radius: 16px; padding: 16px; text-align: center; font-size: 1.2rem; font-weight: 800; }
+.pied { text-align: center; font-size: 0.8rem; color: var(--discret); padding: 8px 18px 18px; }
+.pied a { color: inherit; }
+</style>
+</head>
+<body>
+<main class="appli" id="appli">
+
+  <!-- Autorisation unique (application Android, première ouverture) -->
+  <section class="ecran" data-ecran="bienvenue" hidden>
+    <div class="entete"><h1>Bienvenue</h1></div>
+    <div class="contenu">
+      <p>Envoyez vos documents à la photocopie <strong>sans câble et sans internet</strong>. Votre forfait n'est pas utilisé.</p>
+      <p style="font-weight:700">Une seule autorisation, la première fois :</p>
+      <ul class="permissions">
+        <li><span class="ico">BT</span><span><strong>Appareils à proximité</strong><span>Pour savoir quand vous êtes au guichet et vous le proposer.</span></span></li>
+        <li><span class="ico">Wi</span><span><strong>Wi-Fi</strong><span>Pour créer un lien direct avec l'ordinateur de la boutique, le temps de l'envoi.</span></span></li>
+        <li><span class="ico">!</span><span><strong>Notifications</strong><span>Pour vous proposer l'envoi quand vous arrivez au guichet.</span></span></li>
+      </ul>
+      <p class="aide" id="autorisation-refus" hidden></p>
+    </div>
+    <div class="bas"><button class="btn" id="btn-autoriser">Autoriser</button></div>
+  </section>
+
+  <!-- Profil -->
+  <section class="ecran" data-ecran="profil" hidden>
+    <div class="entete"><h1>Vous</h1></div>
+    <div class="contenu">
+      <p class="aide">Gardé sur votre téléphone. La boutique voit votre prénom sur la commande.</p>
+      <div class="champ"><label for="prenom">Prénom</label><input id="prenom" class="saisie" autocomplete="given-name" maxlength="120" placeholder="Votre prénom"></div>
+      <div class="champ"><label for="numero">Numéro WhatsApp <span style="font-weight:400; color:var(--discret)">(facultatif)</span></label>
+        <p class="aide">Pour vous joindre si votre document pose problème.</p>
+        <input id="numero" class="saisie" type="tel" autocomplete="tel" maxlength="30" placeholder="+229 …"></div>
+    </div>
+    <div class="bas"><button class="btn" id="btn-profil">Continuer</button></div>
+  </section>
+
+  <!-- Accueil au guichet -->
+  <section class="ecran" data-ecran="accueil" hidden>
+    <div class="entete"><h1 data-boutique>Photocopie</h1></div>
+    <div class="contenu">
+      <span class="puce" data-puce><span class="point"></span><span data-puce-texte>Connexion au guichet…</span></span>
+      <p>Bonjour <strong data-prenom></strong>. Choisissez vos documents<span data-mode-app> : la connexion se fait pendant ce temps</span>.</p>
+      <div style="display:grid; gap:8px">
+        <label class="btn" for="fichiers">Choisir mes documents</label>
+        <label class="btn second" for="photo">Prendre un document en photo</label>
+      </div>
+      <p class="aide">Photos, PDF, Word… Plusieurs fichiers à la fois.</p>
+      <button class="lien" id="btn-modifier-profil">Modifier mon prénom ou mon numéro</button>
+    </div>
+  </section>
+
+  <!-- Documents et options -->
+  <section class="ecran" data-ecran="documents" hidden>
+    <div class="entete"><button class="retour" data-aller="accueil" aria-label="Retour">‹</button><h1>Vos documents</h1></div>
+    <div class="contenu">
+      <span class="puce" data-puce><span class="point"></span><span data-puce-texte>Connexion au guichet…</span></span>
+      <div id="docs" style="display:grid; gap:14px"></div>
+      <div class="ajout">
+        <label class="btn second" style="font-size:0.95rem" for="fichiers">+ Ajouter</label>
+        <label class="btn second" style="font-size:0.95rem" for="photo">+ Photo</label>
+      </div>
+    </div>
+    <div class="bas">
+      <div class="total"><small>Prix estimé, confirmé au guichet</small><strong data-total>0 F</strong></div>
+      <button class="btn" id="btn-vers-quand">Continuer</button>
+    </div>
+  </section>
+
+  <!-- Pour quand -->
+  <section class="ecran" data-ecran="quand" hidden>
+    <div class="entete"><button class="retour" data-aller="documents" aria-label="Retour">‹</button><h1>Pour quand ?</h1></div>
+    <div class="contenu">
+      <div class="choix-quand" id="choix-quand">
+        <label class="carte-choix"><input type="radio" name="quand" id="q-attends" value="J'attends sur place" checked><span><strong>J'attends sur place</strong><small>La boutique le fait tout de suite.</small></span></label>
+        <label class="carte-choix"><input type="radio" name="quand" id="q-repasse" value="Je repasse"><span><strong>Je repasse à <select id="q-heure" class="saisie" style="display:inline; width:auto; padding:4px 8px"></select></strong><small>Votre commande vous attendra.</small></span></label>
+        <label class="carte-choix"><input type="radio" name="quand" id="q-demain" value="Demain"><span><strong>Demain</strong><small>Retrait le lendemain.</small></span></label>
+      </div>
+      <label class="carte-choix" id="carte-urgent"><input type="checkbox" id="urgent"><span><strong>Urgent</strong><small>Passe avant les autres. Supplément éventuel fixé par la boutique.</small></span></label>
+      <div class="recap" id="recap"></div>
+    </div>
+    <div class="bas"><button class="btn" id="btn-envoyer">Envoyer à la boutique</button></div>
+  </section>
+
+  <!-- Envoi -->
+  <section class="ecran" data-ecran="envoi" hidden>
+    <div class="entete"><h1>Envoi en cours</h1></div>
+    <div class="contenu">
+      <ol class="etapes">
+        <li data-etape="0"><span class="rond">1</span><div><strong>Connexion au guichet</strong><small data-etape-texte="0">Faite pendant votre choix.</small></div></li>
+        <li data-etape="1"><span class="rond">2</span><div><strong>Préparation</strong><small data-etape-texte="1">Les photos sont réduites pour aller plus vite, sans perte à l'impression.</small></div></li>
+        <li data-etape="2"><span class="rond">3</span><div><strong>Envoi</strong><div class="barre"><div id="barre"></div></div><div class="chiffres" id="chiffres">En attente</div></div></li>
+        <li data-etape="3"><span class="rond">4</span><div><strong>Reçu par la boutique</strong><small>L'ordinateur a tous vos fichiers.</small></div></li>
+      </ol>
+      <div class="alerte" id="erreur-envoi" hidden></div>
+      <p class="aide" id="garder-ouvert">Gardez cet écran ouvert jusqu'à la fin.</p>
+    </div>
+    <div class="bas" id="bas-erreur" hidden>
+      <button class="btn" id="btn-reessayer">Réessayer</button>
+      <button class="btn second" data-aller="documents">Revenir à mes documents</button>
+    </div>
+  </section>
+
+  <!-- Reçu -->
+  <section class="ecran" data-ecran="recu" hidden>
+    <div class="entete"><h1>C'est envoyé</h1></div>
+    <div class="contenu">
+      <div class="ticket"><small>Votre numéro</small><div class="num" id="numero-commande">—</div><small>Donnez ce numéro au guichet.</small></div>
+      <div class="suivi" id="suivi">
+        <div class="fait">✓ Reçu par la boutique</div>
+        <div class="attente" data-suivi="impression">En impression</div>
+        <div class="attente" data-suivi="pret">Prêt à retirer</div>
+      </div>
+      <div class="pret" id="pret" hidden></div>
+      <p class="aide" id="recap-final"></p>
+      <p class="aide" id="message-fidelite" hidden></p>
+    </div>
+    <div class="bas"><button class="btn second" id="btn-nouvelle">Nouvelle commande</button></div>
+  </section>
+
+  <p class="pied" data-mode-web hidden>Un souci ? <a href="/classique">Page d'envoi simple</a></p>
+</main>
+
+<input id="fichiers" type="file" multiple hidden>
+<input id="photo" type="file" accept="image/*" capture="environment" hidden>
+
+<script>
+(() => {
+  "use strict";
+  const PORT = 4173;
+  const app = window.KiosqueApp || null; // pont Android (android/…/Pont.kt)
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
+
+  // ─── Stockage local (profil, grille de prix) ───
+  const lire = (cle, defaut) => { try { const v = localStorage.getItem(cle); return v === null ? defaut : JSON.parse(v); } catch (_) { return defaut; } };
+  const ecrire = (cle, v) => { try { localStorage.setItem(cle, JSON.stringify(v)); } catch (_) {} };
+
+  // Grille par défaut du logiciel du PC (src-tauri/src/db.rs), remplacée
+  // par celle de la boutique dès que le PC répond (/infos).
+  let tarifs = Object.assign({
+    impression_nb: 25, impression_couleur: 100, agrafage: 25, perforation: 25,
+    reliure_spirale: 500, reliure_dos_carre: 1500, plastification: 300,
+    pliage: 25, decoupe: 100, saisie: 100,
+  }, lire("kiosque.tarifs", {}));
+  const SERVICES = [
+    ["agrafage", "Agrafage"], ["perforation", "Perforation"],
+    ["reliure_spirale", "Reliure spirale"], ["reliure_dos_carre", "Reliure dos carré"],
+    ["plastification", "Plastification"], ["pliage", "Pliage"],
+    ["decoupe", "Découpe"], ["saisie", "Saisie (taper le texte)"],
+  ];
+
+  // ─── Connexion au PC ───
+  // Page servie par le PC : on y est déjà. Application : le téléphone crée
+  // son réseau et le PC le rejoint (événements `connexion` du pont).
+  let connexion = app ? { etat: "aucune" } : { etat: "ok", base: "" };
+  const baseUrl = () => connexion.base ?? "";
+
+  window.kiosque = {
+    // Appelé par l'application Android.
+    evenement(e) {
+      if (e.type === "connexion") {
+        connexion = { etat: e.etat, base: e.pc ? `http://${e.pc}:${PORT}` : connexion.base, message: e.message };
+        majPuces();
+        if (e.etat === "ok") chargerInfos();
+        if (attenteConnexion && (e.etat === "ok" || e.etat === "echec")) { const r = attenteConnexion; attenteConnexion = null; r(e.etat === "ok"); }
+      } else if (e.type === "partages") {
+        chargerPartages();
+      } else if (e.type === "autorisations") {
+        if (e.ok) allerApresAutorisation();
+        else { const p = $("#autorisation-refus"); p.hidden = false; p.textContent = e.message || "Sans ces autorisations, l'application ne peut pas joindre la boutique. Touchez « Autoriser » à nouveau."; }
+      }
+    },
+  };
+  // Bouton « retour » du téléphone : écran précédent, ou quitter.
+  window.kiosque.retour = () => {
+    const precedent = { documents: "accueil", quand: "documents", profil: profil().prenom ? "accueil" : null }[courant];
+    if (!precedent || envoiEnCours) return false;
+    aller(precedent);
+    return true;
+  };
+  let attenteConnexion = null;
+  function demarrerConnexion() {
+    if (!app || connexion.etat === "encours" || connexion.etat === "ok") return;
+    connexion = { etat: "encours" };
+    majPuces();
+    try { app.demarrer(); } catch (_) {}
+  }
+  function majPuces() {
+    const textes = { aucune: "Pas encore relié", encours: "Connexion au guichet…", ok: "Relié au guichet", echec: "Guichet introuvable, nouvel essai à l'envoi" };
+    $$("[data-puce]").forEach((p) => {
+      p.classList.toggle("ok", connexion.etat === "ok");
+      p.classList.toggle("echec", connexion.etat === "echec");
+      p.querySelector("[data-puce-texte]").textContent = textes[connexion.etat] || textes.encours;
+    });
+  }
+  async function chargerInfos() {
+    try {
+      const r = await fetch(`${baseUrl()}/infos`, { cache: "no-store" });
+      const infos = await r.json();
+      if (infos.tarifs && Object.keys(infos.tarifs).length) { tarifs = Object.assign(tarifs, infos.tarifs); ecrire("kiosque.tarifs", infos.tarifs); }
+      if (infos.boutique) { ecrire("kiosque.boutique", infos.boutique); afficherBoutique(); }
+      if (courant === "documents") rendreDocs();
+    } catch (_) {}
+  }
+  function afficherBoutique() { $$("[data-boutique]").forEach((b) => (b.textContent = lire("kiosque.boutique", "") || "Photocopie")); }
+
+  // ─── Navigation ───
+  let courant = null;
+  function aller(id) {
+    courant = id;
+    $$("[data-ecran]").forEach((s) => { s.hidden = s.dataset.ecran !== id; });
+    window.scrollTo(0, 0);
+    if (id === "accueil") { $$("[data-prenom]").forEach((n) => (n.textContent = profil().prenom || "")); demarrerConnexion(); }
+    if (id === "documents") { rendreDocs(); demarrerConnexion(); }
+    if (id === "quand") { remplirHeures(); rendreRecap(); }
+  }
+  document.addEventListener("click", (ev) => { const c = ev.target.closest("[data-aller]"); if (c) aller(c.dataset.aller); });
+  $$("[data-mode-app]").forEach((e) => (e.hidden = !app));
+  $$("[data-mode-web]").forEach((e) => (e.hidden = !!app));
+
+  // ─── Autorisations et profil ───
+  const profil = () => lire("kiosque.profil", { prenom: "", numero: "" });
+  $("#btn-autoriser").addEventListener("click", () => { try { app.autoriser(); } catch (_) { allerApresAutorisation(); } });
+  function allerApresAutorisation() { aller(profil().prenom ? "accueil" : "profil"); }
+  $("#btn-profil").addEventListener("click", () => {
+    const prenom = $("#prenom").value.trim();
+    if (!prenom) { $("#prenom").focus(); return; }
+    ecrire("kiosque.profil", { prenom, numero: $("#numero").value.trim() });
+    aller(docs.length ? "documents" : "accueil");
+  });
+  $("#btn-modifier-profil").addEventListener("click", () => { const p = profil(); $("#prenom").value = p.prenom; $("#numero").value = p.numero; aller("profil"); });
+
+  // ─── Documents ───
+  let suivant = 1;
+  let docs = [];
+  const nouveauDoc = (fichier) => ({
+    id: suivant++, fichier, nom: fichier.name || "document", pages: null,
+    type: ((fichier.name || "").split(".").pop() || "DOC").toUpperCase().slice(0, 4),
+    image: /^image\//.test(fichier.type), apercu: null,
+    copies: 1, couleur: false, rv: false, format: "A4", pages_mode: "toutes", plage: "",
+    ouvert: false, orientation: "Auto", par_feuille: "1", papier: "Ordinaire",
+    services: {}, description: "", vocal: null, enreg: false,
+  });
+
+  async function ajouterFichiers(liste) {
+    for (const f of liste) {
+      if (docs.length >= 20) break;
+      const d = nouveauDoc(f);
+      docs.push(d);
+      if (d.image) { d.pages = 1; try { d.apercu = URL.createObjectURL(f); } catch (_) {} }
+      else if (d.type === "PDF") compterPagesPdf(f).then((n) => { d.pages = n; if (courant === "documents") rendreDocs(); });
+    }
+    aller("documents");
+  }
+  $("#fichiers").addEventListener("change", (e) => { ajouterFichiers([...e.target.files]); e.target.value = ""; });
+  $("#photo").addEventListener("change", (e) => { ajouterFichiers([...e.target.files]); e.target.value = ""; });
+
+  // Documents reçus par « Partager » (WhatsApp, galerie…) : l'application
+  // les sert à l'interface, qui les ajoute à la commande.
+  async function chargerPartages() {
+    if (!app) return;
+    let liste = [];
+    try { liste = JSON.parse(app.partages()); } catch (_) {}
+    const recus = [];
+    for (const p of liste) {
+      try {
+        const blob = await (await fetch(p.url)).blob();
+        recus.push(new File([blob], p.nom || "document", { type: p.type || blob.type }));
+      } catch (_) {}
+    }
+    if (recus.length) ajouterFichiers(recus);
+  }
+
+  // Nombre de pages d'un PDF, sans bibliothèque : compte les objets « /Type
+  // /Page ». Une estimation, que le gérant confirme ; null si incertain.
+  async function compterPagesPdf(f) {
+    if (f.size > 40 * 1024 * 1024) return null;
+    try {
+      const texte = new TextDecoder("latin1").decode(await f.arrayBuffer());
+      const n = (texte.match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length;
+      return n > 0 ? n : null;
+    } catch (_) { return null; }
+  }
+
+  function pagesChoisies(d) {
+    const total = d.pages || 1;
+    if (d.pages_mode !== "choix" || !d.plage.trim()) return total;
+    let n = 0;
+    d.plage.split(",").forEach((bout) => {
+      const [a, b] = bout.split("-").map((x) => parseInt(x, 10));
+      if (!isNaN(a) && !isNaN(b) && b >= a) n += Math.max(0, Math.min(b, d.pages || b) - a + 1);
+      else if (!isNaN(a)) n += 1;
+    });
+    return Math.max(n, 1);
+  }
+  // Même calcul que le PC (src-tauri/src/gestion.rs, calculer_prix) : les
+  // pages × exemplaires au prix de la page, plus chaque service une fois.
+  function prix(d) {
+    let t = pagesChoisies(d) * d.copies * (d.couleur ? tarifs.impression_couleur : tarifs.impression_nb);
+    for (const [cle, actif] of Object.entries(d.services)) if (actif) t += tarifs[cle] || 0;
+    return t;
+  }
+  const f = (n) => n.toLocaleString("fr-FR").replace(/[  ]/g, " ") + " F";
+  const echapper = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  const docsEl = $("#docs");
+  function segment(champ, options, valeur) {
+    return `<div class="segment" role="group">${options.map(([v, l]) =>
+      `<button type="button" data-champ="${champ}" data-val="${v}" aria-pressed="${String(v) === String(valeur)}">${l}</button>`).join("")}</div>`;
+  }
+  const vocalPossible = !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  function carte(d) {
+    const pages = pagesChoisies(d);
+    const info = d.pages ? `${d.pages} page${d.pages > 1 ? "s" : ""}` : (d.image ? "1 photo" : "pages comptées au guichet");
+    const vignette = d.apercu ? `style="background-image:url('${d.apercu}')"` : "";
+    return `<article class="doc" data-doc="${d.id}">
+      <div class="doc-tete">
+        <span class="vignette" ${vignette}>${d.apercu ? "" : echapper(d.type)}</span>
+        <div><div class="doc-nom">${echapper(d.nom)}</div><div class="doc-info">${info}</div></div>
+        <button type="button" class="retirer" data-action="retirer" aria-label="Retirer ce document">×</button>
+      </div>
+      <div class="ligne"><span>Copies</span><span class="compteur"><button type="button" data-action="moins" aria-label="Moins">−</button><output>${d.copies}</output><button type="button" data-action="plus" aria-label="Plus">+</button></span></div>
+      <div class="ligne"><span>Couleur</span>${segment("couleur", [[false, "Noir & blanc"], [true, "Couleur"]], d.couleur)}</div>
+      <div class="ligne"><span>Impression</span>${segment("rv", [[false, "Recto"], [true, "Recto-verso"]], d.rv)}</div>
+      <div class="ligne"><span>Format</span>${segment("format", [["A4", "A4"], ["A3", "A3"], ["A5", "A5"], ["10x15", "Photo"]], d.format)}</div>
+      <div class="ligne"><span>Pages</span><span style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">${segment("pages_mode", [["toutes", "Toutes"], ["choix", "Choisir"]], d.pages_mode)}
+        ${d.pages_mode === "choix" ? `<input class="saisie plage" id="plage-${d.id}" data-texte="plage" inputmode="numeric" placeholder="ex. 1-3, 5" value="${echapper(d.plage)}">` : ""}</span></div>
+      ${d.ouvert ? plusOptions(d) : ""}
+      <button type="button" class="lien" data-action="ouvrir">${d.ouvert ? "Moins d'options" : "Plus d'options (reliure, plastification, message…)"}</button>
+      <div class="prix-doc"><span data-resume>${pages} page${pages > 1 ? "s" : ""} × ${d.copies}</span><span data-prix>${f(prix(d))}</span></div>
+    </article>`;
+  }
+  function plusOptions(d) {
+    return `<div class="plus">
+      <div class="ligne"><span>Orientation</span>${segment("orientation", [["Auto", "Auto"], ["Portrait", "Portrait"], ["Paysage", "Paysage"]], d.orientation)}</div>
+      <div class="ligne"><span>Pages par feuille</span>${segment("par_feuille", [["1", "1"], ["2", "2"], ["4", "4"]], d.par_feuille)}</div>
+      <div class="ligne"><span>Papier</span>${segment("papier", [["Ordinaire", "Ordinaire"], ["Photo brillant", "Photo brillant"], ["Cartonné", "Cartonné"]], d.papier)}</div>
+      <div class="services">${SERVICES.map(([cle, nom]) => `
+        <label><input type="checkbox" data-service="${cle}" ${d.services[cle] ? "checked" : ""}><span>${nom}<small>${f(tarifs[cle] || 0)}</small></span></label>`).join("")}</div>
+      <div class="champ"><label for="desc-${d.id}">Ce que vous voulez</label>
+        <textarea class="saisie" id="desc-${d.id}" rows="2" maxlength="500" data-texte="description" placeholder="ex. Agrandir la photo, mettre le logo en couleur…">${echapper(d.description)}</textarea></div>
+      ${vocalPossible ? `<div class="vocal ${d.enreg ? "enreg" : ""}">
+        <button type="button" class="rond" data-action="vocal" aria-label="${d.enreg ? "Arrêter" : "Enregistrer un message vocal"}">${d.enreg ? "■" : "●"}</button>
+        ${d.vocal && !d.enreg ? `<audio controls src="${d.vocal.url}"></audio><button type="button" class="retirer" data-action="vocal-supprimer" aria-label="Supprimer le message vocal">×</button>`
+          : `<span>${d.enreg ? "Enregistrement… touchez pour arrêter" : "Message vocal : expliquez de vive voix"}</span>`}
+      </div>` : ""}
+    </div>`;
+  }
+  function majTotal() {
+    const total = docs.reduce((s, d) => s + prix(d), 0);
+    $$("[data-total]").forEach((t) => (t.textContent = f(total)));
+    $("#btn-vers-quand").disabled = docs.length === 0 || docs.some((d) => d.enreg);
+  }
+  function rendreDocs() {
+    docsEl.innerHTML = docs.length ? docs.map(carte).join("")
+      : `<div class="vide">Aucun document pour l'instant.<br>Touchez « + Ajouter ».</div>`;
+    majTotal();
+  }
+  const docDe = (el) => docs.find((d) => d.id === Number(el.closest("[data-doc]").dataset.doc));
+
+  docsEl.addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button");
+    if (!b || !b.closest("[data-doc]")) return;
+    const d = docDe(b);
+    if (b.dataset.champ) {
+      const v = b.dataset.val;
+      d[b.dataset.champ] = v === "true" ? true : v === "false" ? false : v;
+    }
+    const a = b.dataset.action;
+    if (a === "plus") d.copies = Math.min(d.copies + 1, 500);
+    if (a === "moins") d.copies = Math.max(d.copies - 1, 1);
+    if (a === "ouvrir") d.ouvert = !d.ouvert;
+    if (a === "retirer") { arreterVocal(d); docs = docs.filter((x) => x !== d); }
+    if (a === "vocal") { if (d.enreg) arreterVocal(d); else await demarrerVocal(d); }
+    if (a === "vocal-supprimer") d.vocal = null;
+    rendreDocs();
+  });
+  docsEl.addEventListener("change", (ev) => {
+    const c = ev.target.closest("[data-service]");
+    if (c) { docDe(c).services[c.dataset.service] = c.checked; rendreDocs(); }
+  });
+  docsEl.addEventListener("input", (ev) => {
+    const c = ev.target.closest("[data-texte]");
+    if (!c) return;
+    const d = docDe(c);
+    d[c.dataset.texte] = c.value;
+    const carteEl = c.closest("[data-doc]");
+    const pages = pagesChoisies(d);
+    carteEl.querySelector("[data-resume]").textContent = `${pages} page${pages > 1 ? "s" : ""} × ${d.copies}`;
+    carteEl.querySelector("[data-prix]").textContent = f(prix(d));
+    majTotal();
+  });
+
+  // ─── Message vocal ───
+  let enregistreur = null;
+  async function demarrerVocal(d) {
+    try {
+      const flux = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const morceaux = [];
+      const rec = new MediaRecorder(flux);
+      rec.ondataavailable = (e) => { if (e.data.size) morceaux.push(e.data); };
+      rec.onstop = () => {
+        flux.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(morceaux, { type: rec.mimeType || "audio/webm" });
+        if (blob.size) d.vocal = { blob, url: URL.createObjectURL(blob) };
+        d.enreg = false;
+        enregistreur = null;
+        rendreDocs();
+      };
+      rec.start();
+      d.enreg = true;
+      enregistreur = { rec, doc: d, fin: setTimeout(() => arreterVocal(d), 120000) };
+    } catch (_) {
+      alerteCourte("Le micro n'est pas autorisé. Écrivez plutôt ce que vous voulez.");
+    }
+  }
+  function arreterVocal(d) {
+    if (enregistreur && enregistreur.doc === d) { clearTimeout(enregistreur.fin); try { enregistreur.rec.stop(); } catch (_) {} }
+  }
+  function alerteCourte(texte) { const p = document.createElement("div"); p.className = "alerte"; p.textContent = texte; docsEl.prepend(p); setTimeout(() => p.remove(), 5000); }
+
+  // ─── Pour quand ───
+  function remplirHeures() {
+    const sel = $("#q-heure");
+    if (sel.options.length) return;
+    const h = new Date().getHours();
+    for (let i = Math.min(h + 1, 21); i <= 21; i++) sel.add(new Option(`${String(i).padStart(2, "0")}:00`));
+    if (!sel.options.length) sel.add(new Option("21:00"));
+  }
+  function quandTexte() {
+    const r = document.querySelector("input[name=quand]:checked");
+    return r.id === "q-repasse" ? `Je repasse à ${$("#q-heure").value}` : r.value;
+  }
+  function rendreRecap() {
+    $$("#choix-quand .carte-choix").forEach((c) => c.classList.toggle("actif", c.querySelector("input").checked));
+    $("#carte-urgent").classList.toggle("actif", $("#urgent").checked);
+    const total = docs.reduce((s, d) => s + prix(d), 0);
+    $("#recap").innerHTML = docs.map((d) => `<div><span>${echapper(d.nom)}</span><span>${f(prix(d))}</span></div>`).join("")
+      + `<div style="border-top:1px solid var(--trait); padding-top:6px; font-weight:700"><span>Total estimé</span><span>${f(total)}</span></div>
+         <div style="color:var(--discret)"><span>À régler au guichet.</span></div>`;
+  }
+  $$("input[name=quand], #urgent, #q-heure").forEach((x) => x.addEventListener("change", rendreRecap));
+  $("#btn-vers-quand").addEventListener("click", () => aller("quand"));
+
+  // ─── Préparation : photos réduites (A4 à 300 points par pouce) ───
+  async function preparer(d) {
+    const fi = d.fichier;
+    if (!d.image || fi.size < 1.5 * 1024 * 1024 || !/jpe?g|png|webp/i.test(fi.type)) return fi;
+    try {
+      const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = d.apercu || URL.createObjectURL(fi); });
+      const max = 3508;
+      const echelle = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.naturalWidth * echelle);
+      c.height = Math.round(img.naturalHeight * echelle);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.88));
+      if (!blob || blob.size >= fi.size) return fi;
+      return new File([blob], fi.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+    } catch (_) { return fi; }
+  }
+
+  // ─── Envoi ───
+  function etape(n, etat, texte) {
+    const li = document.querySelector(`[data-etape="${n}"]`);
+    ["fait", "encours", "erreur"].forEach((c) => li.classList.toggle(c, etat === c));
+    li.querySelector(".rond").textContent = etat === "fait" ? "✓" : etat === "erreur" ? "!" : n + 1;
+    if (texte) { const t = document.querySelector(`[data-etape-texte="${n}"]`); if (t) t.textContent = texte; }
+  }
+  const mo = (o) => (o / 1024 / 1024).toFixed(1).replace(".", ",") + " Mo";
+  let envoiEnCours = false;
+  $("#btn-envoyer").addEventListener("click", envoyer);
+  $("#btn-reessayer").addEventListener("click", envoyer);
+
+  async function envoyer() {
+    if (envoiEnCours) return;
+    envoiEnCours = true;
+    aller("envoi");
+    $("#erreur-envoi").hidden = true;
+    $("#bas-erreur").hidden = true;
+    $("#garder-ouvert").hidden = false;
+    [0, 1, 2, 3].forEach((n) => etape(n, ""));
+    $("#barre").style.width = "0";
+    $("#chiffres").textContent = "En attente";
+    try {
+      // 1. Connexion (déjà faite, le plus souvent)
+      if (connexion.etat !== "ok") {
+        etape(0, "encours", "Le téléphone prépare le lien avec l'ordinateur…");
+        if (app) {
+          if (connexion.etat !== "encours") { connexion = { etat: "aucune" }; demarrerConnexion(); }
+          const ok = await new Promise((r) => { attenteConnexion = r; setTimeout(() => { if (attenteConnexion === r) { attenteConnexion = null; r(false); } }, 95000); });
+          if (!ok) throw new Error("L'ordinateur de la boutique ne s'est pas relié au téléphone. Approchez-vous du guichet et vérifiez que le logiciel est ouvert.");
+        }
+      }
+      etape(0, "fait", "Relié au guichet.");
+
+      // 2. Préparation
+      etape(1, "encours");
+      const fichiers = [];
+      for (const d of docs) fichiers.push(await preparer(d));
+      etape(1, "fait");
+
+      // 3. Envoi
+      etape(2, "encours");
+      const p = profil();
+      const form = new FormData();
+      form.append("nom", p.prenom || "");
+      form.append("telephone", p.numero || "");
+      form.append("quand", quandTexte());
+      form.append("urgent", $("#urgent").checked ? "1" : "0");
+      form.append("origine", app ? "app" : "web");
+      form.append("nombre_fichiers", String(docs.length));
+      docs.forEach((d, i) => {
+        form.append(`couleur_${i}`, d.couleur ? "1" : "0");
+        form.append(`rv_${i}`, d.rv ? "1" : "0");
+        form.append(`format_${i}`, d.format === "10x15" ? "A4" : d.format);
+        form.append(`copies_${i}`, String(d.copies));
+        if (d.pages_mode === "choix" && d.plage.trim()) form.append(`pages_${i}`, d.plage.trim());
+        if (d.pages) form.append(`pages_nb_${i}`, String(pagesChoisies(d)));
+        form.append(`services_${i}`, Object.keys(d.services).filter((k) => d.services[k]).join(","));
+        form.append(`orientation_${i}`, d.orientation);
+        form.append(`par_feuille_${i}`, d.par_feuille);
+        form.append(`papier_${i}`, d.papier + (d.format === "10x15" ? " · format photo 10×15" : ""));
+        if (d.description.trim()) form.append(`description_${i}`, d.description.trim());
+        if (d.vocal) form.append(`vocal_${i}`, d.vocal.blob, `vocal.${/ogg/.test(d.vocal.blob.type) ? "ogg" : /mp4|aac/.test(d.vocal.blob.type) ? "m4a" : "webm"}`);
+        form.append(`fichier_${i}`, fichiers[i], fichiers[i].name || d.nom);
+      });
+      const reponse = await televerser(form);
+      $("#barre").style.width = "100%";
+      etape(2, "fait");
+      etape(3, "fait");
+      setTimeout(() => montrerRecu(reponse), 700);
+    } catch (e) {
+      const enCours = [0, 1, 2].find((n) => document.querySelector(`[data-etape="${n}"]`).classList.contains("encours"));
+      if (enCours !== undefined) etape(enCours, "erreur");
+      $("#erreur-envoi").textContent = e.message || "L'envoi n'a pas abouti.";
+      $("#erreur-envoi").hidden = false;
+      $("#bas-erreur").hidden = false;
+      $("#garder-ouvert").hidden = true;
+      if (app && connexion.etat !== "ok") connexion = { etat: "aucune" };
+    } finally {
+      envoiEnCours = false;
+    }
+  }
+
+  function televerser(form) {
+    return new Promise((ok, ko) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${baseUrl()}/envoyer`);
+      xhr.timeout = 15 * 60 * 1000;
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        const pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+        $("#barre").style.width = pct + "%";
+        $("#chiffres").textContent = `${pct} % · ${mo(e.loaded)} sur ${mo(e.total)}`;
+      };
+      xhr.upload.onload = () => { $("#chiffres").textContent = "Enregistrement par la boutique…"; };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) { try { ok(JSON.parse(xhr.responseText)); } catch (_) { ok({}); } }
+        else ko(new Error(xhr.responseText && xhr.responseText.length < 200 ? xhr.responseText : "La boutique a refusé l'envoi. Réessayez."));
+      };
+      xhr.onerror = () => ko(new Error("La liaison avec la boutique a été coupée. Restez près du guichet et réessayez."));
+      xhr.ontimeout = () => ko(new Error("L'envoi a pris trop de temps. Réessayez."));
+      xhr.send(form);
+    });
+  }
+
+  // ─── Reçu et suivi ───
+  let suivi = null;
+  function montrerRecu(r) {
+    $("#numero-commande").textContent = r.numero || "✓";
+    const total = docs.reduce((s, d) => s + prix(d), 0);
+    $("#recap-final").textContent = `${docs.length} document${docs.length > 1 ? "s" : ""} · ${quandTexte()}${$("#urgent").checked ? " · Urgent" : ""} · ${f(total)} estimés`;
+    $("#pret").hidden = true;
+    $("#message-fidelite").hidden = true;
+    majSuivi(null);
+    aller("recu");
+    try { app && app.envoiTermine(r.numero || ""); } catch (_) {}
+    suivreCommande((r.jetons || [])[0]);
+  }
+  function majSuivi(etapeCommande) {
+    const rang = { recu: 0, impression: 1, pret: 2 }[etapeCommande] ?? 0;
+    const imp = document.querySelector('[data-suivi="impression"]');
+    const pret = document.querySelector('[data-suivi="pret"]');
+    imp.className = rang >= 1 ? "fait" : "attente"; imp.textContent = (rang >= 1 ? "✓ " : "") + "En impression";
+    pret.className = rang >= 2 ? "fait" : "attente"; pret.textContent = (rang >= 2 ? "✓ " : "") + "Prêt à retirer";
+    if (rang >= 2) { const b = $("#pret"); b.textContent = `${$("#numero-commande").textContent} est prêt. Passez au guichet.`; b.hidden = false; try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (_) {} }
+  }
+  // Tant que le téléphone reste relié au PC, il suit sa commande. Le PC se
+  // libère ensuite pour le client suivant : le gérant appelle le numéro.
+  function suivreCommande(jeton) {
+    clearInterval(suivi);
+    if (!jeton) return;
+    let echecs = 0;
+    suivi = setInterval(async () => {
+      try {
+        const s = await (await fetch(`${baseUrl()}/statut/${jeton}`, { cache: "no-store" })).json();
+        echecs = 0;
+        majSuivi(s.paye ? "pret" : s.etape);
+        if (s.message) { const m = $("#message-fidelite"); m.textContent = s.message; m.hidden = false; }
+        if (s.paye) clearInterval(suivi);
+      } catch (_) {
+        if (++echecs >= 3) clearInterval(suivi);
+      }
+    }, 3000);
+  }
+  $("#btn-nouvelle").addEventListener("click", () => {
+    clearInterval(suivi);
+    docs.forEach((d) => { if (d.apercu) URL.revokeObjectURL(d.apercu); });
+    docs = [];
+    $("#urgent").checked = false;
+    $("#q-attends").checked = true;
+    if (app) connexion = { etat: "aucune" };
+    aller("accueil");
+  });
+
+  // ─── Démarrage ───
+  afficherBoutique();
+  majPuces();
+  if (!app) chargerInfos();
+  let premier = "accueil";
+  try { if (app && !app.autorise()) premier = "bienvenue"; } catch (_) {}
+  if (premier !== "bienvenue" && !profil().prenom) premier = "profil";
+  aller(premier);
+  if (premier === "accueil") chargerPartages();
+})();
+</script>
+</body>
+</html>

@@ -1,46 +1,97 @@
 package bj.photocopie.envoyeur
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Typeface
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
-import android.text.InputType
+import android.util.Log
 import android.view.WindowManager
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import android.webkit.JavascriptInterface
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.Executors
 
 /**
- * Un seul écran, construit sans fichier de mise en page : autoriser une
- * fois, choisir ou recevoir (« Partager ») des documents, suivre l'envoi.
+ * L'écran de l'application est l'interface web du client
+ * (`client-web/index.html`, la même que celle servie par le PC aux iPhone).
+ * Cette activité lui donne les pouvoirs qu'une page web n'a pas :
+ * créer le réseau et trouver le PC (voir [Liaison]), les autorisations,
+ * l'appareil photo, le micro, et les documents reçus par « Partager ».
  */
 class MainActivity : Activity() {
     companion object {
         const val ACTION_CHOISIR = "bj.photocopie.envoyeur.CHOISIR"
         private const val DEMANDE_FICHIERS = 10
         private const val DEMANDE_AUTORISATIONS = 11
+        private const val DEMANDE_MICRO = 12
+        private const val DEMANDE_PHOTO = 13
+
+        /** Adresse imaginaire, servie par l'application elle-même (voir [ClientWeb]). */
+        private const val HOTE = "envoyeur.kiosque"
+
+        /** Sans envoi, le réseau est supprimé au bout de ce délai : le PC ne reste pas bloqué. */
+        private const val INACTIVITE_MAX_MS = 10 * 60 * 1000L
+
+        /** Après l'envoi, le temps de voir « En impression » avant de libérer le PC. */
+        private const val APRES_ENVOI_MS = 30 * 1000L
     }
 
-    private lateinit var journal: TextView
-    private lateinit var etatEcoute: TextView
-    private lateinit var boutonChoisir: Button
-    @Volatile private var envoiEnCours = false
+    private lateinit var web: WebView
+    private val principal = Handler(Looper.getMainLooper())
+    private val executeur = Executors.newSingleThreadExecutor()
 
+    private var rappelFichiers: ValueCallback<Array<Uri>>? = null
+    private var photo: Uri? = null
+    private var demandeMicro: PermissionRequest? = null
+
+    /** Documents reçus par « Partager », servis à l'interface sous /partage/<n>. */
+    private val partages = mutableListOf<Uri>()
+    private var partagesLus = 0
+
+    @Volatile private var liaison: Liaison? = null
+    @Volatile private var adressePc: String? = null
+    private val fermeture = Runnable { fermerLiaison() }
+
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        construireEcran()
+        web = WebView(this)
+        web.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            mediaPlaybackRequiresUserGesture = false
+            allowFileAccess = false
+            allowContentAccess = true
+            // L'interface est servie en https (adresse imaginaire), le PC
+            // répond en http sur le réseau du téléphone : à autoriser.
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        }
+        web.webViewClient = ClientWeb()
+        web.webChromeClient = ChromeWeb()
+        web.addJavascriptInterface(Pont(), "KiosqueApp")
+        setContentView(web)
         traiter(intent)
+        web.loadUrl("https://$HOTE/index.html")
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -51,109 +102,189 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        rafraichirEcoute()
+        if (autorisationsManquantes().isEmpty()) Balayage.demarrer(this)
     }
 
-    // ───────────────────────────── Écran ─────────────────────────────
+    override fun onDestroy() {
+        principal.removeCallbacks(fermeture)
+        liaison?.let { l -> executeur.execute { l.fermer() } }
+        liaison = null
+        executeur.shutdown()
+        web.destroy()
+        super.onDestroy()
+    }
 
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-
-    private fun construireEcran() {
-        val colonne = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(24))
+    @Deprecated("API Activity simple, sans bibliothèque")
+    override fun onBackPressed() {
+        web.evaluateJavascript("window.kiosque && window.kiosque.retour ? window.kiosque.retour() : false") { r ->
+            if (r != "true") finish()
         }
-        colonne.addView(TextView(this).apply {
-            text = "Envoyeur Kiosque"
-            textSize = 24f
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        colonne.addView(TextView(this).apply {
-            text = "Envoie vos documents au PC du kiosque, sans internet et sans forfait. " +
-                "Près du guichet, une notification vous le propose toute seule."
-            textSize = 15f
-            setPadding(0, dp(8), 0, dp(16))
-        })
+    }
 
-        boutonChoisir = Button(this).apply {
-            text = "Choisir des documents à envoyer"
-            textSize = 18f
-            setOnClickListener { choisirFichiers() }
-        }
-        colonne.addView(boutonChoisir)
+    private fun journal(texte: String) {
+        Log.i("Envoyeur", texte)
+    }
 
-        colonne.addView(Button(this).apply {
-            text = "Autoriser (une seule fois)"
-            setOnClickListener { demanderAutorisations() }
-        })
+    /** Événement pour l'interface (voir `window.kiosque.evenement`). */
+    private fun signaler(evenement: JSONObject) {
+        principal.post {
+            web.evaluateJavascript("window.kiosque && window.kiosque.evenement($evenement)", null)
+        }
+    }
 
-        etatEcoute = TextView(this).apply {
-            textSize = 13f
-            setPadding(0, dp(8), 0, dp(8))
-        }
-        colonne.addView(etatEcoute)
+    // ───────────────────────────── Pages de l'interface ─────────────────────────────
 
-        // Réglages d'essai : le mot de passe doit être celui du PC ; le seuil
-        // sépare « au guichet » de « cage voisine ».
-        colonne.addView(TextView(this).apply {
-            text = "Essai — mot de passe du kiosque :"
-            textSize = 13f
-            setPadding(0, dp(12), 0, 0)
-        })
-        val champMdp = EditText(this).apply {
-            setText(Reglages.motDePasse(this@MainActivity))
-            inputType = InputType.TYPE_CLASS_TEXT
-            isSingleLine = true
-        }
-        colonne.addView(champMdp)
-        colonne.addView(TextView(this).apply {
-            text = "Essai — signal minimal de la balise (dBm, ex. -75 ; plus près de 0 = plus près du guichet) :"
-            textSize = 13f
-        })
-        val champSeuil = EditText(this).apply {
-            setText(Reglages.seuilBle(this@MainActivity).toString())
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
-            isSingleLine = true
-        }
-        colonne.addView(champSeuil)
-        colonne.addView(Button(this).apply {
-            text = "Enregistrer les réglages d'essai"
-            setOnClickListener {
-                val mdp = champMdp.text.toString().trim()
-                if (mdp.length >= 8) Reglages.definirMotDePasse(this@MainActivity, mdp)
-                champSeuil.text.toString().toIntOrNull()?.let { Reglages.definirSeuilBle(this@MainActivity, it) }
-                Reglages.noterNotification(this@MainActivity, 0L)
-                dire("Réglages enregistrés.")
+    private inner class ClientWeb : WebViewClient() {
+        override fun shouldInterceptRequest(view: WebView, requete: WebResourceRequest): WebResourceResponse? {
+            if (requete.url.host != HOTE) return null
+            val chemin = requete.url.path.orEmpty()
+            return try {
+                when {
+                    chemin == "/" || chemin == "/index.html" ->
+                        WebResourceResponse("text/html", "utf-8", assets.open("index.html"))
+                    chemin.startsWith("/partage/") -> {
+                        val uri = chemin.removePrefix("/partage/").toIntOrNull()?.let { partages.getOrNull(it) }
+                            ?: return WebResourceResponse("text/plain", "utf-8", 404, "Introuvable", null, null)
+                        val flux = contentResolver.openInputStream(uri)
+                            ?: return WebResourceResponse("text/plain", "utf-8", 404, "Illisible", null, null)
+                        WebResourceResponse(contentResolver.getType(uri) ?: "application/octet-stream", null, flux)
+                    }
+                    else -> WebResourceResponse("text/plain", "utf-8", 404, "Introuvable", null, null)
+                }
+            } catch (e: Exception) {
+                WebResourceResponse("text/plain", "utf-8", 500, "Erreur", null, null)
             }
-        })
-
-        colonne.addView(TextView(this).apply {
-            text = "Journal"
-            textSize = 16f
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, dp(16), 0, dp(4))
-        })
-        journal = TextView(this).apply {
-            textSize = 13f
-            typeface = Typeface.MONOSPACE
         }
-        colonne.addView(journal)
 
-        setContentView(ScrollView(this).apply { addView(colonne) })
+        // L'interface ne quitte jamais son écran.
+        override fun shouldOverrideUrlLoading(view: WebView, requete: WebResourceRequest) =
+            requete.url.host != HOTE
     }
 
-    private fun rafraichirEcoute() {
-        val etat = Balayage.demarrer(this)
-        val signal = Reglages.dernierSignal(this)?.let { (rssi, quand) ->
-            "\nDernière balise entendue : $rssi dBm à " +
-                SimpleDateFormat("HH:mm:ss", Locale.FRANCE).format(Date(quand))
-        }.orEmpty()
-        etatEcoute.text = etat + signal
+    private inner class ChromeWeb : WebChromeClient() {
+        override fun onShowFileChooser(
+            vue: WebView,
+            rappel: ValueCallback<Array<Uri>>,
+            parametres: FileChooserParams,
+        ): Boolean {
+            rappelFichiers?.onReceiveValue(null)
+            rappelFichiers = rappel
+            if (parametres.isCaptureEnabled) prendrePhoto()
+            else choisirFichiers(parametres.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+            return true
+        }
+
+        // Le micro, pour le message vocal : demandé au moment où il sert.
+        override fun onPermissionRequest(demande: PermissionRequest) {
+            principal.post {
+                if (PermissionRequest.RESOURCE_AUDIO_CAPTURE !in demande.resources) {
+                    demande.deny()
+                } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    demande.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                } else {
+                    demandeMicro?.deny()
+                    demandeMicro = demande
+                    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), DEMANDE_MICRO)
+                }
+            }
+        }
     }
 
-    private fun dire(texte: String) {
-        val heure = SimpleDateFormat("HH:mm:ss", Locale.FRANCE).format(Date())
-        runOnUiThread { journal.text = "$heure  $texte\n" + journal.text }
+    // ───────────────────────────── Pont avec l'interface ─────────────────────────────
+
+    private inner class Pont {
+        @JavascriptInterface
+        fun autorise(): Boolean = autorisationsManquantes().isEmpty()
+
+        @JavascriptInterface
+        fun autoriser() {
+            principal.post { demanderAutorisations() }
+        }
+
+        /** Crée le réseau et attend le PC ; le résultat arrive en événement `connexion`. */
+        @JavascriptInterface
+        fun demarrer() {
+            principal.post { ouvrirLiaison() }
+        }
+
+        /** Envoi reçu par le PC : on le libère peu après pour le client suivant. */
+        @JavascriptInterface
+        fun envoiTermine(numero: String) {
+            journal("🎉 Commande $numero reçue par le PC.")
+            principal.post {
+                principal.removeCallbacks(fermeture)
+                principal.postDelayed(fermeture, APRES_ENVOI_MS)
+            }
+        }
+
+        /** Documents reçus par « Partager » depuis la dernière demande. */
+        @JavascriptInterface
+        fun partages(): String {
+            val liste = JSONArray()
+            synchronized(partages) {
+                for (i in partagesLus until partages.size) {
+                    val uri = partages[i]
+                    liste.put(
+                        JSONObject()
+                            .put("nom", nomFichier(uri))
+                            .put("type", contentResolver.getType(uri) ?: "")
+                            .put("url", "/partage/$i")
+                    )
+                }
+                partagesLus = partages.size
+            }
+            return liste.toString()
+        }
+    }
+
+    // ───────────────────────────── Liaison avec le PC ─────────────────────────────
+
+    private fun ouvrirLiaison() {
+        principal.removeCallbacks(fermeture)
+        adressePc?.let { pc ->
+            signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc))
+            principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
+            return
+        }
+        if (liaison != null) return // déjà en cours
+        if (autorisationsManquantes().isNotEmpty()) {
+            signaler(JSONObject().put("type", "connexion").put("etat", "echec")
+                .put("message", "Autorisations manquantes."))
+            return
+        }
+        val wifi = applicationContext.getSystemService(WifiManager::class.java)
+        if (wifi?.isWifiEnabled == false) {
+            try { startActivity(Intent(Settings.Panel.ACTION_WIFI)) } catch (_: ActivityNotFoundException) {}
+        }
+        val l = Liaison(this, ::journal)
+        liaison = l
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        signaler(JSONObject().put("type", "connexion").put("etat", "encours"))
+        executeur.execute {
+            val pc = try { l.ouvrir() } catch (e: Exception) { journal("❌ ${e.message}"); null }
+            principal.post {
+                if (liaison !== l) return@post
+                if (pc != null) {
+                    adressePc = pc.hostAddress
+                    signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc.hostAddress))
+                    principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
+                } else {
+                    liaison = null
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    signaler(JSONObject().put("type", "connexion").put("etat", "echec")
+                        .put("message", l.raison ?: "Guichet introuvable."))
+                }
+            }
+        }
+    }
+
+    private fun fermerLiaison() {
+        val l = liaison ?: return
+        liaison = null
+        adressePc = null
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        signaler(JSONObject().put("type", "connexion").put("etat", "aucune"))
+        executeur.execute { l.fermer() }
     }
 
     // ───────────────────────────── Autorisations ─────────────────────────────
@@ -174,8 +305,8 @@ class MainActivity : Activity() {
     private fun demanderAutorisations() {
         val manquantes = autorisationsManquantes()
         if (manquantes.isEmpty()) {
-            dire("Tout est déjà autorisé.")
-            rafraichirEcoute()
+            Balayage.demarrer(this)
+            signaler(JSONObject().put("type", "autorisations").put("ok", true))
         } else {
             requestPermissions(manquantes.toTypedArray(), DEMANDE_AUTORISATIONS)
         }
@@ -183,89 +314,136 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        val refusees = autorisationsManquantes()
-        dire(if (refusees.isEmpty()) "✅ Autorisations accordées." else "⚠️ Refusées : ${refusees.joinToString { it.substringAfterLast('.') }}")
-        rafraichirEcoute()
+        when (requestCode) {
+            DEMANDE_AUTORISATIONS -> {
+                val refusees = autorisationsManquantes()
+                if (refusees.isEmpty()) Balayage.demarrer(this)
+                signaler(
+                    JSONObject().put("type", "autorisations").put("ok", refusees.isEmpty())
+                        .put("message", if (refusees.isEmpty()) "" else
+                            "Autorisation refusée. Sans elle, l'application ne peut pas joindre la boutique. " +
+                                "Touchez « Autoriser » à nouveau, ou ouvrez les réglages de l'application.")
+                )
+            }
+            DEMANDE_MICRO -> {
+                val demande = demandeMicro ?: return
+                demandeMicro = null
+                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                    demande.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                } else {
+                    demande.deny()
+                }
+            }
+        }
     }
 
     // ───────────────────────────── Documents ─────────────────────────────
 
     private fun traiter(intent: Intent?) {
-        when (intent?.action) {
-            Intent.ACTION_SEND -> {
-                val uri: Uri? = if (Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
-                }
-                uri?.let { envoyer(listOf(it)) } ?: dire("Rien à envoyer dans ce partage.")
-            }
-            Intent.ACTION_SEND_MULTIPLE -> {
-                val uris: List<Uri> = if (Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-                }.orEmpty()
-                if (uris.isNotEmpty()) envoyer(uris) else dire("Rien à envoyer dans ce partage.")
-            }
-            ACTION_CHOISIR -> choisirFichiers()
+        val uris: List<Uri> = when (intent?.action) {
+            Intent.ACTION_SEND -> listOfNotNull(documentPartage(intent))
+            Intent.ACTION_SEND_MULTIPLE -> documentsPartages(intent)
+            else -> emptyList()
         }
+        if (uris.isEmpty()) return
+        synchronized(partages) { partages.addAll(uris) }
+        signaler(JSONObject().put("type", "partages"))
     }
 
-    private fun choisirFichiers() {
-        if (envoiEnCours) return
+    @Suppress("DEPRECATION")
+    private fun documentPartage(intent: Intent): Uri? =
+        if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        else intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+
+    @Suppress("DEPRECATION")
+    private fun documentsPartages(intent: Intent): List<Uri> =
+        (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        else intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)).orEmpty()
+
+    private fun nomFichier(uri: Uri): String {
+        try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (i >= 0) c.getString(i)?.let { if (it.isNotBlank()) return it }
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return uri.lastPathSegment?.substringAfterLast('/') ?: "document"
+    }
+
+    private fun choisirFichiers(plusieurs: Boolean) {
         val choix = Intent(Intent.ACTION_OPEN_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
             .setType("*/*")
-            .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-        @Suppress("DEPRECATION")
-        startActivityForResult(choix, DEMANDE_FICHIERS)
+            .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, plusieurs)
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(choix, DEMANDE_FICHIERS)
+        } catch (_: ActivityNotFoundException) {
+            rendreFichiers(null)
+        }
+    }
+
+    /** Photo d'un document : enregistrée dans Images/Kiosque, puis ajoutée à la commande. */
+    private fun prendrePhoto() {
+        val valeurs = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "Document_${System.currentTimeMillis()}.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Kiosque")
+        }
+        val cible = try {
+            contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, valeurs)
+        } catch (_: Exception) {
+            null
+        }
+        if (cible == null) {
+            choisirFichiers(true)
+            return
+        }
+        photo = cible
+        val appareil = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            .putExtra(MediaStore.EXTRA_OUTPUT, cible)
+            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(appareil, DEMANDE_PHOTO)
+        } catch (_: ActivityNotFoundException) {
+            contentResolver.delete(cible, null, null)
+            photo = null
+            choisirFichiers(true)
+        }
+    }
+
+    private fun rendreFichiers(uris: Array<Uri>?) {
+        rappelFichiers?.onReceiveValue(uris)
+        rappelFichiers = null
     }
 
     @Deprecated("API Activity simple, sans bibliothèque")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != DEMANDE_FICHIERS || resultCode != RESULT_OK || data == null) return
-        val uris = buildList {
-            data.clipData?.let { clip -> for (i in 0 until clip.itemCount) add(clip.getItemAt(i).uri) }
-            if (isEmpty()) data.data?.let { add(it) }
-        }
-        if (uris.isNotEmpty()) envoyer(uris)
-    }
-
-    private fun envoyer(uris: List<Uri>) {
-        if (envoiEnCours) {
-            dire("Un envoi est déjà en cours.")
-            return
-        }
-        val manquantes = autorisationsManquantes()
-        if (manquantes.isNotEmpty()) {
-            dire("Touchez d'abord « Autoriser (une seule fois) ».")
-            demanderAutorisations()
-            return
-        }
-        val wifi = applicationContext.getSystemService(WifiManager::class.java)
-        if (wifi?.isWifiEnabled == false) startActivity(Intent(Settings.Panel.ACTION_WIFI))
-
-        envoiEnCours = true
-        boutonChoisir.isEnabled = false
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        dire("${uris.size} document(s) à envoyer.")
-        Thread {
-            try {
-                Envoi(this, uris, ::dire).lancer()
-            } catch (e: Exception) {
-                dire("❌ ${e.message}")
-            } finally {
-                envoiEnCours = false
-                runOnUiThread {
-                    boutonChoisir.isEnabled = true
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        when (requestCode) {
+            DEMANDE_FICHIERS -> {
+                if (resultCode != RESULT_OK || data == null) return rendreFichiers(null)
+                val uris = buildList {
+                    data.clipData?.let { clip -> for (i in 0 until clip.itemCount) add(clip.getItemAt(i).uri) }
+                    if (isEmpty()) data.data?.let { add(it) }
+                }
+                rendreFichiers(uris.toTypedArray().takeIf { it.isNotEmpty() })
+            }
+            DEMANDE_PHOTO -> {
+                val cible = photo
+                photo = null
+                if (resultCode == RESULT_OK && cible != null) {
+                    rendreFichiers(arrayOf(cible))
+                } else {
+                    cible?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) {} }
+                    rendreFichiers(null)
                 }
             }
-        }.start()
+        }
     }
 }

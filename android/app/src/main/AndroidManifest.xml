@@ -27,10 +27,20 @@
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="31" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Message vocal joint à un document (demandé seulement quand il sert). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-feature android:name="android.hardware.wifi.direct" android:required="true" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
+    <!-- Appareil photo, pour « Prendre un document en photo ». -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
 
     <application
         android:label="Envoyeur Kiosque"

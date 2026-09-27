@@ -38,6 +38,15 @@ pub struct QueueItem {
     /// (pages × exemplaires) servant au prix et au stock. Permet de rouvrir
     /// « Détails » avec les chiffres réellement saisis.
     pub pages_document: i64,
+    /// Commande du client (« A-27 »), commune aux fichiers envoyés ensemble.
+    pub commande_numero: Option<String>,
+    /// `recu` → `impression` → `pret`, avancée par le gérant ; montrée au
+    /// client sur son téléphone.
+    pub etape: Option<String>,
+    /// JSON : orientation, papier, description, quand, urgent…
+    pub demande_client: Option<String>,
+    /// Un message vocal accompagne ce document (voir `lire_vocal`).
+    pub vocal: bool,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

@@ -2,69 +2,80 @@ package bj.photocopie.envoyeur
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.net.Uri
 import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pManager
-import android.provider.OpenableColumns
-import java.io.DataOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
-import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
-import java.net.URL
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Un envoi complet, sans internet :
+ * Le lien entre le téléphone et le PC du kiosque, sans internet :
  * 1. le téléphone crée son propre réseau (Wi-Fi Direct), avec le mot de
  *    passe de la boutique — rien à allumer à la main, pas de forfait utilisé ;
  * 2. le PC du kiosque le repère et le rejoint tout seul ;
- * 3. le téléphone trouve le PC et lui envoie les fichiers ;
- * 4. le réseau est supprimé.
+ * 3. le téléphone trouve l'adresse du PC.
  *
- * Bloquant : à lancer hors du fil de l'interface. `dire` reçoit chaque étape,
- * affichée à l'écran (version d'essai : tout est noté).
+ * L'envoi lui-même est fait par l'interface (client-web/index.html), qui
+ * affiche la progression. Bloquant : à lancer hors du fil de l'interface.
+ * `dire` reçoit chaque étape, pour le journal.
  */
-class Envoi(
+class Liaison(
     private val ctx: Context,
-    private val fichiers: List<Uri>,
     private val dire: (String) -> Unit,
 ) {
     private val p2p = ctx.getSystemService(WifiP2pManager::class.java)
     private val canal = p2p?.initialize(ctx, ctx.mainLooper, null)
 
-    /** Rend vrai si tout est arrivé au PC. */
-    fun lancer(): Boolean {
+    /** Le nom du réseau créé, pour le journal. */
+    var nomReseau: String? = null
+        private set
+
+    /** Crée le réseau et attend le PC. Rend son adresse, ou null (et la raison dans [raison]). */
+    fun ouvrir(): InetAddress? {
         if (p2p == null || canal == null) {
-            dire("❌ Ce téléphone ne sait pas créer de réseau Wi-Fi Direct.")
-            return false
+            raison = "Ce téléphone ne sait pas créer de réseau Wi-Fi Direct."
+            return null
         }
-        if (!attendreWifi()) return false
+        if (!attendreWifi()) {
+            raison = "Le Wi-Fi est resté éteint. Allumez-le (sans choisir de réseau)."
+            return null
+        }
         val debut = System.currentTimeMillis()
-        try {
-            val nom = creerReseau() ?: return false
-            dire("📶 Réseau « $nom » créé. Le PC du kiosque va le rejoindre…")
-            val pc = trouverPc(90_000)
-            if (pc == null) {
-                dire("❌ Le PC ne s'est pas connecté en 90 s. Le logiciel du kiosque est-il ouvert, réception directe active ?")
-                return false
-            }
-            val secondes = (System.currentTimeMillis() - debut) / 1000.0
-            dire("✅ PC trouvé à ${pc.hostAddress} (${"%.1f".format(secondes)} s). Envoi…")
-            val ok = televerser(pc)
-            if (ok) dire("🎉 Envoyé au kiosque. Vous pouvez ranger le téléphone.")
-            return ok
-        } finally {
-            supprimerReseau()
+        val nom = creerReseau()
+        if (nom == null) {
+            raison = "Le téléphone n'a pas pu créer son réseau. Réessayez."
+            return null
         }
+        nomReseau = nom
+        dire("📶 Réseau « $nom » créé. Le PC du kiosque va le rejoindre…")
+        val pc = trouverPc(90_000)
+        if (pc == null) {
+            raison = "L'ordinateur de la boutique ne s'est pas relié. Approchez-vous du guichet et vérifiez que le logiciel est ouvert."
+            dire("❌ Le PC ne s'est pas connecté en 90 s.")
+            supprimerReseau()
+            return null
+        }
+        val secondes = (System.currentTimeMillis() - debut) / 1000.0
+        dire("✅ PC trouvé à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
+        return pc
+    }
+
+    var raison: String? = null
+        private set
+
+    /** Supprime le réseau : le PC est libéré pour le client suivant. */
+    fun fermer() {
+        supprimerReseau()
+        dire("Réseau supprimé.")
     }
 
     // ───────────────────────────── Wi-Fi ─────────────────────────────
@@ -219,58 +230,5 @@ class Envoi(
         true
     } catch (_: Exception) {
         false
-    }
-
-    // ───────────────────────────── Envoi des fichiers ─────────────────────────────
-
-    private fun nomFichier(uri: Uri): String {
-        ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-            if (c.moveToFirst()) {
-                val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (i >= 0) c.getString(i)?.let { if (it.isNotBlank()) return it }
-            }
-        }
-        return uri.lastPathSegment?.substringAfterLast('/') ?: "document"
-    }
-
-    /** Même formulaire que la page d'envoi du PC : champs `fichier_0`, `fichier_1`… */
-    private fun televerser(pc: InetAddress): Boolean {
-        val limite = "----envoyeur" + System.nanoTime()
-        val connexion = URL("http://${pc.hostAddress}:${Reglages.PORT_PC}/envoyer").openConnection() as HttpURLConnection
-        return try {
-            connexion.requestMethod = "POST"
-            connexion.doOutput = true
-            connexion.connectTimeout = 10_000
-            connexion.readTimeout = 120_000
-            connexion.setChunkedStreamingMode(64 * 1024)
-            connexion.setRequestProperty("Content-Type", "multipart/form-data; boundary=$limite")
-            DataOutputStream(connexion.outputStream).use { sortie ->
-                fun ecrire(texte: String) = sortie.write(texte.toByteArray(Charsets.UTF_8))
-                fichiers.forEachIndexed { i, uri ->
-                    val nom = nomFichier(uri).replace("\"", "'").replace("\r", " ").replace("\n", " ")
-                    dire("⬆️ ${i + 1}/${fichiers.size} : $nom")
-                    ecrire("--$limite\r\n")
-                    ecrire("Content-Disposition: form-data; name=\"fichier_$i\"; filename=\"$nom\"\r\n")
-                    ecrire("Content-Type: application/octet-stream\r\n\r\n")
-                    ctx.contentResolver.openInputStream(uri)?.use { it.copyTo(sortie, 64 * 1024) }
-                        ?: throw IllegalStateException("fichier illisible : $nom")
-                    ecrire("\r\n")
-                }
-                ecrire("--$limite--\r\n")
-            }
-            val code = connexion.responseCode
-            if (code == 200) {
-                true
-            } else {
-                val message = connexion.errorStream?.bufferedReader()?.readText().orEmpty()
-                dire("❌ Le PC a refusé l'envoi (code $code) $message")
-                false
-            }
-        } catch (e: Exception) {
-            dire("❌ Envoi interrompu : ${e.message}")
-            false
-        } finally {
-            connexion.disconnect()
-        }
     }
 }

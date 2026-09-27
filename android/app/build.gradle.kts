@@ -14,8 +14,16 @@ android {
         // choisis, sans fenêtre de confirmation.
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    // L'écran de l'application est l'interface web du client, la même que
+    // celle que le PC sert aux iPhone : un seul fichier pour les deux.
+    sourceSets {
+        getByName("main") {
+            assets.srcDirs("../../client-web")
+        }
     }
 
     signingConfigs {

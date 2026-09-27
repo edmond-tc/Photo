@@ -1012,9 +1012,15 @@ fieldset {
     line-height: 1.6;
     margin: 0 0 1rem;
   }
+  #affiche-reception h2 {
+    font-size: 1.5rem;
+    margin: 0.8rem 0 0.3rem;
+    border-top: 2px solid #000;
+    padding-top: 0.6rem;
+  }
   #affiche-reception img {
-    width: 9cm;
-    height: 9cm;
+    width: 6.5cm;
+    height: 6.5cm;
     image-rendering: pixelated;
   }
   #affiche-reception .mdp {

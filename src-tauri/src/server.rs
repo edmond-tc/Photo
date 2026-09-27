@@ -196,15 +196,65 @@ async fn api_portail(State(app): State<AppHandle>) -> impl IntoResponse {
 
 fn construire_router(app: AppHandle) -> Router {
     Router::new()
-        .route("/envoyer", post(recevoir_fichier))
-        .route("/statut/:jeton", get(statut_fichier))
+        .route("/envoyer", post(recevoir_fichier).options(preflight))
+        .route("/statut/:jeton", get(statut_fichier).options(preflight))
+        .route("/infos", get(infos_boutique).options(preflight))
+        .route("/classique", get(page_classique))
         .route(CHEMIN_API_PORTAIL, get(api_portail))
         // Toute autre adresse, `/` comprise : la page d'envoi, en 200.
         .fallback(page_accueil)
         // La limite est gérée pendant la lecture (voir `lire_envoi`), sur
         // l'espace disque réel ; celle d'axum, fixe, refuserait à tort.
         .layer(DefaultBodyLimit::disable())
+        .layer(axum::middleware::map_response(autoriser_application))
         .with_state(app)
+}
+
+/// L'application Envoyeur Kiosque affiche l'interface depuis le téléphone
+/// lui-même, puis parle au PC : le navigateur exige alors l'accord du PC
+/// pour chaque réponse. N'ouvre rien de plus : tout téléphone relié au PC
+/// peut déjà ouvrir ces adresses.
+async fn autoriser_application(mut reponse: axum::response::Response) -> axum::response::Response {
+    let entetes = reponse.headers_mut();
+    entetes.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        axum::http::HeaderValue::from_static("*"),
+    );
+    reponse
+}
+
+async fn preflight() -> impl IntoResponse {
+    (
+        StatusCode::NO_CONTENT,
+        [
+            (axum::http::header::ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS"),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
+            (axum::http::header::ACCESS_CONTROL_MAX_AGE, "600"),
+        ],
+    )
+}
+
+/// Ce que l'interface du client affiche avant l'envoi : le nom de la
+/// boutique et sa grille de prix, pour estimer le prix en direct.
+async fn infos_boutique(State(app): State<AppHandle>) -> impl IntoResponse {
+    let state = app.state::<crate::db::DbState>();
+    let Ok(conn) = state.0.lock() else {
+        return Json(serde_json::json!({}));
+    };
+    let nom = crate::db::get_setting(&conn, "boutique_nom").unwrap_or_default();
+    let tarifs: serde_json::Map<String, serde_json::Value> = conn
+        .prepare("SELECT service, prix_unitaire FROM tarifs")
+        .and_then(|mut stmt| {
+            stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+                .map(|lignes| {
+                    lignes
+                        .filter_map(Result::ok)
+                        .map(|(k, v)| (k, serde_json::Value::from(v)))
+                        .collect()
+                })
+        })
+        .unwrap_or_default();
+    Json(serde_json::json!({ "boutique": nom, "tarifs": tarifs }))
 }
 
 /// Portail captif, façon Wi-Fi d'hôtel : le téléphone qui rejoint un réseau
@@ -713,6 +763,17 @@ async fn page_accueil(
         return Html(page_de_controle(&adresse_locale()));
     }
 
+    let _ = app;
+    Html(INTERFACE_CLIENT.to_string())
+}
+
+/// L'interface du client (choix des documents, options, envoi, numéro de
+/// commande). Le même fichier est embarqué dans l'application Android :
+/// voir `client-web/` à la racine du projet.
+const INTERFACE_CLIENT: &str = include_str!("../../client-web/index.html");
+
+/// L'ancienne page d'envoi, gardée en secours (lien en bas de l'interface).
+async fn page_classique(State(app): State<AppHandle>) -> Html<String> {
     let (whatsapp, bluetooth_nom) = {
         let state = app.state::<crate::db::DbState>();
         let Ok(conn) = state.0.lock() else {
@@ -1481,6 +1542,45 @@ struct EnvoiClient {
     telephone: Option<String>,
     fichiers: std::collections::HashMap<usize, FichierRecu>,
     options: std::collections::HashMap<usize, OptionsImpression>,
+    /// Ce qui guide le gérant sans se facturer, par document (orientation,
+    /// papier, description…).
+    extras: std::collections::HashMap<usize, serde_json::Map<String, serde_json::Value>>,
+    /// Message vocal du client, par document.
+    vocaux: std::collections::HashMap<usize, FichierRecu>,
+    /// « J'attends sur place », « Je repasse à 15:00 »…
+    quand: Option<String>,
+    urgent: bool,
+}
+
+const LONGUEUR_MAX_DESCRIPTION: usize = 500;
+const LONGUEUR_MAX_COURT: usize = 60;
+const SERVICES_MAX: usize = 12;
+
+/// Un nom de service de la grille tarifaire (`agrafage`, `reliure_spirale`…) :
+/// tout autre texte est ignoré, jamais repris tel quel.
+fn service_valide(service: &str) -> bool {
+    (1..=40).contains(&service.len()) && service.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+}
+
+/// Numéro annoncé au client et au guichet : une lettre qui change chaque
+/// jour, puis le rang de la commande dans la journée (« C-27 »). Deux
+/// commandes de jours voisins ne portent donc jamais le même numéro.
+fn numero_commande(jour_de_l_annee: u32, rang: u32) -> String {
+    let lettre = (b'A' + (jour_de_l_annee % 26) as u8) as char;
+    format!("{lettre}-{rang}")
+}
+
+/// Extension d'un message vocal : seulement les formats audio courants.
+fn extension_vocal(nom: &str) -> &'static str {
+    let ext = nom.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    match ext.as_str() {
+        "webm" => "webm",
+        "ogg" | "oga" | "opus" => "ogg",
+        "m4a" | "mp4" | "aac" => "m4a",
+        "wav" => "wav",
+        "3gp" | "amr" => "3gp",
+        _ => "audio",
+    }
 }
 
 /// Lit la requête du client. Les fichiers sont écrits dans
@@ -1493,40 +1593,37 @@ async fn lire_envoi(
     dossier_en_cours: &std::path::Path,
     budget: u64,
 ) -> Result<EnvoiClient, EchecLecture> {
-    let mut fichiers: std::collections::HashMap<usize, FichierRecu> =
-        std::collections::HashMap::new();
-    let resultat = lire_champs(multipart, dossier_en_cours, budget, &mut fichiers).await;
+    let mut envoi = EnvoiClient {
+        nom: None,
+        telephone: None,
+        fichiers: std::collections::HashMap::new(),
+        options: std::collections::HashMap::new(),
+        extras: std::collections::HashMap::new(),
+        vocaux: std::collections::HashMap::new(),
+        quand: None,
+        urgent: false,
+    };
+    let resultat = lire_champs(multipart, dossier_en_cours, budget, &mut envoi).await;
     match resultat {
-        Ok((nom, telephone, options)) if !fichiers.is_empty() => Ok(EnvoiClient {
-            nom,
-            telephone,
-            fichiers,
-            options,
-        }),
-        Ok(_) => Err(EchecLecture::AucunFichier),
+        Ok(()) if !envoi.fichiers.is_empty() => Ok(envoi),
+        Ok(()) => {
+            effacer_temporaires(&envoi.vocaux).await;
+            Err(EchecLecture::AucunFichier)
+        }
         Err(e) => {
-            effacer_temporaires(&fichiers).await;
+            effacer_temporaires(&envoi.fichiers).await;
+            effacer_temporaires(&envoi.vocaux).await;
             Err(e)
         }
     }
 }
 
-type ChampsTexte = (
-    Option<String>,
-    Option<String>,
-    std::collections::HashMap<usize, OptionsImpression>,
-);
-
 async fn lire_champs(
     mut multipart: Multipart,
     dossier_en_cours: &std::path::Path,
     budget: u64,
-    fichiers: &mut std::collections::HashMap<usize, FichierRecu>,
-) -> Result<ChampsTexte, EchecLecture> {
-    let mut nom: Option<String> = None;
-    let mut telephone: Option<String> = None;
-    let mut options: std::collections::HashMap<usize, OptionsImpression> =
-        std::collections::HashMap::new();
+    envoi: &mut EnvoiClient,
+) -> Result<(), EchecLecture> {
     let mut deja_recu = 0u64;
 
     loop {
@@ -1540,24 +1637,40 @@ async fn lire_champs(
         };
         let name = field.name().unwrap_or("").to_string();
 
-        if name == "nom" {
-            if let Ok(v) = field.text().await {
-                let v = borner_texte(&v, LONGUEUR_MAX_NOM);
-                if !v.is_empty() {
-                    nom = Some(v);
+        match name.as_str() {
+            "nom" => {
+                if let Ok(v) = field.text().await {
+                    let v = borner_texte(&v, LONGUEUR_MAX_NOM);
+                    if !v.is_empty() {
+                        envoi.nom = Some(v);
+                    }
                 }
+                continue;
             }
-            continue;
-        }
-        if name == "telephone" {
-            if let Ok(v) = field.text().await {
-                telephone = normalize_phone(&borner_texte(&v, LONGUEUR_MAX_TELEPHONE));
+            "telephone" => {
+                if let Ok(v) = field.text().await {
+                    envoi.telephone = normalize_phone(&borner_texte(&v, LONGUEUR_MAX_TELEPHONE));
+                }
+                continue;
             }
-            continue;
-        }
-        if name == "nombre_fichiers" {
-            let _ = field.text().await;
-            continue;
+            "quand" => {
+                if let Ok(v) = field.text().await {
+                    let v = borner_texte(&v, LONGUEUR_MAX_COURT);
+                    envoi.quand = (!v.is_empty()).then_some(v);
+                }
+                continue;
+            }
+            "urgent" => {
+                if let Ok(v) = field.text().await {
+                    envoi.urgent = v == "1";
+                }
+                continue;
+            }
+            "nombre_fichiers" | "origine" => {
+                let _ = field.text().await;
+                continue;
+            }
+            _ => {}
         }
 
         let Some((prefixe, indice)) = name.rsplit_once('_') else {
@@ -1568,11 +1681,13 @@ async fn lire_champs(
         };
 
         match prefixe {
-            "fichier" => {
+            "fichier" | "vocal" => {
+                let est_vocal = prefixe == "vocal";
                 // Au-delà de la limite, les fichiers suivants sont ignorés
                 // en silence plutôt que de faire échouer tout l'envoi : les
                 // premiers documents du client sont bien reçus.
-                if fichiers.len() >= FICHIERS_MAX_PAR_ENVOI {
+                let deja = if est_vocal { envoi.vocaux.len() } else { envoi.fichiers.len() };
+                if deja >= FICHIERS_MAX_PAR_ENVOI {
                     continue;
                 }
                 let original_name = field
@@ -1590,9 +1705,10 @@ async fn lire_champs(
                         let _ = tokio::fs::remove_file(&chemin_temporaire).await;
                     }
                     Ok(_) => {
+                        let cible = if est_vocal { &mut envoi.vocaux } else { &mut envoi.fichiers };
                         // Même indice envoyé deux fois (requête forgée) :
                         // l'ancien fichier ne doit pas rester orphelin.
-                        if let Some(ancien) = fichiers.insert(
+                        if let Some(ancien) = cible.insert(
                             indice,
                             FichierRecu {
                                 original_name,
@@ -1608,40 +1724,89 @@ async fn lire_champs(
                     }
                 }
             }
-            "couleur" => {
-                if let Ok(v) = field.text().await {
-                    options.entry(indice).or_default().couleur = v == "1";
-                }
+            _ => {
+                let Ok(v) = field.text().await else { continue };
+                appliquer_option(envoi, prefixe, indice, &v);
             }
-            "format" => {
-                if let Ok(v) = field.text().await {
-                    options.entry(indice).or_default().format_papier =
-                        Some(format_papier_valide(&v));
-                }
-            }
-            "copies" => {
-                if let Ok(v) = field.text().await {
-                    if let Ok(n) = v.parse::<i64>() {
-                        // Le "min=1" du formulaire HTML est côté client, donc
-                        // contournable par une requête forgée ; on borne ici
-                        // pour éviter un débordement lors du calcul du prix.
-                        options.entry(indice).or_default().copies = Some(n.clamp(1, 500));
-                    }
-                }
-            }
-            "pages" => {
-                if let Ok(v) = field.text().await {
-                    let v = borner_texte(&v, LONGUEUR_MAX_PLAGE_PAGES);
-                    if !v.is_empty() {
-                        options.entry(indice).or_default().plage_pages = Some(v);
-                    }
-                }
-            }
-            _ => {}
         }
     }
 
-    Ok((nom, telephone, options))
+    Ok(())
+}
+
+/// Une option d'un document (`couleur_2`, `services_0`…), bornée et vérifiée.
+fn appliquer_option(envoi: &mut EnvoiClient, prefixe: &str, indice: usize, v: &str) {
+    if indice >= FICHIERS_MAX_PAR_ENVOI * 2 {
+        return;
+    }
+    let options = envoi.options.entry(indice).or_default();
+    let mut extra = |cle: &str, valeur: serde_json::Value| {
+        envoi.extras.entry(indice).or_default().insert(cle.to_string(), valeur);
+    };
+    match prefixe {
+        "couleur" => options.couleur = v == "1",
+        "rv" => options.recto_verso = v == "1",
+        "format" => options.format_papier = Some(format_papier_valide(v)),
+        "copies" => {
+            if let Ok(n) = v.trim().parse::<i64>() {
+                // Le "min=1" du formulaire HTML est côté client, donc
+                // contournable par une requête forgée ; on borne ici
+                // pour éviter un débordement lors du calcul du prix.
+                options.copies = Some(n.clamp(1, 500));
+            }
+        }
+        "pages" => {
+            let v = borner_texte(v, LONGUEUR_MAX_PLAGE_PAGES);
+            if !v.is_empty() {
+                options.plage_pages = Some(v);
+            }
+        }
+        "pages_nb" => {
+            if let Ok(n) = v.trim().parse::<i64>() {
+                options.pages_document = Some(n.clamp(1, 5000));
+            }
+        }
+        "services" => {
+            options.finitions = v
+                .split(',')
+                .map(str::trim)
+                .filter(|s| service_valide(s))
+                .take(SERVICES_MAX)
+                .map(str::to_string)
+                .collect();
+        }
+        "orientation" | "papier" | "par_feuille" => {
+            let v = borner_texte(v, LONGUEUR_MAX_COURT);
+            if !v.is_empty() {
+                extra(prefixe, serde_json::Value::String(v));
+            }
+        }
+        "description" => {
+            let v = borner_texte(v, LONGUEUR_MAX_DESCRIPTION);
+            if !v.is_empty() {
+                extra("description", serde_json::Value::String(v));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Attribue le numéro de la commande suivante du jour.
+fn prochain_numero_commande(conn: &rusqlite::Connection) -> String {
+    use chrono::Datelike;
+    let maintenant = chrono::Local::now();
+    let jour = maintenant.format("%Y-%m-%d").to_string();
+    let rang = if crate::db::get_setting(conn, "commande_jour").as_deref() == Some(jour.as_str()) {
+        crate::db::get_setting(conn, "commande_rang")
+            .and_then(|r| r.parse::<u32>().ok())
+            .unwrap_or(0)
+            + 1
+    } else {
+        1
+    };
+    let _ = crate::db::set_setting(conn, "commande_jour", &jour);
+    let _ = crate::db::set_setting(conn, "commande_rang", &rang.to_string());
+    numero_commande(maintenant.ordinal0(), rang)
 }
 
 async fn enregistrer_envoi(
@@ -1654,18 +1819,40 @@ async fn enregistrer_envoi(
         telephone,
         fichiers,
         mut options,
+        mut extras,
+        mut vocaux,
+        quand,
+        urgent,
     } = envoi;
 
     let recus_dir = data_dir.join("recus");
     if std::fs::create_dir_all(&recus_dir).is_err() {
         effacer_temporaires(&fichiers).await;
+        effacer_temporaires(&vocaux).await;
         return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response();
     }
+
+    // Un seul numéro pour tout ce que le client envoie d'un coup.
+    let numero = {
+        let state = app.state::<crate::db::DbState>();
+        let conn = state.0.lock();
+        conn.as_ref().ok().map(|c| prochain_numero_commande(c))
+    };
+    let Some(numero) = numero else {
+        effacer_temporaires(&fichiers).await;
+        effacer_temporaires(&vocaux).await;
+        return (StatusCode::INTERNAL_SERVER_ERROR, "erreur serveur").into_response();
+    };
+    let commande = (numero, format!("{:032x}", rand::random::<u128>()));
 
     let nombre_recus = fichiers.len();
     let mut nombre_enregistres = 0usize;
     let mut jetons: Vec<String> = Vec::new();
-    for (indice, fichier) in fichiers {
+    let mut indices: Vec<usize> = fichiers.keys().copied().collect();
+    indices.sort_unstable();
+    let mut fichiers = fichiers;
+    for indice in indices {
+        let Some(fichier) = fichiers.remove(&indice) else { continue };
         let horodatage = chrono::Local::now().format("%Y%m%d-%H%M%S%3f");
         let nom_fichier_sur_disque = format!("{horodatage}_{}_{}", indice, fichier.original_name);
         let chemin = recus_dir.join(&nom_fichier_sur_disque);
@@ -1675,9 +1862,34 @@ async fn enregistrer_envoi(
             let _ = tokio::fs::remove_file(&fichier.chemin_temporaire).await;
             continue;
         }
-        let opts = options.remove(&indice).unwrap_or_default();
+        let mut opts = options.remove(&indice).unwrap_or_default();
+
+        if let Some(vocal) = vocaux.remove(&indice) {
+            let chemin_vocal = recus_dir.join(format!(
+                "{horodatage}_{indice}_vocal.{}",
+                extension_vocal(&vocal.original_name)
+            ));
+            if tokio::fs::rename(&vocal.chemin_temporaire, &chemin_vocal).await.is_ok() {
+                opts.vocal_chemin = Some(chemin_vocal.to_string_lossy().to_string());
+            } else {
+                let _ = tokio::fs::remove_file(&vocal.chemin_temporaire).await;
+            }
+        }
+
+        let mut demande = extras.remove(&indice).unwrap_or_default();
+        if let Some(q) = &quand {
+            demande.insert("quand".into(), serde_json::Value::String(q.clone()));
+        }
+        if urgent {
+            demande.insert("urgent".into(), serde_json::Value::Bool(true));
+        }
+        if !demande.is_empty() {
+            opts.demande_client = serde_json::to_string(&demande).ok();
+        }
+        opts.commande = Some(commande.clone());
+
         if let Some((_id, jeton)) = enqueue_file_avec_options(
-            &app,
+            app,
             &chemin,
             "qr",
             nom.as_deref(),
@@ -1688,6 +1900,8 @@ async fn enregistrer_envoi(
             jetons.push(jeton);
         }
     }
+    // Message vocal sans document correspondant : rien à quoi le rattacher.
+    effacer_temporaires(&vocaux).await;
 
     // Ne jamais répondre "ok" si rien n'a pu être enregistré : le client
     // verrait "Fichier envoyé, merci !" alors que la boutique n'a rien reçu,
@@ -1713,7 +1927,11 @@ async fn enregistrer_envoi(
     // la commande qu'il a lui-même envoyée.
     (
         StatusCode::OK,
-        Json(serde_json::json!({ "jetons": jetons })),
+        Json(serde_json::json!({
+            "jetons": jetons,
+            "numero": commande.0,
+            "commande": commande.1,
+        })),
     )
         .into_response()
 }
@@ -1723,6 +1941,10 @@ struct StatutFichier {
     traite: bool,
     paye: bool,
     message: Option<String>,
+    /// Numéro de la commande (« C-27 ») et étape avancée par le gérant :
+    /// `recu`, `impression` ou `pret`.
+    numero: Option<String>,
+    etape: Option<String>,
 }
 
 /// Interrogée par la page du client (en boucle discrète, tant qu'il est
@@ -1738,6 +1960,8 @@ async fn statut_fichier(
             traite: false,
             paye: false,
             message: None,
+            numero: None,
+            etape: None,
         })
     };
 
@@ -1748,10 +1972,10 @@ async fn statut_fichier(
 
     // Le jeton, et lui seul, désigne la commande : impossible de consulter
     // celle d'un autre client en faisant défiler des numéros.
-    let Ok(id) = conn.query_row(
-        "SELECT id FROM files_queue WHERE jeton = ?1",
+    let Ok((id, numero, etape)) = conn.query_row(
+        "SELECT id, commande_numero, etape FROM files_queue WHERE jeton = ?1",
         rusqlite::params![jeton],
-        |r| r.get::<_, i64>(0),
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, Option<String>>(2)?)),
     ) else {
         return inconnu();
     };
@@ -1765,7 +1989,13 @@ async fn statut_fichier(
         .ok();
 
     let Some(statut) = statut_transaction else {
-        return inconnu();
+        return Json(StatutFichier {
+            traite: false,
+            paye: false,
+            message: None,
+            numero,
+            etape,
+        });
     };
 
     let paye = statut == "paye";
@@ -1816,6 +2046,8 @@ async fn statut_fichier(
         traite: true,
         paye,
         message,
+        numero,
+        etape,
     })
 }
 
@@ -2133,6 +2365,79 @@ mod tests {
         let accents = "é".repeat(200);
         let borne = borner_texte(&accents, 10);
         assert_eq!(borne.chars().count(), 10);
+    }
+
+    // ── Commande envoyée par l'application du client ──
+
+    fn envoi_vide() -> EnvoiClient {
+        EnvoiClient {
+            nom: None,
+            telephone: None,
+            fichiers: std::collections::HashMap::new(),
+            options: std::collections::HashMap::new(),
+            extras: std::collections::HashMap::new(),
+            vocaux: std::collections::HashMap::new(),
+            quand: None,
+            urgent: false,
+        }
+    }
+
+    #[test]
+    fn le_numero_de_commande_change_de_lettre_chaque_jour() {
+        assert_eq!(numero_commande(0, 1), "A-1");
+        assert_eq!(numero_commande(2, 27), "C-27");
+        assert_eq!(numero_commande(26, 5), "A-5");
+        assert_ne!(numero_commande(100, 3), numero_commande(101, 3));
+    }
+
+    #[test]
+    fn seuls_les_noms_de_service_sont_gardes() {
+        let mut envoi = envoi_vide();
+        appliquer_option(&mut envoi, "services", 0, "agrafage, reliure_spirale,<script>,Plastif,,x y");
+        assert_eq!(envoi.options[&0].finitions, vec!["agrafage", "reliure_spirale"]);
+        assert!(service_valide("reliure_dos_carre"));
+        assert!(!service_valide(""));
+        assert!(!service_valide(&"a".repeat(41)));
+    }
+
+    #[test]
+    fn les_options_du_client_sont_bornees() {
+        let mut envoi = envoi_vide();
+        appliquer_option(&mut envoi, "rv", 1, "1");
+        appliquer_option(&mut envoi, "pages_nb", 1, "999999");
+        appliquer_option(&mut envoi, "copies", 1, "-4");
+        appliquer_option(&mut envoi, "description", 1, &"x".repeat(2000));
+        appliquer_option(&mut envoi, "orientation", 1, "Paysage");
+        appliquer_option(&mut envoi, "inconnu", 1, "valeur");
+        // Indice absurde (requête forgée) : ignoré.
+        appliquer_option(&mut envoi, "couleur", 100_000, "1");
+        let o = &envoi.options[&1];
+        assert!(o.recto_verso);
+        assert_eq!(o.pages_document, Some(5000));
+        assert_eq!(o.copies, Some(1));
+        let extras = &envoi.extras[&1];
+        assert_eq!(extras["description"].as_str().unwrap().chars().count(), LONGUEUR_MAX_DESCRIPTION);
+        assert_eq!(extras["orientation"], "Paysage");
+        assert!(!extras.contains_key("inconnu"));
+        assert!(!envoi.options.contains_key(&100_000));
+    }
+
+    #[test]
+    fn le_message_vocal_garde_une_extension_audio_connue() {
+        assert_eq!(extension_vocal("vocal.webm"), "webm");
+        assert_eq!(extension_vocal("VOCAL.M4A"), "m4a");
+        assert_eq!(extension_vocal("piege.exe"), "audio");
+        assert_eq!(extension_vocal("sans_extension"), "audio");
+    }
+
+    #[test]
+    fn l_interface_du_client_reste_legere_et_sans_ressource_exterieure() {
+        // Ni le PC ni le téléphone n'ont internet ; et iOS refuse d'afficher
+        // un portail de plus de ~128 Ko.
+        assert!(INTERFACE_CLIENT.len() < 100 * 1024);
+        assert!(!INTERFACE_CLIENT.contains("https://"));
+        assert!(!INTERFACE_CLIENT.contains("<link"));
+        assert!(INTERFACE_CLIENT.contains("/envoyer"));
     }
 
     // ── Format papier : le menu déroulant est contournable ──
