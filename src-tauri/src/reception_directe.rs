@@ -220,6 +220,37 @@ pub fn reception_directe_regler(
     Ok(())
 }
 
+/// Adresse fixe de la page : la même pour tous les clients, quel que soit
+/// le téléphone. C'est elle que porte le QR imprimé du guichet.
+pub fn adresse_fixe() -> String {
+    format!("http://{}:{}/", crate::mdns::NOM, crate::server::PORT)
+}
+
+#[derive(serde::Serialize)]
+pub struct QrReception {
+    /// QR imprimé, collé au guichet : `http://kiosque.local:4173/`.
+    pub fixe_url: String,
+    pub fixe: String,
+    /// QR affiché à l'écran pendant qu'un client est connecté, avec
+    /// l'adresse en chiffres : secours si le téléphone ne trouve pas
+    /// `kiosque.local`.
+    pub direct_url: Option<String>,
+    pub direct: Option<String>,
+}
+
+#[tauri::command]
+pub fn reception_directe_qr() -> Result<QrReception, String> {
+    let fixe_url = adresse_fixe();
+    let direct_url =
+        adresse_actuelle().map(|a| format!("http://{a}:{}/", crate::server::PORT));
+    Ok(QrReception {
+        fixe: crate::qr::build_qr_data_uri(&fixe_url)?,
+        direct: direct_url.as_deref().map(crate::qr::build_qr_data_uri).transpose()?,
+        fixe_url,
+        direct_url,
+    })
+}
+
 /// Prépare ce PC une fois pour toutes : ouvre le pare-feu (page d'envoi et
 /// nom `kiosque.local`). Une seule fenêtre d'autorisation Windows.
 #[tauri::command]

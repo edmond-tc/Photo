@@ -140,6 +140,7 @@ pub fn run() {
             reception_directe::reception_directe_etat,
             reception_directe::reception_directe_regler,
             reception_directe::reception_directe_preparer,
+            reception_directe::reception_directe_qr,
             reception_directe::reception_directe_ouvrir_localisation,
             commands::journal_des_telephones,
             commands::generer_rapport_diagnostic,

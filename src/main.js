@@ -1793,12 +1793,35 @@ async function rendreReceptionDirecte(corps) {
   );
   corps.appendChild(preparation);
 
+  const qr = await invoke("reception_directe_qr");
+  const carteQr = document.createElement("div");
+  carteQr.className = "carte-rapport";
+  carteQr.innerHTML = `
+    <h3>QR du guichet</h3>
+    <p style="font-size:0.9rem">Le client partage sa connexion, puis scanne ce code avec l'appareil
+      photo : la page d'envoi s'ouvre. Le même code sert pour tous les clients — imprimez-le et
+      collez-le au guichet.</p>
+    <img src="${qr.fixe}" alt="QR du guichet" style="width:180px; height:180px; image-rendering:pixelated">
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">${echapperHtml(qr.fixe_url)}</p>`;
+  carteQr.appendChild(
+    bouton("Imprimer l'affiche du guichet", "btn-secondaire", () =>
+      imprimerAfficheReception(qr.fixe, e.reglages.mot_de_passe)
+    )
+  );
+  corps.appendChild(carteQr);
+
   const etat = document.createElement("div");
   etat.className = "carte-rapport";
   etat.innerHTML = `<h3>En ce moment</h3>
     <p id="rd-etat" style="font-size:1.05rem"></p>
-    <p id="rd-adresse" style="font-size:0.9rem"></p>`;
+    <p id="rd-adresse" style="font-size:0.9rem"></p>
+    <div id="rd-qr-direct" hidden>
+      <p style="font-size:0.9rem"><strong>Si le QR du guichet n'ouvre rien</strong>, le client scanne
+        celui-ci sur l'écran du PC :</p>
+      <img alt="QR de secours" style="width:180px; height:180px; image-rendering:pixelated">
+    </div>`;
   corps.appendChild(etat);
+  let adresseQr = null;
 
   const journal = document.createElement("section");
   journal.innerHTML = `<h3>Journal (le plus récent en haut)</h3>
@@ -1812,6 +1835,20 @@ async function rendreReceptionDirecte(corps) {
     document.querySelector("#rd-adresse").textContent = x.adresse
       ? `Adresse du PC sur le téléphone du client : ${x.adresse} — page : http://kiosque.local:4173 ou http://${x.adresse}:4173`
       : "";
+    // QR de secours (adresse en chiffres), recalculé seulement quand
+    // l'adresse change : un nouveau client, un nouveau téléphone.
+    if (x.adresse !== adresseQr) {
+      adresseQr = x.adresse;
+      const bloc = document.querySelector("#rd-qr-direct");
+      bloc.hidden = !x.adresse;
+      if (x.adresse) {
+        invoke("reception_directe_qr")
+          .then((q) => {
+            if (q.direct) bloc.querySelector("img").src = q.direct;
+          })
+          .catch(() => {});
+      }
+    }
     const zone = document.querySelector("#rd-journal");
     zone.innerHTML = "";
     if (!x.journal.length) zone.textContent = "Rien encore.";
@@ -1836,6 +1873,25 @@ async function rendreReceptionDirecte(corps) {
       if (!remplir(await invoke("reception_directe_etat"))) clearInterval(minuterieReception);
     } catch (_) {}
   }, 2000);
+}
+
+/// Affiche A4 du guichet : les deux gestes du client, et le QR fixe.
+function imprimerAfficheReception(qrFixe, motDePasse) {
+  const affiche = document.querySelector("#affiche-reception");
+  affiche.innerHTML = `
+    <h1>Envoyez votre document ici</h1>
+    <ol>
+      <li>Allumez le <strong>partage de connexion</strong> de votre téléphone<br>
+        avec ce mot de passe :</li>
+    </ol>
+    <p class="mdp">${echapperHtml(motDePasse)}</p>
+    <ol start="2">
+      <li><strong>Scannez ce code</strong> avec l'appareil photo.</li>
+    </ol>
+    <div><img src="${qrFixe}" alt=""></div>
+    <p class="pied">Sans internet : votre forfait n'est pas utilisé.<br>
+      iPhone : Réglages → Partage de connexion. Android : Point d'accès mobile (sécurité WPA2).</p>`;
+  imprimerPage("impression-reception");
 }
 
 async function rendreRapports(corps) {

@@ -201,7 +201,7 @@ fn wifi_qr_payload(ssid: &str, mot_de_passe: Option<&str>) -> String {
     }
 }
 
-fn build_qr_data_uri(data: &str) -> Result<String, String> {
+pub(crate) fn build_qr_data_uri(data: &str) -> Result<String, String> {
     let code = QrCode::new(data.as_bytes()).map_err(|e| e.to_string())?;
     let image: ImageBuffer<Luma<u8>, Vec<u8>> = code.render::<Luma<u8>>().quiet_zone(true).build();
 
