@@ -938,11 +938,16 @@ const EN_TETES_SECURITE = {
 /// pour installer l'application Envoyeur Kiosque. Volontairement minimale.
 /// Sans JavaScript (la politique de sécurité de ce Worker l'interdit) : le
 /// type de téléphone est reconnu ici, d'après le navigateur.
-function pageApplication(navigateur, tailleApk) {
+function pageApplication(navigateur, tailleApk, whatsapp) {
   const iphone = /iPhone|iPad|iPod/i.test(navigateur);
   const taille = tailleApk ? ` (${(tailleApk / 1024 / 1024).toFixed(1).replace(".", ",")} Mo)` : "";
+  const message = encodeURIComponent("Bonjour, voici mon document à imprimer :");
   const contenu = iphone
-    ? `<p>Sur iPhone, rien à installer : au guichet, allumez votre <b>Partage de connexion</b> puis scannez le QR du guichet.</p>`
+    ? whatsapp
+      ? `<p>L'application iPhone arrive bientôt. En attendant, envoyez votre document au guichet par WhatsApp :</p>
+         <a class="bouton whatsapp" href="https://wa.me/${whatsapp}?text=${message}">Envoyer par WhatsApp</a>
+         <p>Joignez votre fichier et écrivez ce que vous voulez (copies, couleur…).</p>`
+      : `<p>L'application iPhone arrive bientôt. En attendant, donnez votre document au guichet.</p>`
     : tailleApk
       ? `<a class="bouton" href="/telecharger/apk">Installer l'application${taille}</a>
          <p>Si le téléphone le demande, autorisez l'installation.</p>`
@@ -955,6 +960,7 @@ function pageApplication(navigateur, tailleApk) {
   main { max-width:480px; margin:0 auto; padding:40px 18px; display:grid; gap:20px; text-align:center; }
   h1 { font-size:1.5rem; margin:0; }
   p { margin:0; color:#5a6577; line-height:1.45; }
+  .whatsapp { background:#1a8f4a !important; }
   .bouton { display:block; background:#1f4fd1; color:#fff; text-decoration:none; font-weight:800; font-size:1.2rem; padding:20px; border-radius:16px; }
 </style></head><body><main>
   <h1>Envoyeur Kiosque</h1>
@@ -1120,7 +1126,13 @@ async function router(request, env) {
       // (privé) où est développé le code.
       if (pathname === "/app" && method === "GET") {
         const objetApk = await env.TELECHARGEMENTS.head(CLE_APK);
-        const corps = pageApplication(request.headers.get("user-agent") || "", objetApk ? objetApk.size : null);
+        // Numéro WhatsApp de la boutique, mis dans le QR par le logiciel du PC.
+        const whatsapp = (url.searchParams.get("w") || "").replace(/\D/g, "");
+        const corps = pageApplication(
+          request.headers.get("user-agent") || "",
+          objetApk ? objetApk.size : null,
+          whatsapp.length >= 8 && whatsapp.length <= 15 ? whatsapp : null
+        );
         return new Response(corps, { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       if (pathname === "/telecharger" && method === "GET") {

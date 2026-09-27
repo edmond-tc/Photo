@@ -331,8 +331,9 @@ pub struct QrReception {
     /// `kiosque.local`.
     pub direct_url: Option<String>,
     pub direct: Option<String>,
-    /// QR de l'affiche pour installer l'application Android (par internet,
-    /// chez le client) : page d'installation pas à pas, gratuite.
+    /// LE QR de l'affiche du guichet, le même pour tous : la page reconnaît
+    /// le téléphone (Android : installer l'application ; iPhone : envoyer
+    /// par WhatsApp à CETTE boutique, dont le numéro voyage dans le lien).
     pub application_url: String,
     pub application: String,
 }
@@ -340,8 +341,21 @@ pub struct QrReception {
 /// Page d'installation de l'application Envoyeur Kiosque (admin/src/index.js, `/app`).
 pub const ADRESSE_APPLICATION: &str = "https://photocopie-admin.atinzed2.workers.dev/app";
 
+/// Adresse du QR de l'affiche, avec le numéro WhatsApp de la boutique.
+pub fn adresse_application(whatsapp: Option<&str>) -> String {
+    match whatsapp.and_then(crate::server::normalize_phone) {
+        Some(numero) => format!("{ADRESSE_APPLICATION}?w={numero}"),
+        None => ADRESSE_APPLICATION.to_string(),
+    }
+}
+
 #[tauri::command]
-pub fn reception_directe_qr() -> Result<QrReception, String> {
+pub fn reception_directe_qr(state: tauri::State<crate::db::DbState>) -> Result<QrReception, String> {
+    let whatsapp = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        crate::db::get_setting(&conn, "boutique_whatsapp")
+    };
+    let application_url = adresse_application(whatsapp.as_deref());
     let fixe_url = adresse_fixe();
     let direct_url =
         adresse_actuelle().map(|a| format!("http://{a}:{}/", crate::server::PORT));
@@ -350,8 +364,8 @@ pub fn reception_directe_qr() -> Result<QrReception, String> {
         direct: direct_url.as_deref().map(crate::qr::build_qr_data_uri).transpose()?,
         fixe_url,
         direct_url,
-        application_url: ADRESSE_APPLICATION.to_string(),
-        application: crate::qr::build_qr_data_uri(ADRESSE_APPLICATION)?,
+        application: crate::qr::build_qr_data_uri(&application_url)?,
+        application_url,
     })
 }
 
@@ -1057,6 +1071,15 @@ mod tests {
             Ipv4Addr::new(172, 20, 10, 3),
         ];
         assert_eq!(nouvelle_adresse(&avant, &apres), Some(Ipv4Addr::new(172, 20, 10, 3)));
+    }
+
+    #[test]
+    fn le_qr_de_l_affiche_porte_le_whatsapp_de_la_boutique() {
+        assert_eq!(adresse_application(None), ADRESSE_APPLICATION);
+        assert_eq!(
+            adresse_application(Some("01 51 22 67 41")),
+            format!("{ADRESSE_APPLICATION}?w=2290151226741")
+        );
     }
 
     #[test]

@@ -1996,15 +1996,15 @@ async function rendreReceptionDirecte(corps) {
   carteQr.className = "carte-rapport";
   carteQr.innerHTML = `
     <h3>Affiche du guichet</h3>
-    <p style="font-size:0.9rem">Android : le client installe une fois l'application « Envoyeur Kiosque » ;
-      au guichet, une notification lui propose d'envoyer. iPhone : il allume son partage de connexion
-      avec le mot de passe ci-dessus, garde l'écran du partage ouvert jusqu'à la connexion du PC,
-      puis scanne ce code.</p>
+    <p style="font-size:0.9rem">Un seul QR sur l'affiche, pour tous les clients : la page reconnaît
+      le téléphone. Android : installer l'application (une fois). iPhone : envoyer par WhatsApp au
+      numéro de la boutique (Réglages → WhatsApp de la boutique). Le code ci-dessous sert aux clients
+      déjà reliés au PC par leur partage de connexion.</p>
     <img src="${qr.fixe}" alt="QR du guichet" style="width:180px; height:180px; image-rendering:pixelated">
     <p style="font-size:0.8rem; color:var(--gris-texte-discret)">${echapperHtml(qr.fixe_url)}</p>`;
   carteQr.appendChild(
     bouton("Imprimer l'affiche du guichet", "btn-secondaire", () =>
-      imprimerAfficheReception(qr.fixe, e.reglages.mot_de_passe, qr.application)
+      imprimerAfficheReception(qr.application)
     )
   );
   corps.appendChild(carteQr);
@@ -2074,30 +2074,20 @@ async function rendreReceptionDirecte(corps) {
   }, 2000);
 }
 
-/// Affiche A4 du guichet : Android (application) et iPhone (partage de connexion).
-function imprimerAfficheReception(qrFixe, motDePasse, qrApplication) {
+/// Affiche A4 du guichet : UN seul QR pour tous. La page qu'il ouvre
+/// reconnaît le téléphone (Android : installer l'application ; iPhone :
+/// envoyer par WhatsApp à la boutique). Voir admin/src/index.js, `/app`.
+function imprimerAfficheReception(qrApplication) {
   const affiche = document.querySelector("#affiche-reception");
   affiche.innerHTML = `
-    <h1>Envoyez votre document sans câble</h1>
-    <p class="pied" style="margin-top:0">Sans internet : votre forfait n'est pas utilisé.</p>
-    <h2>Android</h2>
-    <div class="deux-colonnes">
-      <div><img src="${qrApplication}" alt=""><p class="legende-qr">Scannez pour installer<br>l'application (gratuit)</p></div>
-      <ol>
-        <li>Une seule fois : scannez ce code et installez <strong>Envoyeur Kiosque</strong>.</li>
-        <li>Au guichet, touchez la notification <strong>« Kiosque photocopie à côté »</strong>, ou ouvrez l'application.</li>
-      </ol>
-    </div>
-    <h2>iPhone</h2>
+    <h1>Envoyez vos documents sans câble</h1>
+    <div><img src="${qrApplication}" alt=""></div>
+    <p class="mdp">Scannez avec l'appareil photo</p>
     <ol>
-      <li>Réglages → <strong>Partage de connexion</strong>, avec ce mot de passe :</li>
+      <li><strong>Android</strong> : installez l'application une seule fois. Ensuite, au guichet, touchez la notification.</li>
+      <li><strong>iPhone</strong> : envoyez votre document par WhatsApp, en un geste.</li>
     </ol>
-    <p class="mdp">${echapperHtml(motDePasse)}</p>
-    <ol start="2">
-      <li>Gardez cet écran ouvert jusqu'à ce qu'un appareil soit connecté.</li>
-      <li><strong>Scannez ce code</strong> avec l'appareil photo.</li>
-    </ol>
-    <div><img src="${qrFixe}" alt=""></div>`;
+    <p class="pied">Android : sans internet au guichet, votre forfait n'est pas utilisé.</p>`;
   imprimerPage("impression-reception");
 }
 
