@@ -376,6 +376,7 @@ pub fn enqueue_file_avec_options(
         pages_document,
         etape: commande_numero.as_ref().map(|_| "recu".to_string()),
         commande_numero,
+        commande_jeton,
         demande_client: options.demande_client,
         vocal: options.vocal_chemin.is_some(),
     };

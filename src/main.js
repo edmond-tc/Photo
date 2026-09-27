@@ -296,61 +296,88 @@ async function ecouterVocal(id) {
   }
 }
 
+// Pastilles d'un document, toujours dans le même ordre et les mêmes
+// couleurs : le gérant sait où regarder (exemplaires, couleur, recto-verso,
+// format, pages, services…).
+function pastille(texte, genre) {
+  const p = document.createElement("span");
+  p.className = `pastille pastille-${genre}`;
+  p.textContent = texte;
+  return p;
+}
+
+// « 20260927-193756426_0_CV Koffi.pdf » → « CV Koffi.pdf » : l'horodatage
+// ajouté à la réception ne sert qu'à éviter deux fichiers du même nom.
+function nomLisible(nom) {
+  return (nom || "").replace(/^\d{8}-\d{6,9}_\d+_/, "") || nom;
+}
+
 function creerLigne(item) {
   const noeud = tplLigne.content.cloneNode(true);
   const li = noeud.querySelector(".ligne-fichier");
   li.dataset.id = item.id;
 
-  noeud.querySelector(".nom-fichier").textContent = item.commande_numero
-    ? `${item.commande_numero} · ${item.original_name}`
-    : item.original_name;
+  noeud.querySelector(".nom-fichier").textContent = nomLisible(item.original_name);
+  noeud.querySelector(".nom-fichier").title = item.original_name;
   const demande = lireDemande(item);
-  const meta = [
-    item.client_name ? `Client : ${item.client_name}` : null,
-    formatHeure(item.received_at),
-    LIBELLES_KIND[item.kind] ?? item.kind,
-    item.couleur ? "Couleur" : null,
-    item.recto_verso ? "Recto-verso" : null,
-    item.format_papier && item.format_papier !== "A4" ? item.format_papier : null,
-    item.copies > 1 ? `${item.copies} feuille${item.copies > 1 ? "s" : ""}` : null,
-    item.plage_pages ? `pages ${item.plage_pages}` : null,
-    item.finitions?.length ? item.finitions.map((f) => LIBELLES_FINITION[f] ?? f).join(", ") : null,
-    demande.orientation && demande.orientation !== "Auto" ? demande.orientation : null,
-    demande.par_feuille && demande.par_feuille !== "1" ? `${demande.par_feuille} pages par feuille` : null,
-    demande.papier && demande.papier !== "Ordinaire" ? `papier ${demande.papier}` : null,
-    item.taille_octets > 20 * 1024 * 1024
-      ? `${(item.taille_octets / 1024 / 1024).toFixed(1)} Mo — fichier volumineux`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  noeud.querySelector(".meta-fichier").textContent = meta;
+  const exemplaires = Math.max(1, Math.round(item.copies / Math.max(1, item.pages_document)));
 
-  // Commande envoyée depuis l'application du client : quand il la veut, ce
-  // qu'il a écrit, son message vocal, et l'étape qu'il voit sur son écran.
-  if (item.commande_numero) {
-    const bloc = document.createElement("div");
-    bloc.className = "demande-client";
-    const quand = [demande.urgent ? "⚡ URGENT" : null, demande.quand ?? null].filter(Boolean).join(" · ");
-    if (quand) {
-      const q = document.createElement("span");
-      q.className = "meta-fichier";
-      q.style.fontWeight = "700";
-      if (demande.urgent) q.style.color = "var(--rouge-alerte)";
-      q.textContent = quand;
-      bloc.appendChild(q);
+  // Même emplacement pour tous : une vignette pour les PDF et images, le
+  // type du fichier pour les autres (Word…).
+  if (item.kind !== "imprimable") {
+    const substitut = document.createElement("span");
+    substitut.className = "vignette-substitut";
+    substitut.textContent = (item.original_name.split(".").pop() || "?").slice(0, 4).toUpperCase();
+    noeud.querySelector(".vignette-fichier").replaceWith(substitut);
+  }
+
+  // Ligne 1 : ce qu'il faut imprimer.
+  const pastilles = document.createElement("div");
+  pastilles.className = "pastilles";
+  if (item.kind === "imprimable" || item.kind === "editable") {
+    pastilles.append(
+      pastille(`×${exemplaires} exemplaire${exemplaires > 1 ? "s" : ""}`, "copies"),
+      pastille(item.couleur ? "Couleur" : "Noir & blanc", item.couleur ? "couleur" : "nb"),
+      pastille(item.recto_verso ? "Recto-verso" : "Recto", item.recto_verso ? "rv" : "neutre"),
+      pastille(item.format_papier || "A4", "format"),
+      pastille(
+        item.plage_pages
+          ? `Pages ${item.plage_pages}`
+          : item.pages_document > 1
+            ? `${item.pages_document} pages`
+            : "Toutes les pages",
+        "neutre"
+      )
+    );
+    if (item.pages_document > 1 || exemplaires > 1) {
+      pastilles.append(pastille(`${item.copies} feuille${item.copies > 1 ? "s" : ""} à facturer`, "neutre"));
     }
-    if (demande.description) {
-      const d = document.createElement("span");
-      d.className = "meta-fichier";
-      d.textContent = `« ${demande.description} »`;
-      bloc.appendChild(d);
-    }
-    const ligneEtape = document.createElement("span");
-    ligneEtape.className = "meta-fichier etape-commande";
-    ligneEtape.textContent = `Le client voit : ${LIBELLES_ETAPE[item.etape] ?? "Reçu"}`;
-    bloc.appendChild(ligneEtape);
-    noeud.querySelector(".info-fichier").appendChild(bloc);
+  } else {
+    pastilles.append(pastille(LIBELLES_KIND[item.kind] ?? item.kind, "alerte"));
+  }
+  noeud.querySelector(".meta-fichier").replaceWith(pastilles);
+
+  // Ligne 2 : services et demandes particulières.
+  const extras = [
+    ...(item.finitions ?? []).map((f) => pastille(LIBELLES_FINITION[f] ?? f, "service")),
+    demande.orientation && demande.orientation !== "Auto" ? pastille(demande.orientation, "neutre") : null,
+    demande.par_feuille && demande.par_feuille !== "1" ? pastille(`${demande.par_feuille} pages par feuille`, "neutre") : null,
+    demande.papier && demande.papier !== "Ordinaire" ? pastille(`Papier ${demande.papier}`, "neutre") : null,
+    item.taille_octets > 20 * 1024 * 1024
+      ? pastille(`${(item.taille_octets / 1024 / 1024).toFixed(1)} Mo`, "alerte")
+      : null,
+  ].filter(Boolean);
+  if (extras.length) {
+    const ligne = document.createElement("div");
+    ligne.className = "pastilles";
+    ligne.append(...extras);
+    noeud.querySelector(".info-fichier").appendChild(ligne);
+  }
+  if (demande.description) {
+    const d = document.createElement("p");
+    d.className = "demande-texte";
+    d.textContent = `« ${demande.description} »`;
+    noeud.querySelector(".info-fichier").appendChild(d);
   }
 
   if (item.protege || item.format_detecte) {
@@ -369,15 +396,6 @@ function creerLigne(item) {
   const actions = noeud.querySelector(".actions-fichier");
   if (item.vocal) {
     actions.appendChild(bouton("🔊 Vocal", "btn-secondaire", () => ecouterVocal(item.id)));
-  }
-  if (item.commande_numero && item.etape !== "pret") {
-    actions.appendChild(
-      bouton("Prêt ✓", "btn-secondaire", async () => {
-        await definirEtape(item.id, "pret");
-        toast(`${item.commande_numero} : le client voit « Prêt à retirer ».`);
-        await chargerFile();
-      })
-    );
   }
 
   // Le bouton Imprimer/Ouvrir passe toujours en premier et va droit au but
@@ -458,19 +476,111 @@ function creerLigne(item) {
   return noeud;
 }
 
+// ── Une carte par commande ──
+// Les documents envoyés ensemble par un client (même commande) sont dans
+// la même carte, sous son numéro, avec un seul bouton « Prêt ». Un fichier
+// arrivé autrement (clé USB, dossier, Bluetooth) a sa propre carte.
+
+const cleCommande = (item) => item.commande_jeton || `seul-${item.id}`;
+
+function creerCarteCommande(item) {
+  const carte = document.createElement("li");
+  carte.className = "carte-commande";
+  carte.dataset.cle = cleCommande(item);
+  if (item.commande_jeton) carte.dataset.commande = item.commande_jeton;
+  const demande = lireDemande(item);
+  if (demande.urgent) carte.classList.add("urgente");
+
+  const tete = document.createElement("div");
+  tete.className = "tete-commande";
+
+  const code = document.createElement("span");
+  code.className = "code-commande";
+  code.textContent = item.commande_numero ?? "—";
+  code.title = item.commande_numero ? "Numéro affiché sur le téléphone du client" : "Sans numéro (arrivé hors de l'application)";
+
+  const qui = document.createElement("div");
+  qui.className = "qui-commande";
+  const nom = document.createElement("span");
+  nom.className = "client-commande";
+  nom.textContent = item.client_name || (item.commande_jeton ? "Client sans nom" : "Document sans client");
+  const details = document.createElement("span");
+  details.className = "details-commande";
+  details.textContent = [item.client_telephone, `reçu à ${formatHeure(item.received_at)}`, SOURCES_CARTE[item.source] ?? null]
+    .filter(Boolean)
+    .join(" · ");
+  qui.append(nom, details);
+
+  const etiquettes = document.createElement("div");
+  etiquettes.className = "pastilles etiquettes-commande";
+  if (demande.urgent) etiquettes.append(pastille("⚡ URGENT", "urgent"));
+  if (demande.quand) etiquettes.append(pastille(`⏱ ${demande.quand}`, "quand"));
+  const nombre = pastille("", "neutre");
+  nombre.classList.add("nombre-docs");
+  etiquettes.append(nombre);
+
+  const droite = document.createElement("div");
+  droite.className = "actions-commande";
+  if (item.commande_jeton) {
+    const etape = pastille("", "etape");
+    etape.classList.add("etape-commande");
+    droite.appendChild(etape);
+    const pret = bouton("Prêt ✓", "btn-pret", async () => {
+      const premier = carte.querySelector(".ligne-fichier");
+      if (!premier) return;
+      await definirEtape(Number(premier.dataset.id), "pret");
+      appliquerEtape(carte, "pret");
+      toast(`${item.commande_numero} : le client voit « Prêt à retirer ».`);
+    });
+    pret.classList.add("bouton-pret");
+    droite.appendChild(pret);
+  }
+
+  tete.append(code, qui, etiquettes, droite);
+  const docs = document.createElement("ul");
+  docs.className = "docs-commande";
+  carte.append(tete, docs);
+  if (item.commande_jeton) appliquerEtape(carte, item.etape || "recu");
+  return carte;
+}
+
+const SOURCES_CARTE = { qr: null, usb: "clé USB", dossier_surveille: "dossier", bluetooth: "Bluetooth" };
+
+function appliquerEtape(carte, etape) {
+  carte.dataset.etape = etape;
+  const e = carte.querySelector(".etape-commande");
+  if (e) e.textContent = `Client : ${LIBELLES_ETAPE[etape] ?? "Reçu"}`;
+  const b = carte.querySelector(".bouton-pret");
+  if (b) b.hidden = etape === "pret";
+}
+
+function majCarteCommande(carte) {
+  const n = carte.querySelectorAll(".ligne-fichier").length;
+  const nombre = carte.querySelector(".nombre-docs");
+  if (nombre) nombre.textContent = `${n} document${n > 1 ? "s" : ""}`;
+}
+
 function ajouterFichier(item, enTete = false) {
   etatVideEl.hidden = true;
-  const noeud = creerLigne(item);
-  if (enTete) {
-    listeEl.prepend(noeud);
-  } else {
-    listeEl.appendChild(noeud);
+  const cle = cleCommande(item);
+  let carte = [...listeEl.querySelectorAll(".carte-commande")].find((c) => c.dataset.cle === cle);
+  if (!carte) {
+    carte = creerCarteCommande(item);
+    if (enTete) listeEl.prepend(carte);
+    else listeEl.appendChild(carte);
   }
+  carte.querySelector(".docs-commande").appendChild(creerLigne(item));
+  majCarteCommande(carte);
 }
 
 function retirerFichier(id) {
   const li = listeEl.querySelector(`.ligne-fichier[data-id="${id}"]`);
+  const carte = li?.closest(".carte-commande");
   if (li) li.remove();
+  if (carte) {
+    if (!carte.querySelector(".ligne-fichier")) carte.remove();
+    else majCarteCommande(carte);
+  }
   if (!listeEl.children.length) etatVideEl.hidden = false;
   mettreAJourBadgeOublies();
 }
@@ -500,10 +610,10 @@ async function imprimer(id) {
     await invoke("print_file", { id, imprimante: imprimanteChoisie() });
     jouerSonImpression();
     // Le client suit sa commande sur son téléphone : elle passe « En impression ».
-    const ligne = document.querySelector(`[data-id="${id}"] .etape-commande`);
-    if (ligne && ligne.textContent.endsWith(LIBELLES_ETAPE.recu)) {
+    const carte = document.querySelector(`.ligne-fichier[data-id="${id}"]`)?.closest(".carte-commande");
+    if (carte?.dataset.commande && carte.dataset.etape === "recu") {
       await definirEtape(id, "impression");
-      ligne.textContent = `Le client voit : ${LIBELLES_ETAPE.impression}`;
+      appliquerEtape(carte, "impression");
     }
   } catch (e) {
     alert(`⚠️ L'impression n'a pas pu démarrer. Vérifiez que l'imprimante est allumée et connectée, puis réessayez.\n\nDétail : ${e}`);

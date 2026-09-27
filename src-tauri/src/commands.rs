@@ -52,6 +52,7 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         etape: row.get(33)?,
         demande_client: row.get(34)?,
         vocal: row.get::<_, Option<String>>(35)?.is_some(),
+        commande_jeton: row.get(36)?,
     })
 }
 
@@ -61,7 +62,7 @@ const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telep
      impression_confirmee, pages_imprimees, impression_erreur,
      recto_verso, impression_couleur_reelle, impression_recto_verso_reelle, impression_format_reel,
      impression_poste, impression_imprimante_reelle, impression_ecarts, pages_document,
-     commande_numero, etape, demande_client, vocal_chemin";
+     commande_numero, etape, demande_client, vocal_chemin, commande_jeton";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {

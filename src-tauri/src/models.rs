@@ -40,6 +40,8 @@ pub struct QueueItem {
     pub pages_document: i64,
     /// Commande du client (« A-27 »), commune aux fichiers envoyés ensemble.
     pub commande_numero: Option<String>,
+    /// Relie les documents envoyés ensemble : une seule carte dans la file.
+    pub commande_jeton: Option<String>,
     /// `recu` → `impression` → `pret`, avancée par le gérant ; montrée au
     /// client sur son téléphone.
     pub etape: Option<String>,

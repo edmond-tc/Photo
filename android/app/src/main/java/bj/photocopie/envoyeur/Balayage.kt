@@ -70,8 +70,17 @@ class BalayageRecepteur : BroadcastReceiver() {
         val maintenant = System.currentTimeMillis()
         Reglages.noterSignal(ctx, meilleur, maintenant)
 
-        // Au guichet seulement, et pas toutes les secondes.
+        // Au guichet seulement.
         if (meilleur < Reglages.seuilBle(ctx)) return
+
+        // Une seule proposition par visite : tant que le téléphone reste
+        // près du guichet (le gérant, un client qui attend), la balise est
+        // entendue sans cesse et on ne redit rien. Il faut s'être éloigné
+        // un moment pour être de nouveau prévenu en revenant.
+        val precedent = Reglages.dernierPassageAuGuichet(ctx)
+        Reglages.noterPassageAuGuichet(ctx, maintenant)
+        if (maintenant - precedent < Reglages.ABSENCE_AVANT_NOUVELLE_PROPOSITION_MS) return
+        if (MainActivity.visible) return
         if (maintenant - Reglages.derniereNotification(ctx) < Reglages.PAUSE_NOTIFICATION_MS) return
         Reglages.noterNotification(ctx, maintenant)
         proposerEnvoi(ctx, meilleur)

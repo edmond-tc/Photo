@@ -41,6 +41,9 @@ import java.util.concurrent.Executors
 class MainActivity : Activity() {
     companion object {
         const val ACTION_CHOISIR = "bj.photocopie.envoyeur.CHOISIR"
+
+        /** Application à l'écran : inutile de proposer l'envoi par notification. */
+        @Volatile var visible = false
         private const val DEMANDE_FICHIERS = 10
         private const val DEMANDE_AUTORISATIONS = 11
         private const val DEMANDE_MICRO = 12
@@ -100,8 +103,14 @@ class MainActivity : Activity() {
         traiter(intent)
     }
 
+    override fun onPause() {
+        visible = false
+        super.onPause()
+    }
+
     override fun onResume() {
         super.onResume()
+        visible = true
         if (autorisationsManquantes().isEmpty()) Balayage.demarrer(this)
     }
 

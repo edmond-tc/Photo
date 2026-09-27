@@ -32,6 +32,12 @@ object Reglages {
     /** Pas plus d'une proposition toutes les 10 minutes. */
     const val PAUSE_NOTIFICATION_MS = 10 * 60 * 1000L
 
+    /**
+     * Balise pas entendue au guichet depuis ce délai : le téléphone était
+     * parti, et on peut de nouveau proposer l'envoi à son retour.
+     */
+    const val ABSENCE_AVANT_NOUVELLE_PROPOSITION_MS = 30 * 60 * 1000L
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("reglages", Context.MODE_PRIVATE)
 
     fun motDePasse(ctx: Context): String =
@@ -51,6 +57,12 @@ object Reglages {
 
     fun noterNotification(ctx: Context, quand: Long) {
         prefs(ctx).edit().putLong("derniere_notif", quand).apply()
+    }
+
+    fun dernierPassageAuGuichet(ctx: Context): Long = prefs(ctx).getLong("dernier_passage", 0L)
+
+    fun noterPassageAuGuichet(ctx: Context, quand: Long) {
+        prefs(ctx).edit().putLong("dernier_passage", quand).apply()
     }
 
     /** Dernier signal de balise entendu, affiché dans l'application pour régler le seuil. */
