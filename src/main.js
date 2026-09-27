@@ -125,6 +125,89 @@ function jouerNotification() {
   }
 }
 
+// Trois notes hautes et rapides : commande URGENTE.
+function jouerSonUrgent() {
+  const ctx = contexteAudio();
+  if (!ctx) return;
+  try {
+    for (let i = 0; i < 3; i++) jouerTonalite(ctx, { freq: 1175, debut: i * 0.18, duree: 0.14, gainMax: 0.25 });
+  } catch {
+    // Un son manqué ne doit jamais interrompre la réception d'un document.
+  }
+}
+
+// ── Annonce des commandes ──
+// Un son, puis une voix : « Nouvelle commande C 27, Koffi, deux
+// documents. » Voix de Windows, sans internet. Réglable (Réglages).
+const MODES_ANNONCE = { voix: "Voix et son", son: "Son seulement", rien: "Rien" };
+function modeAnnonce() {
+  try {
+    return localStorage.getItem("annonce_mode") || "voix";
+  } catch {
+    return "voix";
+  }
+}
+function voixFrancaise() {
+  try {
+    return window.speechSynthesis?.getVoices().find((v) => /^fr([-_]|$)/i.test(v.lang)) ?? null;
+  } catch {
+    return null;
+  }
+}
+// Windows charge la liste des voix après coup.
+try {
+  window.speechSynthesis?.getVoices();
+} catch {}
+function parler(texte) {
+  const voix = voixFrancaise();
+  if (!voix) return false;
+  try {
+    const phrase = new SpeechSynthesisUtterance(texte);
+    phrase.voice = voix;
+    phrase.lang = voix.lang;
+    phrase.rate = 0.95;
+    window.speechSynthesis.speak(phrase);
+    return true;
+  } catch {
+    return false;
+  }
+}
+const NOMBRES_DITS = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix"];
+function phraseAnnonce(item, n, demande) {
+  const docs = `${NOMBRES_DITS[n] ?? n} document${n > 1 ? "s" : ""}`;
+  const qui = item.client_name ? `, ${item.client_name}` : "";
+  if (!item.commande_numero) return `Nouveau document${n > 1 ? "s" : ""} reçu${n > 1 ? "s" : ""}${qui}.`;
+  // « C-27 » se dit « C 27 », pas « C tiret 27 ».
+  const numero = item.commande_numero.replace("-", " ");
+  if (demande.urgent) return `Commande urgente ${numero}${qui}, ${docs}.`;
+  const heure = /à (\d{1,2}):(\d{2})/.exec(demande.quand || "");
+  if (heure && /repasse/.test(demande.quand)) {
+    const jour = /repasse (\S+)/.exec(demande.quand)?.[1];
+    const dit = `${jour && jour !== "aujourd'hui" ? `${jour} à ` : ""}${Number(heure[1])} heures${heure[2] !== "00" ? ` ${Number(heure[2])}` : ""}`;
+    return `Commande ${numero}${qui}, ${docs}, à préparer pour ${dit}.`;
+  }
+  return `Nouvelle commande ${numero}${qui}, ${docs}.`;
+}
+// Les documents d'une même commande arrivent l'un après l'autre : une
+// seule annonce pour tous, une seconde après le dernier.
+const annoncesEnAttente = new Map();
+function annoncerArrivee(item) {
+  const mode = modeAnnonce();
+  if (mode === "rien") return;
+  const cle = item.commande_jeton || `seul-${item.id}`;
+  const entree = annoncesEnAttente.get(cle) ?? { item, n: 0 };
+  entree.n += 1;
+  clearTimeout(entree.minuteur);
+  entree.minuteur = setTimeout(() => {
+    annoncesEnAttente.delete(cle);
+    const demande = lireDemande(entree.item);
+    if (demande.urgent) jouerSonUrgent();
+    else jouerNotification();
+    if (mode === "voix") setTimeout(() => parler(phraseAnnonce(entree.item, entree.n, demande)), 900);
+  }, 1200);
+  annoncesEnAttente.set(cle, entree);
+}
+
 // Petit "tic" — confirme que l'impression a bien été envoyée.
 function jouerSonImpression() {
   const ctx = contexteAudio();
@@ -504,12 +587,17 @@ function creerCarteCommande(item) {
   const nom = document.createElement("span");
   nom.className = "client-commande";
   nom.textContent = item.client_name || (item.commande_jeton ? "Client sans nom" : "Document sans client");
+  const temps = document.createElement("span");
+  temps.className = "ligne-temps";
   const details = document.createElement("span");
   details.className = "details-commande";
   details.textContent = [item.client_telephone, `reçu à ${formatHeure(item.received_at)}`, SOURCES_CARTE[item.source] ?? null]
     .filter(Boolean)
     .join(" · ");
-  qui.append(nom, details);
+  qui.append(nom, details, temps);
+  carte.dataset.recue = item.received_at;
+  if (item.impression_le) carte.dataset.impression = item.impression_le;
+  if (item.pret_le) carte.dataset.pret = item.pret_le;
 
   const etiquettes = document.createElement("div");
   etiquettes.className = "pastilles etiquettes-commande";
@@ -541,12 +629,30 @@ function creerCarteCommande(item) {
   docs.className = "docs-commande";
   carte.append(tete, docs);
   if (item.commande_jeton) appliquerEtape(carte, item.etape || "recu");
+  majLigneTemps(carte);
   return carte;
 }
 
 const SOURCES_CARTE = { qr: null, usb: "clé USB", dossier_surveille: "dossier", bluetooth: "Bluetooth" };
 
+// « reçue 19:37 → imprimée 19:41 → prête 19:43 »
+function majLigneTemps(carte) {
+  const t = carte.querySelector(".ligne-temps");
+  if (!t) return;
+  t.textContent = [
+    carte.dataset.recue ? `reçue ${formatHeure(carte.dataset.recue)}` : null,
+    carte.dataset.impression ? `imprimée ${formatHeure(carte.dataset.impression)}` : null,
+    carte.dataset.pret ? `prête ${formatHeure(carte.dataset.pret)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" → ");
+}
+
 function appliquerEtape(carte, etape) {
+  const maintenant = new Date().toISOString();
+  if (etape === "impression" && !carte.dataset.impression) carte.dataset.impression = maintenant;
+  if (etape === "pret" && !carte.dataset.pret) carte.dataset.pret = maintenant;
+  majLigneTemps(carte);
   carte.dataset.etape = etape;
   const e = carte.querySelector(".etape-commande");
   if (e) e.textContent = `Client : ${LIBELLES_ETAPE[etape] ?? "Reçu"}`;
@@ -2324,6 +2430,38 @@ async function rendreReglages(corps) {
   );
   corps.appendChild(secDossier);
 
+  // Annonce des commandes (voix de Windows, sans internet)
+  const secAnnonce = document.createElement("section");
+  const francaise = voixFrancaise();
+  secAnnonce.innerHTML = `<h3>Annonce des commandes</h3>
+    <label>Quand une commande arrive
+      <select id="reg-annonce">${Object.entries(MODES_ANNONCE)
+        .map(([v, l]) => `<option value="${v}" ${modeAnnonce() === v ? "selected" : ""}>${l}</option>`)
+        .join("")}</select>
+    </label>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin:0.3rem 0 0.6rem">${
+      francaise
+        ? `Voix utilisée : ${echapperHtml(francaise.name)}.`
+        : "Aucune voix française n'est installée sur ce PC : seul le son sera joué. Pour l'ajouter : Paramètres Windows → Heure et langue → Voix → Ajouter des voix → Français."
+    }</p>`;
+  secAnnonce.querySelector("#reg-annonce").addEventListener("change", (e) => {
+    try {
+      localStorage.setItem("annonce_mode", e.target.value);
+    } catch {}
+    toast("✓ Enregistré");
+  });
+  secAnnonce.appendChild(
+    bouton("Écouter un exemple", "btn-secondaire", () => {
+      jouerNotification();
+      if (modeAnnonce() === "voix") {
+        setTimeout(() => {
+          if (!parler("Nouvelle commande C 27, Koffi, deux documents.")) toast("Pas de voix française sur ce PC.", "attention");
+        }, 900);
+      }
+    })
+  );
+  corps.appendChild(secAnnonce);
+
   // Infos boutique
   const params = await invoke("get_boutique_settings");
   const secBoutique = document.createElement("section");
@@ -2333,12 +2471,11 @@ async function rendreReglages(corps) {
     <label>Nom de la boutique <input type="text" id="reg-nom" value="${echapperHtml(params.nom)}" /></label>
     <label>Numéro WhatsApp <input type="text" id="reg-whatsapp" value="${echapperHtml(params.whatsapp)}" /></label>
     <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin:-0.5rem 0 0.75rem">
-      À quoi sert ce numéro : sur l'écran d'envoi (celui que le client voit en
-      scannant le QR), un bouton "Envoyer par WhatsApp à la place" apparaît
-      pour ceux qui préfèrent ou ne peuvent pas utiliser le Wi-Fi de la
-      boutique. Sans numéro renseigné ici, ce bouton n'apparaît tout
-      simplement pas — rien ne casse, mais vous perdez cette option pour vos
-      clients.
+      À quoi sert ce numéro : il est mis dans le QR de l'affiche du guichet.
+      Un client iPhone qui le scanne voit « Envoyer par WhatsApp », qui ouvre
+      directement la discussion avec ce numéro. Sans numéro ici, les clients
+      iPhone ne peuvent pas envoyer par ce moyen. Réimprimez l'affiche
+      après l'avoir changé.
     </p>
     <label>Dossier de sauvegarde <input type="text" id="reg-sauvegarde" value="${echapperHtml(params.dossier_sauvegarde)}" /></label>
     <label>URL de vérification des mises à jour <input type="text" id="reg-url-maj" value="${echapperHtml(params.url_verification_maj)}" /></label>
@@ -3174,7 +3311,7 @@ async function demarrerApplication() {
 
   await listen("nouveau-fichier", (event) => {
     ajouterFichier(event.payload, true);
-    jouerNotification();
+    annoncerArrivee(event.payload);
   });
 
   // Confirmation d'impression, reçue en arrière-plan jusqu'à 45 secondes

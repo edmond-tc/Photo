@@ -53,6 +53,8 @@ fn lire_ligne(row: &rusqlite::Row) -> rusqlite::Result<QueueItem> {
         demande_client: row.get(34)?,
         vocal: row.get::<_, Option<String>>(35)?.is_some(),
         commande_jeton: row.get(36)?,
+        impression_le: row.get(37)?,
+        pret_le: row.get(38)?,
     })
 }
 
@@ -62,7 +64,7 @@ const COLONNES_QUEUE: &str = "id, original_name, path, client_name, client_telep
      impression_confirmee, pages_imprimees, impression_erreur,
      recto_verso, impression_couleur_reelle, impression_recto_verso_reelle, impression_format_reel,
      impression_poste, impression_imprimante_reelle, impression_ecarts, pages_document,
-     commande_numero, etape, demande_client, vocal_chemin, commande_jeton";
+     commande_numero, etape, demande_client, vocal_chemin, commande_jeton, impression_le, pret_le";
 
 #[tauri::command]
 pub fn get_queue(state: State<DbState>) -> Result<Vec<QueueItem>, String> {
@@ -1017,17 +1019,29 @@ pub fn definir_etape(state: State<DbState>, id: i64, etape: String) -> Result<()
             |r| r.get(0),
         )
         .map_err(|_| "Document introuvable".to_string())?;
-    match jeton {
-        Some(j) => conn.execute(
-            "UPDATE files_queue SET etape = ?1 WHERE commande_jeton = ?2",
-            params![etape, j],
-        ),
-        None => conn.execute(
-            "UPDATE files_queue SET etape = ?1 WHERE id = ?2",
-            params![etape, id],
-        ),
-    }
+    // L'heure de chaque étape est retenue une seule fois (la première).
+    let colonne_heure = match etape.as_str() {
+        "impression" => Some("impression_le"),
+        "pret" => Some("pret_le"),
+        _ => None,
+    };
+    let maintenant = chrono::Local::now().to_rfc3339();
+    let (condition, cle): (&str, rusqlite::types::Value) = match jeton {
+        Some(j) => ("commande_jeton = ?2", j.into()),
+        None => ("id = ?2", id.into()),
+    };
+    conn.execute(
+        &format!("UPDATE files_queue SET etape = ?1 WHERE {condition}"),
+        params![etape, cle],
+    )
     .map_err(|e| e.to_string())?;
+    if let Some(colonne) = colonne_heure {
+        conn.execute(
+            &format!("UPDATE files_queue SET {colonne} = ?3 WHERE {condition} AND {colonne} IS NULL"),
+            params![etape, cle, maintenant],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

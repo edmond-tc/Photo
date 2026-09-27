@@ -272,6 +272,12 @@ body {
   font-size: 0.82rem;
   color: var(--gris-texte-discret);
 }
+.ligne-temps {
+  font-size: 0.78rem;
+  color: var(--bleu-office);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .etiquettes-commande {
   flex: 1;
 }

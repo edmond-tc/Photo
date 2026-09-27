@@ -142,7 +142,7 @@ pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// Version du schéma attendue par cette version du logiciel.
-const VERSION_SCHEMA: i64 = 7;
+const VERSION_SCHEMA: i64 = 8;
 
 /// Les boutiques déjà installées ont une base créée par une version
 /// antérieure : les `CREATE TABLE IF NOT EXISTS` ci-dessus ne leur ajoutent
@@ -283,6 +283,13 @@ fn appliquer_migrations(conn: &Connection) -> rusqlite::Result<()> {
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_files_queue_commande ON files_queue(commande_jeton);",
         )?;
+    }
+
+    if version < 8 {
+        // Heures des étapes de la commande, pour la ligne de temps de la
+        // carte (« reçue 19:37 → imprimée 19:41 → prête 19:43 »).
+        ajouter_colonne_si_absente(conn, "files_queue", "impression_le", "TEXT")?;
+        ajouter_colonne_si_absente(conn, "files_queue", "pret_le", "TEXT")?;
     }
 
     conn.pragma_update(None, "user_version", VERSION_SCHEMA)?;

@@ -12,7 +12,9 @@ import android.content.IntentFilter
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.media.MediaRecorder
+import android.speech.tts.TextToSpeech
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -81,6 +83,10 @@ class MainActivity : Activity() {
     private val partages = mutableListOf<Uri>()
     private var partagesLus = 0
 
+    /** Voix du téléphone (française), pour dire « C'est envoyé… ». */
+    private var voix: TextToSpeech? = null
+    private var voixPrete = false
+
     /** Message vocal en cours d'enregistrement, et ceux déjà faits (servis sous /vocal/<n>). */
     private var enregistreur: MediaRecorder? = null
     private val vocaux = mutableListOf<java.io.File>()
@@ -122,6 +128,12 @@ class MainActivity : Activity() {
         web.webChromeClient = ChromeWeb()
         web.addJavascriptInterface(Pont(), "KiosqueApp")
         setContentView(web)
+        voix = TextToSpeech(this) { statut ->
+            if (statut == TextToSpeech.SUCCESS) {
+                val r = voix?.setLanguage(java.util.Locale.FRENCH)
+                voixPrete = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+            }
+        }
         val filtre = IntentFilter().apply {
             addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
@@ -151,6 +163,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        voix?.shutdown()
+        voix = null
         try { unregisterReceiver(recepteurRadios) } catch (_: Exception) {}
         enregistreur?.let { try { it.release() } catch (_: Exception) {} }
         enregistreur = null
@@ -353,6 +367,18 @@ class MainActivity : Activity() {
                     demanderBluetooth()
                 }
             }
+        }
+
+        /**
+         * Dit une phrase avec la voix française du téléphone. Rien en mode
+         * silencieux ou vibreur : le client a choisi le silence.
+         */
+        @JavascriptInterface
+        fun parler(texte: String) {
+            val son = getSystemService(AudioManager::class.java)
+            if (son?.ringerMode != AudioManager.RINGER_MODE_NORMAL) return
+            if (!voixPrete) return
+            voix?.speak(texte.take(300), TextToSpeech.QUEUE_FLUSH, null, "kiosque")
         }
 
         /** Documents reçus par « Partager » depuis la dernière demande. */

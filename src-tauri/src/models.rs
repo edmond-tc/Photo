@@ -42,6 +42,9 @@ pub struct QueueItem {
     pub commande_numero: Option<String>,
     /// Relie les documents envoyés ensemble : une seule carte dans la file.
     pub commande_jeton: Option<String>,
+    /// Heures des étapes (ligne de temps de la carte).
+    pub impression_le: Option<String>,
+    pub pret_le: Option<String>,
     /// `recu` → `impression` → `pret`, avancée par le gérant ; montrée au
     /// client sur son téléphone.
     pub etape: Option<String>,
