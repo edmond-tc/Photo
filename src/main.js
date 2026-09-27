@@ -2004,7 +2004,7 @@ async function rendreReceptionDirecte(corps) {
     <p style="font-size:0.8rem; color:var(--gris-texte-discret)">${echapperHtml(qr.fixe_url)}</p>`;
   carteQr.appendChild(
     bouton("Imprimer l'affiche du guichet", "btn-secondaire", () =>
-      imprimerAfficheReception(qr.fixe, e.reglages.mot_de_passe)
+      imprimerAfficheReception(qr.fixe, e.reglages.mot_de_passe, qr.application)
     )
   );
   corps.appendChild(carteQr);
@@ -2075,16 +2075,19 @@ async function rendreReceptionDirecte(corps) {
 }
 
 /// Affiche A4 du guichet : Android (application) et iPhone (partage de connexion).
-function imprimerAfficheReception(qrFixe, motDePasse) {
+function imprimerAfficheReception(qrFixe, motDePasse, qrApplication) {
   const affiche = document.querySelector("#affiche-reception");
   affiche.innerHTML = `
     <h1>Envoyez votre document sans câble</h1>
     <p class="pied" style="margin-top:0">Sans internet : votre forfait n'est pas utilisé.</p>
     <h2>Android</h2>
-    <ol>
-      <li>Une seule fois : installez l'application <strong>Envoyeur Kiosque</strong> (demandez-la au guichet).</li>
-      <li>Au guichet, touchez la notification <strong>« Kiosque photocopie à côté »</strong>.</li>
-    </ol>
+    <div class="deux-colonnes">
+      <div><img src="${qrApplication}" alt=""><p class="legende-qr">Scannez pour installer<br>l'application (gratuit)</p></div>
+      <ol>
+        <li>Une seule fois : scannez ce code et installez <strong>Envoyeur Kiosque</strong>.</li>
+        <li>Au guichet, touchez la notification <strong>« Kiosque photocopie à côté »</strong>, ou ouvrez l'application.</li>
+      </ol>
+    </div>
     <h2>iPhone</h2>
     <ol>
       <li>Réglages → <strong>Partage de connexion</strong>, avec ce mot de passe :</li>

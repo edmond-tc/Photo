@@ -331,7 +331,14 @@ pub struct QrReception {
     /// `kiosque.local`.
     pub direct_url: Option<String>,
     pub direct: Option<String>,
+    /// QR de l'affiche pour installer l'application Android (par internet,
+    /// chez le client) : page d'installation pas à pas, gratuite.
+    pub application_url: String,
+    pub application: String,
 }
+
+/// Page d'installation de l'application Envoyeur Kiosque (admin/src/index.js, `/app`).
+pub const ADRESSE_APPLICATION: &str = "https://photocopie-admin.atinzed2.workers.dev/app";
 
 #[tauri::command]
 pub fn reception_directe_qr() -> Result<QrReception, String> {
@@ -343,6 +350,8 @@ pub fn reception_directe_qr() -> Result<QrReception, String> {
         direct: direct_url.as_deref().map(crate::qr::build_qr_data_uri).transpose()?,
         fixe_url,
         direct_url,
+        application_url: ADRESSE_APPLICATION.to_string(),
+        application: crate::qr::build_qr_data_uri(ADRESSE_APPLICATION)?,
     })
 }
 

@@ -1167,6 +1167,23 @@ fieldset {
     height: 6.5cm;
     image-rendering: pixelated;
   }
+  #affiche-reception .deux-colonnes {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    text-align: left;
+  }
+  #affiche-reception .deux-colonnes img {
+    width: 4.5cm;
+    height: 4.5cm;
+  }
+  #affiche-reception .legende-qr {
+    margin: 0;
+    text-align: center;
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
   #affiche-reception .mdp {
     font-size: 1.6rem;
     font-weight: 800;
