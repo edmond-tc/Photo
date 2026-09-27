@@ -11,11 +11,13 @@ pub mod gestion;
 pub mod hotspot;
 pub mod impression;
 pub mod license;
+pub mod mdns;
 pub mod models;
 pub mod obex;
 pub mod pare_feu;
 pub mod point_acces_mobile;
 pub mod qr;
+pub mod reception_directe;
 pub mod retention;
 pub mod routeur_externe;
 pub mod server;
@@ -98,6 +100,8 @@ pub fn run() {
             backup::start(app.handle().clone());
             retention::start(app.handle().clone());
             bluetooth::demarrer(app.handle().clone());
+            reception_directe::demarrer(app.handle().clone());
+            mdns::demarrer();
             // Reprend un point d'accès rallumé par Windows au démarrage du
             // PC (voir `hotspot::reprendre_point_acces_existant`) : le gérant
             // n'a alors plus rien à cliquer le matin.
@@ -133,6 +137,10 @@ pub fn run() {
             controle_impressions::controle_impressions,
             controle_impressions::activer_controle_impressions,
             activite::activite_du_jour,
+            reception_directe::reception_directe_etat,
+            reception_directe::reception_directe_regler,
+            reception_directe::reception_directe_preparer,
+            reception_directe::reception_directe_ouvrir_localisation,
             commands::journal_des_telephones,
             commands::generer_rapport_diagnostic,
             commands::sauvegarder_maintenant,

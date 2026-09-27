@@ -3239,7 +3239,7 @@ dependencies = [
 
 [[package]]
 name = "photocopie-benin"
-version = "0.4.69"
+version = "0.4.70"
 dependencies = [
  "axum",
  "base32",
@@ -3259,6 +3259,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "socket2",
  "sysinfo",
  "tauri",
  "tauri-build",

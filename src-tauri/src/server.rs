@@ -1701,6 +1701,10 @@ async fn enregistrer_envoi(
             .into_response();
     }
 
+    // Réception directe : le PC a rejoint le téléphone de ce client ; il
+    // pourra le quitter pour le suivant (voir `reception_directe.rs`).
+    crate::reception_directe::signaler_envoi();
+
     // Ces jetons permettent à la page du client de surveiller elle-même (en
     // interrogeant /statut/:jeton) le moment où le gérant encaisse, pour
     // afficher un message de remerciement en direct sans jamais passer par

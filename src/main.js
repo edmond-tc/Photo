@@ -1038,6 +1038,7 @@ const TITRES_SECTION = {
   rapports: "Rapports",
   reglages: "Réglages",
   activite: "Activité des machines (en direct)",
+  reception: "Réception directe (essai)",
 };
 
 // Une phrase en haut de chaque écran : un gérant qui découvre l'application
@@ -1050,6 +1051,8 @@ const AIDES_SECTION = {
   recherche: "Retrouver un document par nom de client, numéro de téléphone ou nom de fichier — même vieux de plusieurs semaines.",
   rapports: "L'argent du jour, les impayés à relancer, le stock, et le rapport imprimable à garder ou à montrer au propriétaire.",
   reglages: "Le nom de la boutique, le dossier surveillé, les tarifs, les employés et la sauvegarde. À régler une fois, rarement retouché ensuite.",
+  reception:
+    "Le PC rejoint tout seul le partage de connexion du téléphone du client, reçoit le document, puis se libère pour le suivant. Version d'essai : chaque étape est notée ci-dessous.",
   activite: "Ce que font les imprimantes et photocopieurs, à chaque instant : chaque impression partie du PC, et les photocopies faites sur la vitre des machines branchées en réseau. Mis à jour tout seul.",
 };
 
@@ -1072,6 +1075,7 @@ async function ouvrirSection(section) {
     rapports: rendreRapports,
     reglages: rendreReglages,
     activite: rendreActivite,
+    reception: rendreReceptionDirecte,
   };
   await rendus[section]?.(corps);
 
@@ -1718,6 +1722,120 @@ async function rendreActivite(corps) {
     liste.appendChild(ligne);
   }
   corps.appendChild(liste);
+}
+
+/// Réception directe : le PC rejoint le téléphone du client (voir
+/// `reception_directe.rs`). Écran d'essai : réglages, état, journal.
+let minuterieReception = null;
+
+async function rendreReceptionDirecte(corps) {
+  const e = await invoke("reception_directe_etat");
+  corps.innerHTML = "";
+
+  const reglages = document.createElement("div");
+  reglages.className = "carte-rapport";
+  reglages.innerHTML = `
+    <h3>Réglages</h3>
+    <label style="display:flex; gap:0.5rem; align-items:center">
+      <input type="checkbox" id="rd-active" ${e.reglages.active ? "checked" : ""}>
+      <strong>Réception directe active</strong>
+    </label>
+    <p style="margin:0.6rem 0 0.2rem">Mot de passe que le client met sur son partage de connexion :</p>
+    <input id="rd-mdp" type="text" value="${echapperHtml(e.reglages.mot_de_passe)}" style="width:14rem">
+    <p style="margin:0.6rem 0 0.2rem">Force de signal minimale (téléphone au guichet), de 1 à 100 :</p>
+    <input id="rd-seuil" type="number" min="1" max="100" value="${e.reglages.seuil}" style="width:6rem">
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Si le PC rejoint le téléphone d'un voisin, montez ce chiffre. S'il ne voit jamais le
+      téléphone posé au guichet, baissez-le. Le journal montre le signal de chaque téléphone vu.
+    </p>`;
+  reglages.appendChild(
+    bouton("Enregistrer", "btn-primaire", async () => {
+      try {
+        await invoke("reception_directe_regler", {
+          active: document.querySelector("#rd-active").checked,
+          motDePasse: document.querySelector("#rd-mdp").value.trim(),
+          seuil: Number(document.querySelector("#rd-seuil").value) || 60,
+        });
+        toast("✓ Enregistré.");
+        await ouvrirSection("reception");
+      } catch (err) {
+        toast(`${err}`, "attention", 8000);
+      }
+    })
+  );
+  corps.appendChild(reglages);
+
+  const preparation = document.createElement("div");
+  preparation.className = "carte-rapport";
+  preparation.innerHTML = `
+    <h3>Préparer ce PC (une seule fois)</h3>
+    <p style="font-size:0.9rem">1. Ouvrir le pare-feu : Windows demande « Oui » une fois.<br>
+    2. Si le journal dit « autorisez la LOCALISATION » : ouvrez la page, activez
+    « Services de localisation » et « Autoriser les applications de bureau à accéder à votre position ».</p>`;
+  preparation.appendChild(
+    bouton("1. Ouvrir le pare-feu", "btn-secondaire", async () => {
+      try {
+        await invoke("reception_directe_preparer");
+        toast("✓ Pare-feu préparé.");
+      } catch (err) {
+        toast(`Préparation impossible : ${err}`, "attention", 8000);
+      }
+    })
+  );
+  preparation.appendChild(
+    bouton("2. Page Localisation de Windows", "btn-secondaire", async () => {
+      try {
+        await invoke("reception_directe_ouvrir_localisation");
+      } catch (err) {
+        toast(`${err}`, "attention", 8000);
+      }
+    })
+  );
+  corps.appendChild(preparation);
+
+  const etat = document.createElement("div");
+  etat.className = "carte-rapport";
+  etat.innerHTML = `<h3>En ce moment</h3>
+    <p id="rd-etat" style="font-size:1.05rem"></p>
+    <p id="rd-adresse" style="font-size:0.9rem"></p>`;
+  corps.appendChild(etat);
+
+  const journal = document.createElement("section");
+  journal.innerHTML = `<h3>Journal (le plus récent en haut)</h3>
+    <div id="rd-journal" style="font-family:monospace; font-size:0.85rem"></div>`;
+  corps.appendChild(journal);
+
+  const remplir = (x) => {
+    const zoneEtat = document.querySelector("#rd-etat");
+    if (!zoneEtat) return false;
+    zoneEtat.textContent = x.etat || "—";
+    document.querySelector("#rd-adresse").textContent = x.adresse
+      ? `Adresse du PC sur le téléphone du client : ${x.adresse} — page : http://kiosque.local:4173 ou http://${x.adresse}:4173`
+      : "";
+    const zone = document.querySelector("#rd-journal");
+    zone.innerHTML = "";
+    if (!x.journal.length) zone.textContent = "Rien encore.";
+    for (const [heure, texte] of x.journal) {
+      const ligne = document.createElement("div");
+      ligne.className = "ligne-liste";
+      ligne.textContent = `${heure}  ${texte}`;
+      zone.appendChild(ligne);
+    }
+    return true;
+  };
+  remplir(e);
+
+  clearInterval(minuterieReception);
+  minuterieReception = setInterval(async () => {
+    const panneau = document.querySelector("#panneau-contenu");
+    if (sectionOuverte !== "reception" || !panneau || panneau.hidden) {
+      clearInterval(minuterieReception);
+      return;
+    }
+    try {
+      if (!remplir(await invoke("reception_directe_etat"))) clearInterval(minuterieReception);
+    } catch (_) {}
+  }, 2000);
 }
 
 async function rendreRapports(corps) {

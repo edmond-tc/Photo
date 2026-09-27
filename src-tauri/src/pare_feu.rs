@@ -58,6 +58,14 @@ const REGLE_PORTAIL: &str = "Photocopie Benin - ouverture automatique";
 /// silence fait attendre.
 const REGLE_TLS: &str = "Photocopie Benin - refus rapide du port securise";
 
+/// UDP 5353 : la question « où est kiosque.local ? » (voir `mdns.rs`).
+/// Quand le PC rejoint le partage de connexion d'un client, c'est ainsi que
+/// le téléphone trouve la page sans connaître l'adresse du PC.
+const REGLE_MDNS: &str = "Photocopie Benin - nom kiosque.local";
+
+const TOUTES_LES_REGLES: [&str; 6] =
+    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS, REGLE_MDNS];
+
 /// Les commandes à insérer dans un script déjà élevé.
 ///
 /// Rendues séparément du script qui les exécute pour qu'un seul et même
@@ -78,6 +86,7 @@ pub fn commandes_powershell() -> String {
             u32::from(crate::server::PORT_PORTAIL_CAPTIF),
         ),
         (REGLE_TLS, "TCP", u32::from(crate::server::PORT_SECURISE)),
+        (REGLE_MDNS, "UDP", 5353),
     ];
 
     regles
@@ -117,7 +126,7 @@ pub fn regles_presentes() -> bool {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS]
+    TOUTES_LES_REGLES
         .iter()
         .all(|nom| {
             std::process::Command::new("netsh")
@@ -186,7 +195,7 @@ mod tests {
     /// l'a payé : le téléphone rejoignait le réseau, recevait son adresse,
     /// et aucune page ne s'ouvrait jamais.
     #[test]
-    fn ouvre_les_cinq_ports_necessaires_et_rien_d_autre() {
+    fn ouvre_les_six_ports_necessaires_et_rien_d_autre() {
         let commandes = commandes_powershell();
         assert!(commandes.contains("protocol=TCP localport=4173"));
         assert!(commandes.contains("protocol=UDP localport=67"));
@@ -202,14 +211,15 @@ mod tests {
              jusqu'à expiration, et il conclut « pas d'internet » au lieu de \
              « portail à ouvrir »"
         );
+        assert!(commandes.contains("protocol=UDP localport=5353"));
         assert_eq!(
             commandes.matches("add rule").count(),
-            5,
-            "exactement cinq règles, pas une de plus : rien d'autre de ce PC \
+            6,
+            "exactement six règles, pas une de plus : rien d'autre de ce PC \
              ne doit être exposé"
         );
         // Entrant seulement, et jamais "autoriser tout".
-        assert_eq!(commandes.matches("dir=in action=allow").count(), 5);
+        assert_eq!(commandes.matches("dir=in action=allow").count(), 6);
         assert!(!commandes.contains("dir=out"));
     }
 
@@ -218,8 +228,8 @@ mod tests {
     #[test]
     fn remplace_les_regles_au_lieu_de_les_empiler() {
         let commandes = commandes_powershell();
-        assert_eq!(commandes.matches("delete rule").count(), 5);
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS] {
+        assert_eq!(commandes.matches("delete rule").count(), 6);
+        for regle in TOUTES_LES_REGLES {
             let suppression = commandes
                 .find(&format!("delete rule name=\"{regle}\""))
                 .expect("suppression attendue");
@@ -234,12 +244,12 @@ mod tests {
     /// les reconnaître comme les nôtres.
     #[test]
     fn toutes_les_regles_sont_identifiables_comme_les_notres() {
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS] {
+        for regle in TOUTES_LES_REGLES {
             assert!(regle.starts_with(PREFIXE_REGLE), "{regle}");
         }
         // Des noms distincts : deux règles de même nom se remplaceraient
         // l'une l'autre, et un port resterait fermé sans que rien ne le dise.
-        let noms = [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS];
+        let noms = TOUTES_LES_REGLES;
         for (i, a) in noms.iter().enumerate() {
             for b in noms.iter().skip(i + 1) {
                 assert_ne!(a, b);
@@ -263,7 +273,7 @@ mod tests {
 
         // Aucun nom de règle ne doit contenir d'apostrophe : il traverse
         // PowerShell puis netsh, et s'y ferait découper.
-        for regle in [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS] {
+        for regle in TOUTES_LES_REGLES {
             assert!(!regle.contains('\''), "{regle}");
         }
     }
