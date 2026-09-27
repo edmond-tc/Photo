@@ -934,75 +934,31 @@ const EN_TETES_SECURITE = {
   "cache-control": "no-store",
 };
 
-/// Page du QR de l'affiche du guichet, pour les CLIENTS : installer
-/// l'application Envoyeur Kiosque sans le Play Store, pas à pas.
+/// Page du QR de l'affiche du guichet, pour les CLIENTS : un seul bouton
+/// pour installer l'application Envoyeur Kiosque. Volontairement minimale.
 /// Sans JavaScript (la politique de sécurité de ce Worker l'interdit) : le
 /// type de téléphone est reconnu ici, d'après le navigateur.
 function pageApplication(navigateur, tailleApk) {
   const iphone = /iPhone|iPad|iPod/i.test(navigateur);
-  const android = /Android/i.test(navigateur);
   const taille = tailleApk ? ` (${(tailleApk / 1024 / 1024).toFixed(1).replace(".", ",")} Mo)` : "";
-  const etape = (n, titre, texte, ecran) => `
-    <li class="etape"><span class="num">${n}</span><div><h3>${titre}</h3><p>${texte}</p>${ecran || ""}</div></li>`;
-  const fenetre = (titre, texte, boutons) => `
-    <div class="fenetre"><strong>${titre}</strong><span>${texte}</span>
-      <div class="boutons">${boutons.map(([b, fort]) => `<span class="${fort ? "fort" : ""}">${b}</span>`).join("")}</div></div>`;
-
-  const blocAndroid = tailleApk
-    ? `<a class="gros-bouton" href="/telecharger/apk">Télécharger l'application${taille}</a>
-       <p class="note">Gratuit. Une seule fois. Ensuite, plus besoin d'internet pour envoyer.</p>
-       <h2>Puis, en 1 minute</h2>
-       <ol class="etapes">
-         ${etape(1, "Ouvrez le fichier", "Quand le téléchargement est fini, touchez <b>Ouvrir</b> (ou ouvrez-le dans vos Téléchargements).")}
-         ${etape(2, "Autorisez l'installation", "Si le téléphone refuse les « applications inconnues » : touchez <b>Paramètres</b>, activez <b>Autoriser depuis cette source</b>, puis revenez en arrière.",
-           fenetre("Pour votre sécurité, votre téléphone n'est pas autorisé à installer des applications inconnues de cette source.", "", [["Annuler"], ["Paramètres", true]]))}
-         ${etape(3, "Installez", "Touchez <b>Installer</b>. Si « Play Protect » affiche un avertissement : <b>Plus de détails</b> puis <b>Installer quand même</b>. L'application ne lit ni vos messages ni vos contacts.",
-           fenetre("Application inconnue", "Play Protect ne reconnaît pas le développeur de cette application.", [["Plus de détails ▾"], ["Installer quand même", true]]))}
-         ${etape(4, "Ouvrez Envoyeur Kiosque", "Touchez <b>Autoriser</b> une seule fois, donnez votre prénom. C'est prêt : au guichet, une notification vous propose d'envoyer.")}
-       </ol>`
-    : `<p class="alerte">L'application est en cours de préparation. Demandez-la au guichet : le gérant peut vous l'envoyer par Bluetooth ou Quick Share.</p>`;
-
-  const blocIphone = `<div class="carte-iphone">
-       <h2>Sur iPhone : rien à installer</h2>
-       <ol class="etapes">
-         ${etape(1, "Au guichet, allumez le Partage de connexion", "Réglages → <b>Partage de connexion</b>, avec le mot de passe affiché au guichet. Gardez cet écran ouvert.")}
-         ${etape(2, "Scannez le QR du guichet", "La page d'envoi s'ouvre : choisissez vos documents et vos options.")}
-       </ol></div>`;
-
+  const contenu = iphone
+    ? `<p>Sur iPhone, rien à installer : au guichet, allumez votre <b>Partage de connexion</b> puis scannez le QR du guichet.</p>`
+    : tailleApk
+      ? `<a class="bouton" href="/telecharger/apk">Installer l'application${taille}</a>
+         <p>Si le téléphone le demande, autorisez l'installation.</p>`
+      : `<p>Application bientôt disponible. Demandez-la au guichet.</p>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Envoyeur Kiosque</title>
 <style>
-  :root { --bleu:#1f4fd1; --encre:#15202d; --discret:#5a6577; --fond:#f3f5f9; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--encre); background:#fff; line-height:1.45; }
-  main { max-width:560px; margin:0 auto; padding:24px 18px 40px; display:grid; gap:18px; }
-  h1 { font-size:1.6rem; margin:0; line-height:1.2; }
-  h2 { font-size:1.15rem; margin:8px 0 0; }
-  h3 { font-size:1rem; margin:0 0 2px; }
-  p { margin:0; }
-  .accroche { color:var(--discret); font-size:1.05rem; }
-  .gros-bouton { display:block; text-align:center; background:var(--bleu); color:#fff; text-decoration:none; font-weight:800; font-size:1.15rem; padding:18px; border-radius:16px; }
-  .note { text-align:center; color:var(--discret); font-size:0.9rem; }
-  .etapes { list-style:none; padding:0; margin:0; display:grid; gap:14px; }
-  .etape { display:grid; grid-template-columns:34px 1fr; gap:12px; }
-  .num { width:34px; height:34px; border-radius:50%; background:var(--bleu); color:#fff; display:grid; place-items:center; font-weight:800; }
-  .etape p { color:var(--discret); font-size:0.95rem; }
-  .fenetre { margin-top:8px; background:var(--fond); border:1px solid #d9dfe7; border-radius:16px; padding:14px; display:grid; gap:6px; font-size:0.88rem; }
-  .fenetre span { color:var(--discret); }
-  .boutons { display:flex; justify-content:flex-end; gap:16px; margin-top:4px; }
-  .boutons span { color:var(--bleu); font-weight:600; }
-  .boutons .fort { font-weight:800; text-decoration:underline; }
-  .carte-iphone { background:var(--fond); border-radius:16px; padding:16px; display:grid; gap:10px; }
-  .alerte { background:#fbf0dc; color:#7a4d00; padding:14px; border-radius:12px; }
-  .avantages { display:grid; gap:6px; padding:0; margin:0; list-style:none; }
-  .avantages li::before { content:"✓ "; color:#1d7f47; font-weight:800; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:#15202d; background:#fff; }
+  main { max-width:480px; margin:0 auto; padding:40px 18px; display:grid; gap:20px; text-align:center; }
+  h1 { font-size:1.5rem; margin:0; }
+  p { margin:0; color:#5a6577; line-height:1.45; }
+  .bouton { display:block; background:#1f4fd1; color:#fff; text-decoration:none; font-weight:800; font-size:1.2rem; padding:20px; border-radius:16px; }
 </style></head><body><main>
-  <h1>Envoyez vos documents à la photocopie, sans câble</h1>
-  <p class="accroche">Choisissez vos fichiers, vos options (couleur, recto-verso, reliure…), et ils arrivent directement sur l'ordinateur du guichet.</p>
-  <ul class="avantages"><li>Sans internet au guichet : votre forfait n'est pas utilisé</li><li>Un numéro de commande, rien à expliquer</li><li>Gratuit</li></ul>
-  ${iphone ? blocIphone : blocAndroid}
-  ${!iphone && !android ? blocIphone : ""}
+  <h1>Envoyeur Kiosque</h1>
+  ${contenu}
 </main></body></html>`;
 }
 
