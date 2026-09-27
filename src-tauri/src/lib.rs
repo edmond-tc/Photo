@@ -1,5 +1,6 @@
 pub mod activite;
 pub mod backup;
+pub mod balise_ble;
 pub mod bluetooth;
 pub mod commands;
 pub mod controle_impressions;
@@ -102,6 +103,7 @@ pub fn run() {
             bluetooth::demarrer(app.handle().clone());
             reception_directe::demarrer(app.handle().clone());
             mdns::demarrer();
+            balise_ble::demarrer(app.handle().clone());
             // Reprend un point d'accès rallumé par Windows au démarrage du
             // PC (voir `hotspot::reprendre_point_acces_existant`) : le gérant
             // n'a alors plus rien à cliquer le matin.

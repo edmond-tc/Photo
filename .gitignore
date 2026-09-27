@@ -26,3 +26,9 @@ dist-ssr
 
 # Clé privée de signature des licences — ne doit JAMAIS être commitée
 cle-privee.txt
+
+# Envoyeur Android : fichiers de compilation
+android/.gradle
+android/build
+android/app/build
+android/local.properties

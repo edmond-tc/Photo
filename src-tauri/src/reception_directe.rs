@@ -106,7 +106,42 @@ pub fn choisir<'a>(
         .iter()
         .filter(|r| r.protege && r.signal >= seuil && !r.ssid.is_empty())
         .filter(|r| !a_l_ecart(&r.ssid) && !ignorer.iter().any(|i| i == &r.ssid))
-        .max_by_key(|r| r.signal)
+        // L'envoyeur Android d'abord : c'est à coup sûr un client qui veut
+        // envoyer, avec notre mot de passe.
+        .max_by_key(|r| (est_envoyeur(&r.ssid), r.signal))
+}
+
+/// Réseau créé par notre envoyeur Android (voir `android/`, `Reglages.kt`).
+pub const PREFIXE_ENVOYEUR: &str = "DIRECT-KQ-";
+
+pub fn est_envoyeur(ssid: &str) -> bool {
+    ssid.starts_with(PREFIXE_ENVOYEUR)
+}
+
+/// Port où le PC annonce sa présence sur le réseau du client : l'envoyeur
+/// Android l'y trouve sans connaître son adresse.
+pub const PORT_ANNONCE: u16 = 48173;
+
+/// Diffuse « KIOSQUE 4173 » chaque seconde tant que le PC est sur ce réseau.
+fn annoncer_presence(adresse: Ipv4Addr) {
+    std::thread::spawn(move || {
+        let Ok(socket) = std::net::UdpSocket::bind((adresse, 0)) else { return };
+        if socket.set_broadcast(true).is_err() {
+            return;
+        }
+        let message = format!("KIOSQUE {}", crate::server::PORT);
+        let o = adresse.octets();
+        let destinations = [
+            std::net::SocketAddrV4::new(Ipv4Addr::BROADCAST, PORT_ANNONCE),
+            std::net::SocketAddrV4::new(Ipv4Addr::new(o[0], o[1], o[2], 255), PORT_ANNONCE),
+        ];
+        while adresse_actuelle() == Some(adresse) {
+            for d in destinations {
+                let _ = socket.send_to(message.as_bytes(), d);
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
 }
 
 fn echapper_xml(texte: &str) -> String {
@@ -177,6 +212,11 @@ fn lire_reglages(app: &AppHandle) -> Reglages {
             .map(|s: u32| s.clamp(1, 100))
             .unwrap_or(SEUIL_PAR_DEFAUT),
     }
+}
+
+/// La réception directe est-elle activée ? (Lu aussi par `balise_ble.rs`.)
+pub fn est_active(app: &AppHandle) -> bool {
+    lire_reglages(app).active
 }
 
 // ───────────────────────────── Commandes ─────────────────────────────
@@ -421,6 +461,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
     if let Ok(mut a) = ADRESSE.lock() {
         *a = Some(adresse);
     }
+    annoncer_presence(adresse);
     noter(format!(
         "✅ Connecté à « {} » en {secondes:.1} s. Page : http://kiosque.local:{p} ou http://{adresse}:{p}",
         cible.ssid,
@@ -682,6 +723,15 @@ mod tests {
         let reseaux = vec![ouvert, r("Faible", 40), r("Deja", 95), r("Photocopie-Awa", 98)];
         let a_l_ecart = |s: &str| s == "Deja";
         assert!(choisir(&reseaux, 60, &a_l_ecart, &["Photocopie-Awa".to_string()]).is_none());
+    }
+
+    #[test]
+    fn l_envoyeur_android_passe_avant_un_partage_plus_fort() {
+        let reseaux = vec![r("TECNO SPARK", 95), r("DIRECT-KQ-7H2M", 70)];
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[]).unwrap().ssid, "DIRECT-KQ-7H2M");
+        // Mais jamais sous le seuil : la cage voisine reste exclue.
+        let reseaux = vec![r("TECNO SPARK", 95), r("DIRECT-KQ-7H2M", 50)];
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[]).unwrap().ssid, "TECNO SPARK");
     }
 
     #[test]
