@@ -47,6 +47,17 @@ const MISE_A_L_ECART: Duration = Duration::from_secs(180);
 /// avant longtemps. Constaté à l'essai : sans cela, le PC passait son temps
 /// sur les box HUAWEI et Celtiis du voisinage.
 const MISE_A_L_ECART_ECHEC: Duration = Duration::from_secs(30 * 60);
+/// Un réseau qui n'est pas celui de notre envoyeur (box, partage) et qui a
+/// échoué une fois n'acceptera pas mieux notre mot de passe plus tard.
+const MISE_A_L_ECART_ECHEC_AUTRE: Duration = Duration::from_secs(6 * 3600);
+
+fn ecart_apres_echec(ssid: &str) -> Duration {
+    if est_envoyeur(ssid) { MISE_A_L_ECART_ECHEC } else { MISE_A_L_ECART_ECHEC_AUTRE }
+}
+
+fn envoi_recu() -> bool {
+    DERNIER_ENVOI.lock().ok().and_then(|d| *d).is_some()
+}
 const PAUSE_ENTRE_TOURS: Duration = Duration::from_secs(4);
 
 // ───────────────────────────── Journal de diagnostic ─────────────────────────────
@@ -203,12 +214,21 @@ pub enum Evenement {
 }
 
 /// L'adresse apparue après la connexion : celle que le téléphone du client
-/// a donnée au PC.
+/// a donnée au PC. À défaut, une adresse du réseau Wi-Fi Direct d'Android
+/// (toujours 192.168.49.x) : constaté à l'essai, le téléphone avait trouvé
+/// le PC à 192.168.49.96 alors que le PC ne voyait aucune adresse « nouvelle ».
 pub fn nouvelle_adresse(avant: &[Ipv4Addr], apres: &[Ipv4Addr]) -> Option<Ipv4Addr> {
+    let utilisable = |ip: &Ipv4Addr| !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified();
     apres
         .iter()
         .copied()
-        .find(|ip| !avant.contains(ip) && !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified())
+        .find(|ip| !avant.contains(ip) && utilisable(ip))
+        .or_else(|| {
+            apres
+                .iter()
+                .copied()
+                .find(|ip| ip.octets()[..3] == [192, 168, 49] && ip.octets()[3] != 1 && utilisable(ip))
+        })
 }
 
 // ───────────────────────────── Réglages ─────────────────────────────
@@ -453,10 +473,13 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         cible.ssid, cible.signal, cible.securite
     ));
     etat(format!("Connexion à « {} »…", cible.ssid));
+    if let Ok(mut d) = DERNIER_ENVOI.lock() {
+        *d = None;
+    }
     let avant = adresses_ipv4();
     if let Err(e) = client.rejoindre(&cible.ssid, &reglages.mot_de_passe, cible.wpa3) {
         noter(format!("❌ Connexion refusée à « {} » : {e}", cible.ssid));
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART_ECHEC);
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
         return;
     }
 
@@ -473,6 +496,9 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         for evenement in client.evenements() {
             match evenement {
                 Evenement::Etape(e) => {
+                    if e == "connecté" {
+                        connecte = true;
+                    }
                     if etapes.last() != Some(&e) {
                         etapes.push(e);
                     }
@@ -487,7 +513,9 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
                 Evenement::Deconnecte { .. } => {}
             }
         }
-        if echec.is_some() {
+        // Le téléphone a déjà envoyé : le PC était donc bien joignable, même
+        // s'il n'a pas vu son adresse.
+        if echec.is_some() || envoi_recu() {
             break;
         }
         if connecte || client.connecte_a().as_deref() == Some(cible.ssid.as_str()) {
@@ -499,14 +527,36 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         }
     }
     let Some(adresse) = adresse else {
+        let parcours_court = etapes.join(" → ");
+        if envoi_recu() {
+            noter(format!(
+                "📄 « {} » : document reçu ({:.0} s). Étapes : {parcours_court}.",
+                cible.ssid,
+                debut.elapsed().as_secs_f32()
+            ));
+            etat(format!("Document reçu de « {} »", cible.ssid));
+            // Laisser un instant pour d'autres fichiers, puis libérer.
+            let fin = Instant::now() + CALME_APRES_ENVOI;
+            while Instant::now() < fin
+                && !client.evenements().iter().any(|e| matches!(e, Evenement::Deconnecte { .. }))
+            {
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            client.deconnecter();
+            mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART);
+            return;
+        }
         let parcours = if etapes.is_empty() { "aucune".to_string() } else { etapes.join(" → ") };
         let pourquoi = match echec {
             Some(e) => e,
-            None if connecte => format!(
-                "connecté, mais le téléphone n'a donné aucune adresse au PC en 45 s. Adresses du PC : {}",
-                adresses_ipv4().iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ")
-            ),
+            None if connecte => "connecté, mais aucune adresse reçue du téléphone en 45 s".to_string(),
             None => "aucune réponse du réseau en 25 s".to_string(),
+        };
+        let pourquoi = if connecte {
+            let liste = |l: &[Ipv4Addr]| l.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
+            format!("{pourquoi}. Adresses du PC avant : {} ; après : {}", liste(&avant), liste(&adresses_ipv4()))
+        } else {
+            pourquoi
         };
         noter(format!(
             "❌ « {} » : {pourquoi}. Étapes : {parcours}. {:.0} s.",
@@ -514,7 +564,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
             debut.elapsed().as_secs_f32()
         ));
         client.deconnecter();
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART_ECHEC);
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
         return;
     };
 
@@ -533,15 +583,13 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         cible.ssid,
         crate::server::PORT
     ));
-    if let Ok(mut d) = DERNIER_ENVOI.lock() {
-        *d = None;
-    }
 
     // Attendre l'envoi, puis un moment de calme.
     let connecte_depuis = Instant::now();
     let raison = loop {
         std::thread::sleep(Duration::from_secs(1));
-        if client.connecte_a().as_deref() != Some(cible.ssid.as_str()) {
+        let coupe = client.evenements().iter().any(|e| matches!(e, Evenement::Deconnecte { .. }));
+        if coupe || client.connecte_a().as_deref() != Some(cible.ssid.as_str()) {
             break "le téléphone a coupé son partage de connexion";
         }
         let dernier = DERNIER_ENVOI.lock().ok().and_then(|d| *d);
@@ -950,5 +998,17 @@ mod tests {
             Ipv4Addr::new(172, 20, 10, 3),
         ];
         assert_eq!(nouvelle_adresse(&avant, &apres), Some(Ipv4Addr::new(172, 20, 10, 3)));
+    }
+
+    #[test]
+    fn reconnait_le_reseau_wifi_direct_meme_deja_liste() {
+        // Essai réel : le téléphone joignait le PC à 192.168.49.96, mais
+        // cette adresse ne paraissait pas « nouvelle » au PC.
+        let pc = Ipv4Addr::new(192, 168, 49, 96);
+        let liste = vec![Ipv4Addr::new(127, 0, 0, 1), Ipv4Addr::new(192, 168, 1, 20), pc];
+        assert_eq!(nouvelle_adresse(&liste, &liste), Some(pc));
+        // Le téléphone lui-même (.1) n'est jamais l'adresse du PC.
+        let tel = vec![Ipv4Addr::new(192, 168, 49, 1)];
+        assert_eq!(nouvelle_adresse(&tel, &tel), None);
     }
 }
