@@ -55,6 +55,62 @@ fn ecart_apres_echec(ssid: &str) -> Duration {
     if est_envoyeur(ssid) { MISE_A_L_ECART_ECHEC } else { MISE_A_L_ECART_ECHEC_AUTRE }
 }
 
+/// Temps d'attente d'une connexion, avant d'abandonner. Un réseau autre que
+/// notre envoyeur (box, partage d'un inconnu) a droit à moins : pendant
+/// qu'on l'essaie, le PC ne voit pas le téléphone d'un vrai client arriver.
+fn attente_connexion(ssid: &str) -> Duration {
+    Duration::from_secs(if est_envoyeur(ssid) { 25 } else { 12 })
+}
+
+/// Les réseaux écartés survivent au redémarrage du logiciel (sinon, à
+/// chaque ouverture, le PC retente toutes les box du voisinage).
+/// Format : JSON { ssid: fin de l'écart en secondes depuis 1970 }.
+pub fn ecartes_depuis_texte(texte: &str, maintenant: u64) -> HashMap<String, u64> {
+    serde_json::from_str::<HashMap<String, u64>>(texte)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, fin)| *fin > maintenant)
+        .collect()
+}
+
+fn secondes_depuis_1970() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn charger_ecartes(app: &AppHandle) -> HashMap<String, Instant> {
+    let state = app.state::<crate::db::DbState>();
+    let conn = state.0.lock();
+    let texte = conn.as_ref().ok().and_then(|c| crate::db::get_setting(c, CLE_ECARTES)).unwrap_or_default();
+    drop(conn);
+    let maintenant = secondes_depuis_1970();
+    ecartes_depuis_texte(&texte, maintenant)
+        .into_iter()
+        .map(|(ssid, fin)| (ssid, Instant::now() + Duration::from_secs(fin - maintenant)))
+        .collect()
+}
+
+/// N'enregistre que les longs écarts (réseaux étrangers) : les courts
+/// n'ont pas besoin de survivre à un redémarrage.
+fn enregistrer_ecartes(app: &AppHandle, mis_a_l_ecart: &HashMap<String, Instant>) {
+    let maintenant = secondes_depuis_1970();
+    let longs: HashMap<&String, u64> = mis_a_l_ecart
+        .iter()
+        .filter(|(ssid, _)| !est_envoyeur(ssid))
+        .map(|(ssid, fin)| (ssid, maintenant + fin.saturating_duration_since(Instant::now()).as_secs()))
+        .collect();
+    let Ok(texte) = serde_json::to_string(&longs) else { return };
+    let state = app.state::<crate::db::DbState>();
+    let conn = state.0.lock();
+    if let Ok(c) = conn.as_ref() {
+        let _ = crate::db::set_setting(c, CLE_ECARTES, &texte);
+    }
+}
+
+const CLE_ECARTES: &str = "reception_directe_ecartes";
+
 fn envoi_recu() -> bool {
     DERNIER_ENVOI.lock().ok().and_then(|d| *d).is_some()
 }
@@ -385,7 +441,7 @@ fn adresses_ipv4() -> Vec<Ipv4Addr> {
 /// Elle ne fait rien tant que la réception directe n'est pas activée.
 pub fn demarrer(app: AppHandle) {
     std::thread::spawn(move || {
-        let mut mis_a_l_ecart: HashMap<String, Instant> = HashMap::new();
+        let mut mis_a_l_ecart = charger_ecartes(&app);
         let mut empeche_veille = false;
         etat("Arrêtée");
         loop {
@@ -480,6 +536,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
     if let Err(e) = client.rejoindre(&cible.ssid, &reglages.mot_de_passe, cible.wpa3) {
         noter(format!("❌ Connexion refusée à « {} » : {e}", cible.ssid));
         mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
+        enregistrer_ecartes(app, mis_a_l_ecart);
         return;
     }
 
@@ -491,7 +548,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
     let mut etapes: Vec<&'static str> = Vec::new();
     let mut connecte = false;
     let mut echec: Option<String> = None;
-    while debut.elapsed() < Duration::from_secs(if connecte { 45 } else { 25 }) {
+    while debut.elapsed() < if connecte { Duration::from_secs(45) } else { attente_connexion(&cible.ssid) } {
         std::thread::sleep(Duration::from_millis(500));
         for evenement in client.evenements() {
             match evenement {
@@ -550,7 +607,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         let pourquoi = match echec {
             Some(e) => e,
             None if connecte => "connecté, mais aucune adresse reçue du téléphone en 45 s".to_string(),
-            None => "aucune réponse du réseau en 25 s".to_string(),
+            None => format!("aucune réponse du réseau en {} s", attente_connexion(&cible.ssid).as_secs()),
         };
         let pourquoi = if connecte {
             let liste = |l: &[Ipv4Addr]| l.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
@@ -565,6 +622,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         ));
         client.deconnecter();
         mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
+        enregistrer_ecartes(app, mis_a_l_ecart);
         return;
     };
 
@@ -590,7 +648,7 @@ fn un_tour(app: &AppHandle, reglages: &Reglages, mis_a_l_ecart: &mut HashMap<Str
         std::thread::sleep(Duration::from_secs(1));
         let coupe = client.evenements().iter().any(|e| matches!(e, Evenement::Deconnecte { .. }));
         if coupe || client.connecte_a().as_deref() != Some(cible.ssid.as_str()) {
-            break "le téléphone a coupé son partage de connexion";
+            break "le téléphone a fermé son réseau";
         }
         let dernier = DERNIER_ENVOI.lock().ok().and_then(|d| *d);
         match dernier {
@@ -998,6 +1056,21 @@ mod tests {
             Ipv4Addr::new(172, 20, 10, 3),
         ];
         assert_eq!(nouvelle_adresse(&avant, &apres), Some(Ipv4Addr::new(172, 20, 10, 3)));
+    }
+
+    #[test]
+    fn les_ecarts_expires_ou_illisibles_sont_oublies() {
+        let texte = r#"{"HUAWEI-5G-2WdT": 2000, "CPE_R0516_3F92": 500}"#;
+        let e = ecartes_depuis_texte(texte, 1000);
+        assert_eq!(e.len(), 1);
+        assert_eq!(e["HUAWEI-5G-2WdT"], 2000);
+        assert!(ecartes_depuis_texte("pas du json", 0).is_empty());
+        assert!(ecartes_depuis_texte("", 0).is_empty());
+    }
+
+    #[test]
+    fn un_reseau_etranger_est_attendu_moins_longtemps() {
+        assert!(attente_connexion("TECNO SPARK 6 Go") < attente_connexion("DIRECT-KQ-9DKT"));
     }
 
     #[test]
