@@ -224,6 +224,29 @@ function Descendre($dossier, $chemin) {
     foreach ($morceau in $chemin.Split('\')) { if ($d) { $d = Enfant $d $morceau } }
     return $d
 }
+# Le nom AVEC son extension. Constaté à l'essai : pour un téléphone,
+# `.Name` rend « cv-client » au lieu de « cv-client.pdf » (Windows cache
+# les extensions), et la copie attendait un fichier qui n'arrivait jamais
+# sous ce nom.
+function NomReel($f) {
+    $n = $null
+    try { $n = $f.ExtendedProperty('System.FileName') } catch {}
+    if (-not $n) { $n = $f.Name }
+    return $n
+}
+# Date de réception. Constaté à l'essai : `.ModifyDate` d'un fichier de
+# téléphone vaut souvent le 30/12/1899 (date vide) ; les propriétés
+# détaillées, elles, sont remplies.
+function DateReelle($f) {
+    try { if ($f.ModifyDate.Year -ge 2005) { return $f.ModifyDate.ToString('yyyy-MM-dd HH:mm') } } catch {}
+    foreach ($p in @('System.DateModified', 'System.DateCreated', 'System.DateAcquired')) {
+        try {
+            $v = $f.ExtendedProperty($p)
+            if ($v -and $v.Year -ge 2005) { return $v.ToLocalTime().ToString('yyyy-MM-dd HH:mm') }
+        } catch {}
+    }
+    return ''
+}
 function Telephones() {
     # « Ce PC » : les disques y sont des dossiers du système de fichiers,
     # les téléphones (MTP) non.
@@ -254,14 +277,45 @@ fn script_lecture() -> String {
                      \"DOSSIER`t$($paire[0])\"\n\
                      foreach ($f in $d.Items()) {{\n\
                          if ($f.IsFolder) {{ continue }}\n\
-                         $date = ''\n\
-                         try {{ $date = $f.ModifyDate.ToString('yyyy-MM-dd HH:mm') }} catch {{}}\n\
-                         \"FICHIER`t$($tel.Name)`t$($stockage.Name)`t$($paire[0])`t$($paire[1])`t$($f.Name)`t$($f.Size)`t$date\"\n\
+                         $date = DateReelle $f\n\
+                         \"FICHIER`t$($tel.Name)`t$($stockage.Name)`t$($paire[0])`t$($paire[1])`t$(NomReel $f)`t$($f.Size)`t$date\"\n\
                      }}\n\
                  }}\n\
              }}\n\
          }}\n"
     )
+}
+
+/// Extensions des fichiers qu'une photocopie imprime.
+const EXTENSIONS_IMPRIMABLES: [&str; 25] = [
+    "pdf", "doc", "docx", "odt", "rtf", "txt", "xls", "xlsx", "ods", "csv", "ppt", "pptx", "odp",
+    "pub", "jpg", "jpeg", "png", "heic", "heif", "webp", "bmp", "gif", "tif", "tiff", "svg",
+];
+
+fn imprimable(nom: &str) -> bool {
+    nom.rsplit_once('.')
+        .map(|(_, ext)| EXTENSIONS_IMPRIMABLES.contains(&ext.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// La date donnée par le téléphone, ou, si elle est vide ou absurde, celle
+/// que WhatsApp met dans le nom (« IMG-20260927-WA0003.jpg »).
+fn date_de_reception(date: &str, nom: &str) -> String {
+    let valable = date.len() >= 10
+        && date[..4].parse::<u32>().map(|a| a >= 2005).unwrap_or(false);
+    if valable {
+        return date.to_string();
+    }
+    for (i, _) in nom.match_indices("-20") {
+        let chiffres = &nom[i + 1..];
+        if chiffres.len() >= 12
+            && chiffres[..8].bytes().all(|b| b.is_ascii_digit())
+            && chiffres[8..].starts_with("-WA")
+        {
+            return format!("{}-{}-{} 00:00", &chiffres[..4], &chiffres[4..6], &chiffres[6..8]);
+        }
+    }
+    String::new()
 }
 
 /// Traduit la sortie du script de lecture. Séparée pour être testable sans
@@ -279,6 +333,12 @@ fn lire_sortie(sortie: &str) -> LectureTelephone {
                 if nom.is_empty() || nom.chars().any(char::is_control) {
                     continue;
                 }
+                // Seulement ce qui s'imprime : pas les installateurs, vidéos,
+                // notes vocales… qui encombraient la liste à l'essai.
+                if !imprimable(nom) {
+                    continue;
+                }
+                let date = date_de_reception(date.trim(), nom);
                 let taille: u64 = taille.trim().parse().unwrap_or(0);
                 let emplacement = Emplacement {
                     appareil: appareil.to_string(),
@@ -292,7 +352,7 @@ fn lire_sortie(sortie: &str) -> LectureTelephone {
                     nom: nom.to_string(),
                     genre: genre.to_string(),
                     taille_ko: taille.div_ceil(1024),
-                    date: date.trim().to_string(),
+                    date,
                     nouveau: false,
                     deja_ajoute: false,
                     coche: false,
@@ -348,11 +408,11 @@ fn script_copie(documents: &[DocumentTelephone], destination: &std::path::Path) 
                  $d = Descendre $stockage {dossier}\n\
                  if (-not $d) {{ continue }}\n\
                  foreach ($f in $d.Items()) {{\n\
-                     if ($f.Name -ne {nom}) {{ continue }}\n\
+                     if ((NomReel $f) -ne {nom}) {{ continue }}\n\
                      # 4 : sans fenêtre de progression ; 16 : oui à tout ;\n\
                      # 1024 : sans message d'erreur à l'écran.\n\
                      $destination.CopyHere($f, 1044)\n\
-                     $ok = Attendre (Join-Path $dossierCible $f.Name) $f.Size\n\
+                     $ok = Attendre (Join-Path $dossierCible {nom}) $f.Size\n\
                      break\n\
                  }}\n\
              }}\n\
@@ -612,6 +672,30 @@ mod tests {
         assert!(lecture2.documents[0].nouveau && lecture2.documents[1].nouveau);
         let deja = lecture2.documents.iter().find(|d| d.nom == "client1.pdf").unwrap();
         assert!(deja.deja_ajoute && !deja.coche && !deja.nouveau);
+    }
+
+    /// Constaté à l'essai : noms sans extension, dates au 30/12/1899, et des
+    /// installateurs au milieu des documents.
+    #[test]
+    fn ne_garde_que_l_imprimable_et_repare_les_dates() {
+        let sortie = fichier("GestionPhotocopie-MiseAJour (3).exe", "2026-09-27 10:00")
+            + &fichier("note.opus", "2026-09-27 10:00")
+            + &fichier("j5-email-1-hook.pdf", "1899-12-30 00:00")
+            + &fichier("IMG-20260927-WA0003.jpg", "1899-12-30 00:00")
+            + &fichier("Photo.HEIC", "2026-09-26 08:00");
+        let lecture = lire_sortie(&sortie);
+        let noms: Vec<&str> = lecture.documents.iter().map(|d| d.nom.as_str()).collect();
+        assert_eq!(noms, vec!["IMG-20260927-WA0003.jpg", "Photo.HEIC", "j5-email-1-hook.pdf"]);
+        assert_eq!(lecture.documents[0].date, "2026-09-27 00:00");
+        assert_eq!(lecture.documents[2].date, "");
+    }
+
+    #[test]
+    fn la_copie_cherche_le_nom_complet_avec_son_extension() {
+        let lecture = lire_sortie(&fichier("cv.pdf", "2026-09-27 10:00"));
+        let script = script_copie(&lecture.documents, std::path::Path::new("C:\\x"));
+        assert!(script.contains("(NomReel $f) -ne 'cv.pdf'"));
+        assert!(script.contains("Join-Path $dossierCible 'cv.pdf'"));
     }
 
     #[test]

@@ -3290,6 +3290,7 @@ async function afficherDocumentsUsb() {
   });
 
   ouvrirModal("modal-usb");
+  majBoutonUsb();
 }
 
 /// Le client a envoyé son document au gérant par WhatsApp : le téléphone
@@ -3320,14 +3321,10 @@ async function afficherDocumentsTelephone(options) {
   if (auto) {
     // Une clé USB déclenche aussi la détection : sans téléphone, silence.
     if (!lecture.telephones || !lecture.documents.length) return;
-    // VIE PRIVÉE. Le téléphone d'un client branché pour se recharger ne
-    // doit jamais étaler ses fichiers sur l'écran de la boutique. Seul le
-    // téléphone du gérant — celui depuis lequel un import a déjà été
-    // fait — ouvre la liste tout seul.
-    if (!lecture.connu) {
-      toast("Téléphone branché. Si c'est celui du gérant, appuyez sur 📱 pour voir ses fichiers WhatsApp.", "succes", 8000);
-      return;
-    }
+    // Ouverture automatique, sans rien toucher (demande du terrain). Un
+    // téléphone de client branché pour se recharger reste en « charge
+    // uniquement » : Windows n'y voit aucun fichier, rien ne s'affiche.
+    // Et seuls les 10 plus récents sont montrés (voir plus bas).
   }
   if (!lecture.telephones) {
     toast("Aucun téléphone branché n'est visible. " + conseil +
@@ -3352,7 +3349,7 @@ async function afficherDocumentsTelephone(options) {
   const liste = document.querySelector("#usb-liste");
   liste.innerHTML = "";
   // VIE PRIVÉE, leçon de la clé USB : ne pas étaler tout le téléphone à
-  // l'écran. Les nouveaux, plus les 5 plus récents ; le reste seulement si
+  // l'écran. Les nouveaux, plus les 10 plus récents ; le reste seulement si
   // le gérant le demande.
   let autresAffiches = 0;
   let caches = 0;
@@ -3360,7 +3357,7 @@ async function afficherDocumentsTelephone(options) {
     const li = document.createElement("li");
     if (!doc.nouveau) {
       autresAffiches += 1;
-      if (autresAffiches > 5) {
+      if (autresAffiches > 10) {
         li.hidden = true;
         li.classList.add("tel-ancien");
         caches += 1;
@@ -3379,15 +3376,8 @@ async function afficherDocumentsTelephone(options) {
     detail.className = "usb-detail";
     const taille =
       doc.taille_ko >= 1024 ? `${(doc.taille_ko / 1024).toFixed(1)} Mo` : `${doc.taille_ko} Ko`;
-    detail.textContent = [
-      doc.nouveau ? "🆕 Nouveau" : doc.deja_ajoute ? "✓ déjà ajouté" : "",
-      doc.genre,
-      doc.date,
-      doc.taille_ko ? taille : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    li.append(case_, etiquette, detail);
+    detail.textContent = [dateLisible(doc.date), doc.taille_ko ? taille : ""].filter(Boolean).join(" · ");
+    li.append(case_, pastilleRecence(doc), etiquette, detail);
     liste.appendChild(li);
   });
   if (caches) {
@@ -3403,6 +3393,51 @@ async function afficherDocumentsTelephone(options) {
     liste.appendChild(li);
   }
   ouvrirModal("modal-usb");
+  majBoutonUsb();
+}
+
+// Couleur selon l'ancienneté, pour voir d'un coup d'œil le fichier du
+// client qui attend : vert (moins de 30 min), jaune (aujourd'hui), gris
+// (plus ancien), rouge (déjà ajouté à la file une fois).
+function pastilleRecence(doc) {
+  const p = document.createElement("span");
+  p.className = "recence";
+  const quand = doc.date ? new Date(doc.date.replace(" ", "T")) : null;
+  const minutes = quand && !Number.isNaN(quand.getTime()) ? (Date.now() - quand.getTime()) / 60000 : null;
+  const aujourdhui = quand && quand.toDateString() === new Date().toDateString();
+  if (doc.deja_ajoute) {
+    p.classList.add("recence-deja");
+    p.textContent = "Déjà ajouté";
+  } else if (doc.nouveau || (minutes !== null && minutes < 30)) {
+    p.classList.add("recence-nouveau");
+    p.textContent = doc.nouveau ? "Nouveau" : "À l'instant";
+  } else if (aujourdhui) {
+    p.classList.add("recence-jour");
+    p.textContent = "Aujourd'hui";
+  } else {
+    p.classList.add("recence-ancien");
+    p.textContent = quand ? "Plus ancien" : "Date inconnue";
+  }
+  return p;
+}
+
+// « 2026-09-27 19:37 » → « 27/09 à 19:37 » (« aujourd'hui à 19:37 »).
+function dateLisible(date) {
+  if (!date) return "";
+  const [jour, heure] = date.split(" ");
+  const [a, m, j] = jour.split("-");
+  const d = new Date(Number(a), Number(m) - 1, Number(j));
+  const prefixe = d.toDateString() === new Date().toDateString() ? "aujourd'hui" : `${j}/${m}`;
+  return heure && heure !== "00:00" ? `${prefixe} à ${heure}` : prefixe;
+}
+
+// Le bouton dit combien de documents partiront : « Ajouter 2 documents ».
+function majBoutonUsb() {
+  const bouton = document.querySelector("#btn-usb-importer");
+  if (bouton.dataset.copie === "1") return;
+  const n = casesUsb().filter((c) => c.checked).length;
+  bouton.textContent = n ? `Ajouter ${n} document${n > 1 ? "s" : ""} à la file` : "Cochez un document";
+  bouton.disabled = n === 0;
 }
 
 function casesUsb() {
@@ -3415,10 +3450,13 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (c.closest("li").hidden) return;
       c.checked = true;
     });
+    majBoutonUsb();
   });
   document.querySelector("#btn-usb-rien").addEventListener("click", () => {
     casesUsb().forEach((c) => (c.checked = false));
+    majBoutonUsb();
   });
+  document.querySelector("#usb-liste").addEventListener("change", majBoutonUsb);
   document.querySelector("#usb-recherche").addEventListener("input", (ev) => {
     const terme = ev.target.value.trim().toLowerCase();
     casesUsb().forEach((c) => {
@@ -3434,12 +3472,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
     const bouton = document.querySelector("#btn-usb-importer");
     bouton.disabled = true;
-    const texteBouton = bouton.textContent;
+    bouton.dataset.copie = "1";
     try {
       let importes;
       if (modeListe === "telephone") {
         // La copie depuis un téléphone prend quelques secondes par fichier.
-        bouton.textContent = "Copie depuis le téléphone…";
+        bouton.textContent = `Copie de ${chemins.length} document${chemins.length > 1 ? "s" : ""} depuis le téléphone…`;
         importes = await invoke("importer_documents_telephone", { ids: chemins });
         if (importes < chemins.length) {
           toast(
@@ -3462,8 +3500,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     } catch (e) {
       toast(String(e), "attention", 9000);
     } finally {
-      bouton.disabled = false;
-      bouton.textContent = texteBouton;
+      delete bouton.dataset.copie;
+      majBoutonUsb();
     }
   });
 

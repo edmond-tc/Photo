@@ -1128,6 +1128,20 @@ fieldset {
   word-break: break-word;
 }
 
+.recence {
+  flex: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.recence-nouveau { background: #dff6dd; color: #0e5c1f; }
+.recence-jour { background: #fff4ce; color: #614300; }
+.recence-ancien { background: #ececec; color: #605e5c; }
+.recence-deja { background: #fde7e9; color: #a4262c; }
+.usb-liste li:has(.recence-nouveau) { background: #f3fbf2; }
+
 .usb-detail {
   font-size: 0.8rem;
   opacity: 0.7;
