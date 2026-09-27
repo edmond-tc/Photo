@@ -448,7 +448,10 @@ p { margin: 0; }
     return `<div class="segment" role="group">${options.map(([v, l]) =>
       `<button type="button" data-champ="${champ}" data-val="${v}" aria-pressed="${String(v) === String(valeur)}">${l}</button>`).join("")}</div>`;
   }
-  const vocalPossible = !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  // Dans l'application Android, c'est elle qui enregistre (plus fiable que
+  // le micro de la page) ; sur la page du PC, le navigateur s'en charge
+  // quand il le permet.
+  const vocalPossible = !!app || !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   function carte(d) {
     const pages = pagesChoisies(d);
     const info = d.pages ? `${d.pages} page${d.pages > 1 ? "s" : ""}` : (d.image ? "1 photo" : "pages comptées au guichet");
@@ -534,6 +537,14 @@ p { margin: 0; }
   // ─── Message vocal ───
   let enregistreur = null;
   async function demarrerVocal(d) {
+    if (app) {
+      let ok = false;
+      try { ok = app.vocalDemarrer(); } catch (_) {}
+      if (!ok) { alerteCourte("Autorisez le micro dans la fenêtre qui s'affiche, puis touchez ● à nouveau."); return; }
+      d.enreg = true;
+      enregistreur = { natif: true, doc: d, fin: setTimeout(() => { arreterVocal(d); }, 120000) };
+      return;
+    }
     try {
       const flux = await navigator.mediaDevices.getUserMedia({ audio: true });
       const morceaux = [];
@@ -555,7 +566,22 @@ p { margin: 0; }
     }
   }
   function arreterVocal(d) {
-    if (enregistreur && enregistreur.doc === d) { clearTimeout(enregistreur.fin); try { enregistreur.rec.stop(); } catch (_) {} }
+    if (!enregistreur || enregistreur.doc !== d) return;
+    clearTimeout(enregistreur.fin);
+    if (enregistreur.natif) {
+      enregistreur = null;
+      let url = "";
+      try { url = app.vocalArreter(); } catch (_) {}
+      d.enreg = false;
+      if (!url) { alerteCourte("Le message vocal n'a pas pu être enregistré. Réessayez."); rendreDocs(); return; }
+      fetch(url).then((r) => r.blob()).then((blob) => {
+        if (blob.size) d.vocal = { blob: new Blob([blob], { type: "audio/mp4" }), url: URL.createObjectURL(blob) };
+        rendreDocs();
+      }).catch(() => rendreDocs());
+      rendreDocs();
+      return;
+    }
+    try { enregistreur.rec.stop(); } catch (_) {}
   }
   function alerteCourte(texte) { const p = document.createElement("div"); p.className = "alerte"; p.textContent = texte; docsEl.prepend(p); setTimeout(() => p.remove(), 5000); }
 

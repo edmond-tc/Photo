@@ -7,6 +7,7 @@ import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaRecorder
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -71,6 +72,10 @@ class MainActivity : Activity() {
     private val partages = mutableListOf<Uri>()
     private var partagesLus = 0
 
+    /** Message vocal en cours d'enregistrement, et ceux déjà faits (servis sous /vocal/<n>). */
+    private var enregistreur: MediaRecorder? = null
+    private val vocaux = mutableListOf<java.io.File>()
+
     @Volatile private var liaison: Liaison? = null
     @Volatile private var adressePc: String? = null
     private val fermeture = Runnable { fermerLiaison() }
@@ -115,6 +120,9 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        enregistreur?.let { try { it.release() } catch (_: Exception) {} }
+        enregistreur = null
+        vocaux.forEach { it.delete() }
         principal.removeCallbacks(fermeture)
         liaison?.let { l -> executeur.execute { l.fermer() } }
         liaison = null
@@ -151,6 +159,11 @@ class MainActivity : Activity() {
                 when {
                     chemin == "/" || chemin == "/index.html" ->
                         WebResourceResponse("text/html", "utf-8", assets.open("index.html"))
+                    chemin.startsWith("/vocal/") -> {
+                        val fichier = chemin.removePrefix("/vocal/").toIntOrNull()?.let { vocaux.getOrNull(it) }
+                            ?: return WebResourceResponse("text/plain", "utf-8", 404, "Introuvable", null, null)
+                        WebResourceResponse("audio/mp4", null, fichier.inputStream())
+                    }
                     chemin.startsWith("/partage/") -> {
                         val uri = chemin.removePrefix("/partage/").toIntOrNull()?.let { partages.getOrNull(it) }
                             ?: return WebResourceResponse("text/plain", "utf-8", 404, "Introuvable", null, null)
@@ -226,6 +239,57 @@ class MainActivity : Activity() {
             }
         }
 
+        /**
+         * Commence un message vocal. Faux si le micro n'est pas encore
+         * autorisé : la demande s'affiche, le client touche de nouveau.
+         */
+        @JavascriptInterface
+        fun vocalDemarrer(): Boolean {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                principal.post { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), DEMANDE_MICRO) }
+                return false
+            }
+            return synchronized(vocaux) {
+                enregistreur?.let { try { it.release() } catch (_: Exception) {} }
+                val fichier = java.io.File(cacheDir, "vocal_${System.currentTimeMillis()}.m4a")
+                val r = nouvelEnregistreur()
+                try {
+                    r.setAudioSource(MediaRecorder.AudioSource.MIC)
+                    r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    r.setAudioSamplingRate(44100)
+                    r.setAudioEncodingBitRate(64000)
+                    r.setOutputFile(fichier.absolutePath)
+                    r.prepare()
+                    r.start()
+                    enregistreur = r
+                    vocaux.add(fichier)
+                    true
+                } catch (e: Exception) {
+                    journal("❌ Micro : ${e.message}")
+                    try { r.release() } catch (_: Exception) {}
+                    enregistreur = null
+                    false
+                }
+            }
+        }
+
+        /** Arrête le message vocal ; rend son adresse pour l'interface, ou "" en cas d'échec. */
+        @JavascriptInterface
+        fun vocalArreter(): String = synchronized(vocaux) {
+            val r = enregistreur ?: return ""
+            enregistreur = null
+            try {
+                r.stop()
+                "/vocal/${vocaux.size - 1}"
+            } catch (e: Exception) {
+                journal("❌ Micro : ${e.message}")
+                ""
+            } finally {
+                try { r.release() } catch (_: Exception) {}
+            }
+        }
+
         /** Documents reçus par « Partager » depuis la dernière demande. */
         @JavascriptInterface
         fun partages(): String {
@@ -245,6 +309,10 @@ class MainActivity : Activity() {
             return liste.toString()
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun nouvelEnregistreur(): MediaRecorder =
+        if (Build.VERSION.SDK_INT >= 31) MediaRecorder(this) else MediaRecorder()
 
     // ───────────────────────────── Liaison avec le PC ─────────────────────────────
 
@@ -335,6 +403,7 @@ class MainActivity : Activity() {
                 )
             }
             DEMANDE_MICRO -> {
+                // Demande venue du bouton vocal de l'application : le client touche de nouveau.
                 val demande = demandeMicro ?: return
                 demandeMicro = null
                 if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {

@@ -30,6 +30,8 @@
 
     <!-- Message vocal joint à un document (demandé seulement quand il sert). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Exigée par Android pour le micro d'une page affichée dans l'application. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-feature android:name="android.hardware.wifi.direct" android:required="true" />
