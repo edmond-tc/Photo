@@ -64,8 +64,13 @@ class MainActivity : Activity() {
         /** Adresse imaginaire, servie par l'application elle-même (voir [ClientWeb]). */
         private const val HOTE = "envoyeur.kiosque"
 
-        /** Sans envoi, le réseau est supprimé au bout de ce délai : le PC ne reste pas bloqué. */
-        private const val INACTIVITE_MAX_MS = 10 * 60 * 1000L
+        /**
+         * Sans signe de vie de l'interface (client parti), le réseau est
+         * supprimé au bout de ce délai : le PC ne reste pas bloqué. Tant que
+         * le client choisit ou envoie, l'interface le repousse
+         * (`garderLien`), même pour un très gros fichier.
+         */
+        private const val INACTIVITE_MAX_MS = 3 * 60 * 1000L
 
         /** Après l'envoi, le temps de voir « En impression » avant de libérer le PC. */
         private const val APRES_ENVOI_MS = 30 * 1000L
@@ -273,6 +278,16 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun demarrer() {
             principal.post { ouvrirLiaison() }
+        }
+
+        /** Le client est encore là (il choisit, ou un envoi avance) : garder le réseau. */
+        @JavascriptInterface
+        fun garderLien() {
+            principal.post {
+                if (adressePc == null) return@post
+                principal.removeCallbacks(fermeture)
+                principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
+            }
         }
 
         /** Envoi reçu par le PC : on le libère peu après pour le client suivant. */

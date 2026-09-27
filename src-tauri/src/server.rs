@@ -215,6 +215,8 @@ fn construire_router(app: AppHandle) -> Router {
 /// pour chaque réponse. N'ouvre rien de plus : tout téléphone relié au PC
 /// peut déjà ouvrir ces adresses.
 async fn autoriser_application(mut reponse: axum::response::Response) -> axum::response::Response {
+    // Toute réponse à un téléphone relié : le client est encore là.
+    crate::reception_directe::signaler_activite();
     let entetes = reponse.headers_mut();
     entetes.insert(
         axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
@@ -1525,6 +1527,7 @@ async fn ecrire_champ_fichier(
         };
         taille += morceau.len() as u64;
         *deja_recu += morceau.len() as u64;
+        crate::reception_directe::signaler_activite();
         if *deja_recu > budget {
             return Err(EchecLecture::TropGros);
         }

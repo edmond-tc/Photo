@@ -794,7 +794,18 @@ p { margin: 0; }
     }
   }
 
+  // Débit et temps restant, pour un gros fichier : « · 4,2 Mo/s, encore 40 s ».
+  let debutEnvoi = 0;
+  function vitesse(envoye, total) {
+    const s = (Date.now() - debutEnvoi) / 1000;
+    if (s < 2 || !envoye) return "";
+    const debit = envoye / s;
+    const reste = Math.round((total - envoye) / debit);
+    const resteTexte = reste >= 60 ? `${Math.floor(reste / 60)} min ${reste % 60} s` : `${reste} s`;
+    return ` · ${(debit / 1048576).toFixed(1).replace(".", ",")} Mo/s, encore ${resteTexte}`;
+  }
   function televerser(form) {
+    debutEnvoi = Date.now();
     return new Promise((ok, ko) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${baseUrl()}/envoyer`);
@@ -803,7 +814,8 @@ p { margin: 0; }
         if (!e.lengthComputable) return;
         const pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
         $("#barre").style.width = pct + "%";
-        $("#chiffres").textContent = `${pct} % · ${mo(e.loaded)} sur ${mo(e.total)}`;
+        $("#chiffres").textContent = `${pct} % · ${mo(e.loaded)} sur ${mo(e.total)}${vitesse(e.loaded, e.total)}`;
+        try { app && app.garderLien(); } catch (_) {}
       };
       xhr.upload.onload = () => { $("#chiffres").textContent = "Enregistrement par la boutique…"; };
       xhr.onload = () => {
@@ -871,6 +883,18 @@ p { margin: 0; }
     contexteAudio();
     if (!app) { try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (_) {} }
   }
+
+  // ─── Signe de vie ───
+  // Tant que le client choisit ou envoie, le PC et le téléphone gardent
+  // leur lien (sinon chacun le libère au bout de quelques minutes).
+  let dernierSigne = 0;
+  function signeDeVie() {
+    if (connexion.etat !== "ok" || Date.now() - dernierSigne < 20000) return;
+    dernierSigne = Date.now();
+    try { app && app.garderLien(); } catch (_) {}
+    fetch(`${baseUrl()}/infos`, { cache: "no-store" }).catch(() => {});
+  }
+  setInterval(() => { if (["accueil", "documents", "quand", "envoi"].includes(courant)) signeDeVie(); }, 5000);
 
   // ─── Reçu et suivi ───
   let suivi = null;

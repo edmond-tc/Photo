@@ -79,6 +79,26 @@ pub fn adresse_actuelle() -> Option<Ipv4Addr> {
 }
 
 /// Appelé par le serveur à chaque envoi réussi : le client est servi.
+/// Le client est là et agit : un morceau de fichier vient d'arriver, ou
+/// son application a donné signe de vie. Constaté à l'essai : un fichier
+/// de 209 Mo était encore à 13 % au bout de 2 minutes, et le PC, qui
+/// n'attendait qu'un envoi TERMINÉ, a quitté le téléphone en plein
+/// transfert.
+static DERNIERE_ACTIVITE: Mutex<Option<Instant>> = Mutex::new(None);
+
+pub fn signaler_activite() {
+    if let Ok(mut a) = DERNIERE_ACTIVITE.lock() {
+        *a = Some(Instant::now());
+    }
+}
+
+/// Pas de nouvelles du client depuis ce délai : il est parti.
+const ACTIVITE_RECENTE: Duration = Duration::from_secs(30);
+
+fn derniere_activite() -> Option<Instant> {
+    DERNIERE_ACTIVITE.lock().ok().and_then(|a| *a)
+}
+
 pub fn signaler_envoi() {
     if let Ok(mut d) = DERNIER_ENVOI.lock() {
         *d = Some(Instant::now());
@@ -531,6 +551,9 @@ fn un_tour(
     if let Ok(mut d) = DERNIER_ENVOI.lock() {
         *d = None;
     }
+    if let Ok(mut a) = DERNIERE_ACTIVITE.lock() {
+        *a = None;
+    }
     let avant = adresses_ipv4();
     if let Err(e) = client.rejoindre(&cible.ssid, &reglages.mot_de_passe, cible.wpa3) {
         noter(format!("❌ Connexion refusée à « {} » : {e}", cible.ssid));
@@ -647,10 +670,17 @@ fn un_tour(
         if coupe || client.connecte_a().as_deref() != Some(cible.ssid.as_str()) {
             break "le téléphone a fermé son réseau";
         }
+        // Un envoi en cours (même long) ou un client qui choisit encore ses
+        // documents garde le PC ; il ne part qu'après un vrai silence.
+        let activite = derniere_activite();
+        let actif = activite.is_some_and(|t| t.elapsed() < ACTIVITE_RECENTE);
+        let silencieux_depuis = activite.map_or(connecte_depuis.elapsed(), |t| {
+            t.elapsed().min(connecte_depuis.elapsed())
+        });
         let dernier = DERNIER_ENVOI.lock().ok().and_then(|d| *d);
         match dernier {
-            Some(t) if t.elapsed() >= CALME_APRES_ENVOI => break "client servi",
-            None if connecte_depuis.elapsed() >= ATTENTE_PREMIER_ENVOI => {
+            Some(t) if t.elapsed() >= CALME_APRES_ENVOI && !actif => break "client servi",
+            None if !actif && silencieux_depuis >= ATTENTE_PREMIER_ENVOI => {
                 break "aucun envoi en 2 minutes"
             }
             _ => {}
