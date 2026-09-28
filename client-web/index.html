@@ -144,6 +144,11 @@ p { margin: 0; }
 .bandeau.bloquant .btn { background: var(--erreur); color: #fff; }
 .bandeau.doux { background: var(--attente-doux); color: var(--attente); }
 .bandeau.doux .btn { background: var(--surface); color: var(--encre); padding: 10px 14px; font-size: 0.95rem; }
+.carte-decouvrir { border: 1px solid var(--trait); border-radius: 16px; overflow: hidden; background: var(--surface); display: grid; }
+.carte-decouvrir img { width: 100%; max-height: 220px; object-fit: cover; display: block; background: var(--surface-2); }
+.carte-decouvrir .corps { padding: 14px; display: grid; gap: 8px; }
+.carte-decouvrir h2 { font-size: 1.1rem; }
+.carte-decouvrir .genre { font-size: 0.75rem; color: var(--discret); text-transform: uppercase; letter-spacing: 0.06em; }
 .pied { text-align: center; font-size: 0.8rem; color: var(--discret); padding: 8px 18px 18px; }
 .pied a { color: inherit; }
 </style>
@@ -200,7 +205,14 @@ p { margin: 0; }
       </div>
       <p class="aide">Photos, PDF, Word… Plusieurs fichiers à la fois.</p>
       <button class="lien" id="btn-modifier-profil">Modifier mon prénom ou mon numéro</button>
+      <button class="btn second" data-aller="decouvrir" style="margin-top:auto">✨ Découvrir</button>
     </div>
+  </section>
+
+  <!-- Découvrir : projets et partenaires, seulement si le client entre ici -->
+  <section class="ecran" data-ecran="decouvrir" hidden>
+    <div class="entete"><button class="retour" data-aller="accueil" aria-label="Retour">‹</button><h1>Découvrir</h1></div>
+    <div class="contenu" id="decouvrir-liste"><p class="aide">Chargement…</p></div>
   </section>
 
   <!-- Documents et options -->
@@ -347,7 +359,7 @@ p { margin: 0; }
   };
   // Bouton « retour » du téléphone : écran précédent, ou quitter.
   window.kiosque.retour = () => {
-    const precedent = { documents: "accueil", quand: "documents", profil: profil().prenom ? "accueil" : null }[courant];
+    const precedent = { documents: "accueil", quand: "documents", decouvrir: "accueil", profil: profil().prenom ? "accueil" : null }[courant];
     if (!precedent || envoiEnCours) return false;
     aller(precedent);
     return true;
@@ -382,7 +394,13 @@ p { margin: 0; }
     try {
       const r = await fetch(`${baseUrl()}/infos`, { cache: "no-store" });
       const infos = await r.json();
-      if (infos.tarifs && Object.keys(infos.tarifs).length) { tarifs = Object.assign(tarifs, infos.tarifs); ecrire("kiosque.tarifs", infos.tarifs); }
+      // Seulement des nombres : ce qui vient du réseau n'est jamais recopié
+      // tel quel dans l'écran.
+      const recus = {};
+      for (const [cle, v] of Object.entries(infos.tarifs || {})) {
+        if (/^[a-z_]{1,40}$/.test(cle) && Number.isFinite(Number(v))) recus[cle] = Math.max(0, Math.round(Number(v)));
+      }
+      if (Object.keys(recus).length) { tarifs = Object.assign(tarifs, recus); ecrire("kiosque.tarifs", recus); }
       if (infos.boutique) { ecrire("kiosque.boutique", infos.boutique); afficherBoutique(); }
       if (courant === "documents") rendreDocs();
     } catch (_) {}
@@ -398,6 +416,7 @@ p { margin: 0; }
     if (id === "accueil") { $$("[data-prenom]").forEach((n) => (n.textContent = profil().prenom || "")); demarrerConnexion(); }
     if (id === "documents") { rendreDocs(); demarrerConnexion(); }
     if (id === "quand") { remplirHeures(); rendreRecap(); }
+    if (id === "decouvrir") chargerDecouvrir();
   }
   document.addEventListener("click", (ev) => { const c = ev.target.closest("[data-aller]"); if (c) aller(c.dataset.aller); });
   $$("[data-mode-app]").forEach((e) => (e.hidden = !app));
@@ -882,6 +901,39 @@ p { margin: 0; }
   function amorcerSon() {
     contexteAudio();
     if (!app) { try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (_) {} }
+  }
+
+  // ─── Découvrir ───
+  // Projets du porteur du projet et partenaires, gérés depuis son tableau
+  // de bord (admin, /decouvrir). Lu quand le téléphone a internet, gardé
+  // pour quand il n'en a pas. Rien ne s'affiche ailleurs dans l'application.
+  const ADRESSE_DECOUVRIR = "https://photocopie-admin.atinzed2.workers.dev/decouvrir.json";
+  function lienSur(lien) {
+    return /^https:\/\/\S+$/i.test(lien || "") || /^tel:\+?[0-9]{6,20}$/i.test(lien || "") ? lien : null;
+  }
+  function rendreDecouvrir(cartes) {
+    const liste = $("#decouvrir-liste");
+    if (!cartes.length) { liste.innerHTML = `<p class="aide">Rien pour le moment. Revenez bientôt.</p>`; return; }
+    liste.innerHTML = cartes.map((c) => {
+      const lien = lienSur(c.lien);
+      const image = /^https:\/\//i.test(c.image_url || "") ? `<img src="${echapper(c.image_url)}" alt="" loading="lazy">` : "";
+      return `<article class="carte-decouvrir">${image}<div class="corps">
+        <span class="genre">${c.genre === "partenaire" ? "Partenaire" : "À découvrir"}</span>
+        <h2>${echapper(c.titre || "")}</h2>
+        ${c.texte ? `<p>${echapper(c.texte)}</p>` : ""}
+        ${lien ? `<a class="btn" href="${echapper(lien)}" target="_blank" rel="noopener">${echapper(c.bouton || "En savoir plus")}</a>` : ""}
+      </div></article>`;
+    }).join("");
+  }
+  async function chargerDecouvrir() {
+    rendreDecouvrir(lire("kiosque.decouvrir", []));
+    try {
+      const r = await fetch(ADRESSE_DECOUVRIR, { cache: "no-store" });
+      const { cartes } = await r.json();
+      if (Array.isArray(cartes)) { ecrire("kiosque.decouvrir", cartes); rendreDecouvrir(cartes); }
+    } catch (_) {
+      if (!lire("kiosque.decouvrir", []).length) $("#decouvrir-liste").innerHTML = `<p class="aide">Ouvrez cette page quand votre téléphone a internet.</p>`;
+    }
   }
 
   // ─── Signe de vie ───

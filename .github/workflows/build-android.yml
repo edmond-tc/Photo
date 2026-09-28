@@ -28,7 +28,23 @@ jobs:
         with:
           gradle-version: "8.14.3"
 
+      # Clé de publication secrète (voir android/app/build.gradle.kts). Sans
+      # les secrets, l'APK est signé avec la clé d'essai, comme avant.
+      - name: Préparer la clé de publication
+        env:
+          CLE_B64: ${{ secrets.ENVOYEUR_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$CLE_B64" ]; then
+            echo "$CLE_B64" | base64 -d > "$RUNNER_TEMP/envoyeur-publication.jks"
+            echo "ENVOYEUR_KEYSTORE=$RUNNER_TEMP/envoyeur-publication.jks" >> "$GITHUB_ENV"
+            echo "Clé de publication utilisée."
+          else
+            echo "::warning::Secrets ENVOYEUR_KEYSTORE_B64 absents : APK signé avec la clé d'ESSAI."
+          fi
+
       - name: Compiler l'envoyeur (APK)
+        env:
+          ENVOYEUR_KEYSTORE_MDP: ${{ secrets.ENVOYEUR_KEYSTORE_MDP }}
         run: gradle -p android assembleRelease --no-daemon
 
       # Même stockage que l'installateur Windows : la page publique

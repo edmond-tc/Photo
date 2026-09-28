@@ -14,8 +14,8 @@ android {
         // choisis, sans fenêtre de confirmation.
         minSdk = 29
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.2.10"
+        versionCode = 13
+        versionName = "0.2.11"
     }
 
     // L'écran de l'application est l'interface web du client, la même que
@@ -27,6 +27,19 @@ android {
     }
 
     signingConfigs {
+        // Clé de PUBLICATION, secrète : jamais dans le dépôt. Le workflow
+        // de construction la reçoit des secrets GitHub
+        // (ENVOYEUR_KEYSTORE_B64, ENVOYEUR_KEYSTORE_MDP) et la dépose à
+        // l'endroit indiqué par ENVOYEUR_KEYSTORE.
+        val clePublication = System.getenv("ENVOYEUR_KEYSTORE")
+        if (!clePublication.isNullOrBlank() && file(clePublication).exists()) {
+            create("publication") {
+                storeFile = file(clePublication)
+                storePassword = System.getenv("ENVOYEUR_KEYSTORE_MDP")
+                keyAlias = "envoyeur"
+                keyPassword = System.getenv("ENVOYEUR_KEYSTORE_MDP")
+            }
+        }
         create("essai") {
             // Clé d'ESSAI, publique dans le dépôt : elle permet d'installer
             // les versions successives l'une sur l'autre pendant les tests.
@@ -41,7 +54,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("essai")
+            signingConfig = signingConfigs.findByName("publication") ?: signingConfigs.getByName("essai")
         }
     }
 

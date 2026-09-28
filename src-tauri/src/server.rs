@@ -2438,7 +2438,11 @@ mod tests {
         // Ni le PC ni le téléphone n'ont internet ; et iOS refuse d'afficher
         // un portail de plus de ~128 Ko.
         assert!(INTERFACE_CLIENT.len() < 100 * 1024);
-        assert!(!INTERFACE_CLIENT.contains("https://"));
+        // Seule adresse internet : l'espace « Découvrir », lu seulement quand
+        // le client y entre et que son téléphone a internet.
+        let hors_decouvrir = INTERFACE_CLIENT.replace("https://photocopie-admin.atinzed2.workers.dev/decouvrir.json", "");
+        assert!(!hors_decouvrir.contains("\"https://"), "aucune autre ressource en ligne");
+        assert!(!INTERFACE_CLIENT.contains("<script src"));
         assert!(!INTERFACE_CLIENT.contains("<link"));
         assert!(INTERFACE_CLIENT.contains("/envoyer"));
     }

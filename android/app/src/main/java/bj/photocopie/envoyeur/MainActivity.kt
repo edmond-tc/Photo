@@ -233,9 +233,20 @@ class MainActivity : Activity() {
             }
         }
 
-        // L'interface ne quitte jamais son écran.
-        override fun shouldOverrideUrlLoading(view: WebView, requete: WebResourceRequest) =
-            requete.url.host != HOTE
+        // L'interface ne quitte jamais son écran : un lien vers ailleurs
+        // (WhatsApp, un site de l'espace « Découvrir », un appel) s'ouvre
+        // dans l'application qui convient.
+        override fun shouldOverrideUrlLoading(view: WebView, requete: WebResourceRequest): Boolean {
+            if (requete.url.host == HOTE) return false
+            val schema = requete.url.scheme.orEmpty()
+            if (schema == "https" || schema == "tel") {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, requete.url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (_: ActivityNotFoundException) {
+                }
+            }
+            return true
+        }
     }
 
     private inner class ChromeWeb : WebChromeClient() {

@@ -374,6 +374,7 @@ async function pageAccueil(env) {
       <a class="btn secondaire" href="/parametres">Paramètres</a>
       <a class="btn secondaire" href="/telecharger" target="_blank">Page de téléchargement ↗</a>
       <a class="btn secondaire" href="/nouveautes">Nouveautés</a>
+      <a class="btn secondaire" href="/decouvrir">Découvrir</a>
     </div>
     ${
       demandes.length
@@ -705,6 +706,63 @@ async function pageRenouveler(env, { envoye, erreur } = {}) {
   );
 }
 
+/// Seuls les liens qu'un client peut ouvrir sans risque : un site en
+/// https, WhatsApp, un appel. Tout le reste est refusé.
+function lienSur(lien) {
+  if (/^https:\/\/[^\s]+$/i.test(lien)) return lien;
+  if (/^tel:\+?[0-9 ]{6,20}$/i.test(lien)) return lien.replace(/\s/g, "");
+  return null;
+}
+
+async function pageDecouvrir(env) {
+  let cartes = [];
+  try {
+    ({ results: cartes } = await env.DB.prepare(`SELECT * FROM decouvrir ORDER BY genre = 'partenaire', ordre, id DESC`).all());
+  } catch {
+    cartes = [];
+  }
+  const lignes = cartes
+    .map(
+      (c) => `<div class="carte" style="padding:0.75rem; ${c.actif ? "" : "opacity:0.5"}">
+        <strong>${echapper(c.titre)}</strong>
+        <span style="font-size:0.75rem; color:#605e5c">${c.genre === "partenaire" ? "Partenaire" : "Mon projet"} · ordre ${c.ordre} · ${c.actif ? "visible" : "masquée"}</span>
+        ${c.texte ? `<p style="font-size:0.85rem; margin:0.3rem 0 0">${echapper(c.texte)}</p>` : ""}
+        ${c.lien ? `<p style="font-size:0.8rem; margin:0.2rem 0 0">Lien : ${echapper(c.lien)}</p>` : ""}
+        <div style="display:flex; gap:0.4rem; margin-top:0.4rem">
+          <form method="POST" action="/decouvrir/${c.id}/basculer"><button type="submit" class="secondaire" style="font-size:0.8rem; padding:0.3rem 0.6rem">${c.actif ? "Masquer" : "Afficher"}</button></form>
+          <form method="POST" action="/decouvrir/${c.id}/supprimer"><button type="submit" class="secondaire" style="font-size:0.8rem; padding:0.3rem 0.6rem">Supprimer</button></form>
+        </div>
+      </div>`
+    )
+    .join("");
+  return page(
+    "Découvrir",
+    `<div class="carte">
+      <p><a href="/">&larr; Retour</a></p>
+      <h1>Espace « Découvrir »</h1>
+      <p style="font-size:0.85rem; color:#605e5c">
+        Ce que voient les clients dans l'application Envoyeur Kiosque, SEULEMENT
+        quand ils touchent « Découvrir » (jamais pendant un envoi). Vos projets
+        passent en premier, puis les partenaires. Les changements arrivent
+        chez les clients dès que leur téléphone a internet.
+      </p>
+      <form method="POST" action="/decouvrir">
+        <label>Titre <input type="text" name="titre" required maxlength="80" /></label>
+        <label>Texte court <textarea name="texte" rows="2" maxlength="400"></textarea></label>
+        <label>Image (adresse https, facultatif) <input type="url" name="image_url" placeholder="https://…" /></label>
+        <label>Lien du bouton <input type="text" name="lien" placeholder="https://wa.me/229… ou tel:+229…" /></label>
+        <label>Texte du bouton <input type="text" name="bouton" maxlength="30" placeholder="Écrire sur WhatsApp" /></label>
+        <label>Type
+          <select name="genre"><option value="projet">Mon projet</option><option value="partenaire">Partenaire (publicité)</option></select>
+        </label>
+        <label>Ordre (plus petit = plus haut) <input type="number" name="ordre" value="0" /></label>
+        <button type="submit">Ajouter</button>
+      </form>
+    </div>
+    ${lignes}`
+  );
+}
+
 async function pageNouveautes(env) {
   const { results: nouveautes } = await env.DB.prepare(
     `SELECT * FROM nouveautes ORDER BY created_at DESC`
@@ -1012,6 +1070,7 @@ async function router(request, env) {
   "/telecharger/leger",
   "/telecharger/apk",
   "/app",
+  "/decouvrir.json",
   "/renouveler",
 ];
     if (!env.ADMIN_PASSWORD && !PAGES_PUBLIQUES_SANS_MOT_DE_PASSE.includes(pathname)) {
@@ -1124,6 +1183,26 @@ async function router(request, env) {
       // Page publique de téléchargement — pour n'importe quel gérant, sans
       // compte ni mot de passe, sans avoir besoin d'accéder au dépôt GitHub
       // (privé) où est développé le code.
+      // Espace « Découvrir » de l'application : cartes actives, pour tous.
+      if (pathname === "/decouvrir.json" && method === "GET") {
+        let cartes = [];
+        try {
+          const { results } = await env.DB.prepare(
+            `SELECT id, titre, texte, image_url, lien, bouton, genre FROM decouvrir
+             WHERE actif = 1 ORDER BY genre = 'partenaire', ordre, id DESC LIMIT 30`
+          ).all();
+          cartes = results;
+        } catch {
+          cartes = [];
+        }
+        return new Response(JSON.stringify({ cartes }), {
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            // L'application lit ce fichier depuis sa propre page.
+            "access-control-allow-origin": "*",
+          },
+        });
+      }
       if (pathname === "/app" && method === "GET") {
         const objetApk = await env.TELECHARGEMENTS.head(CLE_APK);
         // Numéro WhatsApp de la boutique, mis dans le QR par le logiciel du PC.
@@ -1416,6 +1495,43 @@ async function router(request, env) {
           .bind(id)
           .run();
         return new Response(null, { status: 302, headers: { Location: `/boutiques/${id}` } });
+      }
+
+      if (pathname === "/decouvrir" && method === "GET") {
+        return new Response(await pageDecouvrir(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      if (pathname === "/decouvrir" && method === "POST") {
+        const d = await request.formData();
+        const titre = borner(d.get("titre"), 80);
+        if (!titre) return new Response("Titre obligatoire.", { status: 400 });
+        const lien = lienSur(borner(d.get("lien"), 300));
+        const image = /^https:\/\//i.test(borner(d.get("image_url"), 500)) ? borner(d.get("image_url"), 500) : null;
+        await env.DB.prepare(
+          `INSERT INTO decouvrir (titre, texte, image_url, lien, bouton, genre, ordre) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+          .bind(
+            titre,
+            borner(d.get("texte"), 400) || null,
+            image,
+            lien,
+            borner(d.get("bouton"), 30) || null,
+            d.get("genre") === "partenaire" ? "partenaire" : "projet",
+            Number.parseInt(d.get("ordre"), 10) || 0
+          )
+          .run();
+        return new Response(null, { status: 302, headers: { Location: "/decouvrir" } });
+      }
+      const matchDecouvrir = pathname.match(/^\/decouvrir\/(\d+)\/(supprimer|basculer)$/);
+      if (matchDecouvrir && method === "POST") {
+        const [, id, action] = matchDecouvrir;
+        await env.DB.prepare(
+          action === "supprimer"
+            ? `DELETE FROM decouvrir WHERE id = ?`
+            : `UPDATE decouvrir SET actif = 1 - actif WHERE id = ?`
+        )
+          .bind(id)
+          .run();
+        return new Response(null, { status: 302, headers: { Location: "/decouvrir" } });
       }
 
       if (pathname === "/nouveautes" && method === "GET") {
