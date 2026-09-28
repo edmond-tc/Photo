@@ -101,10 +101,15 @@ class Liaison(
     private fun creerReseau(): String? {
         supprimerReseau()
         val suffixe = (1..4).map { "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".random() }.joinToString("")
-        val nom = Reglages.PREFIXE_RESEAU + suffixe
+        // Pour le kiosque où se trouve le client (balise entendue) : seul ce
+        // kiosque-là le rejoindra. Sans balise : réseau « sans numéro ».
+        val kiosque = Reglages.kiosqueRecent(ctx)
+        val nom = Reglages.PREFIXE_RESEAU + (kiosque?.let { "$it-" } ?: "") + suffixe
+        val motDePasse = kiosque?.let { Reglages.motDePasseKiosque(it) } ?: Reglages.motDePasse(ctx)
+        if (kiosque != null) dire("🏷 Réseau pour le kiosque $kiosque.")
         val config = WifiP2pConfig.Builder()
             .setNetworkName(nom)
-            .setPassphrase(Reglages.motDePasse(ctx))
+            .setPassphrase(motDePasse)
             // 2,4 GHz : toutes les cartes Wi-Fi des PC, même anciennes, le voient.
             .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_2GHZ)
             .build()

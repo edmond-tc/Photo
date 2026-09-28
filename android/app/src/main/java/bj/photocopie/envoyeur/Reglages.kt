@@ -38,6 +38,34 @@ object Reglages {
      */
     const val ABSENCE_AVANT_NOUVELLE_PROPOSITION_MS = 30 * 60 * 1000L
 
+    /**
+     * Un code par kiosque (voir `reception_directe.rs`) : la balise donne le
+     * numéro du kiosque où se trouve le client ; le réseau est créé pour ce
+     * kiosque, avec son mot de passe, et le kiosque voisin l'ignore.
+     */
+    const val SECRET_KIOSQUE = "photocopie-benin/kiosque/v1/8d41c7e2b9f05a36"
+
+    /** Balise entendue depuis moins longtemps : le client est à ce kiosque. */
+    private const val KIOSQUE_RECENT_MS = 10 * 60 * 1000L
+
+    fun motDePasseKiosque(numero: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest("$SECRET_KIOSQUE:$numero".toByteArray(Charsets.UTF_8))
+            .take(8)
+            .joinToString("") { "%02x".format(it) }
+
+    fun noterKiosque(ctx: Context, numero: String, quand: Long) {
+        prefs(ctx).edit().putString("kiosque", numero).putLong("kiosque_quand", quand).apply()
+    }
+
+    /** Numéro du kiosque entendu récemment, ou null (réseau « sans numéro »). */
+    fun kiosqueRecent(ctx: Context): String? {
+        val p = prefs(ctx)
+        val quand = p.getLong("kiosque_quand", 0L)
+        if (System.currentTimeMillis() - quand > KIOSQUE_RECENT_MS) return null
+        return p.getString("kiosque", null)?.takeIf { it.length == 6 }
+    }
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("reglages", Context.MODE_PRIVATE)
 
     fun motDePasse(ctx: Context): String =

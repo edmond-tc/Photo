@@ -67,6 +67,14 @@ class BalayageRecepteur : BroadcastReceiver() {
             intent.getParcelableArrayListExtra(BluetoothLeScanner.EXTRA_LIST_SCAN_RESULT)
         }.orEmpty()
         val meilleur = resultats.maxOfOrNull { it.rssi } ?: return
+        // Numéro du kiosque le plus proche (octets après « KQ » dans la balise).
+        resultats.maxByOrNull { it.rssi }
+            ?.scanRecord?.getManufacturerSpecificData(Reglages.FABRICANT_BLE)
+            ?.takeIf { it.size >= 5 && it[0] == 'K'.code.toByte() && it[1] == 'Q'.code.toByte() }
+            ?.let { d ->
+                val numero = (2..4).joinToString("") { "%02X".format(d[it]) }
+                Reglages.noterKiosque(ctx, numero, System.currentTimeMillis())
+            }
         val maintenant = System.currentTimeMillis()
         Reglages.noterSignal(ctx, meilleur, maintenant)
 

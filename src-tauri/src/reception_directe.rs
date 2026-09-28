@@ -141,13 +141,16 @@ pub fn choisir<'a>(
     a_l_ecart: &dyn Fn(&str) -> bool,
     ignorer: &[String],
     fond: &HashSet<String>,
+    mon_numero: &str,
 ) -> Option<&'a Reseau> {
     reseaux
         .iter()
         .filter(|r| r.protege && !r.connu && r.signal >= seuil && !r.ssid.is_empty())
         .filter(|r| est_envoyeur(&r.ssid) || !fond.contains(&r.ssid))
+        // Le téléphone d'un client qui envoie à un AUTRE kiosque.
+        .filter(|r| kiosque_du_reseau(&r.ssid).is_none_or(|n| n == mon_numero))
         .filter(|r| !a_l_ecart(&r.ssid) && !ignorer.iter().any(|i| i == &r.ssid))
-        .max_by_key(|r| (est_envoyeur(&r.ssid), r.signal))
+        .max_by_key(|r| (kiosque_du_reseau(&r.ssid).is_some(), est_envoyeur(&r.ssid), r.signal))
 }
 
 /// Temps laissé à une connexion. Un réseau qui n'est pas notre envoyeur a
@@ -169,6 +172,51 @@ pub const PREFIXE_ENVOYEUR: &str = "DIRECT-KQ-";
 
 pub fn est_envoyeur(ssid: &str) -> bool {
     ssid.starts_with(PREFIXE_ENVOYEUR)
+}
+
+// ─────────────── Un code par kiosque ───────────────
+//
+// Chaque PC a son numéro (6 caractères), qu'il émet dans sa balise
+// Bluetooth. Le téléphone entend la balise du guichet où il se trouve et
+// crée son réseau POUR CE KIOSQUE : « DIRECT-KQ-3FA92C-XXXX », avec un mot
+// de passe propre à ce kiosque. Un kiosque voisin ne le rejoint donc
+// jamais, et le mot de passe commun « kiosque2026 » ne sert plus qu'aux
+// téléphones qui n'ont pas entendu de balise.
+//
+// Le mot de passe est dérivé du numéro et d'un secret partagé avec
+// l'application (voir `Reglages.kt`) : il sépare les kiosques ; il n'est
+// pas un verrou contre quelqu'un qui démonterait l'application.
+
+pub const SECRET_KIOSQUE: &str = "photocopie-benin/kiosque/v1/8d41c7e2b9f05a36";
+
+pub fn mot_de_passe_kiosque(numero: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let empreinte = Sha256::digest(format!("{SECRET_KIOSQUE}:{numero}"));
+    empreinte.iter().take(8).map(|o| format!("{o:02x}")).collect()
+}
+
+/// Le numéro de kiosque dans le nom d'un réseau d'envoyeur, s'il y en a un.
+pub fn kiosque_du_reseau(ssid: &str) -> Option<&str> {
+    let reste = ssid.strip_prefix(PREFIXE_ENVOYEUR)?;
+    let (numero, suite) = reste.split_once('-')?;
+    (numero.len() == 6
+        && numero.bytes().all(|b| b.is_ascii_digit() || (b'A'..=b'F').contains(&b))
+        && !suite.is_empty())
+    .then_some(numero)
+}
+
+/// Numéro de ce kiosque, créé une fois pour toutes au premier besoin.
+pub fn numero_kiosque(app: &AppHandle) -> String {
+    let state = app.state::<crate::db::DbState>();
+    let Ok(conn) = state.0.lock() else {
+        return "000000".to_string();
+    };
+    if let Some(n) = crate::db::get_setting(&conn, "kiosque_numero").filter(|n| n.len() == 6) {
+        return n;
+    }
+    let n = format!("{:06X}", rand::random::<u32>() & 0x00FF_FFFF);
+    let _ = crate::db::set_setting(&conn, "kiosque_numero", &n);
+    n
 }
 
 /// Port où le PC annonce sa présence sur le réseau du client : l'envoyeur
@@ -539,7 +587,8 @@ fn un_tour(
         appris
     });
     let a_l_ecart = |ssid: &str| mis_a_l_ecart.contains_key(ssid);
-    let Some(cible) = choisir(&reseaux, reglages.seuil, &a_l_ecart, &ignorer, fond).cloned() else {
+    let mon_numero = numero_kiosque(app);
+    let Some(cible) = choisir(&reseaux, reglages.seuil, &a_l_ecart, &ignorer, fond, &mon_numero).cloned() else {
         return;
     };
 
@@ -555,7 +604,12 @@ fn un_tour(
         *a = None;
     }
     let avant = adresses_ipv4();
-    if let Err(e) = client.rejoindre(&cible.ssid, &reglages.mot_de_passe, cible.wpa3) {
+    let mot_de_passe = if kiosque_du_reseau(&cible.ssid).is_some() {
+        mot_de_passe_kiosque(&mon_numero)
+    } else {
+        reglages.mot_de_passe.clone()
+    };
+    if let Err(e) = client.rejoindre(&cible.ssid, &mot_de_passe, cible.wpa3) {
         noter(format!("❌ Connexion refusée à « {} » : {e}", cible.ssid));
         mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
         return;
@@ -1032,16 +1086,16 @@ mod tests {
         let mut box_maison = r("Celtiis_bfbd", 99);
         box_maison.connu = true;
         let reseaux = vec![box_maison, r("DIRECT-KQ-K4G7", 80)];
-        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &HashSet::new()).unwrap().ssid, "DIRECT-KQ-K4G7");
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &HashSet::new(), "3FA92C").unwrap().ssid, "DIRECT-KQ-K4G7");
         let mut seul = r("Celtiis_bfbd", 99);
         seul.connu = true;
-        assert!(choisir(&[seul], 60, &|_| false, &[], &HashSet::new()).is_none());
+        assert!(choisir(&[seul], 60, &|_| false, &[], &HashSet::new(), "3FA92C").is_none());
     }
 
     #[test]
     fn prend_l_envoyeur_le_plus_fort_au_dessus_du_seuil() {
         let reseaux = vec![r("DIRECT-KQ-AAAA", 55), r("DIRECT-KQ-BBBB", 92), r("DIRECT-KQ-CCCC", 71)];
-        let choisi = choisir(&reseaux, 60, &|_| false, &[], &HashSet::new()).unwrap();
+        let choisi = choisir(&reseaux, 60, &|_| false, &[], &HashSet::new(), "3FA92C").unwrap();
         assert_eq!(choisi.ssid, "DIRECT-KQ-BBBB");
     }
 
@@ -1052,7 +1106,7 @@ mod tests {
         ouvert.ssid = "DIRECT-KQ-OUVE".into();
         let reseaux = vec![ouvert, r("DIRECT-KQ-FAIB", 40), r("DIRECT-KQ-DEJA", 95), r("DIRECT-KQ-NOUS", 98)];
         let a_l_ecart = |s: &str| s == "DIRECT-KQ-DEJA";
-        assert!(choisir(&reseaux, 60, &a_l_ecart, &["DIRECT-KQ-NOUS".to_string()], &HashSet::new()).is_none());
+        assert!(choisir(&reseaux, 60, &a_l_ecart, &["DIRECT-KQ-NOUS".to_string()], &HashSet::new(), "3FA92C").is_none());
     }
 
     /// Constaté à l'essai : le PC perdait son temps sur les box et partages
@@ -1064,15 +1118,41 @@ mod tests {
             .map(String::from)
             .collect();
         let voisins = vec![r("TECNO SPARK 6 Go", 95), r("HUAWEI-5G-2WdT", 89), r("CPE_R0516_3F92", 82)];
-        assert!(choisir(&voisins, 60, &|_| false, &[], &fond).is_none());
+        assert!(choisir(&voisins, 60, &|_| false, &[], &fond, "3FA92C").is_none());
         // L'envoyeur Android passe toujours, même devant un partage plus fort.
         let reseaux = vec![r("iPhone de Koffi", 95), r("DIRECT-KQ-7H2M", 70)];
-        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &fond).unwrap().ssid, "DIRECT-KQ-7H2M");
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &fond, "3FA92C").unwrap().ssid, "DIRECT-KQ-7H2M");
         // Un partage de connexion apparu depuis (iPhone au guichet) est tenté.
         let reseaux = vec![r("TECNO SPARK 6 Go", 95), r("iPhone de Koffi", 80)];
-        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &fond).unwrap().ssid, "iPhone de Koffi");
+        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &fond, "3FA92C").unwrap().ssid, "iPhone de Koffi");
         // Et jamais sous le seuil.
-        assert!(choisir(&[r("iPhone de Koffi", 50)], 60, &|_| false, &[], &fond).is_none());
+        assert!(choisir(&[r("iPhone de Koffi", 50)], 60, &|_| false, &[], &fond, "3FA92C").is_none());
+    }
+
+    /// Deux kiosques voisins : chacun ne rejoint que les téléphones qui lui
+    /// envoient, et ceux qui n'ont entendu aucune balise (réseau sans numéro).
+    #[test]
+    fn chaque_kiosque_ne_rejoint_que_ses_clients() {
+        let reseaux = vec![r("DIRECT-KQ-A1B2C3-XY7K", 95), r("DIRECT-KQ-3FA92C-QW2E", 60)];
+        let choisi = choisir(&reseaux, 50, &|_| false, &[], &HashSet::new(), "3FA92C").unwrap();
+        assert_eq!(choisi.ssid, "DIRECT-KQ-3FA92C-QW2E");
+        let autre = vec![r("DIRECT-KQ-A1B2C3-XY7K", 95)];
+        assert!(choisir(&autre, 50, &|_| false, &[], &HashSet::new(), "3FA92C").is_none());
+        // Réseau sans numéro (téléphone sans balise) : accepté, mais après le sien.
+        let mixte = vec![r("DIRECT-KQ-9DKT", 99), r("DIRECT-KQ-3FA92C-QW2E", 60)];
+        assert_eq!(choisir(&mixte, 50, &|_| false, &[], &HashSet::new(), "3FA92C").unwrap().ssid, "DIRECT-KQ-3FA92C-QW2E");
+        assert_eq!(choisir(&[r("DIRECT-KQ-9DKT", 80)], 50, &|_| false, &[], &HashSet::new(), "3FA92C").unwrap().ssid, "DIRECT-KQ-9DKT");
+    }
+
+    #[test]
+    fn numero_et_mot_de_passe_du_kiosque() {
+        assert_eq!(kiosque_du_reseau("DIRECT-KQ-3FA92C-QW2E"), Some("3FA92C"));
+        assert_eq!(kiosque_du_reseau("DIRECT-KQ-9DKT"), None);
+        assert_eq!(kiosque_du_reseau("DIRECT-KQ-3fa92c-QW2E"), None);
+        // Même calcul que l'application (Reglages.kt, motDePasseKiosque).
+        assert_eq!(mot_de_passe_kiosque("3FA92C"), "b52e4f70d5eddab7");
+        let kotlin = include_str!("../../android/app/src/main/java/bj/photocopie/envoyeur/Reglages.kt");
+        assert!(kotlin.contains(&format!("SECRET_KIOSQUE = \"{SECRET_KIOSQUE}\"")));
     }
 
     #[test]
