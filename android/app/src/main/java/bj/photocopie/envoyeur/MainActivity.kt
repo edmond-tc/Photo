@@ -137,6 +137,10 @@ class MainActivity : Activity() {
             if (statut == TextToSpeech.SUCCESS) {
                 val r = voix?.setLanguage(java.util.Locale.FRENCH)
                 voixPrete = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+                // Constaté à l'essai : au réglage par défaut du téléphone, la
+                // voix parlait trop vite. Un peu plus lent, ton normal.
+                voix?.setSpeechRate(0.8f)
+                voix?.setPitch(1.0f)
             }
         }
         val filtre = IntentFilter().apply {

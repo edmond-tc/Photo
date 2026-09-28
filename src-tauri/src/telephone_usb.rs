@@ -457,15 +457,172 @@ pub(crate) fn executer_powershell(_script: &str) -> Result<String, String> {
     Err("Disponible uniquement sur Windows".to_string())
 }
 
+// ─────────────── Accès direct de Windows aux téléphones ───────────────
+//
+// Constaté à l'essai : par PowerShell, la lecture était lente (plusieurs
+// allers-retours avec le téléphone pour CHAQUE fichier) et la copie aussi
+// (la copie se poursuit en arrière-plan, et il fallait surveiller la taille
+// du fichier). L'accès direct (Windows.Storage) lit un dossier d'un coup et
+// copie un fichier en rendant la main quand il est complet. PowerShell
+// reste le secours si cet accès échoue.
+
+#[cfg(windows)]
+mod direct {
+    use super::DOSSIERS_WHATSAPP;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use windows::core::HSTRING;
+    use windows::Devices::Enumeration::DeviceInformation;
+    use windows::Devices::Portable::StorageDevice;
+    use windows::core::Interface;
+    use windows::Storage::{IStorageFolder, NameCollisionOption, StorageFile, StorageFolder};
+
+    /// Un fichier du téléphone, transportable d'un fil à l'autre.
+    ///
+    /// SÛRETÉ : `StorageFile` est un objet Windows « agile » (utilisable
+    /// depuis n'importe quel fil, sans marshaling) ; la bibliothèque ne le
+    /// marque simplement pas `Send`.
+    #[derive(Clone)]
+    pub struct Fichier(pub StorageFile);
+    unsafe impl Send for Fichier {}
+
+    /// Fichiers de la dernière lecture, par identifiant proposé à l'écran :
+    /// la copie les prend tels quels, sans refaire le chemin.
+    pub static FICHIERS: Mutex<Vec<(String, Fichier)>> = Mutex::new(Vec::new());
+
+    type Cle = (String, String, String, String);
+
+    fn descendre(racine: &StorageFolder, chemin: &str) -> Option<StorageFolder> {
+        let mut dossier = racine.clone();
+        for morceau in chemin.split('\\') {
+            dossier = dossier.GetFolderAsync(&HSTRING::from(morceau)).ok()?.get().ok()?;
+        }
+        Some(dossier)
+    }
+
+    /// « 100 ns depuis 1601 » (Windows) → « 2026-09-27 19:37 », heure locale.
+    fn date_lisible(date: windows::Foundation::DateTime) -> String {
+        let secondes = (date.UniversalTime - 116_444_736_000_000_000) / 10_000_000;
+        chrono::DateTime::from_timestamp(secondes, 0)
+            .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_default()
+    }
+
+    /// Même sortie que le script PowerShell (voir `lire_sortie`), et les
+    /// fichiers trouvés, pour la copie.
+    pub fn lire() -> Option<(String, HashMap<Cle, StorageFile>)> {
+        let selecteur = StorageDevice::GetDeviceSelector().ok()?;
+        let appareils = DeviceInformation::FindAllAsyncAqsFilter(&selecteur).ok()?.get().ok()?;
+        let mut sortie = String::new();
+        let mut fichiers = HashMap::new();
+        for i in 0..appareils.Size().unwrap_or(0) {
+            let Ok(appareil) = appareils.GetAt(i) else { continue };
+            let nom_appareil = appareil.Name().map(|n| n.to_string()).unwrap_or_default();
+            let Ok(racine) = appareil.Id().and_then(|id| StorageDevice::FromId(&id)) else { continue };
+            let stockages = racine
+                .GetFoldersAsyncOverloadDefaultOptionsStartAndCount()
+                .and_then(|o| o.get())
+                .map(|v| v.into_iter().collect::<Vec<_>>())
+                .unwrap_or_default();
+            sortie.push_str(&format!("TELEPHONE\t{nom_appareil}\t{}\n", stockages.len()));
+            for stockage in &stockages {
+                let nom_stockage = stockage.Name().map(|n| n.to_string()).unwrap_or_default();
+                for (chemin, genre) in DOSSIERS_WHATSAPP {
+                    let Some(dossier) = descendre(stockage, chemin) else { continue };
+                    sortie.push_str(&format!("DOSSIER\t{chemin}\n"));
+                    let Ok(liste) = dossier
+                        .GetFilesAsyncOverloadDefaultOptionsStartAndCount()
+                        .and_then(|o| o.get())
+                    else {
+                        continue;
+                    };
+                    for fichier in liste {
+                        let nom = fichier.Name().map(|n| n.to_string()).unwrap_or_default();
+                        let date = fichier.DateCreated().map(date_lisible).unwrap_or_default();
+                        sortie.push_str(&format!(
+                            "FICHIER\t{nom_appareil}\t{nom_stockage}\t{chemin}\t{genre}\t{nom}\t0\t{date}\n"
+                        ));
+                        fichiers.insert(
+                            (nom_appareil.clone(), nom_stockage.clone(), chemin.to_string(), nom),
+                            fichier,
+                        );
+                    }
+                }
+            }
+        }
+        Some((sortie, fichiers))
+    }
+
+    pub fn cle(e: &super::Emplacement) -> Cle {
+        (e.appareil.clone(), e.stockage.clone(), e.dossier.clone(), e.nom.clone())
+    }
+
+    /// Taille d'un fichier (une question au téléphone : seulement pour les
+    /// fichiers affichés).
+    pub fn taille(fichier: &StorageFile) -> u64 {
+        fichier
+            .GetBasicPropertiesAsync()
+            .and_then(|o| o.get())
+            .and_then(|p| p.Size())
+            .unwrap_or(0)
+    }
+
+    /// Copie complète : rend la main quand le fichier est entièrement sur le PC.
+    pub fn copier(fichier: &Fichier, destination: &std::path::Path) -> Option<std::path::PathBuf> {
+        let fichier = &fichier.0;
+        let dossier = StorageFolder::GetFolderFromPathAsync(&HSTRING::from(
+            destination.to_string_lossy().as_ref(),
+        ))
+        .ok()?
+        .get()
+        .ok()?;
+        let dossier: IStorageFolder = dossier.cast().ok()?;
+        let nom = fichier.Name().ok()?;
+        let copie = fichier
+            .CopyOverload(&dossier, &nom, NameCollisionOption::GenerateUniqueName)
+            .ok()?
+            .get()
+            .ok()?;
+        Some(std::path::PathBuf::from(copie.Path().ok()?.to_string()))
+    }
+}
+
+/// Lit le téléphone : accès direct de Windows, ou PowerShell en secours.
+fn lire_telephone() -> Result<LectureTelephone, String> {
+    #[cfg(windows)]
+    if let Some((sortie, fichiers)) = direct::lire() {
+        let mut lecture = lire_sortie(&sortie);
+        if lecture.telephones > 0 && lecture.dossiers_whatsapp > 0 {
+            let mut trouves = Vec::new();
+            for document in &mut lecture.documents {
+                if let Some(fichier) = fichiers.get(&direct::cle(&document.emplacement)) {
+                    let taille = direct::taille(fichier);
+                    document.emplacement.taille = taille;
+                    document.taille_ko = taille.div_ceil(1024);
+                    trouves.push((document.id.clone(), direct::Fichier(fichier.clone())));
+                }
+            }
+            if let Ok(mut f) = direct::FICHIERS.lock() {
+                *f = trouves;
+            }
+            return Ok(lecture);
+        }
+    }
+    #[cfg(windows)]
+    if let Ok(mut f) = direct::FICHIERS.lock() {
+        f.clear();
+    }
+    executer_powershell(&script_lecture()).map(|sortie| lire_sortie(&sortie))
+}
+
 /// Lit le téléphone branché et PROPOSE ses derniers fichiers WhatsApp.
 #[tauri::command]
 pub async fn documents_whatsapp_telephone(
     app: tauri::AppHandle,
 ) -> Result<LectureTelephone, String> {
-    let sortie = tauri::async_runtime::spawn_blocking(|| executer_powershell(&script_lecture()))
+    let mut lecture = tauri::async_runtime::spawn_blocking(lire_telephone)
         .await
         .map_err(|e| e.to_string())??;
-    let mut lecture = lire_sortie(&sortie);
     let memoire = charger_memoire(&app);
     lecture.connu = lecture
         .documents
@@ -509,6 +666,46 @@ pub async fn importer_documents_telephone(
         .join(chrono::Local::now().format("%Y%m%d-%H%M%S%3f").to_string());
     std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
 
+    // Accès direct d'abord : chaque copie rend la main quand le fichier est
+    // complet, aucune surveillance de taille.
+    let mut ajoutes = Vec::new();
+    #[cfg(windows)]
+    let choisis: Vec<DocumentTelephone> = {
+        let directs: Vec<(String, direct::Fichier)> =
+            direct::FICHIERS.lock().map(|f| f.clone()).unwrap_or_default();
+        let mut restants = Vec::new();
+        for document in choisis {
+            let fichier = directs.iter().find(|(id, _)| *id == document.id).map(|(_, f)| f.clone());
+            let copie = match fichier {
+                Some(f) => {
+                    let cible = destination.clone();
+                    tauri::async_runtime::spawn_blocking(move || direct::copier(&f, &cible))
+                        .await
+                        .ok()
+                        .flatten()
+                }
+                None => None,
+            };
+            match copie {
+                Some(chemin) if std::fs::metadata(&chemin).map(|m| m.len() > 0).unwrap_or(false) => {
+                    if crate::watcher::enqueue_file(&app, &chemin, "telephone", None, None).is_some() {
+                        ajoutes.push(document);
+                    }
+                }
+                _ => restants.push(document),
+            }
+        }
+        restants
+    };
+    if choisis.is_empty() {
+        let refs: Vec<&DocumentTelephone> = ajoutes.iter().collect();
+        let mut memoire = charger_memoire(&app);
+        retenir(&mut memoire, &presentes, &refs);
+        enregistrer_memoire(&app, &memoire);
+        return Ok(ajoutes.len());
+    }
+
+    // Secours : copie par PowerShell pour ce qui n'a pas pu être copié.
     let script = script_copie(&choisis, &destination);
     tauri::async_runtime::spawn_blocking(move || executer_powershell(&script))
         .await
@@ -517,7 +714,6 @@ pub async fn importer_documents_telephone(
     // La copie depuis un téléphone continue APRÈS la fin du script (Windows
     // la fait en arrière-plan). On attend que chaque fichier soit là, à sa
     // taille complète — sans quoi on mettrait en file un fichier tronqué.
-    let mut ajoutes = Vec::new();
     for document in &choisis {
         let chemin = destination.join(&document.emplacement.nom);
         if !attendre_copie_complete(&chemin, document.emplacement.taille).await {
@@ -527,11 +723,12 @@ pub async fn importer_documents_telephone(
             continue;
         }
         if crate::watcher::enqueue_file(&app, &chemin, "telephone", None, None).is_some() {
-            ajoutes.push(document);
+            ajoutes.push(document.clone());
         }
     }
+    let refs: Vec<&DocumentTelephone> = ajoutes.iter().collect();
     let mut memoire = charger_memoire(&app);
-    retenir(&mut memoire, &presentes, &ajoutes);
+    retenir(&mut memoire, &presentes, &refs);
     enregistrer_memoire(&app, &memoire);
     Ok(ajoutes.len())
 }
