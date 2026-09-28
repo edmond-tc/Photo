@@ -164,6 +164,12 @@ const NOUVEAUTES: &[(&str, &str, &str, &str)] = &[
         "Un son différent pour chaque action (nouvelle commande, impression, encaissement), et des confirmations qui ne bloquent plus l'écran.",
         "Automatique, rien à faire",
     ),
+    (
+        "0.4.90",
+        "Les vraies mises à jour se reconnaissent toutes seules",
+        "Chaque mise à jour officielle porte une signature que le logiciel vérifie. Envoyée par WhatsApp, Bluetooth ou clé USB, elle affiche « Installer la mise à jour ». Un programme sans cette signature n'est jamais lancé, même depuis une clé USB.",
+        "Automatique, rien à faire",
+    ),
 ];
 
 fn parse_version(s: &str) -> Vec<u32> {

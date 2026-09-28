@@ -230,15 +230,12 @@ pub fn enqueue_file_avec_options(
         .unwrap_or_else(|| "fichier".to_string());
     let kind = files::classify(path);
     // Un .exe/.msi classé "installateur" obtient un bouton "Installer la mise
-    // à jour" qui l'exécute en un clic (voir files::shell_open). Seule la clé
-    // USB, que le porteur du projet branche lui-même lors d'une visite, peut
-    // donc produire cette classification. Le QR et le dossier surveillé sont
-    // ouverts à n'importe quel client (Wi-Fi de la boutique, envoi Bluetooth
-    // que l'application invite elle-même à utiliser) : un exécutable arrivé
-    // par là serait un piège nommé "Mise_a_jour.exe", jamais une vraie mise
-    // à jour. Il retombe en "inconnu", qui affiche un avertissement explicite
-    // et n'offre aucun bouton pour l'exécuter.
-    let kind = if kind == "installateur" && source != "usb" {
+    // à jour" qui l'exécute en un clic. Seule une mise à jour officielle,
+    // signée par le build (voir signature_maj.rs), y a droit, quel que soit
+    // le chemin par lequel elle arrive. Tout autre programme — un
+    // "Mise_a_jour.exe" envoyé par un client, ou trouvé sur sa clé USB —
+    // retombe en "inconnu" : avertissement, et aucun bouton pour le lancer.
+    let kind = if kind == "installateur" && crate::signature_maj::verifier(path).is_none() {
         "inconnu"
     } else {
         kind

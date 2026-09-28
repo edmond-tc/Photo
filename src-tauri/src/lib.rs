@@ -22,6 +22,7 @@ pub mod reception_directe;
 pub mod retention;
 pub mod routeur_externe;
 pub mod server;
+pub mod signature_maj;
 pub mod snmp;
 pub mod telephone_usb;
 pub mod updates;
@@ -122,6 +123,7 @@ pub fn run() {
             commands::get_watched_folder,
             commands::choose_watched_folder,
             commands::open_file,
+            commands::mise_a_jour_recue,
             commands::print_file,
             commands::lister_imprimantes,
             commands::ignorer_fichier,

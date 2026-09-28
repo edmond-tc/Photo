@@ -68,6 +68,8 @@ jobs:
       # sert aux mises à jour.
       - name: Préparer les deux installateurs
         shell: pwsh
+        env:
+          CLE_SIGNATURE_MAJ: ${{ secrets.CLE_SIGNATURE_MAJ }}
         run: |
           $sortie = "installateurs"
           New-Item -ItemType Directory -Force -Path $sortie | Out-Null
@@ -94,6 +96,19 @@ jobs:
           if (-not $leger) { Write-Error "Installateur léger introuvable."; exit 1 }
           Copy-Item $leger.FullName "$sortie/GestionPhotocopie-MiseAJour.exe"
 
+          # Signature officielle (voir scripts/signer-mise-a-jour.mjs et
+          # signature_maj.rs) : le logiciel du PC n'installe que ce qu'elle
+          # couvre. Faite AVANT les empreintes, qui décrivent donc le
+          # fichier réellement publié. Sans le secret, rien n'est publié.
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          foreach ($nom in @("GestionPhotocopie-Installateur.exe", "GestionPhotocopie-MiseAJour.exe")) {
+            node scripts/signer-mise-a-jour.mjs "$sortie/$nom" $version
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Signature impossible. Ajoutez le secret GitHub CLE_SIGNATURE_MAJ (Settings > Secrets and variables > Actions)."
+              exit 1
+            }
+          }
+
           foreach ($paire in @(
             @{ Fichier = "GestionPhotocopie-Installateur.exe"; Empreinte = "empreinte-sha256.txt" },
             @{ Fichier = "GestionPhotocopie-MiseAJour.exe";    Empreinte = "empreinte-sha256-mise-a-jour.txt" }
@@ -115,6 +130,19 @@ jobs:
             Write-Error "La version légère ($tailleLeger octets) n'est pas plus petite que la moitié de la complète ($tailleComplet octets) : le moteur d'affichage y est probablement encore embarqué."
             exit 1
           }
+
+      # Garde-fou : l'installateur SIGNÉ doit s'installer comme avant. La
+      # signature est ajoutée après les données de l'installateur, qui les
+      # ignore ; cette étape le prouve sur un vrai Windows avant publication.
+      - name: Installer la mise à jour signée (garde-fou)
+        shell: pwsh
+        run: |
+          Get-Process photocopie-benin -ErrorAction SilentlyContinue | Stop-Process -Force
+          $p = Start-Process -FilePath "installateurs/GestionPhotocopie-MiseAJour.exe" -ArgumentList "/S" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { Write-Error "L'installateur signé a échoué (code $($p.ExitCode))."; exit 1 }
+          $installe = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles -Filter "photocopie-benin.exe" -File -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installe) { Write-Error "Après installation, photocopie-benin.exe est introuvable."; exit 1 }
+          Write-Host "OK : l'installateur signé s'installe ($($installe.FullName))."
 
       # Le lien public /telecharger (page Cloudflare) sert le fichier depuis
       # ce stockage R2, pas depuis GitHub — c'est donc lui, et pas le dépôt

@@ -179,7 +179,25 @@ pub async fn choisir_logo_boutique(app: AppHandle) -> Result<Option<String>, Str
 #[tauri::command]
 pub fn open_file(state: State<DbState>, id: i64) -> Result<(), String> {
     let path = queue_item_path(&state, id)?;
+    // Dernier verrou, quel que soit l'écran qui a demandé l'ouverture : un
+    // programme n'est lancé que s'il est une mise à jour officielle signée,
+    // vérifiée à l'instant même.
+    if crate::signature_maj::est_programme(&path) && crate::signature_maj::verifier(&path).is_none() {
+        return Err(
+            "Ce programme n'est pas une mise à jour officielle de Gestion Photocopie : il ne sera pas lancé."
+                .to_string(),
+        );
+    }
     files::shell_open(&path, "open")
+}
+
+/// Version qu'installe une mise à jour reçue, si elle est officielle.
+#[tauri::command]
+pub fn mise_a_jour_recue(state: State<DbState>, id: i64) -> Result<String, String> {
+    let path = queue_item_path(&state, id)?;
+    crate::signature_maj::verifier(&path).ok_or_else(|| {
+        "Ce fichier n'est pas une mise à jour officielle de Gestion Photocopie.".to_string()
+    })
 }
 
 /// `imprimante` : nom exact d'une imprimante choisie dans la liste
@@ -194,6 +212,9 @@ pub fn print_file(
     imprimante: Option<String>,
 ) -> Result<(), String> {
     let path = queue_item_path(&state, id)?;
+    if crate::signature_maj::est_programme(&path) {
+        return Err("Un programme ne s'imprime pas.".to_string());
+    }
     let nom_original: String = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         conn.query_row(

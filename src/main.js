@@ -494,18 +494,20 @@ function creerLigne(item) {
     actions.appendChild(bouton("Encaisser", "btn-secondaire", () => ouvrirEncaissement(item)));
     actions.appendChild(bouton("Détails", "btn-discret", () => ouvrirOptions(item)));
   } else if (item.kind === "installateur") {
-    // Un exécutable ne peut arriver ici que par clé USB branchée sur le PC
-    // (voir watcher.rs). Une clé USB peut malgré tout être infectée : on ne
-    // lance jamais un exécutable sans que le gérant confirme qu'il vient
-    // bien de la personne qui lui fournit le logiciel.
+    // Mise à jour officielle : sa signature a été vérifiée à la réception
+    // (voir signature_maj.rs), et l'est encore au moment d'installer.
     actions.appendChild(
-      bouton("Installer la mise à jour", "btn-primaire", () => {
+      bouton("Installer la mise à jour", "btn-primaire", async () => {
+        let version;
+        try {
+          version = await invoke("mise_a_jour_recue", { id: item.id });
+        } catch (e) {
+          toast(String(e), "attention", 8000);
+          return;
+        }
+        const actuelle = await invoke("version_actuelle").catch(() => "?");
         const ok = confirm(
-          `Installer "${item.original_name}" ?\n\n` +
-            "N'installez ce fichier QUE s'il vient d'une clé USB donnée en main propre " +
-            "par la personne qui vous fournit ce logiciel (ou transférée depuis SON lien " +
-            "WhatsApp à elle).\n\n" +
-            "Un fichier trouvé sur la clé USB d'un client peut contenir un virus.\n\n" +
+          `Mise à jour officielle vérifiée : version ${version} (vous avez la ${actuelle}).\n\n` +
             "L'installateur va s'ouvrir. Si Gestion Photocopie ne se ferme pas " +
             "automatiquement, fermez-la vous-même (croix en haut), puis suivez " +
             "les instructions à l'écran jusqu'au bout."
@@ -515,11 +517,11 @@ function creerLigne(item) {
     );
     actions.appendChild(bouton("Ignorer", "btn-discret", () => ignorer(item.id)));
   } else {
-    const estExecutable = /\.(exe|msi)$/i.test(item.original_name || "");
+    const estExecutable = /\.(exe|msi|bat|cmd|com|scr|pif|ps1|vbs|vbe|js|jse|hta|lnk)$/i.test(item.original_name || "");
     const avert = document.createElement("span");
     avert.className = "avertissement";
     avert.textContent = estExecutable
-      ? "⚠️ Fichier exécutable reçu d'un client — ne pas l'ouvrir, ce n'est pas une mise à jour officielle"
+      ? "⚠️ Programme sans signature officielle — ne pas l'ouvrir. Une vraie mise à jour de Gestion Photocopie est reconnue toute seule."
       : "Format non supporté — redemander un format standard au client";
     actions.appendChild(avert);
     actions.appendChild(bouton("Ignorer", "btn-discret", () => ignorer(item.id)));
