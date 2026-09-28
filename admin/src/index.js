@@ -1019,10 +1019,12 @@ function pageApplication(navigateur, tailleApk, whatsapp) {
   h1 { font-size:1.5rem; margin:0; }
   p { margin:0; color:#5a6577; line-height:1.45; }
   .whatsapp { background:#1a8f4a !important; }
+  .note { font-size:0.8rem; margin-top:12px; }
   .bouton { display:block; background:#1f4fd1; color:#fff; text-decoration:none; font-weight:800; font-size:1.2rem; padding:20px; border-radius:16px; }
 </style></head><body><main>
   <h1>Envoyeur Kiosque</h1>
   ${contenu}
+  <p class="note">Vos documents vont directement à l'ordinateur de la boutique, sans passer par internet ni par un serveur. La boutique les efface après son délai de conservation (30 jours par défaut) ou tout de suite si vous le demandez au guichet.</p>
 </main></body></html>`;
 }
 

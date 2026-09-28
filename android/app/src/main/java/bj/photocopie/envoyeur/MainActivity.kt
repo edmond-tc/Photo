@@ -581,7 +581,10 @@ class MainActivity : Activity() {
             Intent.ACTION_SEND -> listOfNotNull(documentPartage(intent))
             Intent.ACTION_SEND_MULTIPLE -> documentsPartages(intent)
             else -> emptyList()
-        }
+        }.filter { it.scheme == "content" }
+        // Seuls les documents confiés par une autre application (content://)
+        // sont acceptés : une adresse file:// pourrait désigner les fichiers
+        // privés de cette application (messages vocaux, réglages).
         if (uris.isEmpty()) return
         synchronized(partages) { partages.addAll(uris) }
         signaler(JSONObject().put("type", "partages"))

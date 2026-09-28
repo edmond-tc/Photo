@@ -243,6 +243,7 @@ pub fn enqueue_file_avec_options(
     } else {
         kind
     };
+    files::marquer_si_macros_possibles(path);
     let received_at = Local::now().to_rfc3339();
     let taille_octets = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     let (protege, format_detecte) = files::diagnostiquer_pdf(path);

@@ -168,6 +168,7 @@ p { margin: 0; }
         <li><span class="ico">!</span><span><strong>Notifications</strong><span>Pour vous proposer l'envoi quand vous arrivez au guichet.</span></span></li>
       </ul>
       <p class="aide" id="autorisation-refus" hidden></p>
+      <button class="lien" data-aller="donnees">Vos données : ce que l'application fait</button>
     </div>
     <div class="bas"><button class="btn" id="btn-autoriser">Autoriser</button></div>
   </section>
@@ -205,7 +206,23 @@ p { margin: 0; }
       </div>
       <p class="aide">Photos, PDF, Word… Plusieurs fichiers à la fois.</p>
       <button class="lien" id="btn-modifier-profil">Modifier mon prénom ou mon numéro</button>
+      <button class="lien" data-aller="donnees">Vos données</button>
       <button class="btn second" data-aller="decouvrir" style="margin-top:auto">✨ Découvrir</button>
+    </div>
+  </section>
+
+  <!-- Vos données : ce qui part, où, combien de temps -->
+  <section class="ecran" data-ecran="donnees" hidden>
+    <div class="entete"><button class="retour" data-retour aria-label="Retour">‹</button><h1>Vos données</h1></div>
+    <div class="contenu">
+      <p><strong>Vos documents vont directement à l'ordinateur de la boutique</strong>, par un lien sans fil entre votre téléphone et lui. Ils ne passent par aucun serveur et par aucun internet.</p>
+      <p><strong>Ce qui est envoyé :</strong> les documents que vous choisissez, vos options (copies, couleur…), votre prénom, et seulement si vous les donnez : votre numéro WhatsApp, votre description et votre message vocal.</p>
+      <p><strong>Qui les voit :</strong> la boutique, pour faire votre travail. Personne d'autre.</p>
+      <p><strong>Combien de temps :</strong> la boutique les efface automatiquement après le délai qu'elle a choisi (30 jours si elle n'a rien changé). Vous pouvez demander au guichet qu'ils soient effacés tout de suite.</p>
+      <p><strong>Sur votre téléphone :</strong> seuls votre prénom et votre numéro sont gardés, pour ne pas vous les redemander. Désinstaller l'application les efface.</p>
+      <p><strong>Bluetooth et Wi-Fi :</strong> l'application écoute seulement le signal des kiosques pour vous prévenir au guichet. Elle ne sert pas à vous localiser et ne garde aucun trajet.</p>
+      <p><strong>Internet :</strong> l'application ne l'utilise que si vous ouvrez « Découvrir », pour afficher les nouveautés. Aucune publicité ne s'affiche ailleurs, et aucune donnée sur vous n'est envoyée.</p>
+      <p class="aide">Une question sur vos données : adressez-vous au guichet de la boutique.</p>
     </div>
   </section>
 
@@ -359,7 +376,7 @@ p { margin: 0; }
   };
   // Bouton « retour » du téléphone : écran précédent, ou quitter.
   window.kiosque.retour = () => {
-    const precedent = { documents: "accueil", quand: "documents", decouvrir: "accueil", profil: profil().prenom ? "accueil" : null }[courant];
+    const precedent = { documents: "accueil", quand: "documents", decouvrir: "accueil", donnees: avantDonnees, profil: profil().prenom ? "accueil" : null }[courant];
     if (!precedent || envoiEnCours) return false;
     aller(precedent);
     return true;
@@ -409,7 +426,9 @@ p { margin: 0; }
 
   // ─── Navigation ───
   let courant = null;
+  let avantDonnees = "accueil";
   function aller(id) {
+    if (id === "donnees" && courant !== "donnees") avantDonnees = courant || "accueil";
     courant = id;
     $$("[data-ecran]").forEach((s) => { s.hidden = s.dataset.ecran !== id; });
     window.scrollTo(0, 0);
@@ -419,6 +438,7 @@ p { margin: 0; }
     if (id === "decouvrir") chargerDecouvrir();
   }
   document.addEventListener("click", (ev) => { const c = ev.target.closest("[data-aller]"); if (c) aller(c.dataset.aller); });
+  document.addEventListener("click", (ev) => { if (ev.target.closest("[data-retour]")) aller(avantDonnees); });
   $$("[data-mode-app]").forEach((e) => (e.hidden = !app));
   $$("[data-mode-web]").forEach((e) => (e.hidden = !!app));
 

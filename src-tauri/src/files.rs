@@ -9,6 +9,33 @@ pub const SEUIL_FICHIER_VOLUMINEUX: u64 = 20 * 1024 * 1024; // 20 Mo
 /// aussi gros) plutôt que de ralentir la réception.
 const LIMITE_DIAGNOSTIC_PDF: u64 = 25 * 1024 * 1024;
 
+/// Anciens formats Office capables de porter des macros (les .docx, .xlsx
+/// et .pptx ne le peuvent pas ; les .docm & co. restent « inconnus »).
+const FORMATS_A_MACROS: [&str; 4] = ["doc", "xls", "ppt", "rtf"];
+
+/// Marque un document de client comme « venu d'internet » (la marque que
+/// Windows pose sur un téléchargement). Office l'ouvre alors en mode protégé
+/// et bloque toute macro, sans bouton pour l'activer : un .doc piégé envoyé
+/// par un client ne peut rien lancer sur le PC de la boutique. Le gérant
+/// touche « Activer la modification » pour éditer, comme pour une pièce
+/// jointe de courriel.
+pub fn marquer_si_macros_possibles(path: &Path) {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !FORMATS_A_MACROS.contains(&ext.as_str()) {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        let mut flux = path.as_os_str().to_owned();
+        flux.push(":Zone.Identifier");
+        let _ = std::fs::write(flux, "[ZoneTransfer]\r\nZoneId=3\r\n");
+    }
+}
+
 /// Classe un fichier reçu selon le routage décrit dans le cahier des charges :
 /// PDF/image -> impression directe ; bureautique -> ouverture dans l'éditeur natif.
 pub fn classify(path: &Path) -> &'static str {
