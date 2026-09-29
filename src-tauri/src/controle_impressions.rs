@@ -152,6 +152,193 @@ fn comparer(
     }
 }
 
+// ─────────────── Suivi d'un document ouvert, jusqu'à son impression ───────────────
+//
+// « Ouvrir » lance le document dans son programme habituel (lecteur PDF,
+// Word, Photos). Le gérant y imprime quand il veut, sur l'imprimante qu'il
+// veut. L'application ne tient plus l'impression en main : elle regarde
+// donc le journal des impressions de Windows, qui note TOUTES les
+// impressions, quel que soit le programme ou l'imprimante, et rattache la
+// première qui porte le nom du document à sa carte dans la file.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+
+struct EnAttente {
+    id: i64,
+    noms: Vec<String>,
+    depuis: chrono::DateTime<chrono::Local>,
+}
+
+static EN_ATTENTE: Mutex<Vec<EnAttente>> = Mutex::new(Vec::new());
+static SUIVI_EN_COURS: AtomicBool = AtomicBool::new(false);
+static EVENEMENTS_RATTACHES: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+static JOURNAL_ETEINT_SIGNALE: AtomicBool = AtomicBool::new(false);
+
+/// Le gérant a ouvert ce document : surveiller son impression (3 heures).
+pub fn suivre(app: &tauri::AppHandle, id: i64, noms: Vec<String>) {
+    let Ok(mut attente) = EN_ATTENTE.lock() else { return };
+    attente.retain(|a| a.id != id);
+    attente.push(EnAttente { id, noms, depuis: chrono::Local::now() });
+    if !SUIVI_EN_COURS.swap(true, Ordering::SeqCst) {
+        let app = app.clone();
+        std::thread::spawn(move || boucle_de_suivi(app));
+    }
+}
+
+fn script_suivi(depuis: &str) -> String {
+    format!(
+        "$ErrorActionPreference = 'SilentlyContinue'\n\
+         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n\
+         $j = Get-WinEvent -ListLog '{JOURNAL}'\n\
+         \"ACTIF`t$($j.IsEnabled)\"\n\
+         $debut = [datetime]::ParseExact('{depuis}', 'yyyy-MM-ddTHH:mm:ss', $null)\n\
+         Get-WinEvent -FilterHashtable @{{LogName='{JOURNAL}'; Id=307; StartTime=$debut}} |\n\
+         ForEach-Object {{\n\
+             $p = ([xml]$_.ToXml()).Event.UserData.DocumentPrinted\n\
+             $nom = \"$($p.Param2)\" -replace \"`t|`r|`n\", ' '\n\
+             \"IMPRESSION`t$($_.RecordId)`t$($_.TimeCreated.ToString('yyyy-MM-ddTHH:mm:ss'))`t$nom`t$($p.Param5)`t$($p.Param8)\"\n\
+         }}\n"
+    )
+}
+
+#[derive(Debug, PartialEq)]
+struct Evenement {
+    numero: u64,
+    heure: chrono::NaiveDateTime,
+    document: String,
+    imprimante: String,
+    pages: u32,
+}
+
+fn lire_suivi(sortie: &str) -> (bool, Vec<Evenement>) {
+    let mut actif = false;
+    let mut evenements = Vec::new();
+    for ligne in sortie.lines() {
+        let champs: Vec<&str> = ligne.trim_end_matches('\r').split('\t').collect();
+        match champs.as_slice() {
+            ["ACTIF", valeur] => actif = valeur.trim().eq_ignore_ascii_case("true"),
+            ["IMPRESSION", numero, heure, document, imprimante, pages] => {
+                let (Ok(numero), Ok(heure)) = (
+                    numero.trim().parse(),
+                    chrono::NaiveDateTime::parse_from_str(heure.trim(), "%Y-%m-%dT%H:%M:%S"),
+                ) else {
+                    continue;
+                };
+                evenements.push(Evenement {
+                    numero,
+                    heure,
+                    document: document.to_string(),
+                    imprimante: imprimante.to_string(),
+                    pages: pages.trim().parse().unwrap_or(0),
+                });
+            }
+            _ => {}
+        }
+    }
+    (actif, evenements)
+}
+
+/// Rattache chaque impression nouvelle au document ouvert qui porte son
+/// nom. Rend les couples (document de la file, impression). Séparée pour
+/// être testable sans Windows.
+fn rattacher(
+    attente: &[(i64, Vec<String>, chrono::NaiveDateTime)],
+    evenements: &[Evenement],
+    deja: &[u64],
+) -> Vec<(i64, usize)> {
+    let mut resultats: Vec<(i64, usize)> = Vec::new();
+    for (index, e) in evenements.iter().enumerate() {
+        if deja.contains(&e.numero) || imprimante_virtuelle(&e.imprimante) {
+            continue;
+        }
+        let trouve = attente.iter().find(|(id, noms, depuis)| {
+            !resultats.iter().any(|(pris, _)| pris == id)
+                && e.heure + chrono::Duration::seconds(5) >= *depuis
+                && noms.iter().any(|n| crate::impression::tache_correspond(&e.document, n))
+        });
+        if let Some((id, _, _)) = trouve {
+            resultats.push((*id, index));
+        }
+    }
+    resultats
+}
+
+fn boucle_de_suivi(app: tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    const DUREE_MAX: i64 = 3 * 60 * 60;
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(12));
+        let attente: Vec<(i64, Vec<String>, chrono::NaiveDateTime)> = {
+            let Ok(mut attente) = EN_ATTENTE.lock() else { return };
+            let maintenant = chrono::Local::now();
+            attente.retain(|a| (maintenant - a.depuis).num_seconds() < DUREE_MAX);
+            if attente.is_empty() {
+                SUIVI_EN_COURS.store(false, Ordering::SeqCst);
+                return;
+            }
+            attente.iter().map(|a| (a.id, a.noms.clone(), a.depuis.naive_local())).collect()
+        };
+        let Some(plus_ancien) = attente.iter().map(|(_, _, d)| *d).min() else { continue };
+        let depuis = (plus_ancien - chrono::Duration::seconds(60)).format("%Y-%m-%dT%H:%M:%S").to_string();
+        let Ok(sortie) = crate::telephone_usb::executer_powershell(&script_suivi(&depuis)) else {
+            continue;
+        };
+        let (actif, evenements) = lire_suivi(&sortie);
+        if !actif {
+            // Sans ce journal, rien ne peut être compté : le dire une fois,
+            // au lieu de laisser croire que le suivi fonctionne.
+            if !JOURNAL_ETEINT_SIGNALE.swap(true, Ordering::SeqCst) {
+                let _ = app.emit("journal-impressions-eteint", ());
+            }
+            continue;
+        }
+        let deja = EVENEMENTS_RATTACHES.lock().map(|d| d.clone()).unwrap_or_default();
+        for (id, index) in rattacher(&attente, &evenements, &deja) {
+            let e = &evenements[index];
+            if let Ok(mut d) = EVENEMENTS_RATTACHES.lock() {
+                d.push(e.numero);
+                if d.len() > 500 {
+                    d.remove(0);
+                }
+            }
+            if let Ok(mut a) = EN_ATTENTE.lock() {
+                a.retain(|x| x.id != id);
+            }
+            let etat = crate::impression::EtatFinal::Terminee {
+                pages: e.pages,
+                details: crate::impression::DetailsImpression::default(),
+                poste_utilisateur: None,
+                imprimante: Some(e.imprimante.clone()),
+            };
+            let state = app.state::<DbState>();
+            let ecarts = state.0.lock().ok().and_then(|conn| {
+                let _ = crate::impression::enregistrer_resultat(&conn, id, &etat);
+                conn.query_row(
+                    "SELECT impression_ecarts FROM files_queue WHERE id = ?1",
+                    params![id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten()
+            });
+            let ecarts: serde_json::Value = ecarts
+                .and_then(|j| serde_json::from_str(&j).ok())
+                .unwrap_or_else(|| serde_json::json!([]));
+            let _ = app.emit(
+                "impression-confirmee",
+                serde_json::json!({
+                    "id": id,
+                    "confirmee": true,
+                    "pages_imprimees": e.pages,
+                    "ecarts": ecarts,
+                    "erreur": serde_json::Value::Null,
+                }),
+            );
+        }
+    }
+}
+
 /// Le contrôle d'une journée (aujourd'hui par défaut).
 #[tauri::command]
 pub async fn controle_impressions(
@@ -294,5 +481,40 @@ mod tests {
         let commandes = commandes_activation();
         assert!(commandes.contains("wevtutil sl Microsoft-Windows-PrintService/Operational /e:true"));
         assert!(commandes.contains("/rt:false"));
+    }
+}
+
+#[cfg(test)]
+mod tests_suivi {
+    use super::*;
+
+    fn heure(h: &str) -> chrono::NaiveDateTime {
+        chrono::NaiveDateTime::parse_from_str(h, "%Y-%m-%dT%H:%M:%S").unwrap()
+    }
+
+    #[test]
+    fn lit_les_impressions_du_journal() {
+        let sortie = "ACTIF\tTrue\r\nIMPRESSION\t812\t2026-09-29T10:02:11\tMicrosoft Word - cv.docx\tHP LaserJet\t2\r\n";
+        let (actif, ev) = lire_suivi(sortie);
+        assert!(actif);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0].numero, 812);
+        assert_eq!(ev[0].pages, 2);
+    }
+
+    #[test]
+    fn rattache_l_impression_au_bon_document_et_une_seule_fois() {
+        let attente = vec![
+            (1, vec!["cv.docx".to_string()], heure("2026-09-29T10:00:00")),
+            (2, vec!["facture.pdf".to_string()], heure("2026-09-29T10:00:00")),
+        ];
+        let ev = vec![
+            Evenement { numero: 5, heure: heure("2026-09-29T09:00:00"), document: "cv.docx".into(), imprimante: "HP".into(), pages: 1 },
+            Evenement { numero: 6, heure: heure("2026-09-29T10:02:00"), document: "Microsoft Word - cv.docx".into(), imprimante: "Microsoft Print to PDF".into(), pages: 1 },
+            Evenement { numero: 7, heure: heure("2026-09-29T10:03:00"), document: "Microsoft Word - cv.docx".into(), imprimante: "HP".into(), pages: 2 },
+        ];
+        // Trop ancienne (avant l'ouverture) et imprimante virtuelle : ignorées.
+        assert_eq!(rattacher(&attente, &ev, &[]), vec![(1, 2)]);
+        assert!(rattacher(&attente, &ev, &[7]).is_empty());
     }
 }

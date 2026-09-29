@@ -322,6 +322,16 @@ mod implementation {
         ALLUME_PAR_NOUS.lock().map(|garde| *garde).unwrap_or(false)
     }
 
+    /// Le point d'accès tourne-t-il VRAIMENT ? Windows peut l'éteindre seul
+    /// (économie d'énergie, mise en veille) sans que l'application le sache.
+    pub fn en_marche() -> bool {
+        profils_a_essayer().iter().any(|(_, profil)| {
+            NetworkOperatorTetheringManager::CreateFromConnectionProfile(profil)
+                .map(|g| g.TetheringOperationalState() == Ok(TetheringOperationalState::On))
+                .unwrap_or(false)
+        })
+    }
+
     /// Les connexions que Windows accepterait de partager : d'abord celle
     /// qui mène à internet s'il y en a une, puis toutes les autres — dont
     /// la carte factice.
@@ -482,6 +492,10 @@ mod implementation {
     pub fn est_actif() -> bool {
         false
     }
+
+    pub fn en_marche() -> bool {
+        false
+    }
 }
 
-pub use implementation::{activer, desactiver, est_actif};
+pub use implementation::{activer, desactiver, en_marche, est_actif};

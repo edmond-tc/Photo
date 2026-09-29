@@ -752,7 +752,7 @@ async function imprimer(id) {
     // Le document s'ouvre dans son programme habituel : le gérant y fait
     // Ctrl+P et choisit l'imprimante, les propriétés, les pages…
     await invoke("print_file", { id });
-    toast("Document ouvert en entier. Pour imprimer : Ctrl+P (ou Fichier → Imprimer), puis choisissez l'imprimante et « Propriétés » (bac, papier, qualité…).", "info", 8000);
+    toast("Document ouvert. Imprimez comme d'habitude (Ctrl+P) : l'application note toute seule quand c'est imprimé.", "info", 7000);
     // Le client suit sa commande sur son téléphone : elle passe « En impression ».
     const carte = document.querySelector(`.ligne-fichier[data-id="${id}"]`)?.closest(".carte-commande");
     if (carte?.dataset.commande && carte.dataset.etape === "recu") {
@@ -3397,6 +3397,29 @@ async function demarrerApplication() {
   // ouverte (voir arrivees.rs) : le gérant le voit tout de suite, avec le
   // code à faire scanner. Le client n'attend plus sans que personne le sache.
   await listen("telephone-sans-page", () => alerterTelephoneSansPage());
+
+  // Le gardien du Wi-Fi (gardien_wifi.rs) a rallumé le réseau tout seul.
+  await listen("wifi-relance", (event) => {
+    if (event.payload === "ok") toast("✓ Wi-Fi de la boutique rallumé automatiquement.");
+    else if (event.payload === "echec")
+      toast("⚠️ Le Wi-Fi de la boutique s'est éteint et ne se rallume pas. Ouvrez la fenêtre du QR et touchez « Activer le Wi-Fi local ».", "attention", 12000);
+  });
+
+  // Sans le journal des impressions de Windows, l'application ne peut pas
+  // savoir ce qui est imprimé depuis Adobe, Word… (voir controle_impressions.rs).
+  await listen("journal-impressions-eteint", async () => {
+    const ok = confirm(
+      "Pour savoir ce qui est imprimé (et faire le rapport), l'application doit allumer le suivi " +
+        "des impressions de Windows. Une seule fois : Windows va demander « Oui ».\n\nAllumer maintenant ?"
+    );
+    if (!ok) return;
+    try {
+      await invoke("activer_controle_impressions");
+      toast("✓ Suivi des impressions allumé.");
+    } catch (e) {
+      toast(`Suivi des impressions non allumé : ${e}`, "attention", 10000);
+    }
+  });
 
   await listen("impression-confirmee", (event) => {
     confirmationsImpression.set(event.payload.id, event.payload);

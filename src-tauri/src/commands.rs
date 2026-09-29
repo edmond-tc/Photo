@@ -177,7 +177,7 @@ pub async fn choisir_logo_boutique(app: AppHandle) -> Result<Option<String>, Str
 }
 
 #[tauri::command]
-pub fn open_file(state: State<DbState>, id: i64) -> Result<(), String> {
+pub fn open_file(app: AppHandle, state: State<DbState>, id: i64) -> Result<(), String> {
     let path = queue_item_path(&state, id)?;
     // Dernier verrou, quel que soit l'écran qui a demandé l'ouverture : un
     // programme n'est lancé que s'il est une mise à jour officielle signée,
@@ -193,7 +193,27 @@ pub fn open_file(state: State<DbState>, id: i64) -> Result<(), String> {
     } else {
         exiger_licence(&state)?;
     }
-    files::shell_open(&path, "open")
+    files::shell_open(&path, "open")?;
+    suivre_impression(&app, &state, id, &path);
+    Ok(())
+}
+
+/// Document ouvert dans son programme : son impression, quand elle aura
+/// lieu, sera rattachée à sa carte (voir controle_impressions.rs).
+fn suivre_impression(app: &AppHandle, state: &State<DbState>, id: i64, path: &std::path::Path) {
+    let original: Option<String> = state.0.lock().ok().and_then(|conn| {
+        conn.query_row(
+            "SELECT original_name FROM files_queue WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .ok()
+    });
+    let mut noms: Vec<String> = original.into_iter().collect();
+    if let Some(n) = path.file_name() {
+        noms.push(n.to_string_lossy().to_string());
+    }
+    crate::controle_impressions::suivre(app, id, noms);
 }
 
 /// Licence terminée : ni impression ni ouverture, même si l'écran de
@@ -240,8 +260,9 @@ pub fn print_file(
     // Windows propose (Ctrl+P). Plus d'envoi direct vers une imprimante
     // imposée. Le journal des impressions (impression.rs) compte toujours
     // les pages réellement sorties, quelle que soit l'imprimante.
-    let _ = (&app, imprimante);
+    let _ = imprimante;
     files::shell_open(&path, "open")?;
+    suivre_impression(&app, &state, id, &path);
     Ok(())
 }
 
@@ -607,6 +628,7 @@ pub struct ResultatActivationWifi {
 pub async fn activer_point_acces_local(
     state: State<'_, DbState>,
     etat_point_acces: State<'_, crate::hotspot::EtatPointAcces>,
+    app: AppHandle,
 ) -> Result<ResultatActivationWifi, String> {
     let ssid = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
@@ -899,6 +921,9 @@ pub async fn activer_point_acces_local(
         }
     }
 
+    // Le gardien (gardien_wifi.rs) le rallumera désormais tout seul s'il
+    // s'éteint, par cette même méthode.
+    crate::gardien_wifi::retenir_allume(&app, Some(activation.methode));
     Ok(ResultatActivationWifi {
         methode: activation.methode.to_string(),
         recapitulatif,
@@ -911,7 +936,10 @@ pub async fn activer_point_acces_local(
 #[tauri::command]
 pub async fn desactiver_point_acces_local(
     etat_point_acces: State<'_, crate::hotspot::EtatPointAcces>,
+    app: AppHandle,
 ) -> Result<(), String> {
+    // Coupé exprès par le gérant : le gardien ne le rallume pas.
+    crate::gardien_wifi::retenir_allume(&app, None);
     let taches = std::mem::take(&mut *etat_point_acces.0.lock().map_err(|e| e.to_string())?);
     for tache in taches {
         tache.abort();

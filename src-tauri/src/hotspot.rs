@@ -223,6 +223,40 @@ pub struct DiagnosticPoste {
 /// l'UTF-8, donc les accents arrivent ici en caractères de remplacement.
 /// En ne gardant que l'ASCII, "réseau hébergé" et "r?seau h?berg?" se
 /// réduisent tous deux à "rseau hberg", sur quoi on peut chercher.
+/// Le réseau hébergé est-il démarré ? Lu sur la ligne « État/Status » de
+/// `netsh wlan show hostednetwork`. `None` quand Windows ne dit rien de
+/// clair : dans le doute, on ne relance rien.
+pub fn lire_reseau_heberge_demarre(sortie: &str) -> Option<bool> {
+    for ligne in normaliser(sortie).lines() {
+        let Some((cle, valeur)) = ligne.split_once(':') else { continue };
+        let cle = cle.trim();
+        if cle == "tat" || cle == "etat" || cle == "statut" || cle == "status" {
+            let valeur = valeur.trim();
+            let demarre = valeur.contains("dmarr") || valeur.contains("started");
+            let negatif = valeur.contains("non") || valeur.contains("not");
+            if demarre || negatif || valeur.contains("disponible") || valeur.contains("available") {
+                return Some(demarre && !negatif);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+pub fn reseau_heberge_demarre() -> Option<bool> {
+    lire_reseau_heberge_demarre(&executer_netsh(&["wlan", "show", "hostednetwork"]))
+}
+
+#[cfg(not(windows))]
+pub fn reseau_heberge_demarre() -> Option<bool> {
+    None
+}
+
+/// Méthode 1 à sauter : sur ce PC, une autre méthode a déjà réussi. La
+/// retenter demanderait « Oui » administrateur pour rien à chaque relance.
+pub static SAUTER_RESEAU_HEBERGE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 fn normaliser(sortie: &str) -> String {
     sortie
         .to_lowercase()
@@ -1428,7 +1462,12 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
 
     // Méthode 1 : sautée seulement quand Windows affirme qu'elle est
     // impossible — en cas de doute (`None`), on essaie quand même.
-    if diagnostic.reseau_heberge_supporte == Some(false) {
+    if SAUTER_RESEAU_HEBERGE.load(std::sync::atomic::Ordering::SeqCst) {
+        echecs.push(
+            "Méthode 1 (réseau hébergé) : sautée, une autre méthode a déjà marché sur ce PC."
+                .to_string(),
+        );
+    } else if diagnostic.reseau_heberge_supporte == Some(false) {
         echecs.push(
             "Méthode 1 (réseau hébergé) : la carte Wi-Fi de ce PC déclare ne pas la supporter."
                 .to_string(),
@@ -2480,6 +2519,18 @@ mod tests {
     /// Le PC branché en câble n'a AUCUN nom de réseau à proposer : en
     /// inventer un envoie le client rejoindre un réseau qui n'existe pas,
     /// ce qui a été constaté en boutique.
+    #[test]
+    fn lit_si_le_reseau_heberge_tourne() {
+        let fr = "Paramètres du réseau hébergé\r\n    Mode : Autorisé\r\nÉtat du réseau hébergé\r\n    État                   : Démarré\r\n";
+        assert_eq!(lire_reseau_heberge_demarre(fr), Some(true));
+        let fr_arrete = "    État                   : Non démarré\r\n";
+        assert_eq!(lire_reseau_heberge_demarre(fr_arrete), Some(false));
+        let en = "    Status                 : Started\r\n";
+        assert_eq!(lire_reseau_heberge_demarre(en), Some(true));
+        assert_eq!(lire_reseau_heberge_demarre("    Status : Not started\r\n"), Some(false));
+        assert_eq!(lire_reseau_heberge_demarre(""), None);
+    }
+
     #[test]
     fn lit_le_reseau_auquel_le_pc_est_connecte() {
         let sortie = "    Nom                    : Wi-Fi\r\n                          SSID                   : BOUTIQUE-PAUL\r\n                          Profil                 : BOUTIQUE-PAUL\r\n";

@@ -140,6 +140,19 @@ mod implementation {
 
     /// Vrai quand un réseau créé par cette méthode est en cours — sert à
     /// savoir laquelle des deux méthodes a réussi, sans redemander à Windows.
+    /// Le réseau tourne-t-il VRAIMENT ? Windows peut interrompre l'annonce
+    /// (carte réinitialisée, veille) : l'objet existe encore, le Wi-Fi non.
+    pub fn en_marche() -> bool {
+        PUBLICATEUR
+            .lock()
+            .ok()
+            .and_then(|g| {
+                g.as_ref()
+                    .map(|p| p.Status() == Ok(WiFiDirectAdvertisementPublisherStatus::Started))
+            })
+            .unwrap_or(false)
+    }
+
     pub fn est_actif() -> bool {
         PUBLICATEUR
             .lock()
@@ -161,6 +174,10 @@ mod implementation {
     pub fn est_actif() -> bool {
         false
     }
+
+    pub fn en_marche() -> bool {
+        false
+    }
 }
 
-pub use implementation::{activer, desactiver, est_actif};
+pub use implementation::{activer, desactiver, en_marche, est_actif};
