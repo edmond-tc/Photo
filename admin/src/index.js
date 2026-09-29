@@ -998,8 +998,33 @@ const EN_TETES_SECURITE = {
 /// type de téléphone est reconnu ici, d'après le navigateur.
 function pageApplication(navigateur, tailleApk, whatsapp) {
   const iphone = /iPhone|iPad|iPod/i.test(navigateur);
-  const taille = tailleApk ? ` (${(tailleApk / 1024 / 1024).toFixed(1).replace(".", ",")} Mo)` : "";
+  const taille = tailleApk ? `${(tailleApk / 1024 / 1024).toFixed(1).replace(".", ",")} Mo` : "";
   const message = encodeURIComponent("Bonjour, voici mon document à imprimer :");
+  // Ce que le client gagne, dit en une ligne chacun : c'est ce qui décide
+  // à installer, pas le gérant qui répète « installez l'application ».
+  const avantages = `
+    <ul class="avantages">
+      <li><span>📄</span><span><strong>Sans câble, sans WhatsApp</strong>Vos documents partent de votre téléphone au guichet.</span></li>
+      <li><span>📶</span><span><strong>Sans internet au guichet</strong>Votre forfait n'est pas utilisé.</span></li>
+      <li><span>💰</span><span><strong>Vous choisissez tout, vous voyez le prix</strong>Copies, couleur, reliure… avant d'envoyer.</span></li>
+      <li><span>🔔</span><span><strong>Prévenu quand c'est prêt</strong>Plus besoin d'attendre au comptoir.</span></li>
+    </ul>`;
+  // Android pose plusieurs questions pour une application hors Play Store :
+  // on les annonce AVANT, avec le bouton exact à toucher, pour que personne
+  // n'abandonne en croyant à un virus.
+  const etapes = `
+    <section class="etapes">
+      <h2>Android va poser quelques questions. C'est normal : voici quoi toucher.</h2>
+      <ol>
+        <li>Le téléchargement demande confirmation : <b class="b">Télécharger quand même</b></li>
+        <li>Une fois téléchargé : <b class="b">Ouvrir</b></li>
+        <li>Si Android dit « Pour votre sécurité… » : <b class="b">Paramètres</b>, activez <b class="b">Autoriser cette source</b>, puis revenez en arrière ‹</li>
+        <li><b class="b">Installer</b></li>
+        <li>Si Android dit « Application non vérifiée » ou « Play Protect » : <b class="b">Plus de détails</b> puis <b class="b">Installer quand même</b></li>
+        <li><b class="b">Ouvrir</b>, puis <b class="b">Autoriser</b> une seule fois. C'est fini.</li>
+      </ol>
+      <p class="rassure">Gratuite, sans publicité pendant vos envois. Elle ne demande ni argent, ni mot de passe, ni compte.</p>
+    </section>`;
   const contenu = iphone
     ? whatsapp
       ? `<p>L'application iPhone arrive bientôt. En attendant, envoyez votre document au guichet par WhatsApp :</p>
@@ -1007,22 +1032,44 @@ function pageApplication(navigateur, tailleApk, whatsapp) {
          <p>Joignez votre fichier et écrivez ce que vous voulez (copies, couleur…).</p>`
       : `<p>L'application iPhone arrive bientôt. En attendant, donnez votre document au guichet.</p>`
     : tailleApk
-      ? `<a class="bouton" href="/telecharger/apk">Installer l'application${taille}</a>
-         <p>Si le téléphone le demande, autorisez l'installation.</p>`
+      ? `${avantages}
+         <a class="bouton" href="/telecharger/apk">Installer l'application<small>Gratuit · ${taille} · 1 minute</small></a>
+         <p class="auto">Le téléchargement commence tout seul. Sinon, touchez le bouton.</p>
+         ${etapes}`
       : `<p>Application bientôt disponible. Demandez-la au guichet.</p>`;
+  // Android : le téléchargement démarre seul pendant que le client lit les
+  // étapes (un geste de moins). Sans script : la politique de sécurité de
+  // la page reste « aucun JavaScript ».
+  const auto = !iphone && tailleApk ? `<meta http-equiv="refresh" content="1;url=/telecharger/apk">` : "";
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${auto}
 <title>Envoyeur Kiosque</title>
 <style>
-  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:#15202d; background:#fff; }
-  main { max-width:480px; margin:0 auto; padding:40px 18px; display:grid; gap:20px; text-align:center; }
-  h1 { font-size:1.5rem; margin:0; }
-  p { margin:0; color:#5a6577; line-height:1.45; }
-  .whatsapp { background:#1a8f4a !important; }
-  .note { font-size:0.8rem; margin-top:12px; }
-  .bouton { display:block; background:#1f4fd1; color:#fff; text-decoration:none; font-weight:800; font-size:1.2rem; padding:20px; border-radius:16px; }
+  :root { --fond:#fff; --encre:#15202d; --discret:#5a6577; --carte:#f3f5f9; --accent:#1f4fd1; }
+  @media (prefers-color-scheme: dark) { :root { --fond:#0e131a; --encre:#e7ecf2; --discret:#9aa6b6; --carte:#1d2733; --accent:#3d6bf0; } }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--encre); background:var(--fond); }
+  main { max-width:480px; margin:0 auto; padding:28px 16px 40px; display:grid; gap:18px; }
+  h1 { font-size:1.45rem; margin:0; text-align:center; }
+  h2 { font-size:1rem; margin:0 0 10px; }
+  p { margin:0; color:var(--discret); line-height:1.45; }
+  .avantages { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+  .avantages li { display:flex; gap:12px; align-items:flex-start; background:var(--carte); border-radius:14px; padding:12px; }
+  .avantages li > span:first-child { font-size:1.5rem; line-height:1; }
+  .avantages strong { display:block; }
+  .avantages li > span:last-child { color:var(--discret); font-size:0.92rem; }
+  .avantages li strong { color:var(--encre); font-size:1rem; }
+  .bouton { display:block; text-align:center; background:var(--accent); color:#fff; text-decoration:none; font-weight:800; font-size:1.25rem; padding:18px; border-radius:16px; }
+  .bouton small { display:block; font-weight:400; font-size:0.9rem; opacity:0.9; margin-top:4px; }
+  .whatsapp { background:#1a8f4a; }
+  .etapes { background:var(--carte); border-radius:14px; padding:14px; }
+  .etapes ol { margin:0; padding-left:1.3rem; display:grid; gap:10px; line-height:1.5; }
+  .b { display:inline-block; border:1.5px solid var(--accent); color:var(--accent); border-radius:999px; padding:0 8px; font-weight:700; white-space:nowrap; }
+  .rassure { margin-top:12px; font-size:0.9rem; }
+  .note { font-size:0.8rem; }
+  .auto { text-align:center; font-size:0.9rem; margin-top:-8px; }
 </style></head><body><main>
-  <h1>Envoyeur Kiosque</h1>
+  <h1>Envoyez vos documents à la photocopie depuis votre téléphone</h1>
   ${contenu}
   <p class="note">Vos documents vont directement à l'ordinateur de la boutique, sans passer par internet ni par un serveur. La boutique les efface après son délai de conservation (30 jours par défaut) ou tout de suite si vous le demandez au guichet.</p>
 </main></body></html>`;

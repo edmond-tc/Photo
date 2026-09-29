@@ -2150,13 +2150,19 @@ async function rendreReceptionDirecte(corps) {
   const carteQr = document.createElement("div");
   carteQr.className = "carte-rapport";
   carteQr.innerHTML = `
-    <h3>Affiche du guichet</h3>
-    <p style="font-size:0.9rem">Un seul QR sur l'affiche, pour tous les clients : la page reconnaît
-      le téléphone. Android : installer l'application (une fois). iPhone : envoyer par WhatsApp au
-      numéro de la boutique (Réglages → WhatsApp de la boutique). Le code ci-dessous sert aux clients
-      déjà reliés au PC par leur partage de connexion.</p>
-    <img src="${qr.fixe}" alt="QR du guichet" style="width:180px; height:180px; image-rendering:pixelated">
-    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">${echapperHtml(qr.fixe_url)}</p>`;
+    <h3>QR de l'application (affiche du guichet)</h3>
+    <p style="font-size:0.9rem">Le client le scanne avec l'appareil photo, avec sa connexion internet
+      (quelques Mo, une seule fois). La page reconnaît le téléphone : <strong>Android</strong> installe
+      l'application Envoyeur Kiosque ; <strong>iPhone</strong> envoie par WhatsApp au numéro de la
+      boutique (Réglages → WhatsApp de la boutique).</p>
+    <img src="${qr.application}" alt="QR d'installation de l'application" style="width:200px; height:200px; image-rendering:pixelated">
+    <p style="font-size:0.85rem; overflow-wrap:anywhere"><strong>Lien à partager</strong> (statut WhatsApp,
+      Facebook…) pour installer à l'avance, de chez soi : ${echapperHtml(qr.application_url)}</p>
+    <details style="font-size:0.85rem; margin-top:0.5rem">
+      <summary>QR pour un client déjà relié au PC (partage de connexion)</summary>
+      <img src="${qr.fixe}" alt="QR de la page d'envoi" style="width:140px; height:140px; image-rendering:pixelated">
+      <p style="color:var(--gris-texte-discret)">${echapperHtml(qr.fixe_url)}</p>
+    </details>`;
   carteQr.appendChild(
     bouton("Imprimer l'affiche du guichet", "btn-secondaire", () =>
       imprimerAfficheReception(qr.application)
@@ -2235,14 +2241,16 @@ async function rendreReceptionDirecte(corps) {
 function imprimerAfficheReception(qrApplication) {
   const affiche = document.querySelector("#affiche-reception");
   affiche.innerHTML = `
-    <h1>Envoyez vos documents sans câble</h1>
+    <h1>Envoyez vos documents depuis votre téléphone</h1>
     <div><img src="${qrApplication}" alt=""></div>
     <p class="mdp">Scannez avec l'appareil photo</p>
     <ol>
-      <li><strong>Android</strong> : installez l'application une seule fois. Ensuite, au guichet, touchez la notification.</li>
-      <li><strong>iPhone</strong> : envoyez votre document par WhatsApp, en un geste.</li>
+      <li>✓ Sans câble, sans WhatsApp</li>
+      <li>✓ Sans internet au guichet : votre forfait n'est pas utilisé</li>
+      <li>✓ Vous choisissez copies et couleur, vous voyez le prix</li>
+      <li>✓ Prévenu quand c'est prêt</li>
     </ol>
-    <p class="pied">Android : sans internet au guichet, votre forfait n'est pas utilisé.</p>`;
+    <p class="pied">Android : application gratuite, installée en 1 minute, une seule fois. iPhone : envoi par WhatsApp.</p>`;
   imprimerPage("impression-reception");
 }
 
