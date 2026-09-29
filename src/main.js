@@ -1069,7 +1069,7 @@ async function afficherQr() {
     // filet, et l'annoncer d'emblée ferait croire qu'il faut deux scans.
     document.querySelector("#qr-intro").textContent =
       info.qr_page_data_uri
-        ? "① Scannez ce code avec l'appareil photo"
+        ? "① Scannez ce code avec l'appareil photo de votre téléphone"
         : "Scannez ce code avec l'appareil photo de votre téléphone";
 
     // DEUX scans, annoncés comme tels, et de même taille.
@@ -1121,7 +1121,7 @@ async function afficherQr() {
         // iPhone) : Android montre la notification « Connectez-vous au
         // réseau », l'iPhone rien. Ce dernier toucher, seul le téléphone le
         // décide — l'affiche doit donc le montrer, pas le taire.
-        ? "② Touchez « Rejoindre »\n③ Touchez « Connectez-vous au réseau » en haut de l'écran : la page d'envoi s'ouvre"
+        ? "② Touchez « Rejoindre »\n③ Touchez « Connectez-vous au réseau » en haut de l'écran du téléphone : la page d'envoi s'ouvre"
         : "Scannez pour envoyer vos documents"
     );
     // Pour les téléphones qui ne lisent pas les QR (pas de scanner, Lens
@@ -1130,7 +1130,7 @@ async function afficherQr() {
     const secours = document.querySelector("#qr-affiche-secours");
     if (secours) {
       secours.textContent = info.reseau
-        ? `iPhone, ou rien ne s'ouvre : Réglages → Wi-Fi → touchez « ${info.reseau} »` +
+        ? `iPhone, ou rien ne s'ouvre : sur le téléphone, Réglages → Wi-Fi → touchez « ${info.reseau} »` +
           (info.mot_de_passe ? ` (mot de passe ${info.mot_de_passe})` : "") +
           `.`
         : "Le réseau ne se connecte pas ? Appuyez sur son nom dans la liste affichée.";
