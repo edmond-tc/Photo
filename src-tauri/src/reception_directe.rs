@@ -661,7 +661,7 @@ fn un_tour(
     let mut echec: Option<String> = None;
     while debut.elapsed() < if connecte { Duration::from_secs(45) } else { attente_connexion(&cible.ssid) } {
         std::thread::sleep(Duration::from_millis(500));
-        for evenement in client.evenements() {
+        for evenement in client.evenements(&cible.ssid) {
             match evenement {
                 Evenement::Etape(e) => {
                     if e == "connecté" {
@@ -706,7 +706,7 @@ fn un_tour(
             // Laisser un instant pour d'autres fichiers, puis libérer.
             let fin = Instant::now() + CALME_APRES_ENVOI;
             while Instant::now() < fin
-                && !client.evenements().iter().any(|e| matches!(e, Evenement::Deconnecte { .. }))
+                && !client.evenements(&cible.ssid).iter().any(|e| matches!(e, Evenement::Deconnecte { .. }))
             {
                 std::thread::sleep(Duration::from_secs(1));
             }
@@ -756,7 +756,7 @@ fn un_tour(
     let connecte_depuis = Instant::now();
     let raison = loop {
         std::thread::sleep(Duration::from_secs(1));
-        let coupe = client.evenements().iter().any(|e| matches!(e, Evenement::Deconnecte { .. }));
+        let coupe = client.evenements(&cible.ssid).iter().any(|e| matches!(e, Evenement::Deconnecte { .. }));
         if coupe || client.connecte_a().as_deref() != Some(cible.ssid.as_str()) {
             break "le téléphone a fermé son réseau";
         }
@@ -803,12 +803,18 @@ mod wlan {
     use windows::Win32::Foundation::{BOOL, HANDLE};
     use windows::Win32::NetworkManagement::WiFi::*;
 
-    /// Messages reçus de Windows (sur un de ses fils à lui), lus par la boucle.
-    static EVENEMENTS: Mutex<VecDeque<Evenement>> = Mutex::new(VecDeque::new());
+    /// Messages reçus de Windows (sur un de ses fils à lui), lus par la boucle,
+    /// chacun avec le réseau qu'il concerne.
+    ///
+    /// Constaté sur le terrain : sans ce nom, l'« opération annulée » d'un
+    /// partage de connexion du voisinage, tenté juste avant, était lue comme
+    /// l'échec du téléphone du client — et le PC coupait lui-même une
+    /// connexion réussie au bout d'une seconde, à chaque essai.
+    static EVENEMENTS: Mutex<VecDeque<(String, Evenement)>> = Mutex::new(VecDeque::new());
 
-    fn pousser(e: Evenement) {
+    fn pousser(ssid: String, e: Evenement) {
         if let Ok(mut liste) = EVENEMENTS.lock() {
-            liste.push_back(e);
+            liste.push_back((ssid, e));
             while liste.len() > 100 {
                 liste.pop_front();
             }
@@ -840,10 +846,24 @@ mod wlan {
         String::from_utf16_lossy(&tampon[..fin]).trim().to_string()
     }
 
+    /// Nom du réseau porté par un message de Windows (vide s'il n'en dit rien).
+    fn nom_du_reseau(ssid: &DOT11_SSID) -> String {
+        let longueur = (ssid.uSSIDLength as usize).min(32);
+        String::from_utf8_lossy(&ssid.ucSSID[..longueur]).to_string()
+    }
+
     unsafe extern "system" fn rappel(donnees: *mut L2_NOTIFICATION_DATA, _contexte: *mut core::ffi::c_void) {
         let Some(d) = donnees.as_ref() else { return };
         let code = d.NotificationCode as i32;
         if d.NotificationSource == WLAN_NOTIFICATION_SOURCE_ACM {
+            let ssid = if !d.pData.is_null()
+                && d.dwDataSize as usize
+                    >= std::mem::offset_of!(WLAN_CONNECTION_NOTIFICATION_DATA, dot11Ssid) + std::mem::size_of::<DOT11_SSID>()
+            {
+                nom_du_reseau(&(*(d.pData as *const WLAN_CONNECTION_NOTIFICATION_DATA)).dot11Ssid)
+            } else {
+                String::new()
+            };
             let raison = if !d.pData.is_null()
                 && d.dwDataSize as usize >= std::mem::offset_of!(WLAN_CONNECTION_NOTIFICATION_DATA, dwFlags)
             {
@@ -852,19 +872,27 @@ mod wlan {
                 0
             };
             if code == wlan_notification_acm_connection_complete.0 {
-                pousser(if raison == 0 {
+                pousser(ssid, if raison == 0 {
                     Evenement::Reussie
                 } else {
                     Evenement::Echec { code: raison, texte: raison_en_texte(raison) }
                 });
             } else if code == wlan_notification_acm_connection_attempt_fail.0 {
-                pousser(Evenement::Echec { code: raison, texte: raison_en_texte(raison) });
+                pousser(ssid, Evenement::Echec { code: raison, texte: raison_en_texte(raison) });
             }
         } else if d.NotificationSource == WLAN_NOTIFICATION_SOURCE_MSM {
+            let ssid = if !d.pData.is_null()
+                && d.dwDataSize as usize
+                    >= std::mem::offset_of!(WLAN_MSM_NOTIFICATION_DATA, dot11Ssid) + std::mem::size_of::<DOT11_SSID>()
+            {
+                nom_du_reseau(&(*(d.pData as *const WLAN_MSM_NOTIFICATION_DATA)).dot11Ssid)
+            } else {
+                String::new()
+            };
             match code {
-                c if c == wlan_notification_msm_associating.0 => pousser(Evenement::Etape("association")),
-                c if c == wlan_notification_msm_authenticating.0 => pousser(Evenement::Etape("authentification")),
-                c if c == wlan_notification_msm_connected.0 => pousser(Evenement::Etape("connecté")),
+                c if c == wlan_notification_msm_associating.0 => pousser(ssid, Evenement::Etape("association")),
+                c if c == wlan_notification_msm_authenticating.0 => pousser(ssid, Evenement::Etape("authentification")),
+                c if c == wlan_notification_msm_connected.0 => pousser(ssid, Evenement::Etape("connecté")),
                 c if c == wlan_notification_msm_disconnected.0 => {
                     let raison = if !d.pData.is_null()
                         && d.dwDataSize as usize >= std::mem::size_of::<WLAN_MSM_NOTIFICATION_DATA>()
@@ -873,7 +901,7 @@ mod wlan {
                     } else {
                         0
                     };
-                    pousser(Evenement::Deconnecte { code: raison, texte: raison_en_texte(raison) });
+                    pousser(ssid, Evenement::Deconnecte { code: raison, texte: raison_en_texte(raison) });
                 }
                 _ => {}
             }
@@ -931,9 +959,14 @@ mod wlan {
             Ok(Client { poignee, interface })
         }
 
-        /// Les messages de Windows reçus depuis le dernier appel.
-        pub fn evenements(&self) -> Vec<Evenement> {
-            EVENEMENTS.lock().map(|mut l| l.drain(..).collect()).unwrap_or_default()
+        /// Les messages de Windows reçus depuis le dernier appel, pour CE
+        /// réseau seulement : ceux d'un autre réseau (tenté avant, ou voisin)
+        /// ne doivent jamais faire échouer la connexion en cours.
+        pub fn evenements(&self, ssid: &str) -> Vec<Evenement> {
+            EVENEMENTS
+                .lock()
+                .map(|mut l| l.drain(..).filter(|(s, _)| s == ssid).map(|(_, e)| e).collect())
+                .unwrap_or_default()
         }
 
         pub fn scanner(&self) {
@@ -1088,7 +1121,7 @@ mod wlan {
     use super::{Evenement, Reseau};
     pub struct Client;
     impl Client {
-        pub fn evenements(&self) -> Vec<Evenement> {
+        pub fn evenements(&self, _ssid: &str) -> Vec<Evenement> {
             Vec::new()
         }
         pub fn ouvrir() -> Result<Self, String> {
