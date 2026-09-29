@@ -99,6 +99,8 @@ p { margin: 0; }
 .vocal button.rond { border: 0; width: 46px; height: 46px; border-radius: 50%; background: var(--accent); color: var(--sur-accent); cursor: pointer; font-weight: 800; flex: none; font-size: 1.1rem; }
 .vocal.enreg button.rond { background: var(--erreur); color: #fff; }
 .vocal audio { width: 100%; height: 36px; }
+/* Aucun prix affiché au client (demande du terrain) : seul le résumé reste. */
+[data-prix] { display: none !important; }
 .prix-doc { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid var(--trait); padding-top: 10px; font-variant-numeric: tabular-nums; }
 .ajout { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .total { display: flex; justify-content: space-between; align-items: baseline; font-variant-numeric: tabular-nums; }
@@ -235,7 +237,7 @@ p { margin: 0; }
   <!-- Accueil au guichet -->
   <section class="ecran" data-ecran="accueil" hidden>
     <div class="entete"><h1 data-boutique>Photocopie</h1>
-      <button type="button" class="moi" id="btn-modifier-profil" aria-label="Modifier mon prénom ou mon numéro">👤 <span data-prenom></span></button></div>
+      <button type="button" class="moi" id="btn-modifier-profil" hidden aria-label="Modifier mon prénom ou mon numéro">👤 <span data-prenom></span></button></div>
     <div class="contenu">
       <nav class="onglets" data-mode-app hidden aria-label="Fonctions de l'application">
         <button type="button" aria-current="page">🖨️ Kiosque</button>
@@ -253,6 +255,10 @@ p { margin: 0; }
       <div class="action">
         <label class="btn grand" for="fichiers">📄 Choisir mes documents<small>PDF, Word, photos… plusieurs à la fois</small></label>
         <label class="btn second" for="photo">📷 Prendre un document en photo</label>
+      </div>
+      <div class="bandeau bloquant" id="fenetre-reduite" hidden>
+        <p><strong>Cette petite fenêtre ne sait pas ouvrir vos fichiers.</strong> Touchez ce bouton : la même page s'ouvre dans votre navigateur.</p>
+        <a class="btn" id="lien-navigateur" href="/" target="_blank" rel="noopener">Ouvrir dans le navigateur</a>
       </div>
       <p class="aide centre" data-mode-app hidden>La liaison avec le guichet se fait pendant votre choix.</p>
       <div class="pied-appli">
@@ -327,10 +333,9 @@ p { margin: 0; }
     <div class="entete"><button class="retour" data-retour aria-label="Retour">‹</button><h1>Vos données</h1></div>
     <div class="contenu">
       <p><strong>Vos documents vont directement à l'ordinateur de la boutique</strong>, par un lien sans fil entre votre téléphone et lui. Ils ne passent par aucun serveur et par aucun internet.</p>
-      <p><strong>Ce qui est envoyé :</strong> les documents que vous choisissez, vos options (copies, couleur…), votre prénom, et seulement si vous les donnez : votre numéro WhatsApp, votre description et votre message vocal.</p>
+      <p><strong>Ce qui est envoyé :</strong> les documents que vous choisissez, vos options (copies, couleur…), et seulement si vous les donnez : votre description et votre message vocal.</p>
       <p><strong>Qui les voit :</strong> la boutique, pour faire votre travail. Personne d'autre.</p>
       <p><strong>Combien de temps :</strong> la boutique les efface automatiquement après le délai qu'elle a choisi (30 jours si elle n'a rien changé). Vous pouvez demander au guichet qu'ils soient effacés tout de suite.</p>
-      <p><strong>Sur votre téléphone :</strong> seuls votre prénom et votre numéro sont gardés, pour ne pas vous les redemander. Désinstaller l'application les efface.</p>
       <p><strong>Bluetooth et Wi-Fi :</strong> l'application écoute seulement le signal des kiosques pour vous prévenir au guichet. Elle ne sert pas à vous localiser et ne garde aucun trajet.</p>
       <p><strong>Internet :</strong> l'application ne l'utilise que si vous ouvrez « Découvrir », pour afficher les nouveautés. Aucune publicité ne s'affiche ailleurs, et aucune donnée sur vous n'est envoyée.</p>
       <p class="aide">Une question sur vos données : adressez-vous au guichet de la boutique.</p>
@@ -359,8 +364,8 @@ p { margin: 0; }
       </div>
     </div>
     <div class="bas">
-      <div class="total"><small>Prix estimé, confirmé au guichet</small><strong data-total>0 F</strong></div>
-      <button class="btn" id="btn-vers-quand">Continuer</button>
+      <div class="total" hidden><small>Prix estimé, confirmé au guichet</small><strong data-total>0 F</strong></div>
+      <button class="btn" id="btn-vers-quand">Envoyer à la boutique</button>
     </div>
   </section>
 
@@ -564,7 +569,7 @@ p { margin: 0; }
     bienvenue: ["Touchez « Autoriser » tout en bas.", "Android pose une ou deux questions : répondez « Autoriser » à chaque fois."],
     profil: ["Écrivez votre prénom.", "La boutique le verra sur votre commande. Puis touchez « Continuer »."],
     accueil: ["Touchez « Choisir mes documents ».", "Prenez le fichier à imprimer : PDF, Word, photo… Vous pouvez aussi le prendre en photo."],
-    documents: ["Réglez les copies et la couleur.", "Le prix s'affiche en bas. Puis touchez « Continuer »."],
+    documents: ["Réglez les copies et la couleur.", "Puis touchez « Envoyer à la boutique », tout en bas."],
     quand: ["Dites pour quand, puis touchez « Envoyer à la boutique ».", "Restez près du guichet pendant l'envoi."],
     envoi: ["Gardez l'application ouverte.", "Les étapes se cochent toutes seules jusqu'à « Reçu par la boutique »."],
   };
@@ -620,7 +625,9 @@ p { margin: 0; }
   // ─── Autorisations et profil ───
   const profil = () => lire("kiosque.profil", { prenom: "", numero: "" });
   $("#btn-autoriser").addEventListener("click", () => { try { app.autoriser(); } catch (_) { allerApresAutorisation(); } });
-  function allerApresAutorisation() { aller(profil().prenom ? "accueil" : "profil"); }
+  // Plus de prénom ni de numéro à donner (demande du terrain) : on va
+  // droit au choix des documents.
+  function allerApresAutorisation() { aller("accueil"); }
   $("#btn-profil").addEventListener("click", () => {
     const prenom = $("#prenom").value.trim();
     if (!prenom) { $("#prenom").focus(); return; }
@@ -652,6 +659,25 @@ p { margin: 0; }
     aller("documents");
   }
   $("#fichiers").addEventListener("change", (e) => { ajouterFichiers([...e.target.files]); e.target.value = ""; });
+
+  // Après le scan, certains téléphones ouvrent la page dans leur petite
+  // fenêtre « Se connecter au réseau », qui ne sait pas ouvrir le choix des
+  // fichiers. Si le choix ne s'est pas ouvert, on propose d'ouvrir la même
+  // page dans le navigateur, d'un seul toucher.
+  if (!app) {
+    const hote = location.host;
+    if (/Android/i.test(navigator.userAgent)) {
+      $("#lien-navigateur").href = `intent://${hote}/#Intent;scheme=http;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(location.origin + "/")};end`;
+    }
+    let quitte = false;
+    const marquer = () => { quitte = true; };
+    window.addEventListener("blur", marquer);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) marquer(); });
+    $$('label[for="fichiers"], label[for="photo"]').forEach((l) => l.addEventListener("click", () => {
+      quitte = false;
+      setTimeout(() => { if (!quitte && courant === "accueil") $("#fenetre-reduite").hidden = false; }, 1800);
+    }));
+  }
   $("#photo").addEventListener("change", (e) => { ajouterFichiers([...e.target.files]); e.target.value = ""; });
 
   // Documents reçus par « Partager » (WhatsApp, galerie…) : l'application
@@ -901,7 +927,9 @@ p { margin: 0; }
          <div style="color:var(--discret)"><span>À régler au guichet.</span></div>`;
   }
   $$("input[name=quand], #urgent, #q-heure").forEach((x) => x.addEventListener("change", rendreRecap));
-  $("#btn-vers-quand").addEventListener("click", () => aller("quand"));
+  // Plus d'écran « Pour quand ? » : documents, réglages, Envoyer. Le
+  // client attend sur place (choix par défaut).
+  $("#btn-vers-quand").addEventListener("click", () => { $("#q-attends").checked = true; $("#urgent").checked = false; envoyer(); });
 
   // ─── Préparation : photos réduites (A4 à 300 points par pouce) ───
   async function preparer(d) {
@@ -1391,7 +1419,7 @@ p { margin: 0; }
     document.querySelectorAll('[data-suivi]').forEach((d) => (d.hidden = false));
     $("#numero-commande").textContent = r.numero || "✓";
     const total = docs.reduce((s, d) => s + prix(d), 0);
-    $("#recap-final").textContent = `${docs.length} document${docs.length > 1 ? "s" : ""} · ${quandTexte()}${$("#urgent").checked ? " · Urgent" : ""} · ${f(total)} estimés`;
+    $("#recap-final").textContent = `${docs.length} document${docs.length > 1 ? "s" : ""} · ${quandTexte()}${$("#urgent").checked ? " · Urgent" : ""}`;
     $("#pret").hidden = true;
     $("#message-fidelite").hidden = true;
     pretAnnonce = false;
@@ -1457,7 +1485,6 @@ p { margin: 0; }
   if (!app) chargerInfos();
   let premier = "accueil";
   try { if (app && !app.autorise()) premier = "bienvenue"; } catch (_) {}
-  if (premier !== "bienvenue" && !profil().prenom) premier = "profil";
   aller(premier);
   if (premier === "accueil") chargerPartages();
 })();
