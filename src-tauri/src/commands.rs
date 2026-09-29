@@ -193,7 +193,7 @@ pub fn open_file(app: AppHandle, state: State<DbState>, id: i64) -> Result<(), S
     } else {
         exiger_licence(&state)?;
     }
-    files::shell_open(&path, "open")?;
+    files::ouvrir_document(&path)?;
     suivre_impression(&app, &state, id, &path);
     Ok(())
 }
@@ -261,7 +261,7 @@ pub fn print_file(
     // imposée. Le journal des impressions (impression.rs) compte toujours
     // les pages réellement sorties, quelle que soit l'imprimante.
     let _ = imprimante;
-    files::shell_open(&path, "open")?;
+    files::ouvrir_document(&path)?;
     suivre_impression(&app, &state, id, &path);
     Ok(())
 }
@@ -564,6 +564,16 @@ pub fn journal_des_telephones() -> Vec<String> {
     let noms = crate::dns::journal();
 
     let mut lignes = Vec::new();
+    // La première chose à savoir : Android n'ouvre la page que si le PC lui
+    // répond une adresse publique (voir hotspot::ADRESSE_PORTAIL).
+    lignes.push(if crate::hotspot::adresse_portail_en_place() {
+        format!("✅ Adresse donnée aux téléphones : {} (ouverture automatique préparée)", crate::hotspot::ADRESSE_PORTAIL)
+    } else {
+        "⚠️ Adresse de façade 4.3.2.1 ABSENTE : les Android récents n'ouvriront pas la page. \
+         Touchez « Activer le Wi-Fi local » et répondez « Oui » à Windows."
+            .to_string()
+    });
+    lignes.push(String::new());
     lignes.push("— Demandes d'adresse reçues —".to_string());
     if adresses.is_empty() {
         lignes.push(

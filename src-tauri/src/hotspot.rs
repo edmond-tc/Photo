@@ -191,6 +191,17 @@ if ($adaptateur) {
 }
 "#;
 
+/// Récrit le script de démarrage avec le contenu de CETTE version (il n'était
+/// récrit qu'à l'activation : une mise à jour gardait l'ancien, sans
+/// l'adresse de façade). Sans droits : le fichier est dans le dossier de
+/// l'utilisateur.
+pub fn rafraichir_script_demarrage() {
+    #[cfg(windows)]
+    {
+        let _ = ecrire_script_demarrage();
+    }
+}
+
 /// Écrit le script de démarrage à un endroit stable, et rend son chemin.
 ///
 /// Dans le dossier de l'utilisateur et non dans `%TEMP%` : Windows efface le

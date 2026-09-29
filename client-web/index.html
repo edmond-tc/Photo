@@ -658,7 +658,9 @@ p { margin: 0; }
       if (docs.length >= 20) break;
       const d = nouveauDoc(f);
       docs.push(d);
-      if (d.image) { d.pages = 1; try { d.apercu = URL.createObjectURL(f); } catch (_) {} }
+      // Vignette seulement pour une image légère dans un navigateur : une
+      // photo de 12 mégapixels décodée pèse près de 50 Mo en mémoire.
+      if (d.image) { d.pages = 1; if (app || f.size < 2.5 * 1024 * 1024) { try { d.apercu = URL.createObjectURL(f); } catch (_) {} } }
       else if (d.type === "PDF") compterPagesPdf(f).then((n) => { d.pages = n; if (courant === "documents") rendreDocs(); });
     }
     aller("documents");
@@ -716,11 +718,24 @@ p { margin: 0; }
 
   // Nombre de pages d'un PDF, sans bibliothèque : compte les objets « /Type
   // /Page ». Une estimation, que le gérant confirme ; null si incertain.
+  // Lu par morceaux de 512 Ko : lire tout le PDF d'un coup (plusieurs
+  // dizaines de Mo en mémoire, deux fois) faisait fermer le navigateur des
+  // téléphones modestes juste après le choix — « Mémoire insuffisante »,
+  // constaté sur le terrain.
   async function compterPagesPdf(f) {
-    if (f.size > 40 * 1024 * 1024) return null;
+    if (f.size > 60 * 1024 * 1024) return null;
     try {
-      const texte = new TextDecoder("latin1").decode(await f.arrayBuffer());
-      const n = (texte.match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length;
+      const morceau = 512 * 1024, decodeur = new TextDecoder("latin1");
+      let n = 0, reste = "";
+      for (let debut = 0; debut < f.size; debut += morceau) {
+        const texte = reste + decodeur.decode(await f.slice(debut, debut + morceau).arrayBuffer());
+        // Les 20 derniers caractères repassent avec le morceau suivant, sans
+        // être comptés deux fois : on ne compte que ce qui finit avant eux.
+        const limite = Math.max(0, texte.length - 20);
+        for (const m of texte.matchAll(/\/Type\s*\/Page(?![a-zA-Z])/g)) if (m.index < limite) n++;
+        reste = texte.slice(limite);
+      }
+      n += (reste.match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length;
       return n > 0 ? n : null;
     } catch (_) { return null; }
   }
@@ -952,6 +967,9 @@ p { margin: 0; }
   // ─── Préparation : photos réduites (A4 à 300 points par pouce) ───
   async function preparer(d) {
     const fi = d.fichier;
+    // Dans un navigateur, pas de réduction (un grand dessin en mémoire peut
+    // faire fermer la page) : la photo part telle quelle, le Wi-Fi suffit.
+    if (!app) return fi;
     if (!d.image || fi.size < 1.5 * 1024 * 1024 || !/jpe?g|png|webp/i.test(fi.type)) return fi;
     try {
       const img = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = d.apercu || URL.createObjectURL(fi); });

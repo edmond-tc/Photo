@@ -72,16 +72,14 @@ class MainActivity : Activity() {
         /** Adresse imaginaire, servie par l'application elle-même (voir [ClientWeb]). */
         private const val HOTE = "envoyeur.kiosque"
 
-        /**
-         * Sans signe de vie de l'interface (client parti), le réseau est
-         * supprimé au bout de ce délai : le PC ne reste pas bloqué. Tant que
-         * le client choisit ou envoie, l'interface le repousse
-         * (`garderLien`), même pour un très gros fichier.
-         */
-        private const val INACTIVITE_MAX_MS = 3 * 60 * 1000L
 
-        /** Après l'envoi, le temps de voir « En impression » avant de libérer le PC. */
-        private const val APRES_ENVOI_MS = 30 * 1000L
+        /**
+         * Le lien reste tant que l'application est à l'écran (demande du
+         * terrain : il se coupait et se refaisait sans cesse). Il n'est
+         * supprimé que ce délai après que le client a quitté l'application
+         * ou éteint l'écran.
+         */
+        private const val EN_ARRIERE_PLAN_MS = 2 * 60 * 1000L
     }
 
     private lateinit var web: WebView
@@ -204,6 +202,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         visible = false
+        if (liaison != null) programmerFermeture()
         getSystemService(SensorManager::class.java)?.unregisterListener(ecouteurChoc)
         super.onPause()
     }
@@ -211,6 +210,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         visible = true
+        principal.removeCallbacks(fermeture)
         signalerRadios()
         if (autorisationsManquantes().isEmpty()) Balayage.demarrer(this)
         if (tchinActif) activerTchin(true)
@@ -348,7 +348,7 @@ class MainActivity : Activity() {
             principal.post {
                 if (adressePc == null) return@post
                 principal.removeCallbacks(fermeture)
-                principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
+                programmerFermeture()
             }
         }
 
@@ -358,7 +358,7 @@ class MainActivity : Activity() {
             journal("🎉 Commande $numero reçue par le PC.")
             principal.post {
                 principal.removeCallbacks(fermeture)
-                principal.postDelayed(fermeture, APRES_ENVOI_MS)
+                programmerFermeture()
             }
         }
 
@@ -678,7 +678,7 @@ class MainActivity : Activity() {
                     if (joignable) {
                         signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc))
                         principal.removeCallbacks(fermeture)
-                        principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
+                        programmerFermeture()
                     } else {
                         journal("↻ Le PC n'est plus relié : nouvelle liaison.")
                         val ancienne = liaison
@@ -724,7 +724,7 @@ class MainActivity : Activity() {
                 if (pc != null) {
                     adressePc = pc.hostAddress
                     signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc.hostAddress))
-                    principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
+                    programmerFermeture()
                 } else {
                     liaison = null
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -746,6 +746,12 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
         } catch (_: Exception) {
         }
+    }
+
+    /** Coupe le lien seulement si le client n'est plus dans l'application. */
+    private fun programmerFermeture() {
+        principal.removeCallbacks(fermeture)
+        if (!visible) principal.postDelayed(fermeture, EN_ARRIERE_PLAN_MS)
     }
 
     private fun wifiAllume(): Boolean =

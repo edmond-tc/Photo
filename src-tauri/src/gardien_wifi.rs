@@ -60,6 +60,7 @@ pub fn demarrer(app: tauri::AppHandle) {
         let debut = Instant::now();
         let mut derniere_relance: Option<Instant> = None;
         let mut echecs_suivis = 0u32;
+        let mut derniere_facade: Option<Instant> = None;
         loop {
             std::thread::sleep(PERIODE);
             if debut.elapsed() < ATTENTE_DEMARRAGE {
@@ -74,6 +75,16 @@ pub fn demarrer(app: tauri::AppHandle) {
             let methode = reglage(&app, "wifi_methode").unwrap_or_default();
             if reseau_vivant(&methode) {
                 echecs_suivis = 0;
+                // Réseau hébergé sans l'adresse de façade (PC mis à jour sans
+                // réactiver le Wi-Fi) : la tâche de démarrage, qui a déjà les
+                // droits, la pose — sans fenêtre « Oui ».
+                if methode == "réseau hébergé"
+                    && !crate::hotspot::adresse_portail_en_place()
+                    && derniere_facade.is_none_or(|t: Instant| t.elapsed() > Duration::from_secs(600))
+                {
+                    derniere_facade = Some(Instant::now());
+                    lancer_tache_demarrage();
+                }
                 continue;
             }
             // Relances espacées, et de plus en plus après des échecs : une
@@ -95,20 +106,26 @@ pub fn demarrer(app: tauri::AppHandle) {
     });
 }
 
+/// La tâche Windows de démarrage (réseau hébergé, adresse fixe, adresse de
+/// façade), lancée avec les droits qu'elle a déjà.
+fn lancer_tache_demarrage() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("schtasks")
+            .args(["/run", "/tn", crate::hotspot::NOM_TACHE_DEMARRAGE])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
 /// Rallume le réseau. Méthode 1 (réseau hébergé) : par la tâche Windows de
 /// démarrage, qui a déjà les droits — aucune fenêtre « Oui » au gérant.
 /// Autres méthodes : la même activation que le bouton, sans la méthode 1.
 fn relancer(app: &tauri::AppHandle, methode: &str) -> bool {
     if methode == "réseau hébergé" {
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            let _ = std::process::Command::new("schtasks")
-                .args(["/run", "/tn", crate::hotspot::NOM_TACHE_DEMARRAGE])
-                .creation_flags(CREATE_NO_WINDOW)
-                .status();
-        }
+        lancer_tache_demarrage();
         std::thread::sleep(Duration::from_secs(20));
         // Après un redémarrage du PC, l'application ne connaît pas encore
         // l'adresse : la reprise la retrouve et relance DHCP et DNS.

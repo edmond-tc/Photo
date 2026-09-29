@@ -860,10 +860,18 @@ fn un_tour(
         // et rien n'arrivait. Le PC reste donc tant que le téléphone garde
         // son réseau, et ne part que si un AUTRE client attend (ou après
         // 10 minutes sans rien).
-        if calme {
-            if silencieux_depuis >= Duration::from_secs(10 * 60) {
-                break "aucune activité depuis 10 minutes";
-            }
+        // L'application garde son réseau tant qu'elle est à l'écran : sans
+        // cette règle, un premier client garderait le PC pour lui seul. Le
+        // PC cède donc sa place à un client qui attend dès que le premier
+        // n'envoie rien (jamais au milieu d'un envoi), après lui avoir
+        // laissé au moins 20 secondes.
+        let peut_ceder = crate::server::envois_en_cours() == 0
+            && connecte_depuis.elapsed() >= Duration::from_secs(20)
+            && dernier.is_none_or(|t| t.elapsed() >= Duration::from_secs(10));
+        if calme && silencieux_depuis >= Duration::from_secs(10 * 60) {
+            break "aucune activité depuis 10 minutes";
+        }
+        if calme || peut_ceder {
             if dernier_regard.elapsed() >= Duration::from_secs(6) {
                 dernier_regard = Instant::now();
                 client.scanner();

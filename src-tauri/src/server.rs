@@ -1461,7 +1461,29 @@ pub fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
     }
 }
 
+/// Envois en cours de réception : la réception directe ne quitte jamais un
+/// téléphone au milieu d'un envoi (voir reception_directe.rs).
+static ENVOIS_ACTIFS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn envois_en_cours() -> usize {
+    ENVOIS_ACTIFS.load(Ordering::SeqCst)
+}
+
+struct EnvoiEnCours;
+impl EnvoiEnCours {
+    fn commencer() -> Self {
+        ENVOIS_ACTIFS.fetch_add(1, Ordering::SeqCst);
+        EnvoiEnCours
+    }
+}
+impl Drop for EnvoiEnCours {
+    fn drop(&mut self) {
+        ENVOIS_ACTIFS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 async fn recevoir_fichier(State(app): State<AppHandle>, multipart: Multipart) -> impl IntoResponse {
+    let _envoi = EnvoiEnCours::commencer();
     // Licence terminée : rien ne s'accumule en silence dans une file que
     // personne ne peut plus traiter ; le client le sait tout de suite.
     let autorise = {

@@ -106,6 +106,7 @@ pub fn run() {
             bluetooth::demarrer(app.handle().clone());
             reception_directe::demarrer(app.handle().clone());
             arrivees::demarrer(app.handle().clone());
+            hotspot::rafraichir_script_demarrage();
             gardien_wifi::demarrer(app.handle().clone());
             std::thread::spawn(controle_impressions::fenetre_impression_windows_dans_les_navigateurs);
             mdns::demarrer();
