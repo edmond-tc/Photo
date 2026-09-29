@@ -32,3 +32,6 @@ android/.gradle
 android/build
 android/app/build
 android/local.properties
+
+# Application Android embarquée à la construction (voir src-tauri/ressources/LISEZMOI.txt)
+src-tauri/ressources/*.apk

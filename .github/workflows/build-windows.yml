@@ -42,6 +42,26 @@ jobs:
       - name: Installer les dépendances npm
         run: npm ci
 
+      # L'application Android voyage avec le logiciel du PC, qui la donne
+      # aux clients par le Wi-Fi de la boutique, sans internet (route
+      # /application.apk). Prise sur la page publique, là où la construction
+      # Android la dépose. Si elle manque, le PC se construit quand même et
+      # la page d'envoi ne propose simplement pas l'installation.
+      - name: Embarquer l'application Android
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $apk = "src-tauri/ressources/EnvoyeurKiosque.apk"
+          try {
+            Invoke-WebRequest -Uri "https://photocopie-admin.atinzed2.workers.dev/telecharger/apk" -OutFile $apk -MaximumRedirection 5
+            $debut = [System.IO.File]::ReadAllBytes($apk)[0..1]
+            if ($debut[0] -ne 0x50 -or $debut[1] -ne 0x4B) { throw "ce n'est pas un APK" }
+            Write-Host ("Application embarquée : {0} Mo" -f [math]::Round((Get-Item $apk).Length / 1MB, 1))
+          } catch {
+            Remove-Item $apk -ErrorAction SilentlyContinue
+            Write-Host "::warning::Application Android non embarquée : $_"
+          }
+
       - name: Compiler l'application Windows
         run: npm run tauri build
 
