@@ -29,6 +29,83 @@ use tauri::async_runtime::JoinHandle;
 /// bascule de l'un à l'autre.
 pub const ADRESSE_POINT_ACCES: Ipv4Addr = Ipv4Addr::new(192, 168, 73, 1);
 
+/// Adresse PUBLIQUE « de façade » que le PC porte en plus sur la carte de
+/// son Wi-Fi, et que son DNS donne aux téléphones.
+///
+/// Constaté sur le terrain, jamais expliqué jusqu'ici : après « Rejoindre »,
+/// les Android récents n'affichaient NI la page NI la notification « Se
+/// connecter au réseau ». Cause : leur vérification de réseau (NetworkMonitor,
+/// réglage « DNS_PROBE_PRIVATE_IP_NO_INTERNET ») conclut « pas d'internet »
+/// — et non « portail à ouvrir » — dès que connectivitycheck.gstatic.com
+/// répond par une adresse privée (192.168.x.x). Les portails faits maison
+/// (ESP32 & co.) contournent en répondant une adresse publique que
+/// l'appareil porte lui-même : 4.3.2.1. Hors ligne, elle ne mène nulle part
+/// ailleurs que chez nous.
+pub const ADRESSE_PORTAIL: Ipv4Addr = Ipv4Addr::new(4, 3, 2, 1);
+
+static PORTAIL_EN_PLACE: Mutex<Option<(std::time::Instant, bool)>> = Mutex::new(None);
+
+/// Le PC porte-t-il l'adresse de façade ? (Relu au plus toutes les 10 s.)
+pub fn adresse_portail_en_place() -> bool {
+    if let Ok(garde) = PORTAIL_EN_PLACE.lock() {
+        if let Some((quand, oui)) = *garde {
+            if quand.elapsed() < std::time::Duration::from_secs(10) {
+                return oui;
+            }
+        }
+    }
+    let oui = local_ip_address::list_afinet_netifas()
+        .map(|l| l.iter().any(|(_, ip)| *ip == std::net::IpAddr::V4(ADRESSE_PORTAIL)))
+        .unwrap_or(false);
+    if let Ok(mut garde) = PORTAIL_EN_PLACE.lock() {
+        *garde = Some((std::time::Instant::now(), oui));
+    }
+    oui
+}
+
+/// Pose l'adresse de façade sur la carte qui porte `adresse_pc` (droits
+/// administrateur : « Oui » une fois). Pour les méthodes 2 et 3, dont la
+/// carte est recréée à chaque démarrage du réseau.
+#[cfg(windows)]
+pub fn poser_adresse_portail(adresse_pc: Ipv4Addr) -> Result<(), String> {
+    if let Ok(mut garde) = PORTAIL_EN_PLACE.lock() {
+        *garde = None;
+    }
+    if adresse_portail_en_place() {
+        return Ok(());
+    }
+    let resultat = std::env::temp_dir().join("photocopie-benin-hotspot-resultat.txt");
+    let script = format!(
+        r#"$sortie = @()
+$ip = Get-NetIPAddress -IPAddress '{adresse_pc}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($ip) {{
+    New-NetIPAddress -InterfaceIndex $ip.InterfaceIndex -IPAddress '{portail}' -PrefixLength 32 -SkipAsSource $true -ErrorAction SilentlyContinue | Out-Null
+    Set-NetIPInterface -InterfaceIndex $ip.InterfaceIndex -WeakHostReceive Enabled -ErrorAction SilentlyContinue
+    $sortie += "PORTAIL_POSE"
+}} else {{
+    $sortie += "CARTE_INTROUVABLE"
+}}
+$sortie | Out-File -FilePath "{res}" -Encoding utf8
+"#,
+        portail = ADRESSE_PORTAIL,
+        res = resultat.display()
+    );
+    executer_script_eleve(&script)?;
+    if let Ok(mut garde) = PORTAIL_EN_PLACE.lock() {
+        *garde = None;
+    }
+    if adresse_portail_en_place() {
+        Ok(())
+    } else {
+        Err("l'adresse de façade n'a pas pu être posée : l'ouverture automatique de la page risque de ne pas marcher sur les Android récents.".to_string())
+    }
+}
+
+#[cfg(not(windows))]
+pub fn poser_adresse_portail(_adresse_pc: Ipv4Addr) -> Result<(), String> {
+    Err("disponible seulement sous Windows".to_string())
+}
+
 /// Les deux serveurs (DHCP, DNS) tournent tant que le point d'accès est
 /// actif : leurs tâches sont gardées ici pour pouvoir les arrêter net à la
 /// désactivation, plutôt que de les laisser tourner indéfiniment en fond
@@ -109,6 +186,8 @@ $adaptateur = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*Ho
 if ($adaptateur) {
     Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
     New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "__ADRESSE__" -PrefixLength 24 -ErrorAction SilentlyContinue | Out-Null
+    New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "4.3.2.1" -PrefixLength 32 -SkipAsSource $true -ErrorAction SilentlyContinue | Out-Null
+    Set-NetIPInterface -InterfaceIndex $adaptateur.InterfaceIndex -WeakHostReceive Enabled -ErrorAction SilentlyContinue
 }
 "#;
 
@@ -1048,6 +1127,9 @@ try {{
                 $sortie += ("retiree: " + $_.IPAddress)
                 Remove-NetIPAddress -IPAddress $_.IPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
             }}
+        # Adresse publique de façade (voir ADRESSE_PORTAIL dans hotspot.rs).
+        New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "{portail}" -PrefixLength 32 -SkipAsSource $true -ErrorAction SilentlyContinue | Out-Null
+        Set-NetIPInterface -InterfaceIndex $adaptateur.InterfaceIndex -WeakHostReceive Enabled -ErrorAction SilentlyContinue
     }} else {{
         $sortie += "ADAPTATEUR_INTROUVABLE"
     }}
@@ -1059,6 +1141,7 @@ $sortie -join "`n" | Out-File -FilePath "{res}" -Encoding utf8
         ssid = ssid,
         mot_de_passe = mot_de_passe,
         ip = ip,
+        portail = ADRESSE_PORTAIL,
         marqueur_debut = MARQUEUR_DEBUT_DEMARRAGE,
         marqueur_fin = MARQUEUR_FIN_DEMARRAGE,
         pare_feu = crate::pare_feu::commandes_powershell(),

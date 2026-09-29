@@ -269,7 +269,15 @@ async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
         if !admis {
             continue;
         }
-        if let Some(reponse) = construire_reponse(&tampon[..taille], adresse) {
+        // L'adresse publique de façade quand le PC la porte (voir
+        // `hotspot::ADRESSE_PORTAIL`) : sinon Android conclut « pas
+        // d'internet » et n'ouvre jamais la page.
+        let donnee = if crate::hotspot::adresse_portail_en_place() {
+            crate::hotspot::ADRESSE_PORTAIL
+        } else {
+            adresse
+        };
+        if let Some(reponse) = construire_reponse(&tampon[..taille], donnee) {
             let _ = socket.send_to(&reponse, expediteur).await;
         }
     }

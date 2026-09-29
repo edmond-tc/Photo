@@ -923,6 +923,22 @@ pub async fn activer_point_acces_local(
 
     // Le gardien (gardien_wifi.rs) le rallumera désormais tout seul s'il
     // s'éteint, par cette même méthode.
+    // Adresse publique de façade (voir `hotspot::ADRESSE_PORTAIL`) : sans
+    // elle, les Android récents n'ouvrent pas la page après « Rejoindre ».
+    // Pas pendant une relance silencieuse du gardien : jamais de fenêtre
+    // « Oui » qui surgit sans que le gérant ait rien touché.
+    if !crate::hotspot::SAUTER_RESEAU_HEBERGE.load(std::sync::atomic::Ordering::SeqCst)
+        && !crate::hotspot::adresse_portail_en_place()
+    {
+        let adresse_pc = activation.adresse;
+        match tauri::async_runtime::spawn_blocking(move || crate::hotspot::poser_adresse_portail(adresse_pc)).await {
+            Ok(Ok(())) => recapitulatif.push("✅ Ouverture automatique de la page préparée (adresse 4.3.2.1)".to_string()),
+            Ok(Err(e)) => avertissements.push(format!("Ouverture automatique de la page : {e}")),
+            Err(e) => avertissements.push(format!("Ouverture automatique de la page : {e}")),
+        }
+    } else if crate::hotspot::adresse_portail_en_place() {
+        recapitulatif.push("✅ Ouverture automatique de la page préparée (adresse 4.3.2.1)".to_string());
+    }
     // Le gérant a choisi le Wi-Fi créé par le PC : la réception directe
     // (le PC rejoint les téléphones) lâche la carte Wi-Fi.
     if let Ok(conn) = state.0.lock() {
