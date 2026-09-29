@@ -583,6 +583,11 @@ pub async fn journal_des_telephones() -> Vec<String> {
     // autre réseau ou si ses messages ont été jetés en route : ce que
     // Windows voit connecté tranche entre les deux.
     match &clients {
+        // Windows ne liste pas toujours les téléphones du réseau hébergé :
+        // constaté sur le terrain, « AUCUN » alors que deux téléphones
+        // venaient de recevoir leur adresse. Ce compte ne parle donc que
+        // quand notre journal est vide lui aussi.
+        Some(macs) if macs.is_empty() && !adresses.is_empty() => {}
         Some(macs) if macs.is_empty() => lignes.push(
             "📶 Téléphones connectés au Wi-Fi de ce PC (d'après Windows) : AUCUN. Le téléphone \
              n'est pas sur le Wi-Fi de ce PC en ce moment. Vérifiez le nom du Wi-Fi affiché sur \

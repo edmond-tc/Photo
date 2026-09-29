@@ -265,6 +265,9 @@ p { margin: 0; }
         <p><strong>Cette petite fenêtre ne sait pas ouvrir vos fichiers.</strong> Touchez ce bouton : la même page s'ouvre dans votre navigateur.</p>
         <a class="btn" id="lien-navigateur" href="/" target="_blank" rel="noopener">Ouvrir dans le navigateur</a>
       </div>
+      <div class="bandeau bloquant" id="memoire-pleine" hidden>
+        <p><strong>Votre téléphone a manqué de mémoire pendant le choix du fichier.</strong> Le navigateur a dû se relancer et a perdu votre choix. Fermez les autres applications (enregistrement d'écran, jeux, vidéos) et les onglets inutiles du navigateur, puis touchez à nouveau « Choisir mes documents ».</p>
+      </div>
       <p class="aide centre" data-mode-app hidden>La liaison avec le guichet se fait pendant votre choix.</p>
       <div class="pied-appli">
         <details class="a-savoir" data-mode-app hidden>
@@ -693,7 +696,21 @@ p { margin: 0; }
     const marquer = () => { quitte = true; };
     window.addEventListener("blur", marquer);
     document.addEventListener("visibilitychange", () => { if (document.hidden) marquer(); });
+    // Un téléphone à court de mémoire ferme le navigateur pendant que le
+    // choix des fichiers est ouvert : au retour, la page repart de zéro et
+    // Chrome dit seulement « Mémoire insuffisante ». On le reconnaît à la
+    // marque posée en ouvrant le choix, retrouvée au chargement suivant.
+    const MARQUE_CHOIX = "choix-ouvert";
+    const ouvertA = lire(MARQUE_CHOIX, 0);
+    if (ouvertA && Date.now() - ouvertA < 5 * 60 * 1000) $("#memoire-pleine").hidden = false;
+    try { localStorage.removeItem(MARQUE_CHOIX); } catch (_) {}
+    const oublierChoix = () => { try { localStorage.removeItem(MARQUE_CHOIX); } catch (_) {} };
+    // Choix annulé : la page, restée en vie, revient au premier plan.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(oublierChoix, 1500); });
+    $$("label[data-choix] input").forEach((c) => c.addEventListener("change", oublierChoix));
     $$('label[data-choix]').forEach((l) => l.addEventListener("click", () => {
+      ecrire(MARQUE_CHOIX, Date.now());
+      $("#memoire-pleine").hidden = true;
       quitte = false;
       setTimeout(() => { if (!quitte && courant === "accueil") $("#fenetre-reduite").hidden = false; }, 1800);
     }));
