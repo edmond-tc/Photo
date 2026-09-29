@@ -1034,10 +1034,16 @@ function pageApplication(navigateur, tailleApk, whatsapp) {
     : tailleApk
       ? `${avantages}
          <a class="bouton" href="/telecharger/apk">Installer l'application<small>Gratuit · ${taille} · 1 minute</small></a>
+         <p class="auto">Le téléchargement commence tout seul. Sinon, touchez le bouton.</p>
          ${etapes}`
       : `<p>Application bientôt disponible. Demandez-la au guichet.</p>`;
+  // Android : le téléchargement démarre seul pendant que le client lit les
+  // étapes (un geste de moins). Sans script : la politique de sécurité de
+  // la page reste « aucun JavaScript ».
+  const auto = !iphone && tailleApk ? `<meta http-equiv="refresh" content="1;url=/telecharger/apk">` : "";
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${auto}
 <title>Envoyeur Kiosque</title>
 <style>
   :root { --fond:#fff; --encre:#15202d; --discret:#5a6577; --carte:#f3f5f9; --accent:#1f4fd1; }
@@ -1061,6 +1067,7 @@ function pageApplication(navigateur, tailleApk, whatsapp) {
   .b { display:inline-block; border:1.5px solid var(--accent); color:var(--accent); border-radius:999px; padding:0 8px; font-weight:700; white-space:nowrap; }
   .rassure { margin-top:12px; font-size:0.9rem; }
   .note { font-size:0.8rem; }
+  .auto { text-align:center; font-size:0.9rem; margin-top:-8px; }
 </style></head><body><main>
   <h1>Envoyez vos documents à la photocopie depuis votre téléphone</h1>
   ${contenu}
