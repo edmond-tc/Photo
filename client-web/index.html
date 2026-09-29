@@ -159,6 +159,19 @@ p { margin: 0; }
 .carte-decouvrir .genre { font-size: 0.75rem; color: var(--discret); text-transform: uppercase; letter-spacing: 0.06em; }
 .pied { text-align: center; font-size: 0.8rem; color: var(--discret); padding: 8px 18px 18px; }
 .pied a { color: inherit; }
+/* Accueil du kiosque : une seule grande action, le reste rangé en bas. */
+.entete .moi { margin-left: auto; border: 0; background: var(--surface-2); border-radius: 999px; padding: 8px 12px; font-weight: 700; cursor: pointer; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action { display: grid; gap: 10px; }
+.btn.grand { padding: 20px 18px; font-size: 1.15rem; }
+.btn small { display: block; font-weight: 400; font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
+.centre { text-align: center; }
+.bandeau.compact { grid-template-columns: 1fr auto; align-items: center; padding: 10px 12px; }
+.bandeau.compact p { margin: 0; font-size: 0.9rem; }
+.bandeau.compact .btn { width: auto; padding: 8px 14px; }
+.pied-appli { margin-top: auto; display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--trait); }
+.a-savoir summary { cursor: pointer; font-weight: 700; color: var(--accent); }
+.a-savoir p { margin: 8px 0 0; font-size: 0.9rem; color: var(--discret); }
+.liens-bas { display: flex; justify-content: space-between; gap: 12px; }
 /* Deux fonctions séparées de l'application : le kiosque, et « Main à main » entre téléphones. */
 .onglets { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface-2); border-radius: 14px; padding: 4px; gap: 4px; }
 .onglets button { border: 0; background: transparent; border-radius: 11px; padding: 10px 8px; font-weight: 700; cursor: pointer; color: var(--discret); font-size: 0.95rem; }
@@ -221,7 +234,8 @@ p { margin: 0; }
 
   <!-- Accueil au guichet -->
   <section class="ecran" data-ecran="accueil" hidden>
-    <div class="entete"><h1 data-boutique>Photocopie</h1></div>
+    <div class="entete"><h1 data-boutique>Photocopie</h1>
+      <button type="button" class="moi" id="btn-modifier-profil" aria-label="Modifier mon prénom ou mon numéro">👤 <span data-prenom></span></button></div>
     <div class="contenu">
       <nav class="onglets" data-mode-app hidden aria-label="Fonctions de l'application">
         <button type="button" aria-current="page">🖨️ Kiosque</button>
@@ -232,21 +246,26 @@ p { margin: 0; }
         <p><strong>Le Wi-Fi de votre téléphone est éteint.</strong> Il sert à envoyer vos documents au guichet, sans internet et sans forfait.</p>
         <button type="button" class="btn" data-allumer="wifi">Allumer le Wi-Fi</button>
       </div>
-      <div class="bandeau doux" data-bandeau-bluetooth hidden>
-        <p><strong>Bluetooth éteint.</strong> Allumez-le pour être prévenu tout seul en arrivant au guichet. Il n'est pas nécessaire pour envoyer.</p>
-        <button type="button" class="btn" data-allumer="bluetooth">Allumer le Bluetooth</button>
+      <div class="bandeau doux compact" data-bandeau-bluetooth hidden>
+        <p><strong>Bluetooth éteint</strong> : pas prévenu en arrivant au guichet.</p>
+        <button type="button" class="btn" data-allumer="bluetooth">Allumer</button>
       </div>
-      <p>Bonjour <strong data-prenom></strong>. Choisissez vos documents<span data-mode-app> : la connexion se fait pendant ce temps</span>.</p>
-      <div style="display:grid; gap:8px">
-        <label class="btn" for="fichiers">Choisir mes documents</label>
-        <label class="btn second" for="photo">Prendre un document en photo</label>
+      <div class="action">
+        <label class="btn grand" for="fichiers">📄 Choisir mes documents<small>PDF, Word, photos… plusieurs à la fois</small></label>
+        <label class="btn second" for="photo">📷 Prendre un document en photo</label>
       </div>
-      <p class="aide">Photos, PDF, Word… Plusieurs fichiers à la fois.</p>
-      <button class="lien" id="btn-modifier-profil">Modifier mon prénom ou mon numéro</button>
-      <button class="lien" data-aller="donnees">Vos données</button>
-      <p class="aide" data-mode-app hidden><strong>Plus rien à scanner :</strong> cette application marche dans toutes les boutiques équipées (photocopie, cyber, restaurant…). Demandez au gérant ; votre téléphone vous prévient quand vous y êtes.
-        Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">01 51 22 67 41</a>.</p>
-      <button class="btn second" data-aller="decouvrir" style="margin-top:auto">✨ Découvrir</button>
+      <p class="aide centre" data-mode-app hidden>La liaison avec le guichet se fait pendant votre choix.</p>
+      <div class="pied-appli">
+        <details class="a-savoir" data-mode-app hidden>
+          <summary>Cette application marche partout</summary>
+          <p>Plus rien à scanner : elle marche dans toutes les boutiques équipées (photocopie, cyber, restaurant…). Demandez au gérant ; votre téléphone vous prévient quand vous y êtes.
+            Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">01 51 22 67 41</a>.</p>
+        </details>
+        <div class="liens-bas">
+          <button type="button" class="lien" data-aller="decouvrir">✨ Découvrir</button>
+          <button type="button" class="lien" data-aller="donnees">Vos données</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -568,7 +587,9 @@ p { margin: 0; }
     detail.textContent = texte[1];
     guide.append(titre, quoi, detail);
     const contenu = document.querySelector(`[data-ecran="${id}"] .contenu`);
-    if (contenu) contenu.prepend(guide);
+    const onglets = contenu && contenu.querySelector(".onglets:not([hidden])");
+    if (onglets) onglets.after(guide);
+    else if (contenu) contenu.prepend(guide);
     // L'application le dit aussi à voix haute, une fois par écran.
     if (app && !guidesDits.has(id)) { guidesDits.add(id); parlerClient(texte[0]); }
   }

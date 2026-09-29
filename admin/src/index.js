@@ -1042,12 +1042,15 @@ function pageApplication(navigateur, tailleApk, whatsapp, bluetooth, nonce) {
         ${!iphone ? `<button type="button" class="bouton bt" data-mode="bluetooth">🔵 Par Bluetooth</button>` : ""}
       </div>
       ${whatsapp ? `<div class="panneau" data-panneau="whatsapp" hidden>
+        <div class="bonjour" data-bonjour>
+          <p><b>Une seule fois sur ce téléphone :</b> dites bonjour à la boutique. Sans cela, WhatsApp ne vous la proposera pas au moment d'envoyer vos fichiers.</p>
+          <a class="bouton second" href="https://wa.me/${whatsapp}?text=${message}" data-dire-bonjour>👋 Dire bonjour à la boutique</a>
+          <small>Envoyez le message qui s'affiche, puis revenez sur cette page.</small>
+        </div>
         <ol>
-          <li><a class="bouton second" href="https://wa.me/${whatsapp}?text=${message}">1. Ouvrir la discussion avec la boutique</a>
-            <small>Envoyez ce premier message, puis revenez sur cette page : la boutique sera en haut de la liste.</small></li>
-          <li><label class="bouton second" for="fichiers">2. Choisir mes fichiers</label><div class="liste" data-liste></div></li>
-          <li><button type="button" class="bouton" data-envoyer disabled>3. Envoyer par WhatsApp</button>
-            <small>Choisissez <b>WhatsApp</b>, puis la discussion de la boutique. Tous vos fichiers partent d'un coup.</small></li>
+          <li><label class="bouton second" for="fichiers">Choisir mes fichiers</label><div class="liste" data-liste></div></li>
+          <li><button type="button" class="bouton" data-envoyer disabled>Envoyer à la boutique par WhatsApp</button>
+            <small>Touchez <b>WhatsApp</b>, puis la discussion de la boutique, <b>en haut de la liste</b>. Tous vos fichiers partent d'un coup.</small></li>
         </ol>
       </div>` : ""}
       ${!iphone ? `<div class="panneau" data-panneau="bluetooth" hidden>
@@ -1082,6 +1085,19 @@ function pageApplication(navigateur, tailleApk, whatsapp, bluetooth, nonce) {
   const retour = document.querySelector(".retour-envoi");
   let mode = null, choisis = [];
   const dire = (t) => { retour.hidden = !t; retour.textContent = t || ""; };
+  // « Bonjour » déjà dit à CETTE boutique sur ce téléphone : l'étape disparaît.
+  const cleBonjour = "bonjour-${whatsapp || ""}";
+  const lireBonjour = () => { try { return localStorage.getItem(cleBonjour) === "1"; } catch (_) { return false; } };
+  const cadreBonjour = document.querySelector("[data-bonjour]");
+  if (cadreBonjour && lireBonjour()) cadreBonjour.hidden = true;
+  const lienBonjour = document.querySelector("[data-dire-bonjour]");
+  if (lienBonjour) lienBonjour.addEventListener("click", () => {
+    try { localStorage.setItem(cleBonjour, "1"); } catch (_) {}
+    // Au retour de WhatsApp, le navigateur remet la page telle quelle : l'étape
+    // doit déjà avoir disparu, place au choix des fichiers.
+    setTimeout(() => { if (cadreBonjour) cadreBonjour.hidden = true; }, 300);
+  });
+  window.addEventListener("pageshow", () => { if (cadreBonjour && lireBonjour()) cadreBonjour.hidden = true; });
   document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
     mode = b.dataset.mode;
     document.querySelectorAll("[data-panneau]").forEach((p) => (p.hidden = p.dataset.panneau !== mode));
@@ -1154,6 +1170,10 @@ ${auto}
   .panneau small { display:block; color:var(--discret); margin-top:6px; line-height:1.4; }
   .liste { font-size:0.9rem; margin-top:6px; overflow-wrap:anywhere; }
   .retour-envoi { background:var(--carte); border-radius:12px; padding:12px; color:var(--encre); }
+  [hidden] { display:none !important; }
+  .bonjour { background:#e8f7ee; color:#14532d; border-radius:12px; padding:12px; display:grid; gap:8px; margin-bottom:12px; }
+  .bonjour p { color:inherit; }
+  @media (prefers-color-scheme: dark) { .bonjour { background:#173726; color:#c9f2da; } }
   .etapes { background:var(--carte); border-radius:14px; padding:14px; }
   .etapes ol { margin:0; padding-left:1.3rem; display:grid; gap:10px; line-height:1.5; }
   .b { display:inline-block; border:1.5px solid var(--accent); color:var(--accent); border-radius:999px; padding:0 8px; font-weight:700; white-space:nowrap; }
