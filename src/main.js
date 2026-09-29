@@ -1182,9 +1182,11 @@ async function afficherQr() {
     // client déjà sur le Wi-Fi dont la page ne s'est pas ouverte.
     if (info.qr_page_data_uri) {
       urlEl.innerHTML +=
-        `<details style="margin-top:0.75rem"><summary>Page pas ouverte ? Code de secours (écran du PC seulement)</summary>` +
-        `<img src="${info.qr_page_data_uri}" alt="Code de la page d'envoi" width="150" height="150" style="image-rendering:pixelated">` +
-        `</details>`;
+        `<div style="margin-top:0.75rem; padding:0.6rem; border:2px dashed currentColor; border-radius:8px">` +
+        `<strong>Le client est sur le Wi-Fi mais la page ne s'est pas ouverte ?</strong> Tournez l'écran vers lui : ` +
+        `il scanne ce code, la page d'envoi s'ouvre.<br>` +
+        `<img src="${info.qr_page_data_uri}" alt="Code de la page d'envoi" width="170" height="170" style="image-rendering:pixelated; margin-top:0.4rem">` +
+        `</div>`;
     }
     signatureQr = signatureInfoQr(info);
   } catch (e) {
