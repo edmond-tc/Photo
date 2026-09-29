@@ -983,7 +983,8 @@ fieldset {
   }
   body.impression-qr .qr-bloc figcaption {
     font-size: 1.05rem;
-    max-width: 22ch;
+    max-width: 30ch;
+    text-align: left;
   }
   body.impression-qr #modal-qr .modal-entete,
   body.impression-qr #modal-qr #qr-aide,
@@ -1047,6 +1048,7 @@ fieldset {
 }
 
 .qr-bloc figcaption {
+  white-space: pre-line;
   margin-top: 0.4rem;
   font-size: 0.85rem;
   font-weight: 600;
