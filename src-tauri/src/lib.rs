@@ -1,4 +1,5 @@
 pub mod activite;
+pub mod arrivees;
 pub mod backup;
 pub mod balise_ble;
 pub mod bluetooth;
@@ -103,6 +104,7 @@ pub fn run() {
             retention::start(app.handle().clone());
             bluetooth::demarrer(app.handle().clone());
             reception_directe::demarrer(app.handle().clone());
+            arrivees::demarrer(app.handle().clone());
             mdns::demarrer();
             balise_ble::demarrer(app.handle().clone());
             // Reprend un point d'accès rallumé par Windows au démarrage du

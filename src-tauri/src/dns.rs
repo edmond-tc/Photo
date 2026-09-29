@@ -259,6 +259,7 @@ async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
         if let Ok(demande) = hickory_proto::op::Message::from_vec(&tampon[..taille]) {
             if let Some(question) = demande.queries.first() {
                 if admis {
+                    crate::arrivees::vu(*expediteur.ip());
                     noter(*expediteur.ip(), &question.name().to_string());
                 } else {
                     noter_refus(*expediteur.ip(), &question.name().to_string(), adresse);

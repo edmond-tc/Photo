@@ -1114,9 +1114,20 @@ async function afficherQr() {
       info.qr_data_uri,
       null,
       info.qr_page_data_uri
-        ? "Touchez « Rejoindre » : la page d'envoi s'ouvre. Sinon, touchez la notification « Se connecter au réseau »."
+        ? "Touchez « Rejoindre », puis « Se connecter » si le téléphone le propose : la page d'envoi s'ouvre."
         : "Scannez pour envoyer vos documents"
     );
+    // Pour les téléphones qui ne lisent pas les QR (pas de scanner, Lens
+    // qui échoue) : le nom du Wi-Fi et son mot de passe, en clair sur
+    // l'affiche. Choisi dans la liste Wi-Fi, le réseau ouvre la page.
+    const secours = document.querySelector("#qr-affiche-secours");
+    if (secours) {
+      secours.textContent = info.reseau
+        ? `Le code ne se lit pas ? Wi-Fi du téléphone → « ${info.reseau} »` +
+          (info.mot_de_passe ? `, mot de passe ${info.mot_de_passe}` : "") +
+          `, puis touchez « Se connecter ».`
+        : "Le réseau ne se connecte pas ? Appuyez sur son nom dans la liste affichée.";
+    }
     // Chaque installation appelle une consigne différente : dire au gérant
     // une phrase qui ne correspond pas à son poste le laisserait sans réponse
     // devant un client bloqué.
@@ -1192,6 +1203,45 @@ async function afficherQr() {
   } catch (e) {
     conteneur.innerHTML = `<p class="avertissement">${echapperHtml(e)}</p>`;
   }
+}
+
+let alerteSansPage = null;
+async function alerterTelephoneSansPage() {
+  let info;
+  try {
+    info = await invoke("get_server_info");
+  } catch {
+    return;
+  }
+  const code = info.qr_page_data_uri;
+  if (!code) return;
+  if (!alerteSansPage) {
+    alerteSansPage = document.createElement("div");
+    alerteSansPage.setAttribute("role", "alertdialog");
+    alerteSansPage.style.cssText =
+      "position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; padding:16px";
+    document.body.appendChild(alerteSansPage);
+  }
+  alerteSansPage.innerHTML = `
+    <div style="background:#fff; color:#111; border-radius:14px; padding:1.4rem; max-width:30rem; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.35)">
+      <h2 style="margin:0 0 0.5rem">📱 Un client est sur le Wi-Fi</h2>
+      <p style="margin:0 0 0.8rem; font-size:1.05rem">Sa page d'envoi ne s'est pas ouverte.
+        <strong>Tournez l'écran vers lui : il scanne ce code</strong>, la page s'ouvre.</p>
+      <img src="${code}" alt="Code de la page d'envoi" width="260" height="260" style="image-rendering:pixelated">
+      <p style="margin:0.8rem 0; color:#555">Ou il tire le haut de son écran et touche « Se connecter au réseau ».</p>
+      <button class="btn-primaire" type="button">Fermer</button>
+    </div>`;
+  alerteSansPage.querySelector("button").addEventListener("click", () => {
+    alerteSansPage.style.display = "none";
+  });
+  alerteSansPage.style.display = "flex";
+  try {
+    jouerSonUrgent();
+  } catch {}
+  clearTimeout(alerteSansPage.minuterie);
+  alerteSansPage.minuterie = setTimeout(() => {
+    if (alerteSansPage) alerteSansPage.style.display = "none";
+  }, 90000);
 }
 
 /// Ce qui, s'il change, rend le QR affiché faux.
@@ -3343,6 +3393,11 @@ async function demarrerApplication() {
   // après le clic sur "Imprimer" (voir impression.rs). Peut arriver que la
   // commande soit encore dans la file, ou déjà passée en caisse — on met
   // donc à jour partout où sa ligne pourrait exister à cet instant.
+  // Un téléphone est sur le Wi-Fi du PC mais sa page d'envoi ne s'est pas
+  // ouverte (voir arrivees.rs) : le gérant le voit tout de suite, avec le
+  // code à faire scanner. Le client n'attend plus sans que personne le sache.
+  await listen("telephone-sans-page", () => alerterTelephoneSansPage());
+
   await listen("impression-confirmee", (event) => {
     confirmationsImpression.set(event.payload.id, event.payload);
     appliquerStatutImpression(event.payload.id, event.payload);
@@ -3491,16 +3546,25 @@ async function afficherDocumentsTelephone(options) {
     // Et seuls les 10 plus récents sont montrés (voir plus bas).
   }
   if (!lecture.telephones) {
-    toast("Aucun téléphone branché n'est visible. " + conseil +
-      " (Un iPhone ne montre que ses photos au PC, pas les documents WhatsApp.)", "attention", 12000);
+    // Une fenêtre qui reste, pas un message qui disparaît : sur le terrain,
+    // le gérant n'avait pas eu le temps de lire la consigne.
+    alert("📱 Aucun téléphone branché n'est visible.\n\n" +
+      "1. Branchez le câble (un câble qui transfère, pas seulement de charge).\n" +
+      "2. DÉVERROUILLEZ le téléphone.\n" +
+      "3. Tirez le haut de l'écran du téléphone, touchez la notification « USB » (ou « Recharge via USB ») " +
+      "et choisissez « Transfert de fichiers ».\n" +
+      "4. Réappuyez sur 📱.\n\n(Un iPhone ne montre que ses photos au PC, pas les documents WhatsApp.)");
     return;
   }
   if (!lecture.dossiers_whatsapp) {
-    toast("Le téléphone est vu, mais ses fichiers ne sont pas accessibles. " + conseil, "attention", 12000);
+    alert("📱 Le téléphone est vu, mais ses fichiers ne sont pas accessibles.\n\n" + conseil +
+      "\n\nSi le téléphone demande « Autoriser l'accès aux données ? », touchez « Autoriser ».");
     return;
   }
   if (!lecture.documents.length) {
-    toast("Aucun fichier reçu sur WhatsApp sur ce téléphone.", "attention", 6000);
+    alert("📱 Aucun fichier reçu sur WhatsApp n'est enregistré sur ce téléphone.\n\n" +
+      "Dans WhatsApp, TOUCHEZ d'abord le document du client pour le télécharger " +
+      "(tant qu'il montre une flèche ⬇, il n'est pas sur le téléphone). Puis réappuyez sur 📱.");
     return;
   }
 

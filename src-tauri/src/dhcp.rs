@@ -126,6 +126,9 @@ async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
             let [a, b, c, _] = adresse_serveur.octets();
             let donnee = Ipv4Addr::new(a, b, c, adresse_pour(demande.chaddr()));
             noter(format!("{type_demande} de {mac} → {donnee}"));
+            if type_demande == "Request" {
+                crate::arrivees::vu(donnee);
+            }
         }
 
         if let Some(reponse) = construire_reponse(&tampon[..taille], adresse_serveur) {

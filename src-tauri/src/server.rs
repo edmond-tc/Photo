@@ -127,7 +127,8 @@ pub fn start(app: AppHandle) {
                     .state::<EtatServeur>()
                     .0
                     .store(true, Ordering::SeqCst);
-                if let Err(e) = axum::serve(listener, router).await {
+                let service = router.into_make_service_with_connect_info::<std::net::SocketAddr>();
+                if let Err(e) = axum::serve(listener, service).await {
                     eprintln!("Serveur local arrêté avec une erreur : {e}");
                 }
                 app_pour_etat
@@ -207,7 +208,35 @@ fn construire_router(app: AppHandle) -> Router {
         // l'espace disque réel ; celle d'axum, fixe, refuserait à tort.
         .layer(DefaultBodyLimit::disable())
         .layer(axum::middleware::map_response(autoriser_application))
+        .layer(axum::middleware::from_fn(noter_arrivee))
         .with_state(app)
+}
+
+/// Suit les téléphones du Wi-Fi du PC (voir `arrivees.rs`) : une question de
+/// réseau dit « je suis là », un appel de la page d'envoi (`/infos`, qu'elle
+/// charge en s'ouvrant, ou `/envoyer`) dit « ma page est ouverte ». Les
+/// autres visites (applications du téléphone en arrière-plan) ne prouvent
+/// rien : le client ne voit pas ce qu'elles reçoivent.
+async fn noter_arrivee(
+    requete: axum::extract::Request,
+    suite: axum::middleware::Next,
+) -> axum::response::Response {
+    let ip = requete
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .and_then(|c| match c.0.ip() {
+            std::net::IpAddr::V4(v4) => Some(v4),
+            std::net::IpAddr::V6(v6) => v6.to_ipv4_mapped(),
+        });
+    if let Some(ip) = ip {
+        let chemin = requete.uri().path();
+        if chemin == "/infos" || chemin == "/envoyer" || chemin.starts_with("/statut/") {
+            crate::arrivees::page_ouverte(ip);
+        } else {
+            crate::arrivees::vu(ip);
+        }
+    }
+    suite.run(requete).await
 }
 
 /// L'application Envoyeur Kiosque affiche l'interface depuis le téléphone
@@ -412,7 +441,8 @@ fn demarrer_portail_captif(app: AppHandle) {
                 if let Ok(mut garde) = PROBLEME_PORTAIL_CAPTIF.lock() {
                     *garde = None;
                 }
-                let _ = axum::serve(listener, router).await;
+                let service = router.into_make_service_with_connect_info::<std::net::SocketAddr>();
+                let _ = axum::serve(listener, service).await;
             }
             Err(e) => {
                 if let Ok(mut garde) = PROBLEME_PORTAIL_CAPTIF.lock() {

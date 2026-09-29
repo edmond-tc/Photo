@@ -149,8 +149,11 @@ mod implementation {
         let lecteur = DataReader::CreateDataReader(&socket.InputStream()?)?;
         let ecrivain = DataWriter::CreateDataWriter(&socket.OutputStream()?)?;
         let mut fichier = crate::obex::FichierEnCours::default();
+        // Fin du corps reçue sur un paquet non final : on attend le paquet
+        // final pour répondre « c'est bon » et déposer.
+        let mut complet = false;
 
-        loop {
+        let resultat = (|| -> windows::core::Result<()> { loop {
             // Chaque paquet OBEX commence par son code d'opération et sa
             // longueur totale sur trois octets : on lit d'abord ça pour
             // savoir combien d'octets réclamer ensuite.
@@ -176,16 +179,24 @@ mod implementation {
                     nom,
                     donnees,
                     dernier,
+                    bit_final,
                 }) => {
                     if fichier.ajouter(nom, &donnees).is_err() {
                         // Envoi trop volumineux : on coupe plutôt que de
                         // laisser la mémoire du PC se remplir.
+                        fichier = crate::obex::FichierEnCours::default();
+                        complet = false;
                         break;
                     }
-                    if dernier {
-                        deposer(app, &mut fichier);
+                    if bit_final {
+                        // Répondre D'ABORD : enregistrer et mettre en file
+                        // prend du temps, et un téléphone qui attend trop
+                        // croit à un échec et renvoie le document.
                         repondre(&ecrivain, &crate::obex::reponse_succes())?;
+                        deposer(app, &mut fichier);
+                        complet = false;
                     } else {
+                        complet |= dernier;
                         repondre(&ecrivain, &crate::obex::reponse_continuer())?;
                     }
                 }
@@ -193,15 +204,49 @@ mod implementation {
                     repondre(&ecrivain, &crate::obex::reponse_succes())?;
                     break;
                 }
-                Some(crate::obex::Requete::Abandon) => break,
+                Some(crate::obex::Requete::Abandon) => {
+                    fichier = crate::obex::FichierEnCours::default();
+                    complet = false;
+                    break;
+                }
                 None => break,
             }
-        }
+        } Ok(()) })();
 
-        Ok(())
+        // Téléphone qui a envoyé tout le corps mais raccroche sans paquet
+        // final : le document est complet, on le garde.
+        if complet {
+            deposer(app, &mut fichier);
+        }
+        resultat
+    }
+
+    /// Empreintes des derniers documents reçus par Bluetooth : un téléphone
+    /// qui renvoie le même document (il a cru à un échec) ne le fait pas
+    /// tomber deux fois sur le PC.
+    static RECENTS: Mutex<Vec<(std::time::Instant, [u8; 32])>> = Mutex::new(Vec::new());
+
+    fn deja_recu(donnees: &[u8]) -> bool {
+        use sha2::{Digest, Sha256};
+        let empreinte: [u8; 32] = Sha256::digest(donnees).into();
+        let maintenant = std::time::Instant::now();
+        let Ok(mut recents) = RECENTS.lock() else {
+            return false;
+        };
+        recents.retain(|(quand, _)| maintenant.duration_since(*quand) < std::time::Duration::from_secs(10 * 60));
+        if recents.iter().any(|(_, e)| *e == empreinte) {
+            return true;
+        }
+        recents.push((maintenant, empreinte));
+        false
     }
 
     fn deposer(app: &tauri::AppHandle, fichier: &mut crate::obex::FichierEnCours) {
+        let recu = std::mem::take(fichier);
+        if recu.donnees.is_empty() || deja_recu(&recu.donnees) {
+            return;
+        }
+        let fichier = &recu;
         let Some(dossier) = dossier_de_reception(app) else {
             eprintln!(
                 "Fichier reçu par Bluetooth mais aucun dossier surveillé n'est configuré : \
@@ -220,11 +265,6 @@ mod implementation {
             }
             Err(e) => eprintln!("Impossible d'enregistrer le fichier reçu par Bluetooth : {e}"),
         }
-
-        // Le même téléphone peut enchaîner plusieurs fichiers sur une seule
-        // connexion : repartir à vide, sinon le deuxième contiendrait le
-        // premier.
-        *fichier = crate::obex::FichierEnCours::default();
     }
 }
 

@@ -50,6 +50,11 @@ pub enum Requete {
         nom: Option<String>,
         donnees: Vec<u8>,
         dernier: bool,
+        /// Le bit « final » de l'opération : seul lui appelle la réponse
+        /// « c'est bon ». Un « fin de corps » sur un paquet non final
+        /// appelle encore « continue », sinon le téléphone croit à un échec
+        /// et renvoie tout (document reçu en double ou en triple).
+        bit_final: bool,
     },
     Deconnexion,
     /// Le téléphone renonce (client qui annule, sortie de portée…).
@@ -101,6 +106,7 @@ pub fn decoder_requete(paquet: &[u8]) -> Option<Requete> {
                 // "fin de corps". Accepter les deux évite de rester bloqué à
                 // attendre une suite qui ne viendra jamais.
                 dernier: operation == OP_PUT_FINAL || fin_de_corps_vue,
+                bit_final: operation == OP_PUT_FINAL,
             })
         }
         _ => None,
@@ -265,6 +271,7 @@ mod tests {
                 nom: Some("facture.pdf".to_string()),
                 donnees: b"PDF-CONTENU".to_vec(),
                 dernier: true,
+                bit_final: true,
             }
         );
     }
@@ -291,6 +298,7 @@ mod tests {
                 nom,
                 donnees,
                 dernier,
+                ..
             }) = decoder_requete(&paquet(operation, corps))
             else {
                 panic!("morceau illisible");
