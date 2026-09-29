@@ -1112,26 +1112,35 @@ async function afficherQr() {
       return bloc;
     };
 
-    ajouterQr(
+    // Ni Android ni l'iPhone n'ouvrent la page tout seuls après un scan de
+    // QR Wi-Fi (constaté sur le terrain : Samsung A07 sous Android 16,
+    // iPhone). Mais les deux l'ouvrent dès qu'on touche le nom du réseau
+    // dans le Wi-Fi du téléphone : un seul geste, le même partout, que tout
+    // le monde sait déjà faire. L'affiche ne dit que lui — pas de
+    // « Réglages », où les clients se perdent — avec le nom choisi par le
+    // gérant, en gros sous le code, pour qu'on le reconnaisse dans la liste.
+    const nomReseau = info.qr_page_data_uri ? info.reseau : null;
+    const blocQr = ajouterQr(
       info.qr_data_uri,
       null,
-      info.qr_page_data_uri
-        // Ni Android ni l'iPhone n'ouvrent la page tout seuls après un scan
-        // de QR Wi-Fi (constaté sur le terrain : Samsung A07 sous Android 16,
-        // iPhone) : Android montre la notification « Connectez-vous au
-        // réseau », l'iPhone rien. Ce dernier toucher, seul le téléphone le
-        // décide — l'affiche doit donc le montrer, pas le taire.
-        ? "② Touchez « Rejoindre »\n③ Touchez « Connectez-vous au réseau » en haut de l'écran du téléphone : la page d'envoi s'ouvre"
+      nomReseau
+        ? `② Touchez « Rejoindre »\n③ Ouvrez votre Wi-Fi et touchez « ${nomReseau} » : la page d'envoi s'ouvre`
         : "Scannez pour envoyer vos documents"
     );
+    if (nomReseau) {
+      const etiquette = document.createElement("p");
+      etiquette.className = "qr-nom-reseau";
+      etiquette.textContent = `Wi-Fi : ${nomReseau}`;
+      blocQr.insertBefore(etiquette, blocQr.querySelector("figcaption"));
+    }
     // Pour les téléphones qui ne lisent pas les QR (pas de scanner, Lens
     // qui échoue) : le nom du Wi-Fi et son mot de passe, en clair sur
     // l'affiche. Choisi dans la liste Wi-Fi, le réseau ouvre la page.
     const secours = document.querySelector("#qr-affiche-secours");
     if (secours) {
       secours.textContent = info.reseau
-        ? `iPhone, ou rien ne s'ouvre : sur le téléphone, Réglages → Wi-Fi → touchez « ${info.reseau} »` +
-          (info.mot_de_passe ? ` (mot de passe ${info.mot_de_passe})` : "") +
+        ? `Le code ne se lit pas ? Dans votre Wi-Fi, touchez « ${info.reseau} »` +
+          (info.mot_de_passe ? `, mot de passe ${info.mot_de_passe}` : "") +
           `.`
         : "Le réseau ne se connecte pas ? Appuyez sur son nom dans la liste affichée.";
     }

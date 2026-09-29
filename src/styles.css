@@ -981,6 +981,9 @@ fieldset {
   body.impression-qr .qr-numero {
     font-size: 3rem;
   }
+  body.impression-qr .qr-nom-reseau {
+    font-size: 1.8rem;
+  }
   body.impression-qr .qr-bloc figcaption {
     font-size: 1.05rem;
     max-width: 30ch;
@@ -1045,6 +1048,13 @@ fieldset {
   font-weight: 800;
   line-height: 1;
   margin-bottom: 0.35rem;
+}
+
+/* Le nom du réseau, que le client cherchera dans son Wi-Fi. */
+.qr-nom-reseau {
+  margin: 0.3rem 0 0;
+  font-size: 1.1rem;
+  font-weight: 800;
 }
 
 .qr-bloc figcaption {
