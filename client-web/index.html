@@ -159,6 +159,31 @@ p { margin: 0; }
 .carte-decouvrir .genre { font-size: 0.75rem; color: var(--discret); text-transform: uppercase; letter-spacing: 0.06em; }
 .pied { text-align: center; font-size: 0.8rem; color: var(--discret); padding: 8px 18px 18px; }
 .pied a { color: inherit; }
+/* Deux fonctions séparées de l'application : le kiosque, et « Main à main » entre téléphones. */
+.onglets { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface-2); border-radius: 14px; padding: 4px; gap: 4px; }
+.onglets button { border: 0; background: transparent; border-radius: 11px; padding: 10px 8px; font-weight: 700; cursor: pointer; color: var(--discret); font-size: 0.95rem; }
+.onglets button[aria-current="page"] { background: var(--surface); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,0.14); }
+.gros-choix { display: grid; gap: 12px; }
+.gros-choix .btn { padding: 22px 18px; font-size: 1.2rem; }
+.gros-choix .btn small { display: block; font-weight: 400; font-size: 0.85rem; opacity: 0.85; margin-top: 4px; }
+.mam-fichiers { display: grid; gap: 8px; }
+.mam-fichier { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
+.mam-fichier .nom { font-weight: 700; overflow-wrap: anywhere; flex: 1; }
+.mam-fichier .taille { font-size: 0.85rem; color: var(--discret); white-space: nowrap; }
+.coche { display: flex; gap: 10px; align-items: center; background: var(--surface-2); border-radius: 12px; padding: 12px; cursor: pointer; }
+.coche input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.mam-etat { font-size: 1.15rem; font-weight: 800; }
+.mam-etat.erreur { color: var(--erreur); }
+.mam-etat.ok { color: var(--ok); }
+.symbole { border: 3px solid var(--teinte, var(--accent)); border-radius: 18px; padding: 14px; display: flex; align-items: center; gap: 14px; }
+.symbole .emoji { font-size: 3rem; line-height: 1; }
+.symbole strong { display: block; font-size: 1.15rem; }
+.pair { background: var(--surface-2); border-radius: 12px; padding: 12px; display: grid; gap: 6px; }
+.pair .tete { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
+.barre { height: 10px; border-radius: 999px; background: var(--trait); overflow: hidden; }
+.barre > div { height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+.pair.fini .barre > div { background: var(--ok); }
+.pair .sous { font-size: 0.85rem; color: var(--discret); overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -198,6 +223,10 @@ p { margin: 0; }
   <section class="ecran" data-ecran="accueil" hidden>
     <div class="entete"><h1 data-boutique>Photocopie</h1></div>
     <div class="contenu">
+      <nav class="onglets" data-mode-app hidden aria-label="Fonctions de l'application">
+        <button type="button" aria-current="page">🖨️ Kiosque</button>
+        <button type="button" data-aller="mam">📲 Main à main</button>
+      </nav>
       <span class="puce" data-puce><span class="point"></span><span data-puce-texte>Connexion au guichet…</span></span>
       <div class="bandeau bloquant" data-bandeau-wifi hidden>
         <p><strong>Le Wi-Fi de votre téléphone est éteint.</strong> Il sert à envoyer vos documents au guichet, sans internet et sans forfait.</p>
@@ -219,6 +248,59 @@ p { margin: 0; }
         Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">01 51 22 67 41</a>.</p>
       <button class="btn second" data-aller="decouvrir" style="margin-top:auto">✨ Découvrir</button>
     </div>
+  </section>
+
+  <!-- Main à main : envoyer n'importe quel fichier d'un téléphone à un autre (application seulement) -->
+  <section class="ecran" data-ecran="mam" hidden>
+    <div class="entete"><h1>Main à main</h1></div>
+    <div class="contenu">
+      <nav class="onglets" aria-label="Fonctions de l'application">
+        <button type="button" data-aller="accueil">🖨️ Kiosque</button>
+        <button type="button" aria-current="page">📲 Main à main</button>
+      </nav>
+      <p>Envoyez <strong>n'importe quel fichier</strong> (vidéos, musique, applications, documents) au téléphone d'à côté. Sans internet, sans forfait, sans rien scanner.</p>
+      <div class="bandeau bloquant" data-mam-bandeau="wifi" hidden>
+        <p><strong>Le Wi-Fi est éteint.</strong> Il transporte les fichiers (aucun réseau à choisir).</p>
+        <button type="button" class="btn" data-allumer="wifi">Allumer le Wi-Fi</button>
+      </div>
+      <div class="bandeau bloquant" data-mam-bandeau="bluetooth" hidden>
+        <p><strong>Le Bluetooth est éteint.</strong> Il sert à trouver l'autre téléphone.</p>
+        <button type="button" class="btn" data-allumer="bluetooth">Allumer le Bluetooth</button>
+      </div>
+      <div class="gros-choix">
+        <button type="button" class="btn" data-aller="mam-envoi">📤 Envoyer<small>Choisir des fichiers pour le téléphone d'à côté</small></button>
+        <button type="button" class="btn second" id="mam-btn-recevoir">📥 Recevoir<small>L'autre personne touche « Envoyer »</small></button>
+      </div>
+      <p class="aide">Astuce : au lieu de toucher, cognez doucement les deux téléphones l'un contre l'autre : <strong>« Tchin ! »</strong></p>
+      <p class="aide" id="mam-message" hidden></p>
+      <button type="button" class="btn second" id="mam-donner" style="margin-top:auto">🎁 Donner l'application à un ami</button>
+    </div>
+  </section>
+
+  <section class="ecran" data-ecran="mam-envoi" hidden>
+    <div class="entete"><button class="retour" data-aller="mam" aria-label="Retour">‹</button><h1>Envoyer</h1></div>
+    <div class="contenu">
+      <div class="mam-fichiers" id="mam-fichiers"></div>
+      <button type="button" class="btn second" id="mam-choisir">+ Choisir des fichiers</button>
+      <label class="coche"><input type="checkbox" id="mam-groupe"><span><strong>Envoyer à plusieurs</strong><br><span class="aide">Jusqu'à 5 téléphones à la fois : chacun touche « Recevoir ».</span></span></label>
+      <p class="aide">Demandez à l'autre personne de toucher « Recevoir », puis touchez « Envoyer » (ou cognez les deux téléphones).</p>
+    </div>
+    <div class="bas"><button class="btn" id="mam-envoyer" disabled>Envoyer</button></div>
+  </section>
+
+  <section class="ecran" data-ecran="mam-session" hidden>
+    <div class="entete"><h1 id="mam-titre">Main à main</h1></div>
+    <div class="contenu">
+      <p class="mam-etat" id="mam-etat" role="status">…</p>
+      <p class="aide" id="mam-conseil"></p>
+      <div class="symbole" id="mam-symbole" hidden>
+        <span class="emoji" data-emoji></span>
+        <span><strong data-nom></strong><span class="aide">Le même symbole doit s'afficher sur l'autre téléphone. Sinon, touchez « Arrêter ».</span></span>
+      </div>
+      <div class="mam-fichiers" id="mam-pairs"></div>
+      <div class="mam-fichiers" id="mam-recus"></div>
+    </div>
+    <div class="bas"><button class="btn second" id="mam-arreter">Arrêter</button></div>
   </section>
 
   <!-- Vos données : ce qui part, où, combien de temps -->
@@ -326,7 +408,10 @@ p { margin: 0; }
       </div>
       <p class="aide" id="message-fidelite" hidden></p>
     </div>
-    <div class="bas"><button class="btn second" id="btn-nouvelle">Nouvelle commande</button></div>
+    <div class="bas">
+      <button class="btn second" id="btn-nouvelle">Nouvelle commande</button>
+      <button class="btn second" id="btn-donner-recu" data-mode-app hidden>🎁 Donner l'application à un ami (sans internet)</button>
+    </div>
   </section>
 
   <p class="pied" data-mode-web hidden>Un souci ? <a href="/classique">Page d'envoi simple</a></p>
@@ -373,6 +458,8 @@ p { margin: 0; }
       if (e.type === "nouvelle-visite") {
         // Notification du guichet touchée : on repart pour une nouvelle commande.
         if (courant === "recu" && !envoiEnCours) nouvelleCommande();
+        // Au guichet : retour à la fonction kiosque (sauf partage en cours).
+        else if (/^mam/.test(courant) && !mam.actif) aller("accueil");
       } else if (e.type === "connexion") {
         if (e.etat === "aucune" && courant === "recu") passerHorsLigne();
         connexion = { etat: e.etat, base: e.pc ? `http://${e.pc}:${PORT}` : connexion.base, message: e.message };
@@ -386,6 +473,8 @@ p { margin: 0; }
           connexion = { etat: "aucune" };
           if (["accueil", "documents", "quand"].includes(courant)) demarrerConnexion();
         }
+      } else if (e.type === "mam" || e.type === "mam-choix" || e.type === "tchin") {
+        evenementMam(e);
       } else if (e.type === "partages") {
         chargerPartages();
       } else if (e.type === "autorisations") {
@@ -396,7 +485,8 @@ p { margin: 0; }
   };
   // Bouton « retour » du téléphone : écran précédent, ou quitter.
   window.kiosque.retour = () => {
-    const precedent = { documents: "accueil", quand: "documents", decouvrir: "accueil", donnees: avantDonnees, profil: profil().prenom ? "accueil" : null }[courant];
+    const precedent = { documents: "accueil", quand: "documents", decouvrir: "accueil", donnees: avantDonnees, profil: profil().prenom ? "accueil" : null,
+      mam: "accueil", "mam-envoi": "mam", "mam-session": mam.actif ? null : "mam" }[courant];
     if (!precedent || envoiEnCours) return false;
     aller(precedent);
     return true;
@@ -406,6 +496,8 @@ p { margin: 0; }
   function majRadios() {
     $$("[data-bandeau-wifi]").forEach((b) => (b.hidden = !app || radios.wifi));
     $$("[data-bandeau-bluetooth]").forEach((b) => (b.hidden = !app || radios.bluetooth !== false));
+    $$('[data-mam-bandeau="wifi"]').forEach((b) => (b.hidden = !app || radios.wifi));
+    $$('[data-mam-bandeau="bluetooth"]').forEach((b) => (b.hidden = !app || radios.bluetooth !== false));
   }
   document.addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-allumer]");
@@ -493,6 +585,10 @@ p { margin: 0; }
     if (id === "documents") { rendreDocs(); demarrerConnexion(); }
     if (id === "quand") { remplirHeures(); rendreRecap(); }
     if (id === "decouvrir") chargerDecouvrir();
+    if (id === "mam") ouvrirMam();
+    if (id === "mam-envoi") rendreMamFichiers();
+    // Le geste « Tchin » n'écoute que sur ces deux écrans.
+    if (app) { try { app.tchin(id === "mam" || id === "mam-envoi"); } catch (_) {} }
     majGuide(id);
   }
   document.addEventListener("click", (ev) => { const c = ev.target.closest("[data-aller]"); if (c) aller(c.dataset.aller); });
@@ -980,6 +1076,228 @@ p { margin: 0; }
     contexteAudio();
     if (!app) { try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch (_) {} }
   }
+
+  // ─── Main à main (application seulement) ───
+  // Fonction à part du kiosque : d'un téléphone à un autre, tout genre de
+  // fichier. Le moteur est dans l'application (android/…/MainAMain.kt) ;
+  // ici, seulement les écrans, les sons et la voix.
+  const mam = { actif: false, fichiers: [], role: null, pairs: {}, fini: false };
+  const taille = (n) => {
+    if (!(n >= 0)) return "";
+    if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} Ko`;
+    if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1).replace(".", ",")} Mo`;
+    return `${(n / 1024 / 1024 / 1024).toFixed(2).replace(".", ",")} Go`;
+  };
+  const duree = (s) => (s < 60 ? `${Math.max(1, Math.round(s))} s` : `${Math.round(s / 60)} min`);
+
+  function ouvrirMam() {
+    if (!app) { aller("accueil"); return; }
+    // Les deux fonctions ne tournent jamais ensemble : le réseau du kiosque est refermé.
+    try { app.quitterKiosque(); } catch (_) {}
+    majRadios();
+  }
+  function messageMam(texte) {
+    const m = $("#mam-message");
+    m.hidden = !texte;
+    m.textContent = texte || "";
+  }
+  function rendreMamFichiers() {
+    const liste = $("#mam-fichiers");
+    liste.textContent = "";
+    mam.fichiers.forEach((f, i) => {
+      const ligne = document.createElement("div");
+      ligne.className = "mam-fichier";
+      const nom = document.createElement("span");
+      nom.className = "nom";
+      nom.textContent = f.nom;
+      const t = document.createElement("span");
+      t.className = "taille";
+      t.textContent = taille(f.taille);
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "retirer";
+      x.setAttribute("aria-label", `Retirer ${f.nom}`);
+      x.textContent = "×";
+      x.addEventListener("click", () => { try { app.mamRetirer(i); } catch (_) {} });
+      ligne.append(nom, t, x);
+      liste.appendChild(ligne);
+    });
+    if (!mam.fichiers.length) {
+      const vide = document.createElement("p");
+      vide.className = "aide";
+      vide.textContent = "Aucun fichier choisi pour l'instant.";
+      liste.appendChild(vide);
+    }
+    const total = mam.fichiers.reduce((s, f) => s + Math.max(0, f.taille || 0), 0);
+    const bouton = $("#mam-envoyer");
+    bouton.disabled = !mam.fichiers.length;
+    bouton.textContent = mam.fichiers.length ? `Envoyer ${mam.fichiers.length} fichier${mam.fichiers.length > 1 ? "s" : ""} · ${taille(total)}` : "Envoyer";
+  }
+  function debutSession(role) {
+    Object.assign(mam, { actif: true, role, pairs: {}, fini: false });
+    $("#mam-titre").textContent = role === "envoi" ? "Envoi" : "Réception";
+    $("#mam-symbole").hidden = true;
+    $("#mam-pairs").textContent = "";
+    $("#mam-recus").textContent = "";
+    $("#mam-conseil").textContent = "";
+    etatMam(role === "envoi" ? "Recherche du téléphone qui reçoit…" : "Prêt à recevoir…");
+    $("#mam-arreter").textContent = "Arrêter";
+    aller("mam-session");
+  }
+  function etatMam(texte, genre) {
+    const e = $("#mam-etat");
+    e.textContent = texte;
+    e.className = "mam-etat" + (genre ? " " + genre : "");
+  }
+  function finSession() {
+    mam.actif = false;
+    mam.fini = true;
+    $("#mam-arreter").textContent = "Terminé";
+  }
+  function envoyerMam() {
+    if (!mam.fichiers.length || mam.actif) return;
+    amorcerSon();
+    debutSession("envoi");
+    try { app.mamEnvoyer($("#mam-groupe").checked, profil().prenom || ""); } catch (_) {}
+  }
+  function recevoirMam() {
+    if (mam.actif) return;
+    amorcerSon();
+    debutSession("reception");
+    try { app.mamRecevoir(profil().prenom || ""); } catch (_) {}
+  }
+  function pair(cle, prenom) {
+    if (!mam.pairs[cle]) {
+      const bloc = document.createElement("div");
+      bloc.className = "pair";
+      bloc.innerHTML = `<div class="tete"><span data-qui></span><span data-pourcent></span></div><div class="barre"><div></div></div><div class="sous" data-sous></div>`;
+      $("#mam-pairs").appendChild(bloc);
+      mam.pairs[cle] = bloc;
+    }
+    const bloc = mam.pairs[cle];
+    if (prenom !== undefined) bloc.querySelector("[data-qui]").textContent = prenom || "L'autre téléphone";
+    return bloc;
+  }
+  function evenementMam(e) {
+    if (e.type === "mam-choix") { mam.fichiers = e.fichiers || []; rendreMamFichiers(); return; }
+    if (e.type === "tchin") {
+      if (courant === "mam-envoi" && mam.fichiers.length) envoyerMam();
+      else if (courant === "mam") recevoirMam();
+      return;
+    }
+    const envoi = mam.role === "envoi";
+    const cle = envoi ? (e.id || "?") : "r";
+    switch (e.etat) {
+      case "wifi": case "bluetooth":
+        if (courant === "mam-session" && mam.actif) { mam.actif = false; aller("mam"); }
+        radios[e.etat] = false;
+        majRadios();
+        messageMam(e.etat === "wifi" ? "Allumez le Wi-Fi, puis réessayez." : "Allumez le Bluetooth, puis réessayez.");
+        break;
+      case "recherche":
+        etatMam(e.groupe ? "Recherche des téléphones qui reçoivent…" : "Recherche du téléphone qui reçoit…");
+        $("#mam-conseil").textContent = e.groupe ? "Chacun touche « Recevoir » sur son téléphone." : "L'autre personne touche « Recevoir ». Tenez les deux téléphones côte à côte.";
+        break;
+      case "rapprocher": $("#mam-conseil").textContent = "Rapprochez les deux téléphones (presque collés)."; break;
+      case "plusieurs": $("#mam-conseil").textContent = "Plusieurs téléphones à côté : collez les deux téléphones pour que le bon soit choisi."; break;
+      case "reseau": etatMam(e.cinqGhz ? "Liaison rapide (5 GHz) en préparation…" : "Liaison en préparation…"); break;
+      case "attente": etatMam(e.groupe ? "En attente des téléphones qui reçoivent…" : "En attente de l'autre téléphone…"); break;
+      case "attente-envoyeur":
+        etatMam("Prêt à recevoir");
+        $("#mam-conseil").textContent = e.annonce ? "L'autre personne touche « Envoyer ». Gardez les téléphones côte à côte."
+          : "Ce téléphone ne sait pas se signaler : collez-le à celui qui envoie, puis l'autre touche « Envoyer ».";
+        break;
+      case "connexion": etatMam("Liaison avec l'autre téléphone…"); break;
+      case "relie": {
+        const s = e.symbole || {};
+        const carte = $("#mam-symbole");
+        carte.hidden = false;
+        carte.style.setProperty("--teinte", /^#[0-9a-f]{6}$/i.test(s.teinte || "") ? s.teinte : "");
+        carte.querySelector("[data-emoji]").textContent = s.emoji || "";
+        carte.querySelector("[data-nom]").textContent = `${s.animal || ""} ${s.couleur || ""} ${s.nombre || ""}`.trim();
+        const qui = e.prenom || "l'autre téléphone";
+        etatMam(envoi ? "Envoi en cours" : "Réception en cours");
+        $("#mam-conseil").textContent = "";
+        const bloc = pair(cle, e.prenom);
+        bloc.querySelector("[data-sous]").textContent = `${e.nombre} fichier${e.nombre > 1 ? "s" : ""} · ${taille(e.total)}${e.cinqGhz ? " · liaison rapide" : ""}`;
+        signal("succes", envoi ? `Relié à ${qui}. Envoi en cours.` : `Relié à ${qui}. Réception en cours.`, 80);
+        break;
+      }
+      case "progression": {
+        const bloc = pair(cle, envoi ? e.prenom : undefined);
+        const p = e.total > 0 ? Math.min(100, Math.floor((e.fait / e.total) * 100)) : 0;
+        bloc.querySelector(".barre > div").style.width = `${p}%`;
+        bloc.querySelector("[data-pourcent]").textContent = e.total > 0 ? `${p} %` : taille(e.fait);
+        const reste = e.vitesse > 0 && e.total > 0 ? (e.total - e.fait) / e.vitesse : 0;
+        bloc.querySelector("[data-sous]").textContent =
+          `${e.fichier || ""} · ${taille(e.vitesse)}/s${reste > 1 ? ` · encore ${duree(reste)}` : ""}`;
+        break;
+      }
+      case "fichier": {
+        const ligne = document.createElement("div");
+        ligne.className = "mam-fichier";
+        const nom = document.createElement("span");
+        nom.className = "nom";
+        nom.textContent = `✓ ${e.nom}`;
+        const ouvrir = document.createElement("button");
+        ouvrir.type = "button";
+        ouvrir.className = "lien";
+        ouvrir.textContent = /android\.package-archive/.test(e.typeFichier || "") ? "Installer" : "Ouvrir";
+        ouvrir.addEventListener("click", () => { try { app.mamOuvrir(e.n); } catch (_) {} });
+        ligne.append(nom, ouvrir);
+        $("#mam-recus").appendChild(ligne);
+        break;
+      }
+      case "coupure": {
+        const bloc = pair(cle, envoi ? e.prenom : undefined);
+        bloc.querySelector("[data-sous]").textContent = "Liaison coupée : reprise là où ça s'est arrêté…";
+        break;
+      }
+      case "termine": {
+        const bloc = pair(cle, envoi ? e.prenom : undefined);
+        bloc.classList.add("fini");
+        bloc.querySelector(".barre > div").style.width = "100%";
+        bloc.querySelector("[data-pourcent]").textContent = "✓";
+        bloc.querySelector("[data-sous]").textContent = envoi ? "Tout est envoyé." : "Tout est reçu, dans Téléchargements › Main a main.";
+        const n = e.nombre || 0;
+        if (envoi && $("#mam-groupe").checked) {
+          signal("pret", `${e.prenom || "Un téléphone"} a tout reçu.`, [60, 40, 60]);
+          $("#mam-arreter").textContent = "Terminer";
+        } else {
+          etatMam(envoi ? "Envoi terminé" : "Réception terminée", "ok");
+          signal("pret", envoi ? "Envoi terminé." : `Réception terminée. ${n} fichier${n > 1 ? "s" : ""} reçu${n > 1 ? "s" : ""}.`, [60, 40, 60]);
+          finSession();
+        }
+        break;
+      }
+      case "erreur":
+        if (e.id && envoi && $("#mam-groupe").checked) {
+          pair(cle).querySelector("[data-sous]").textContent = e.message || "Échec pour ce téléphone.";
+          break;
+        }
+        etatMam(e.message || "La liaison a échoué. Réessayez.", "erreur");
+        $("#mam-conseil").textContent = "";
+        signal("echec", e.message || "La liaison a échoué.", [200, 100, 200]);
+        finSession();
+        if (courant !== "mam-session") messageMam(e.message);
+        break;
+      case "arrete":
+        finSession();
+        if (courant === "mam-session") aller(mam.role === "envoi" ? "mam-envoi" : "mam");
+        break;
+      case "ouverture": messageMam(e.message); etatMam(e.message || "", "erreur"); break;
+    }
+  }
+  $("#mam-btn-recevoir").addEventListener("click", recevoirMam);
+  $("#mam-envoyer").addEventListener("click", envoyerMam);
+  $("#mam-choisir").addEventListener("click", () => { try { app.mamChoisir(); } catch (_) {} });
+  $("#mam-donner").addEventListener("click", () => { try { app.donnerApplication(); } catch (_) {} });
+  // Juste après une commande réussie : le meilleur moment pour la faire connaître.
+  $("#btn-donner-recu").addEventListener("click", () => { try { app.donnerApplication(); } catch (_) {} });
+  $("#mam-arreter").addEventListener("click", () => {
+    if (mam.actif) { try { app.mamArreter(); } catch (_) {} return; }
+    aller(mam.role === "envoi" ? "mam-envoi" : "mam");
+  });
 
   // ─── Découvrir ───
   // Projets du porteur du projet et partenaires, gérés depuis son tableau

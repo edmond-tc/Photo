@@ -2,7 +2,9 @@ name: Build Android (envoyeur)
 
 on:
   push:
-    branches: [main]
+    # « essai/… » et « main-a-main » : APK d'essai seulement (publication
+    # GitHub à part), jamais sur la page d'installation des clients.
+    branches: [main, main-a-main, "essai/**"]
     paths:
       - "android/**"
       - "client-web/**"
@@ -54,12 +56,17 @@ jobs:
         with:
           node-version: 22
 
-      - name: Publier l'APK sur la page de téléchargement
+      - name: Préparer l'APK
         shell: bash
         run: |
           mkdir -p sortie
           cp android/app/build/outputs/apk/release/app-release.apk sortie/EnvoyeurKiosque.apk
           (cd sortie && sha256sum EnvoyeurKiosque.apk > empreinte-sha256-envoyeur.txt)
+
+      - name: Publier l'APK sur la page de téléchargement
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
           cd admin
           npm ci
           for nom in EnvoyeurKiosque.apk empreinte-sha256-envoyeur.txt; do
@@ -75,6 +82,9 @@ jobs:
         run: |
           version=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
           tag="envoyeur-v$version"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            tag="envoyeur-essai-${GITHUB_REF_NAME//\//-}"
+          fi
           # --latest=false : la « dernière version » du dépôt doit rester
           # celle du logiciel du PC.
           if gh release view "$tag" >/dev/null 2>&1; then

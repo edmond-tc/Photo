@@ -6,12 +6,17 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioManager
 import android.media.MediaRecorder
 import android.speech.tts.TextToSpeech
@@ -21,6 +26,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
@@ -60,6 +66,8 @@ class MainActivity : Activity() {
         private const val DEMANDE_ACTIVER_BLUETOOTH = 15
         private const val DEMANDE_REGLAGE_WIFI = 16
         private const val DEMANDE_REGLAGE_BLUETOOTH = 17
+        private const val DEMANDE_MAM = 18
+        private const val DEMANDE_MAM_FICHIERS = 19
 
         /** Adresse imaginaire, servie par l'application elle-même (voir [ClientWeb]). */
         private const val HOTE = "envoyeur.kiosque"
@@ -111,6 +119,40 @@ class MainActivity : Activity() {
         }
     }
 
+    /** « Main à main » : fichiers choisis pour l'envoi, et action en attente d'autorisation. */
+    private val mamFichiers = mutableListOf<MainAMain.FichierAEnvoyer>()
+    private var mamEnAttente: (() -> Unit)? = null
+
+    /** Geste « Tchin » : deux téléphones qu'on cogne doucement l'un contre l'autre. */
+    private var tchinActif = false
+    private val ecouteurChoc = object : SensorEventListener {
+        private val gravite = FloatArray(3)
+        private var pret = false
+        private var dernier = 0L
+
+        override fun onSensorChanged(e: SensorEvent) {
+            if (!pret) {
+                e.values.copyInto(gravite, 0, 0, 3)
+                pret = true
+                return
+            }
+            var force = 0f
+            for (k in 0..2) {
+                gravite[k] = 0.9f * gravite[k] + 0.1f * e.values[k]
+                val lineaire = e.values[k] - gravite[k]
+                force += lineaire * lineaire
+            }
+            val t = SystemClock.elapsedRealtime()
+            // Un petit choc sec (plus de 1,3 g en un instant), pas plus d'un par seconde et demie.
+            if (force > 13f * 13f && t - dernier > 1500) {
+                dernier = t
+                signaler(JSONObject().put("type", "tchin"))
+            }
+        }
+
+        override fun onAccuracyChanged(capteur: Sensor?, precision: Int) {}
+    }
+
     @Volatile private var liaison: Liaison? = null
     @Volatile private var adressePc: String? = null
     private val fermeture = Runnable { fermerLiaison() }
@@ -150,6 +192,7 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(recepteurRadios, filtre, Context.RECEIVER_NOT_EXPORTED)
         else registerReceiver(recepteurRadios, filtre)
         traiter(intent)
+        MainAMain.ecouteur = { e -> signaler(e) }
         web.loadUrl("https://$HOTE/index.html")
     }
 
@@ -161,6 +204,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         visible = false
+        getSystemService(SensorManager::class.java)?.unregisterListener(ecouteurChoc)
         super.onPause()
     }
 
@@ -169,6 +213,7 @@ class MainActivity : Activity() {
         visible = true
         signalerRadios()
         if (autorisationsManquantes().isEmpty()) Balayage.demarrer(this)
+        if (tchinActif) activerTchin(true)
     }
 
     override fun onDestroy() {
@@ -178,6 +223,8 @@ class MainActivity : Activity() {
         enregistreur?.let { try { it.release() } catch (_: Exception) {} }
         enregistreur = null
         vocaux.forEach { it.delete() }
+        MainAMain.ecouteur = null
+        getSystemService(SensorManager::class.java)?.unregisterListener(ecouteurChoc)
         principal.removeCallbacks(fermeture)
         liaison?.let { l -> executeur.execute { l.fermer() } }
         liaison = null
@@ -429,6 +476,171 @@ class MainActivity : Activity() {
             }
             return liste.toString()
         }
+
+        // ─── Main à main ───
+
+        /** Ce que ce téléphone sait faire (Bluetooth, balise, Wi-Fi Direct, 5 GHz). */
+        @JavascriptInterface
+        fun mamCapacites(): String = MainAMain.capacites(this@MainActivity).toString()
+
+        /** Choisir des fichiers de tout genre (vidéos, .apk, musique…) ; la liste revient en « mam-choix ». */
+        @JavascriptInterface
+        fun mamChoisir() {
+            principal.post { choisirPourMam() }
+        }
+
+        @JavascriptInterface
+        fun mamRetirer(i: Int) {
+            synchronized(mamFichiers) { if (i in mamFichiers.indices) mamFichiers.removeAt(i) }
+            signalerChoixMam()
+        }
+
+        @JavascriptInterface
+        fun mamEnvoyer(groupe: Boolean, prenom: String) {
+            principal.post {
+                lancerMam {
+                    val liste = synchronized(mamFichiers) { mamFichiers.toList() }
+                    MainAMain.envoyer(this@MainActivity, liste, groupe, prenom.take(40))
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun mamRecevoir(prenom: String) {
+            principal.post { lancerMam { MainAMain.recevoir(this@MainActivity, prenom.take(40)) } }
+        }
+
+        @JavascriptInterface
+        fun mamArreter() = MainAMain.arreter()
+
+        /** Ouvre un fichier reçu (ou l'installe, pour un .apk : Android demande confirmation). */
+        @JavascriptInterface
+        fun mamOuvrir(n: Int) {
+            principal.post { ouvrirRecu(n) }
+        }
+
+        @JavascriptInterface
+        fun tchin(actif: Boolean) {
+            principal.post {
+                tchinActif = actif
+                activerTchin(actif)
+            }
+        }
+
+        /** Partage le fichier d'installation de l'application (Quick Share, Bluetooth…). */
+        @JavascriptInterface
+        fun donnerApplication() {
+            principal.post { partagerApk() }
+        }
+
+        /**
+         * La personne passe à « Main à main » : le réseau du kiosque est
+         * refermé. Les deux fonctions ne tournent jamais en même temps.
+         */
+        @JavascriptInterface
+        fun quitterKiosque() {
+            principal.post { fermerLiaison() }
+        }
+
+    }
+
+    // ───────────────────────────── Main à main ─────────────────────────────
+
+    private fun autorisationsMam(): List<String> = buildList {
+        addAll(autorisationsNecessaires())
+        if (Build.VERSION.SDK_INT >= 31) {
+            add(Manifest.permission.BLUETOOTH_ADVERTISE)
+            add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+    }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+
+    /**
+     * Avant « Envoyer » ou « Recevoir » : autorisations, Wi-Fi et Bluetooth
+     * allumés, et le lien avec le PC du kiosque refermé (un téléphone ne
+     * tient qu'un réseau direct à la fois).
+     */
+    private fun lancerMam(action: () -> Unit) {
+        if (MainAMain.enCours()) return
+        val manquantes = autorisationsMam()
+        if (manquantes.isNotEmpty()) {
+            mamEnAttente = action
+            requestPermissions(manquantes.toTypedArray(), DEMANDE_MAM)
+            return
+        }
+        if (!wifiAllume()) {
+            signaler(JSONObject().put("type", "mam").put("etat", "wifi"))
+            return
+        }
+        if (bluetoothAllume() != true) {
+            signaler(JSONObject().put("type", "mam").put("etat", "bluetooth"))
+            return
+        }
+        fermerLiaison()
+        // Même file que la fermeture du lien kiosque : elle est finie avant.
+        executeur.execute { principal.post { action() } }
+    }
+
+    private fun choisirPourMam() {
+        val choix = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("*/*")
+            .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(choix, DEMANDE_MAM_FICHIERS)
+        } catch (_: ActivityNotFoundException) {
+        }
+    }
+
+    private fun signalerChoixMam() {
+        val liste = JSONArray()
+        synchronized(mamFichiers) {
+            mamFichiers.forEach { f ->
+                liste.put(JSONObject().put("nom", f.nom).put("taille", f.taille).put("type", f.type))
+            }
+        }
+        signaler(JSONObject().put("type", "mam-choix").put("fichiers", liste))
+    }
+
+    private fun ouvrirRecu(n: Int) {
+        val (uri, type) = synchronized(MainAMain.recus) { MainAMain.recus.getOrNull(n) } ?: return
+        if (type == FournisseurApk.TYPE && !packageManager.canRequestPackageInstalls()) {
+            // Une seule fois : autoriser cette application à installer ce qu'on lui envoie.
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            } catch (_: Exception) {
+            }
+            return
+        }
+        val voir = Intent(Intent.ACTION_VIEW).setDataAndType(uri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            startActivity(voir)
+        } catch (_: ActivityNotFoundException) {
+            signaler(JSONObject().put("type", "mam").put("etat", "ouverture")
+                .put("message", "Aucune application de ce téléphone ne sait ouvrir ce fichier. Il est dans Téléchargements."))
+        }
+    }
+
+    private fun activerTchin(actif: Boolean) {
+        val capteurs = getSystemService(SensorManager::class.java) ?: return
+        capteurs.unregisterListener(ecouteurChoc)
+        if (actif) {
+            capteurs.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
+                capteurs.registerListener(ecouteurChoc, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+        }
+    }
+
+    private fun partagerApk() {
+        val envoi = Intent(Intent.ACTION_SEND)
+            .setType(FournisseurApk.TYPE)
+            .putExtra(Intent.EXTRA_STREAM, FournisseurApk.ADRESSE)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        envoi.clipData = ClipData.newRawUri(FournisseurApk.NOM, FournisseurApk.ADRESSE)
+        try {
+            startActivity(Intent.createChooser(envoi, "Donner l'application").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (_: ActivityNotFoundException) {
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -439,6 +651,11 @@ class MainActivity : Activity() {
 
     private fun ouvrirLiaison() {
         principal.removeCallbacks(fermeture)
+        // Un envoi « Main à main » occupe le Wi-Fi Direct : le guichet attendra.
+        if (MainAMain.enCours()) {
+            signaler(JSONObject().put("type", "connexion").put("etat", "aucune"))
+            return
+        }
         adressePc?.let { pc ->
             signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc))
             principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
@@ -554,6 +771,16 @@ class MainActivity : Activity() {
                             "Autorisation refusée. Sans elle, l'application ne peut pas joindre la boutique. " +
                                 "Touchez « Autoriser » à nouveau, ou ouvrez les réglages de l'application.")
                 )
+            }
+            DEMANDE_MAM -> {
+                val action = mamEnAttente
+                mamEnAttente = null
+                if (autorisationsMam().isEmpty()) {
+                    action?.let { lancerMam(it) }
+                } else {
+                    signaler(JSONObject().put("type", "mam").put("etat", "erreur")
+                        .put("message", "Sans l'autorisation « Appareils à proximité », les deux téléphones ne peuvent pas se trouver."))
+                }
             }
             DEMANDE_BLUETOOTH -> {
                 if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) demanderBluetooth()
@@ -673,6 +900,18 @@ class MainActivity : Activity() {
                     if (isEmpty()) data.data?.let { add(it) }
                 }
                 rendreFichiers(uris.toTypedArray().takeIf { it.isNotEmpty() })
+            }
+            DEMANDE_MAM_FICHIERS -> {
+                if (resultCode != RESULT_OK || data == null) return
+                val uris = buildList {
+                    data.clipData?.let { clip -> for (i in 0 until clip.itemCount) add(clip.getItemAt(i).uri) }
+                    if (isEmpty()) data.data?.let { add(it) }
+                }
+                executeur.execute {
+                    val decrits = uris.map { MainAMain.decrire(this, it) }
+                    synchronized(mamFichiers) { mamFichiers.addAll(decrits) }
+                    signalerChoixMam()
+                }
             }
             DEMANDE_PHOTO -> {
                 val cible = photo
