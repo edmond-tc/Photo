@@ -1245,6 +1245,47 @@ fn echec_wifi_direct_sans_adresse(wdi_supporte: Option<bool>) -> String {
     constat.to_string()
 }
 
+/// Réception directe : remet le Wi-Fi du PC en état de marche quand Windows
+/// dit « aucune carte Wi-Fi ». Même réparation que l'ancienne méthode, qui
+/// la faisait sans le dire (constaté sur le terrain : sur un PC où l'ancienne
+/// méthode marchait, la nouvelle annonçait « aucune carte Wi-Fi ») :
+/// 1. la radio Wi-Fi coupée depuis Windows (mode avion, bouton du panneau) ;
+/// 2. le service Wi-Fi de Windows arrêté ;
+/// 3. la carte Wi-Fi DÉSACTIVÉE dans « Connexions réseau ».
+/// Les deux derniers demandent l'accord administrateur (« Oui » une fois).
+#[cfg(windows)]
+pub fn remettre_wifi_en_marche() -> Result<String, String> {
+    if let Some(bloque) = allumer_radio_wifi() {
+        return Err(bloque);
+    }
+    let resultat = std::env::temp_dir().join("photocopie-benin-hotspot-resultat.txt");
+    let script = format!(
+        r#"$sortie = @()
+try {{ Set-Service WlanSvc -StartupType Automatic -ErrorAction SilentlyContinue }} catch {{}}
+try {{ Start-Service WlanSvc -ErrorAction SilentlyContinue }} catch {{}}
+$sortie += ("Service Wi-Fi de Windows : " + (Get-Service WlanSvc -ErrorAction SilentlyContinue).Status)
+Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
+    Where-Object {{ ($_.PhysicalMediaType -eq 'Native 802.11' -or $_.InterfaceDescription -match 'Wireless|Wi-?Fi|WLAN|802\.11') -and $_.Status -eq 'Disabled' }} |
+    ForEach-Object {{
+        Enable-NetAdapter -Name $_.Name -Confirm:$false -ErrorAction SilentlyContinue
+        $sortie += ("Carte Wi-Fi reactivee : " + $_.InterfaceDescription)
+    }}
+Start-Sleep -Seconds 4
+$sortie | Out-File -FilePath "{}" -Encoding utf8
+"#,
+        resultat.display()
+    );
+    executer_script_eleve(&script).map(|sortie| {
+        let propre = sortie.trim_start_matches('\u{FEFF}').lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" · ");
+        if propre.is_empty() { "Wi-Fi du PC vérifié.".to_string() } else { propre }
+    })
+}
+
+#[cfg(not(windows))]
+pub fn remettre_wifi_en_marche() -> Result<String, String> {
+    Err("Wi-Fi du PC : réparation possible seulement sous Windows.".to_string())
+}
+
 /// Vrai si ce PC a une carte Wi-Fi physique DÉSACTIVÉE dans Windows.
 #[cfg(windows)]
 pub fn carte_wifi_desactivee() -> bool {

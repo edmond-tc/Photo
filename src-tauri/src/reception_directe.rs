@@ -156,6 +156,27 @@ pub fn choisir<'a>(
         .max_by_key(|r| (kiosque_du_reseau(&r.ssid).is_some(), est_envoyeur(&r.ssid), r.signal))
 }
 
+/// Dernière réparation du Wi-Fi du PC tentée (voir `hotspot::remettre_wifi_en_marche`).
+static DERNIERE_REPARATION: Mutex<Option<Instant>> = Mutex::new(None);
+const PAUSE_ENTRE_REPARATIONS: Duration = Duration::from_secs(10 * 60);
+
+/// Répare le Wi-Fi du PC, si ce n'a pas été tenté il y a moins de 10 minutes.
+/// Rend la phrase à écrire au journal, ou None si on attend encore.
+fn reparer_wifi() -> Option<String> {
+    {
+        let mut derniere = DERNIERE_REPARATION.lock().ok()?;
+        if derniere.is_some_and(|t| t.elapsed() < PAUSE_ENTRE_REPARATIONS) {
+            return None;
+        }
+        *derniere = Some(Instant::now());
+    }
+    etat("Remise en marche du Wi-Fi du PC… (cliquez « Oui » si Windows le demande)");
+    Some(match crate::hotspot::remettre_wifi_en_marche() {
+        Ok(sortie) => format!("🔧 Wi-Fi du PC remis en marche : {sortie}"),
+        Err(raison) => format!("⚠️ Wi-Fi du PC : {raison}"),
+    })
+}
+
 /// Temps laissé à une connexion. Un réseau qui n'est pas notre envoyeur a
 /// droit à moins : pendant qu'on l'essaie, le PC ne voit pas un vrai client
 /// arriver.
@@ -576,6 +597,14 @@ fn un_tour(
     let client = match wlan::Client::ouvrir() {
         Ok(c) => c,
         Err(e) => {
+            // Carte désactivée, service arrêté, radio coupée : on répare
+            // (au plus une fois toutes les 10 minutes, pour ne pas harceler
+            // le gérant de fenêtres « Oui/Non »), puis on réessaie aussitôt.
+            if let Some(message) = reparer_wifi() {
+                noter(message);
+                std::thread::sleep(Duration::from_secs(3));
+                return;
+            }
             etat(format!("Bloquée : {e}"));
             noter(format!("❌ {e}"));
             std::thread::sleep(Duration::from_secs(20));
