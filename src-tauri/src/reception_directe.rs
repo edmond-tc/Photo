@@ -43,7 +43,7 @@ const ATTENTE_PREMIER_ENVOI: Duration = Duration::from_secs(120);
 /// fichier, puis on libère pour le suivant.
 const CALME_APRES_ENVOI: Duration = Duration::from_secs(20);
 /// Un client déjà servi n'est pas repris pendant ce délai.
-const MISE_A_L_ECART: Duration = Duration::from_secs(180);
+const MISE_A_L_ECART: Duration = Duration::from_secs(30);
 /// Un réseau d'envoyeur qui a échoué n'est pas retenté avant ce délai (le
 /// téléphone crée un nouveau nom à chaque envoi).
 const MISE_A_L_ECART_ECHEC: Duration = Duration::from_secs(30 * 60);
@@ -835,6 +835,7 @@ fn un_tour(
 
     // Attendre l'envoi, puis un moment de calme.
     let connecte_depuis = Instant::now();
+    let mut dernier_regard = Instant::now();
     let raison = loop {
         std::thread::sleep(Duration::from_secs(1));
         let coupe = client.evenements(&cible.ssid).iter().any(|e| matches!(e, Evenement::Deconnecte { .. }));
@@ -849,12 +850,30 @@ fn un_tour(
             t.elapsed().min(connecte_depuis.elapsed())
         });
         let dernier = DERNIER_ENVOI.lock().ok().and_then(|d| *d);
-        match dernier {
-            Some(t) if t.elapsed() >= CALME_APRES_ENVOI && !actif => break "client servi",
-            None if !actif && silencieux_depuis >= ATTENTE_PREMIER_ENVOI => {
-                break "aucun envoi en 2 minutes"
+        let calme = match dernier {
+            Some(t) => t.elapsed() >= CALME_APRES_ENVOI && !actif,
+            None => !actif && silencieux_depuis >= ATTENTE_PREMIER_ENVOI,
+        };
+        // Constaté sur le terrain : le PC quittait le téléphone 20 s après
+        // un envoi et l'ignorait ensuite 3 minutes, alors que le client
+        // touchait « Nouvelle commande » — son téléphone se croyait relié
+        // et rien n'arrivait. Le PC reste donc tant que le téléphone garde
+        // son réseau, et ne part que si un AUTRE client attend (ou après
+        // 10 minutes sans rien).
+        if calme {
+            if silencieux_depuis >= Duration::from_secs(10 * 60) {
+                break "aucune activité depuis 10 minutes";
             }
-            _ => {}
+            if dernier_regard.elapsed() >= Duration::from_secs(6) {
+                dernier_regard = Instant::now();
+                client.scanner();
+                if let Ok(reseaux) = client.reseaux() {
+                    let deja = |x: &str| x == cible.ssid || mis_a_l_ecart.contains_key(x);
+                    if choisir(&reseaux, reglages.seuil, &deja, &ignorer, &HashSet::new(), &mon_numero).is_some() {
+                        break if dernier.is_some() { "client servi, un autre client attend" } else { "un autre client attend" };
+                    }
+                }
+            }
         }
         if !lire_reglages(app).active {
             break "réception directe arrêtée";

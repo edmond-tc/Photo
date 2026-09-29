@@ -33,8 +33,34 @@ const JOURNAL: &str = "Microsoft-Windows-PrintService/Operational";
 pub fn commandes_activation() -> String {
     format!(
         "$sortie += \"===CONTROLE_IMPRESSIONS===\"\n\
-         $sortie += (wevtutil sl {JOURNAL} /e:true /ms:33554432 /rt:false 2>&1 | Out-String)\n"
+         $sortie += (wevtutil sl {JOURNAL} /e:true /ms:33554432 /rt:false 2>&1 | Out-String)\n\
+         reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge' /v UseSystemPrintDialog /t REG_DWORD /d 1 /f | Out-Null\n\
+         reg add 'HKLM\\SOFTWARE\\Policies\\Google\\Chrome' /v DisablePrintPreview /t REG_DWORD /d 1 /f | Out-Null\n"
     )
+}
+
+/// Edge et Chrome, qui ouvrent les PDF sur la plupart des PC, impriment par
+/// leur propre fenêtre, sans « Propriétés » de l'imprimante (bacs, papier,
+/// qualité) — constaté chez une gérante. Leurs réglages officiels
+/// « UseSystemPrintDialog » (Edge) et « DisablePrintPreview » (Chrome) leur
+/// font ouvrir la VRAIE fenêtre d'impression de Windows. Posés pour cet
+/// utilisateur, sans droits administrateur ; pris en compte au prochain
+/// démarrage du navigateur.
+pub fn fenetre_impression_windows_dans_les_navigateurs() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        for (cle, valeur) in [
+            (r"HKCU\SOFTWARE\Policies\Microsoft\Edge", "UseSystemPrintDialog"),
+            (r"HKCU\SOFTWARE\Policies\Google\Chrome", "DisablePrintPreview"),
+        ] {
+            let _ = std::process::Command::new("reg")
+                .args(["add", cle, "/v", valeur, "/t", "REG_DWORD", "/d", "1", "/f"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+    }
 }
 
 /// Une impression vue par Windows.

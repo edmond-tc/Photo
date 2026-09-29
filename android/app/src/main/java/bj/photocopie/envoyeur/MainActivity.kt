@@ -663,8 +663,32 @@ class MainActivity : Activity() {
             return
         }
         adressePc?.let { pc ->
-            signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc))
-            principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
+            // Le PC est-il vraiment encore là ? (Il a pu partir servir un
+            // autre client.) Sinon, nouvelle liaison tout de suite, au lieu
+            // d'un envoi qui échouerait plus tard.
+            executeur.execute {
+                val joignable = try {
+                    java.net.Socket().use { it.connect(java.net.InetSocketAddress(pc, Reglages.PORT_PC), 1500) }
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+                principal.post {
+                    if (adressePc != pc) return@post
+                    if (joignable) {
+                        signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc))
+                        principal.removeCallbacks(fermeture)
+                        principal.postDelayed(fermeture, INACTIVITE_MAX_MS)
+                    } else {
+                        journal("↻ Le PC n'est plus relié : nouvelle liaison.")
+                        val ancienne = liaison
+                        liaison = null
+                        adressePc = null
+                        if (ancienne != null) executeur.execute { ancienne.fermer() }
+                        ouvrirLiaison()
+                    }
+                }
+            }
             return
         }
         if (liaison != null) return // déjà en cours
