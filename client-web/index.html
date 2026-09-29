@@ -139,6 +139,14 @@ p { margin: 0; }
 .suivi div.attente { color: var(--discret); font-weight: 400; }
 .pret { background: var(--ok); color: #fff; border-radius: 16px; padding: 16px; text-align: center; font-size: 1.2rem; font-weight: 800; }
 .bandeau { border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+/* Première commande : un pas à pas, du premier écran jusqu'à « C'est envoyé ». */
+.guide { background: var(--accent-doux); border-left: 5px solid var(--accent); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; }
+.guide small { color: var(--accent); font-weight: 800; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.guide strong { font-size: 1.05rem; }
+.guide span { font-size: 0.92rem; color: var(--discret); }
+.suite { border: 2px solid var(--ok); border-radius: 16px; padding: 14px; display: grid; gap: 8px; }
+.suite h2 { font-size: 1.1rem; margin: 0; }
+.suite ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 6px; }
 .bandeau p { font-size: 0.95rem; }
 .bandeau.bloquant { background: var(--erreur-doux); color: var(--erreur); }
 .bandeau.bloquant .btn { background: var(--erreur); color: #fff; }
@@ -306,6 +314,16 @@ p { margin: 0; }
       <div class="pret" id="pret" hidden></div>
       <p class="bandeau doux" id="hors-ligne" hidden></p>
       <p class="aide" id="recap-final"></p>
+      <div class="suite" id="suite-premiere" hidden>
+        <h2>🎉 Bravo, votre premier envoi est fait !</h2>
+        <p style="margin:0">La suite est encore plus simple :</p>
+        <ul>
+          <li data-mode-app hidden><strong>Plus rien à scanner.</strong> La prochaine fois, ouvrez l'application au guichet, ou touchez la notification « Kiosque à côté ».</li>
+          <li data-mode-app hidden><strong>Partout pareil :</strong> elle marche dans toutes les boutiques équipées (photocopie, cyber, restaurant…). Demandez au gérant.</li>
+          <li><strong>Suivez votre commande ici :</strong> cet écran vous dit quand c'est imprimé, puis prêt. Donnez votre numéro au guichet.</li>
+          <li>Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">01 51 22 67 41</a>.</li>
+        </ul>
+      </div>
       <p class="aide" id="message-fidelite" hidden></p>
     </div>
     <div class="bas"><button class="btn second" id="btn-nouvelle">Nouvelle commande</button></div>
@@ -426,6 +444,43 @@ p { margin: 0; }
   }
   function afficherBoutique() { $$("[data-boutique]").forEach((b) => (b.textContent = lire("kiosque.boutique", "") || "Photocopie")); }
 
+  // ─── Première commande : pas à pas ───
+  // Le client n'a jamais utilisé l'application : chaque écran lui dit
+  // exactement quoi toucher, jusqu'à « C'est envoyé », sans déranger le
+  // gérant. Disparaît après le premier envoi réussi.
+  const premiereFois = () => !lire("kiosque.premier_envoi", false);
+  const GUIDE = {
+    bienvenue: ["Touchez « Autoriser » tout en bas.", "Android pose une ou deux questions : répondez « Autoriser » à chaque fois."],
+    profil: ["Écrivez votre prénom.", "La boutique le verra sur votre commande. Puis touchez « Continuer »."],
+    accueil: ["Touchez « Choisir mes documents ».", "Prenez le fichier à imprimer : PDF, Word, photo… Vous pouvez aussi le prendre en photo."],
+    documents: ["Réglez les copies et la couleur.", "Le prix s'affiche en bas. Puis touchez « Continuer »."],
+    quand: ["Dites pour quand, puis touchez « Envoyer à la boutique ».", "Restez près du guichet pendant l'envoi."],
+    envoi: ["Gardez l'application ouverte.", "Les étapes se cochent toutes seules jusqu'à « Reçu par la boutique »."],
+  };
+  const guidesDits = new Set();
+  function majGuide(id) {
+    $$("[data-guide]").forEach((g) => g.remove());
+    const texte = GUIDE[id];
+    if (!texte || !premiereFois()) return;
+    const ordre = (app ? ["bienvenue", "profil", "accueil", "documents", "quand"] : ["profil", "accueil", "documents", "quand"]);
+    const n = ordre.indexOf(id);
+    const guide = document.createElement("div");
+    guide.className = "guide";
+    guide.setAttribute("data-guide", "");
+    guide.setAttribute("role", "note");
+    const titre = document.createElement("small");
+    titre.textContent = n >= 0 ? `Première fois · étape ${n + 1} sur ${ordre.length}` : "Première fois";
+    const quoi = document.createElement("strong");
+    quoi.textContent = texte[0];
+    const detail = document.createElement("span");
+    detail.textContent = texte[1];
+    guide.append(titre, quoi, detail);
+    const contenu = document.querySelector(`[data-ecran="${id}"] .contenu`);
+    if (contenu) contenu.prepend(guide);
+    // L'application le dit aussi à voix haute, une fois par écran.
+    if (app && !guidesDits.has(id)) { guidesDits.add(id); parlerClient(texte[0]); }
+  }
+
   // ─── Navigation ───
   let courant = null;
   let avantDonnees = "accueil";
@@ -438,6 +493,7 @@ p { margin: 0; }
     if (id === "documents") { rendreDocs(); demarrerConnexion(); }
     if (id === "quand") { remplirHeures(); rendreRecap(); }
     if (id === "decouvrir") chargerDecouvrir();
+    majGuide(id);
   }
   document.addEventListener("click", (ev) => { const c = ev.target.closest("[data-aller]"); if (c) aller(c.dataset.aller); });
   document.addEventListener("click", (ev) => { if (ev.target.closest("[data-retour]")) aller(avantDonnees); });
@@ -1001,6 +1057,8 @@ p { margin: 0; }
     $("#message-fidelite").hidden = true;
     pretAnnonce = false;
     majSuivi(null);
+    $("#suite-premiere").hidden = !premiereFois();
+    ecrire("kiosque.premier_envoi", true);
     aller("recu");
     signal("succes", r.numero ? `C'est envoyé. Votre numéro est ${numeroDit(r.numero)}.` : "C'est envoyé.", [120, 60, 120]);
     try { app && app.envoiTermine(r.numero || ""); } catch (_) {}
