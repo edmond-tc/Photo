@@ -996,7 +996,7 @@ const EN_TETES_SECURITE = {
 /// pour installer l'application Envoyeur Kiosque. Volontairement minimale.
 /// Sans JavaScript (la politique de sécurité de ce Worker l'interdit) : le
 /// type de téléphone est reconnu ici, d'après le navigateur.
-function pageApplication(navigateur, tailleApk, whatsapp) {
+function pageApplication(navigateur, tailleApk, whatsapp, bluetooth, nonce) {
   const iphone = /iPhone|iPad|iPod/i.test(navigateur);
   const taille = tailleApk ? `${(tailleApk / 1024 / 1024).toFixed(1).replace(".", ",")} Mo` : "";
   const message = encodeURIComponent("Bonjour, voici mon document à imprimer :");
@@ -1029,18 +1029,95 @@ function pageApplication(navigateur, tailleApk, whatsapp) {
       <h2>Ensuite, plus rien à scanner</h2>
       <p>L'application marche dans <strong>toutes les boutiques équipées</strong> : photocopie, cyber, restaurant… Demandez au gérant si sa boutique l'a : votre téléphone vous prévient tout seul quand vous y êtes, et vos fichiers partent directement.</p>
     </section>`;
+  // Envoyer tout de suite, sans installer : WhatsApp (numéro réglé par le
+  // gérant) et Bluetooth (nom réglé par le gérant, Android seulement). Le
+  // client choisit ses fichiers ICI, puis tous partent d'un coup par le
+  // menu « Partager » du téléphone.
+  const nomBt = bluetooth ? echapper(bluetooth) : "";
+  const envoiDirect = (whatsapp || !iphone)
+    ? `<section class="direct">
+      <h2>${iphone ? "Envoyez vos fichiers maintenant" : "Pas maintenant ? Envoyez vos fichiers tout de suite"}</h2>
+      <div class="choix">
+        ${whatsapp ? `<button type="button" class="bouton whatsapp" data-mode="whatsapp">💬 Par WhatsApp</button>` : ""}
+        ${!iphone ? `<button type="button" class="bouton bt" data-mode="bluetooth">🔵 Par Bluetooth</button>` : ""}
+      </div>
+      ${whatsapp ? `<div class="panneau" data-panneau="whatsapp" hidden>
+        <ol>
+          <li><a class="bouton second" href="https://wa.me/${whatsapp}?text=${message}">1. Ouvrir la discussion avec la boutique</a>
+            <small>Envoyez ce premier message, puis revenez sur cette page : la boutique sera en haut de la liste.</small></li>
+          <li><label class="bouton second" for="fichiers">2. Choisir mes fichiers</label><div class="liste" data-liste></div></li>
+          <li><button type="button" class="bouton" data-envoyer disabled>3. Envoyer par WhatsApp</button>
+            <small>Choisissez <b>WhatsApp</b>, puis la discussion de la boutique. Tous vos fichiers partent d'un coup.</small></li>
+        </ol>
+      </div>` : ""}
+      ${!iphone ? `<div class="panneau" data-panneau="bluetooth" hidden>
+        <ol>
+          <li>Allumez le Bluetooth de votre téléphone.</li>
+          <li><label class="bouton second" for="fichiers">Choisir mes fichiers</label><div class="liste" data-liste></div></li>
+          <li><button type="button" class="bouton" data-envoyer disabled>Envoyer par Bluetooth</button>
+            <small>Choisissez <b>Bluetooth</b>, puis ${nomBt ? `<b>${nomBt}</b>` : "l'ordinateur de la boutique"} dans la liste. Tous vos fichiers partent d'un coup, sans internet.</small></li>
+        </ol>
+      </div>` : ""}
+      <p class="retour-envoi" role="status" hidden></p>
+      <input type="file" id="fichiers" multiple hidden>
+    </section>`
+    : "";
   const contenu = iphone
     ? whatsapp
-      ? `<p>L'application iPhone arrive bientôt. En attendant, envoyez votre document au guichet par WhatsApp :</p>
-         <a class="bouton whatsapp" href="https://wa.me/${whatsapp}?text=${message}">Envoyer par WhatsApp</a>
-         <p>Joignez votre fichier et écrivez ce que vous voulez (copies, couleur…).</p>`
+      ? `<p>L'application iPhone arrive bientôt. En attendant, envoyez vos documents au guichet par WhatsApp :</p>${envoiDirect}`
       : `<p>L'application iPhone arrive bientôt. En attendant, donnez votre document au guichet.</p>`
     : tailleApk
       ? `${avantages}
          <a class="bouton" href="/telecharger/apk">Installer l'application<small>Gratuit · ${taille} · 1 minute</small></a>
          <p class="auto">Le téléchargement commence tout seul. Sinon, touchez le bouton.</p>
-         ${etapes}`
-      : `<p>Application bientôt disponible. Demandez-la au guichet.</p>`;
+         ${etapes}
+         ${envoiDirect}`
+      : `<p>Application bientôt disponible. Demandez-la au guichet.</p>${envoiDirect}`;
+  // Le menu « Partager » du téléphone reçoit tous les fichiers d'un coup.
+  // Certains navigateurs refusent quelques types (Word, Excel…) : on le dit,
+  // avec le geste de secours.
+  const script = envoiDirect ? `<script nonce="${nonce}">
+(() => {
+  const champ = document.getElementById("fichiers");
+  const retour = document.querySelector(".retour-envoi");
+  let mode = null, choisis = [];
+  const dire = (t) => { retour.hidden = !t; retour.textContent = t || ""; };
+  document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+    mode = b.dataset.mode;
+    document.querySelectorAll("[data-panneau]").forEach((p) => (p.hidden = p.dataset.panneau !== mode));
+    dire("");
+  }));
+  const partageable = (f) => { try { return !!(navigator.canShare && navigator.canShare({ files: [f] })); } catch (_) { return false; } };
+  champ.addEventListener("change", () => {
+    choisis = Array.from(champ.files || []);
+    document.querySelectorAll("[data-liste]").forEach((l) => {
+      l.textContent = "";
+      choisis.forEach((f) => {
+        const ligne = document.createElement("div");
+        ligne.textContent = (partageable(f) ? "✓ " : "⚠ ") + f.name;
+        l.appendChild(ligne);
+      });
+    });
+    document.querySelectorAll("[data-envoyer]").forEach((b) => (b.disabled = !choisis.length));
+    dire("");
+  });
+  document.querySelectorAll("[data-envoyer]").forEach((b) => b.addEventListener("click", async () => {
+    const ok = choisis.filter(partageable);
+    const refuses = choisis.filter((f) => !ok.includes(f));
+    const secours = "Ouvrez-le dans votre application Fichiers ou Galerie, touchez « Partager », puis " + (mode === "whatsapp" ? "WhatsApp." : "Bluetooth.");
+    if (!ok.length) { dire("Ce téléphone ne permet pas d'envoyer ce fichier d'ici. " + secours); return; }
+    try {
+      const donnees = { files: ok };
+      if (mode === "whatsapp") donnees.text = "Bonjour, voici mes documents à imprimer.";
+      await navigator.share(donnees);
+      dire("C'est parti. Donnez votre prénom au guichet." + (refuses.length ? " Non envoyés d'ici (" + refuses.map((f) => f.name).join(", ") + ") : " + secours : ""));
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+      dire("L'envoi n'a pas pu s'ouvrir. " + secours);
+    }
+  }));
+})();
+</script>` : "";
   // Android : le téléchargement démarre seul pendant que le client lit les
   // étapes (un geste de moins). Sans script : la politique de sécurité de
   // la page reste « aucun JavaScript ».
@@ -1066,6 +1143,17 @@ ${auto}
   .bouton { display:block; text-align:center; background:var(--accent); color:#fff; text-decoration:none; font-weight:800; font-size:1.25rem; padding:18px; border-radius:16px; }
   .bouton small { display:block; font-weight:400; font-size:0.9rem; opacity:0.9; margin-top:4px; }
   .whatsapp { background:#1a8f4a; }
+  .bt { background:#1565c0; }
+  button.bouton { border:0; width:100%; font-family:inherit; cursor:pointer; }
+  .bouton.second { background:var(--carte); color:var(--encre); font-size:1rem; padding:14px; border:1.5px solid var(--accent); }
+  .bouton:disabled { opacity:0.45; }
+  .direct { border-top:1px solid var(--carte); padding-top:16px; display:grid; gap:12px; }
+  .choix { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .choix .bouton { font-size:1.05rem; padding:14px 8px; }
+  .panneau ol { margin:0; padding-left:1.2rem; display:grid; gap:12px; }
+  .panneau small { display:block; color:var(--discret); margin-top:6px; line-height:1.4; }
+  .liste { font-size:0.9rem; margin-top:6px; overflow-wrap:anywhere; }
+  .retour-envoi { background:var(--carte); border-radius:12px; padding:12px; color:var(--encre); }
   .etapes { background:var(--carte); border-radius:14px; padding:14px; }
   .etapes ol { margin:0; padding-left:1.3rem; display:grid; gap:10px; line-height:1.5; }
   .b { display:inline-block; border:1.5px solid var(--accent); color:var(--accent); border-radius:999px; padding:0 8px; font-weight:700; white-space:nowrap; }
@@ -1082,13 +1170,19 @@ ${auto}
   ${contenu}
   <p class="equiper">Votre boutique n'est pas encore équipée ? Le gérant peut appeler ou écrire au
     <a href="tel:+2290151226741">01 51 22 67 41</a> (<a href="https://wa.me/2290151226741">WhatsApp</a>).</p>
+  ${script}
   <p class="note">Vos documents vont directement à l'ordinateur de la boutique, sans passer par internet ni par un serveur. La boutique les efface après son délai de conservation (30 jours par défaut) ou tout de suite si vous le demandez au guichet.</p>
 </main></body></html>`;
 }
 
 function avecEnTetesSecurite(reponse) {
   const entetes = new Headers(reponse.headers);
-  for (const [nom, valeur] of Object.entries(EN_TETES_SECURITE)) entetes.set(nom, valeur);
+  for (const [nom, valeur] of Object.entries(EN_TETES_SECURITE)) {
+    // Une page qui a sa propre politique (plus stricte sur les scripts : un
+    // seul, marqué) la garde ; toutes les autres reçoivent « aucun script ».
+    if (nom === "content-security-policy" && entetes.has(nom)) continue;
+    entetes.set(nom, valeur);
+  }
   return new Response(reponse.body, {
     status: reponse.status,
     statusText: reponse.statusText,
@@ -1267,12 +1361,25 @@ async function router(request, env) {
         const objetApk = await env.TELECHARGEMENTS.head(CLE_APK);
         // Numéro WhatsApp de la boutique, mis dans le QR par le logiciel du PC.
         const whatsapp = (url.searchParams.get("w") || "").replace(/\D/g, "");
+        // Nom Bluetooth du PC, réglé par le gérant : seulement lettres,
+        // chiffres, espace, tiret, point, souligné (comme côté PC).
+        const bluetooth = (url.searchParams.get("b") || "").replace(/[^\p{L}\p{N} ._-]/gu, "").trim().slice(0, 40);
+        // Un seul script permis sur cette page : le sien, marqué de ce nombre
+        // tiré au hasard à chaque visite.
+        const nonce = crypto.randomUUID().replace(/-/g, "");
         const corps = pageApplication(
           request.headers.get("user-agent") || "",
           objetApk ? objetApk.size : null,
-          whatsapp.length >= 8 && whatsapp.length <= 15 ? whatsapp : null
+          whatsapp.length >= 8 && whatsapp.length <= 15 ? whatsapp : null,
+          bluetooth || null,
+          nonce
         );
-        return new Response(corps, { headers: { "content-type": "text/html; charset=utf-8" } });
+        return new Response(corps, {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'nonce-${nonce}'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`,
+          },
+        });
       }
       if (pathname === "/telecharger" && method === "GET") {
         const objet = await env.TELECHARGEMENTS.head(CLE_INSTALLATEUR);

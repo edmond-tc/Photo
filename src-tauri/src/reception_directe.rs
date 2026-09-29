@@ -409,21 +409,57 @@ pub struct QrReception {
 /// Page d'installation de l'application Envoyeur Kiosque (admin/src/index.js, `/app`).
 pub const ADRESSE_APPLICATION: &str = "https://photocopie-admin.atinzed2.workers.dev/app";
 
-/// Adresse du QR de l'affiche, avec le numéro WhatsApp de la boutique.
-pub fn adresse_application(whatsapp: Option<&str>) -> String {
-    match whatsapp.and_then(crate::server::normalize_phone) {
-        Some(numero) => format!("{ADRESSE_APPLICATION}?w={numero}"),
-        None => ADRESSE_APPLICATION.to_string(),
+/// Adresse du QR de l'affiche, avec le numéro WhatsApp de la boutique et le
+/// nom Bluetooth du PC : la page propose alors d'envoyer par l'un ou
+/// l'autre sans installer l'application, en montrant quel nom toucher.
+pub fn adresse_application(whatsapp: Option<&str>, bluetooth: Option<&str>) -> String {
+    let mut parametres = Vec::new();
+    if let Some(numero) = whatsapp.and_then(crate::server::normalize_phone) {
+        parametres.push(format!("w={numero}"));
     }
+    if let Some(nom) = bluetooth.map(nom_bluetooth_pour_adresse).filter(|n| !n.is_empty()) {
+        parametres.push(format!("b={nom}"));
+    }
+    if parametres.is_empty() {
+        ADRESSE_APPLICATION.to_string()
+    } else {
+        format!("{ADRESSE_APPLICATION}?{}", parametres.join("&"))
+    }
+}
+
+/// Lettres, chiffres, espace, tiret, point et souligné seulement (40 au plus),
+/// encodés pour une adresse : rien d'autre ne peut passer par le QR.
+fn nom_bluetooth_pour_adresse(nom: &str) -> String {
+    nom.trim()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.'))
+        .take(40)
+        .map(|c| match c {
+            ' ' => "%20".to_string(),
+            c if c.is_ascii() => c.to_string(),
+            c => {
+                let mut tampon = [0u8; 4];
+                c.encode_utf8(&mut tampon).bytes().map(|o| format!("%{o:02X}")).collect()
+            }
+        })
+        .collect()
 }
 
 #[tauri::command]
 pub fn reception_directe_qr(state: tauri::State<crate::db::DbState>) -> Result<QrReception, String> {
-    let whatsapp = {
+    let (whatsapp, bluetooth) = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
-        crate::db::get_setting(&conn, "boutique_whatsapp")
+        (
+            crate::db::get_setting(&conn, "boutique_whatsapp"),
+            crate::db::get_setting(&conn, "bluetooth_nom"),
+        )
     };
-    let application_url = adresse_application(whatsapp.as_deref());
+    // Sans nom réglé par le gérant : celui que Windows montre réellement dans
+    // la liste Bluetooth du téléphone, le nom de l'ordinateur.
+    let bluetooth = bluetooth
+        .filter(|n| !n.trim().is_empty())
+        .or_else(|| std::env::var("COMPUTERNAME").ok());
+    let application_url = adresse_application(whatsapp.as_deref(), bluetooth.as_deref());
     let fixe_url = adresse_fixe();
     let direct_url =
         adresse_actuelle().map(|a| format!("http://{a}:{}/", crate::server::PORT));
@@ -1185,11 +1221,21 @@ mod tests {
 
     #[test]
     fn le_qr_de_l_affiche_porte_le_whatsapp_de_la_boutique() {
-        assert_eq!(adresse_application(None), ADRESSE_APPLICATION);
+        assert_eq!(adresse_application(None, None), ADRESSE_APPLICATION);
         assert_eq!(
-            adresse_application(Some("01 51 22 67 41")),
+            adresse_application(Some("01 51 22 67 41"), None),
             format!("{ADRESSE_APPLICATION}?w=2290151226741")
         );
+        assert_eq!(
+            adresse_application(Some("01 51 22 67 41"), Some(" PC Photocopie-Rapide ")),
+            format!("{ADRESSE_APPLICATION}?w=2290151226741&b=PC%20Photocopie-Rapide")
+        );
+        // Rien d'autre ne passe : ni &, ni guillemets, ni balises.
+        assert_eq!(
+            adresse_application(None, Some("Kiosque\"&x=<b>é")),
+            format!("{ADRESSE_APPLICATION}?b=Kiosquexb%C3%A9")
+        );
+        assert_eq!(adresse_application(None, Some("   ")), ADRESSE_APPLICATION);
     }
 
     #[test]
