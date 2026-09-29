@@ -444,6 +444,7 @@ object MainAMain {
         /** Receveurs acceptés (id → prénom), et ceux qui ont tout reçu. */
         val servis = ConcurrentHashMap<String, String>()
         val termines: MutableSet<String> = ConcurrentHashMap.newKeySet()
+        private val connexions = java.util.concurrent.atomic.AtomicInteger(0)
         private var dernierConseil = 0L
 
         override fun deroulement() {
@@ -564,8 +565,18 @@ object MainAMain {
                 } catch (_: IOException) {
                     break
                 }
+                // Pas plus de connexions que de receveurs possibles (et une
+                // marge pour les reprises) : un téléphone malveillant à côté
+                // ne peut pas épuiser celui qui envoie.
+                if (connexions.incrementAndGet() > GROUPE_MAX + 2) {
+                    connexions.decrementAndGet()
+                    try { prise.close() } catch (_: Exception) {}
+                    continue
+                }
                 suivre(prise)
-                Thread({ servir(prise) }, "mam-envoi").start()
+                Thread({
+                    try { servir(prise) } finally { connexions.decrementAndGet() }
+                }, "mam-envoi").start()
             }
         }
 
@@ -810,6 +821,10 @@ object MainAMain {
 
                 val compteur = Compteur(total)
                 compteur.fait = parties.sumOf { it.deja }
+                // Un fichier de taille inconnue ne doit jamais remplir le
+                // téléphone : il a droit à la place qui reste, marge gardée.
+                val plafondInconnus = (libre - reste - MARGE_DISQUE).coerceAtLeast(0)
+                var inconnus = 0L
                 var courant = -1
                 var sortie: FileOutputStream? = null
                 var pfd: android.os.ParcelFileDescriptor? = null
@@ -837,6 +852,10 @@ object MainAMain {
                             }
                             val n = contenu.size - 4
                             if (p.taille >= 0 && p.deja + n > p.taille) throw IOException("Fichier plus gros qu'annoncé.")
+                            if (p.taille < 0) {
+                                inconnus += n
+                                if (inconnus > plafondInconnus) throw Refus("Plus assez de place sur ce téléphone pour « ${p.nom} ».")
+                            }
                             sortie!!.write(contenu, 4, n)
                             p.deja += n
                             compteur.avancer(n.toLong()) { fait, t, vitesse ->
