@@ -3,6 +3,17 @@ name: Build Windows
 on:
   push:
     branches: [main]
+    # Seulement quand le logiciel du PC change : une modification du site
+    # (admin/) ou de l'application Android seule ne reconstruit pas Windows
+    # (près de 20 minutes de construction épargnées à chaque fois).
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "client-web/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/build-windows.yml"
   workflow_dispatch: {}
 
 jobs:
