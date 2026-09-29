@@ -2250,7 +2250,8 @@ function imprimerAfficheReception(qrApplication) {
       <li>✓ Vous choisissez copies et couleur, vous voyez le prix</li>
       <li>✓ Prévenu quand c'est prêt</li>
     </ol>
-    <p class="pied">Android : application gratuite, installée en 1 minute, une seule fois. iPhone : envoi par WhatsApp.</p>`;
+    <p class="pied">Android : application gratuite, installée en 1 minute, une seule fois. iPhone : envoi par WhatsApp.</p>
+    <p class="pied">Déjà l'application ? Rien à scanner : elle marche dans toutes les boutiques équipées. Boutique non équipée : 01 51 22 67 41.</p>`;
   imprimerPage("impression-reception");
 }
 
