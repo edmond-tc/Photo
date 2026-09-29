@@ -1020,7 +1020,7 @@ function pageApplication(navigateur, tailleApk, whatsapp) {
         <li>Une fois téléchargé : <b class="b">Ouvrir</b></li>
         <li>Si Android dit « Pour votre sécurité… » : <b class="b">Paramètres</b>, activez <b class="b">Autoriser cette source</b>, puis revenez en arrière ‹</li>
         <li><b class="b">Installer</b></li>
-        <li>Si Android dit « Application non vérifiée » ou « Play Protect » : <b class="b">Plus de détails</b> puis <b class="b">Installer quand même</b></li>
+        <li class="attention">Si « Appli bloquée pour protéger votre appareil » s'affiche : <strong>ne touchez PAS « OK »</strong>. Touchez le petit texte <b class="b">Installer quand même</b>, juste au-dessus. (Sur certains téléphones : <b class="b">Plus de détails</b> d'abord.) C'est l'avertissement habituel pour une application hors Play Store.</li>
         <li><b class="b">Ouvrir</b>. Ensuite, l'application vous guide pas à pas, à l'écran et à voix haute, jusqu'à l'envoi de vos documents.</li>
       </ol>
       <p class="rassure">Gratuite, sans publicité pendant vos envois. Elle ne demande ni argent, ni mot de passe, ni compte.</p>
@@ -1070,6 +1070,8 @@ ${auto}
   .etapes ol { margin:0; padding-left:1.3rem; display:grid; gap:10px; line-height:1.5; }
   .b { display:inline-block; border:1.5px solid var(--accent); color:var(--accent); border-radius:999px; padding:0 8px; font-weight:700; white-space:nowrap; }
   .rassure { margin-top:12px; font-size:0.9rem; }
+  .attention { background:#fff4d6; color:#5c3d00; border-radius:10px; padding:8px 10px; margin-left:-6px; }
+  @media (prefers-color-scheme: dark) { .attention { background:#3a2d15; color:#f5dca8; } }
   .note { font-size:0.8rem; }
   .auto { text-align:center; font-size:0.9rem; margin-top:-8px; }
   .partout { border:2px solid var(--accent); border-radius:14px; padding:14px; }
