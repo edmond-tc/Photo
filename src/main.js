@@ -485,7 +485,7 @@ function creerLigne(item) {
   // (boîte de dialogue Windows native) — les détails de facturation sont
   // secondaires et n'empêchent jamais d'imprimer ou d'éditer directement.
   if (item.kind === "imprimable") {
-    actions.appendChild(bouton("🖨️ Ouvrir pour imprimer", "btn-primaire", () => imprimer(item.id)));
+    actions.appendChild(bouton("📂 Ouvrir", "btn-primaire", () => imprimer(item.id)));
     actions.appendChild(bouton("Encaisser", "btn-secondaire", () => ouvrirEncaissement(item)));
     actions.appendChild(bouton("Détails", "btn-discret", () => ouvrirOptions(item)));
   } else if (item.kind === "editable") {
@@ -752,7 +752,7 @@ async function imprimer(id) {
     // Le document s'ouvre dans son programme habituel : le gérant y fait
     // Ctrl+P et choisit l'imprimante, les propriétés, les pages…
     await invoke("print_file", { id });
-    toast("Document ouvert. Faites Ctrl+P (ou Fichier → Imprimer) : vous choisissez l'imprimante et ses propriétés.", "info", 7000);
+    toast("Document ouvert en entier. Pour imprimer : Ctrl+P (ou Fichier → Imprimer), puis choisissez l'imprimante et « Propriétés » (bac, papier, qualité…).", "info", 8000);
     // Le client suit sa commande sur son téléphone : elle passe « En impression ».
     const carte = document.querySelector(`.ligne-fichier[data-id="${id}"]`)?.closest(".carte-commande");
     if (carte?.dataset.commande && carte.dataset.etape === "recu") {
@@ -1058,15 +1058,17 @@ async function afficherQr() {
   try {
     const info = await invoke("get_server_info");
     conteneur.innerHTML = "";
-    conteneur.classList.toggle("deux-qr", Boolean(info.qr_page_data_uri));
+    // UN SEUL QR, sur l'écran comme sur l'affiche (demande ferme du
+    // terrain : deux codes, les clients s'y perdent). Le code de la page
+    // n'est plus qu'un secours, sur l'écran du PC seulement (plus bas).
+    conteneur.classList.remove("deux-qr");
 
     // Cette phrase part à l'impression sur l'affiche collée à l'entrée :
     // c'est souvent la seule consigne que le client lira. Elle annonce UN
     // seul geste, parce que c'est le cas normal — le second code n'est qu'un
     // filet, et l'annoncer d'emblée ferait croire qu'il faut deux scans.
-    document.querySelector("#qr-intro").textContent = info.qr_page_data_uri
-      ? "Deux scans, dans l'ordre. Rien à taper."
-      : "Scannez ce code avec l'appareil photo de votre téléphone";
+    document.querySelector("#qr-intro").textContent =
+      "Scannez ce code avec l'appareil photo de votre téléphone";
 
     // DEUX scans, annoncés comme tels, et de même taille.
     //
@@ -1108,22 +1110,13 @@ async function afficherQr() {
       return bloc;
     };
 
-    if (info.qr_page_data_uri) {
-      // Les légendes disent le GESTE, pas le concept. « Rejoindre le Wi-Fi »
-      // décrit un état ; « appuyez sur Rejoindre » décrit ce que le client
-      // doit faire de son pouce — et c'est précisément le moment où il
-      // s'arrête, parce que le téléphone lui demande de confirmer.
-      // Deux légendes, une ligne chacune, verbe en tête. Sur l'affiche,
-      // elles sont lues DEBOUT et de loin : chaque mot en trop est un mot
-      // que le client ne lira pas. « appuyez sur Rejoindre » reste parce
-      // que c'est le seul endroit où le téléphone attend un geste et où le
-      // client s'arrête s'il ne s'y attend pas.
-      ajouterQr(info.qr_data_uri, "1", "Rejoignez le Wi-Fi — appuyez sur « Rejoindre »");
-      ajouterQr(info.qr_page_data_uri, "2", "Ouvrez la page et envoyez");
-    } else {
-      // Pas de point d'accès local : le premier code ouvre déjà la page.
-      ajouterQr(info.qr_data_uri, null, "Scannez pour envoyer vos documents");
-    }
+    ajouterQr(
+      info.qr_data_uri,
+      null,
+      info.qr_page_data_uri
+        ? "Touchez « Rejoindre » : la page d'envoi s'ouvre. Sinon, touchez la notification « Se connecter au réseau »."
+        : "Scannez pour envoyer vos documents"
+    );
     // Chaque installation appelle une consigne différente : dire au gérant
     // une phrase qui ne correspond pas à son poste le laisserait sans réponse
     // devant un client bloqué.
@@ -1150,13 +1143,11 @@ async function afficherQr() {
       // déjà ouvert — la consigne la plus sûre est celle qui décrit le
       // geste, pas l'itinéraire.
       urlEl.innerHTML =
-        `<strong>Deux scans, rien à taper.</strong> Le client scanne le <strong>1</strong> et accepte de rejoindre le Wi-Fi, ` +
-        `puis il scanne le <strong>2</strong> : la page d'envoi s'ouvre.` +
-        `<br><br>Selon le téléphone, l'écran revient ou non à l'appareil photo après le 1. ` +
-        `Ce n'est pas un échec : il suffit de rouvrir le scanner et de viser le <strong>2</strong>.` +
-        `<br><br><strong>Si le 2 ne donne rien non plus :</strong> le scan a déjà ouvert ` +
-        `l'écran des réseaux Wi-Fi. Il suffit d'appuyer sur le bouton à côté du nom du réseau — ` +
-        `aucun menu à chercher.`;
+        `<strong>Un seul scan, rien à taper.</strong> Le client scanne et touche « Rejoindre » : ` +
+        `la page d'envoi s'ouvre (la même que dans l'application Envoyeur). Si elle ne s'ouvre pas ` +
+        `toute seule, le téléphone affiche « Se connecter au réseau » : il la touche.` +
+        `<br><br>Avec l'application Envoyeur, rien d'autre à faire : une fois sur ce Wi-Fi, ` +
+        `elle trouve le PC toute seule.`;
     } else if (info.mode === "point_acces_inactif") {
       urlEl.innerHTML =
         `⚠️ Ce QR fait rejoindre le Wi-Fi <strong>${echapperHtml(info.url)}</strong>… mais le Wi-Fi local n'est pas allumé. ` +
@@ -1186,6 +1177,14 @@ async function afficherQr() {
         `<br><br><strong>Sans scanner :</strong> Wi-Fi « ${echapperHtml(info.reseau)} »` +
         (info.mot_de_passe ? `, mot de passe « ${echapperHtml(info.mot_de_passe)} »` : "") +
         `, puis ouvrir <strong>${echapperHtml(info.url)}</strong>`;
+    }
+    // Secours, à l'écran seulement (#qr-url n'est pas imprimé) : pour un
+    // client déjà sur le Wi-Fi dont la page ne s'est pas ouverte.
+    if (info.qr_page_data_uri) {
+      urlEl.innerHTML +=
+        `<details style="margin-top:0.75rem"><summary>Page pas ouverte ? Code de secours (écran du PC seulement)</summary>` +
+        `<img src="${info.qr_page_data_uri}" alt="Code de la page d'envoi" width="150" height="150" style="image-rendering:pixelated">` +
+        `</details>`;
     }
     signatureQr = signatureInfoQr(info);
   } catch (e) {
@@ -1425,7 +1424,7 @@ const AIDES_ECRAN = {
       "Vous pouvez aussi GLISSER des fichiers directement sur cette fenêtre — pratique quand un client vient avec un câble : " +
       "ouvrez son téléphone dans l'Explorateur, sélectionnez, et lâchez ici.",
     boutons: [
-      ["Ouvrir pour imprimer", "Ouvre le document dans son programme habituel (lecteur PDF, Photos, Word…). Faites Ctrl+P : vous choisissez l'imprimante, ses propriétés, les pages, tout."],
+      ["Ouvrir", "Ouvre le document dans son programme habituel (lecteur PDF, Photos, Word…). Faites Ctrl+P : vous choisissez l'imprimante, ses propriétés, les pages, tout."],
       ["Encaisser", "Enregistre le paiement du client et retire la commande de la liste."],
       ["Détails", "Ce qu'on facture : nombre de pages, couleur, recto-verso, format, finitions."],
       ["📶 en haut", "Affiche le QR code que le client scanne pour envoyer son document depuis son téléphone."],
@@ -1507,7 +1506,7 @@ const ETAPES_VISITE = [
   {
     titre: "2. Vous imprimez",
     texte:
-      "« Ouvrir pour imprimer » : le document s'ouvre comme un fichier normal. Faites Ctrl+P, choisissez l'imprimante et ses propriétés. Le journal des impressions compte les pages réellement sorties.",
+      "« Ouvrir » : le document s'ouvre comme un fichier normal. Faites Ctrl+P, choisissez l'imprimante et ses propriétés. Le journal des impressions compte les pages réellement sorties.",
   },
   {
     titre: "3. Vous encaissez",
@@ -1572,7 +1571,7 @@ function imprimerGuideGerant() {
         <tr><td><strong>1. Le document arrive</strong></td><td>Le client scanne le QR code (bouton 📶) et envoie depuis son téléphone,
           ou vous branchez sa clé USB, ou vous déposez le fichier dans le dossier surveillé.
           Il apparaît tout seul dans la liste.</td></tr>
-        <tr><td><strong>2. Vous imprimez</strong></td><td>« Ouvrir pour imprimer » : le document s'ouvre comme un fichier
+        <tr><td><strong>2. Vous imprimez</strong></td><td>« Ouvrir » : le document s'ouvre comme un fichier
           normal. Ctrl+P, puis choisissez l'imprimante et ses propriétés.</td></tr>
         <tr><td><strong>3. Vous encaissez</strong></td><td>« Détails » pour dire ce qu'on facture, puis « Encaisser ».
           Le prix est calculé tout seul ; il reste modifiable en disant pourquoi.</td></tr>
