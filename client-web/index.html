@@ -388,7 +388,10 @@ p { margin: 0; }
       <p class="aide" id="recap-final"></p>
       <p class="aide" id="message-fidelite" hidden></p>
     </div>
-    <div class="bas"><button class="btn second" id="btn-nouvelle">Nouvelle commande</button></div>
+    <div class="bas">
+      <button class="btn second" id="btn-nouvelle">Nouvelle commande</button>
+      <button class="btn second" id="btn-donner-recu" data-mode-app hidden>🎁 Donner l'application à un ami (sans internet)</button>
+    </div>
   </section>
 
   <p class="pied" data-mode-web hidden>Un souci ? <a href="/classique">Page d'envoi simple</a></p>
@@ -1231,6 +1234,8 @@ p { margin: 0; }
   $("#mam-envoyer").addEventListener("click", envoyerMam);
   $("#mam-choisir").addEventListener("click", () => { try { app.mamChoisir(); } catch (_) {} });
   $("#mam-donner").addEventListener("click", () => { try { app.donnerApplication(); } catch (_) {} });
+  // Juste après une commande réussie : le meilleur moment pour la faire connaître.
+  $("#btn-donner-recu").addEventListener("click", () => { try { app.donnerApplication(); } catch (_) {} });
   $("#mam-arreter").addEventListener("click", () => {
     if (mam.actif) { try { app.mamArreter(); } catch (_) {} return; }
     aller(mam.role === "envoi" ? "mam-envoi" : "mam");
