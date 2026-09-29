@@ -1038,21 +1038,10 @@ function pageApplication(navigateur, tailleApk, whatsapp, bluetooth, nonce) {
     ? `<section class="direct">
       <h2>${iphone ? "Envoyez vos fichiers maintenant" : "Pas maintenant ? Envoyez vos fichiers tout de suite"}</h2>
       <div class="choix">
-        ${whatsapp ? `<button type="button" class="bouton whatsapp" data-mode="whatsapp">💬 Par WhatsApp</button>` : ""}
+        ${whatsapp ? `<a class="bouton whatsapp" href="https://wa.me/${whatsapp}?text=${message}">💬 Par WhatsApp</a>` : ""}
         ${!iphone ? `<button type="button" class="bouton bt" data-mode="bluetooth">🔵 Par Bluetooth</button>` : ""}
       </div>
-      ${whatsapp ? `<div class="panneau" data-panneau="whatsapp" hidden>
-        <div class="bonjour" data-bonjour>
-          <p><b>Une seule fois sur ce téléphone :</b> dites bonjour à la boutique. Sans cela, WhatsApp ne vous la proposera pas au moment d'envoyer vos fichiers.</p>
-          <a class="bouton second" href="https://wa.me/${whatsapp}?text=${message}" data-dire-bonjour>👋 Dire bonjour à la boutique</a>
-          <small>Envoyez le message qui s'affiche, puis revenez sur cette page.</small>
-        </div>
-        <ol>
-          <li><label class="bouton second" for="fichiers">Choisir mes fichiers</label><div class="liste" data-liste></div></li>
-          <li><button type="button" class="bouton" data-envoyer disabled>Envoyer à la boutique par WhatsApp</button>
-            <small>Touchez <b>WhatsApp</b>, puis la discussion de la boutique, <b>en haut de la liste</b>. Tous vos fichiers partent d'un coup.</small></li>
-        </ol>
-      </div>` : ""}
+      ${whatsapp ? `<p class="aide-wa">WhatsApp s'ouvre directement sur la discussion de la boutique : touchez 📎 pour joindre vos fichiers, puis envoyez.</p>` : ""}
       ${!iphone ? `<div class="panneau" data-panneau="bluetooth" hidden>
         <ol>
           <li>Allumez le Bluetooth de votre téléphone.</li>
@@ -1079,25 +1068,12 @@ function pageApplication(navigateur, tailleApk, whatsapp, bluetooth, nonce) {
   // Le menu « Partager » du téléphone reçoit tous les fichiers d'un coup.
   // Certains navigateurs refusent quelques types (Word, Excel…) : on le dit,
   // avec le geste de secours.
-  const script = envoiDirect ? `<script nonce="${nonce}">
+  const script = envoiDirect && !iphone ? `<script nonce="${nonce}">
 (() => {
   const champ = document.getElementById("fichiers");
   const retour = document.querySelector(".retour-envoi");
   let mode = null, choisis = [];
   const dire = (t) => { retour.hidden = !t; retour.textContent = t || ""; };
-  // « Bonjour » déjà dit à CETTE boutique sur ce téléphone : l'étape disparaît.
-  const cleBonjour = "bonjour-${whatsapp || ""}";
-  const lireBonjour = () => { try { return localStorage.getItem(cleBonjour) === "1"; } catch (_) { return false; } };
-  const cadreBonjour = document.querySelector("[data-bonjour]");
-  if (cadreBonjour && lireBonjour()) cadreBonjour.hidden = true;
-  const lienBonjour = document.querySelector("[data-dire-bonjour]");
-  if (lienBonjour) lienBonjour.addEventListener("click", () => {
-    try { localStorage.setItem(cleBonjour, "1"); } catch (_) {}
-    // Au retour de WhatsApp, le navigateur remet la page telle quelle : l'étape
-    // doit déjà avoir disparu, place au choix des fichiers.
-    setTimeout(() => { if (cadreBonjour) cadreBonjour.hidden = true; }, 300);
-  });
-  window.addEventListener("pageshow", () => { if (cadreBonjour && lireBonjour()) cadreBonjour.hidden = true; });
   document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
     mode = b.dataset.mode;
     document.querySelectorAll("[data-panneau]").forEach((p) => (p.hidden = p.dataset.panneau !== mode));
@@ -1120,12 +1096,10 @@ function pageApplication(navigateur, tailleApk, whatsapp, bluetooth, nonce) {
   document.querySelectorAll("[data-envoyer]").forEach((b) => b.addEventListener("click", async () => {
     const ok = choisis.filter(partageable);
     const refuses = choisis.filter((f) => !ok.includes(f));
-    const secours = "Ouvrez-le dans votre application Fichiers ou Galerie, touchez « Partager », puis " + (mode === "whatsapp" ? "WhatsApp." : "Bluetooth.");
+    const secours = "Ouvrez-le dans votre application Fichiers ou Galerie, touchez « Partager », puis Bluetooth.";
     if (!ok.length) { dire("Ce téléphone ne permet pas d'envoyer ce fichier d'ici. " + secours); return; }
     try {
-      const donnees = { files: ok };
-      if (mode === "whatsapp") donnees.text = "Bonjour, voici mes documents à imprimer.";
-      await navigator.share(donnees);
+      await navigator.share({ files: ok });
       dire("C'est parti. Donnez votre prénom au guichet." + (refuses.length ? " Non envoyés d'ici (" + refuses.map((f) => f.name).join(", ") + ") : " + secours : ""));
     } catch (e) {
       if (e && e.name === "AbortError") return;
@@ -1171,9 +1145,7 @@ ${auto}
   .liste { font-size:0.9rem; margin-top:6px; overflow-wrap:anywhere; }
   .retour-envoi { background:var(--carte); border-radius:12px; padding:12px; color:var(--encre); }
   [hidden] { display:none !important; }
-  .bonjour { background:#e8f7ee; color:#14532d; border-radius:12px; padding:12px; display:grid; gap:8px; margin-bottom:12px; }
-  .bonjour p { color:inherit; }
-  @media (prefers-color-scheme: dark) { .bonjour { background:#173726; color:#c9f2da; } }
+  .aide-wa { font-size:0.9rem; }
   .etapes { background:var(--carte); border-radius:14px; padding:14px; }
   .etapes ol { margin:0; padding-left:1.3rem; display:grid; gap:10px; line-height:1.5; }
   .b { display:inline-block; border:1.5px solid var(--accent); color:var(--accent); border-radius:999px; padding:0 8px; font-weight:700; white-space:nowrap; }
