@@ -1024,6 +1024,10 @@ function pageApplication(navigateur, tailleApk, whatsapp) {
         <li><b class="b">Ouvrir</b>, puis <b class="b">Autoriser</b> une seule fois. C'est fini.</li>
       </ol>
       <p class="rassure">Gratuite, sans publicité pendant vos envois. Elle ne demande ni argent, ni mot de passe, ni compte.</p>
+    </section>
+    <section class="partout">
+      <h2>Ensuite, plus rien à scanner</h2>
+      <p>L'application marche dans <strong>toutes les boutiques équipées</strong> : photocopie, cyber, restaurant… Demandez au gérant si sa boutique l'a : votre téléphone vous prévient tout seul quand vous y êtes, et vos fichiers partent directement.</p>
     </section>`;
   const contenu = iphone
     ? whatsapp
@@ -1068,9 +1072,14 @@ ${auto}
   .rassure { margin-top:12px; font-size:0.9rem; }
   .note { font-size:0.8rem; }
   .auto { text-align:center; font-size:0.9rem; margin-top:-8px; }
+  .partout { border:2px solid var(--accent); border-radius:14px; padding:14px; }
+  .equiper { text-align:center; }
+  .equiper a { color:var(--accent); font-weight:700; white-space:nowrap; }
 </style></head><body><main>
   <h1>Envoyez vos documents à la photocopie depuis votre téléphone</h1>
   ${contenu}
+  <p class="equiper">Votre boutique n'est pas encore équipée ? Le gérant peut appeler ou écrire au
+    <a href="tel:+2290151226741">01 51 22 67 41</a> (<a href="https://wa.me/2290151226741">WhatsApp</a>).</p>
   <p class="note">Vos documents vont directement à l'ordinateur de la boutique, sans passer par internet ni par un serveur. La boutique les efface après son délai de conservation (30 jours par défaut) ou tout de suite si vous le demandez au guichet.</p>
 </main></body></html>`;
 }
