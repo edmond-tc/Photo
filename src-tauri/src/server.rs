@@ -1432,6 +1432,20 @@ pub fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
 }
 
 async fn recevoir_fichier(State(app): State<AppHandle>, multipart: Multipart) -> impl IntoResponse {
+    // Licence terminée : rien ne s'accumule en silence dans une file que
+    // personne ne peut plus traiter ; le client le sait tout de suite.
+    let autorise = {
+        let state = app.state::<crate::db::DbState>();
+        let conn = state.0.lock();
+        conn.as_ref().map(|c| crate::license::utilisation_autorisee(c)).unwrap_or(true)
+    };
+    if !autorise {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "La réception de documents est suspendue dans cette boutique. Donnez votre document au guichet.",
+        )
+            .into_response();
+    }
     // Attend son tour si trois envois sont déjà en cours (voir
     // ENVOIS_SIMULTANES_MAX) : le permis est pris AVANT de lire le corps de
     // la requête, sinon la mémoire serait déjà consommée au moment où on

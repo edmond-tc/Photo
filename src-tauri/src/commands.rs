@@ -181,14 +181,31 @@ pub fn open_file(state: State<DbState>, id: i64) -> Result<(), String> {
     let path = queue_item_path(&state, id)?;
     // Dernier verrou, quel que soit l'écran qui a demandé l'ouverture : un
     // programme n'est lancé que s'il est une mise à jour officielle signée,
-    // vérifiée à l'instant même.
-    if crate::signature_maj::est_programme(&path) && crate::signature_maj::verifier(&path).is_none() {
-        return Err(
-            "Ce programme n'est pas une mise à jour officielle de Gestion Photocopie : il ne sera pas lancé."
-                .to_string(),
-        );
+    // vérifiée à l'instant même. Celle-ci reste installable même licence
+    // terminée ; tout autre fichier attend le renouvellement.
+    if crate::signature_maj::est_programme(&path) {
+        if crate::signature_maj::verifier(&path).is_none() {
+            return Err(
+                "Ce programme n'est pas une mise à jour officielle de Gestion Photocopie : il ne sera pas lancé."
+                    .to_string(),
+            );
+        }
+    } else {
+        exiger_licence(&state)?;
     }
     files::shell_open(&path, "open")
+}
+
+/// Licence terminée : ni impression ni ouverture, même si l'écran de
+/// blocage a été contourné. Une mise à jour officielle reste installable
+/// (c'est parfois elle qui répare), le reste attend le renouvellement.
+fn exiger_licence(state: &State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if crate::license::utilisation_autorisee(&conn) {
+        Ok(())
+    } else {
+        Err("Abonnement terminé : renouvelez la licence pour continuer (appelez le 0151226741).".to_string())
+    }
 }
 
 /// Version qu'installe une mise à jour reçue, si elle est officielle.
@@ -211,6 +228,7 @@ pub fn print_file(
     id: i64,
     imprimante: Option<String>,
 ) -> Result<(), String> {
+    exiger_licence(&state)?;
     let path = queue_item_path(&state, id)?;
     if crate::signature_maj::est_programme(&path) {
         return Err("Un programme ne s'imprime pas.".to_string());

@@ -515,11 +515,45 @@ pub fn assurer_debut_essai(conn: &rusqlite::Connection) {
 #[tauri::command]
 pub fn get_license_status(state: State<DbState>) -> Result<StatutLicence, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let statut = statut_licence(&conn);
+    noter_autorisation(statut.statut == "actif" || statut.statut == "essai");
+    Ok(statut)
+}
+
+/// Dernier verdict connu, et quand : l'empreinte matérielle coûte cher à
+/// calculer, on ne la refait pas à chaque impression.
+static AUTORISATION: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+const VALIDITE_AUTORISATION: std::time::Duration = std::time::Duration::from_secs(300);
+
+fn noter_autorisation(oui: bool) {
+    if let Ok(mut a) = AUTORISATION.lock() {
+        *a = Some((std::time::Instant::now(), oui));
+    }
+}
+
+/// Licence active ou essai en cours ? Vérifié par le logiciel lui-même avant
+/// d'imprimer, d'ouvrir ou de recevoir un fichier : l'écran de blocage seul
+/// se contourne, pas ce verrou-ci.
+pub fn utilisation_autorisee(conn: &rusqlite::Connection) -> bool {
+    if let Ok(a) = AUTORISATION.lock() {
+        if let Some((quand, oui)) = *a {
+            if quand.elapsed() < VALIDITE_AUTORISATION {
+                return oui;
+            }
+        }
+    }
+    let statut = statut_licence(conn);
+    let oui = statut.statut == "actif" || statut.statut == "essai";
+    noter_autorisation(oui);
+    oui
+}
+
+fn statut_licence(conn: &rusqlite::Connection) -> StatutLicence {
     let id_herite = machine_id();
     let empreinte = empreinte_materielle();
-    let maintenant = date_de_reference(&conn);
+    let maintenant = date_de_reference(conn);
 
-    let cle_enregistree = db::get_setting(&conn, "cle_licence");
+    let cle_enregistree = db::get_setting(conn, "cle_licence");
     // Une licence déjà liée à l'ancien identifiant fige l'affichage sur
     // celui-ci : le gérant ne doit jamais lire à l'écran un numéro
     // différent de celui auquel sa licence est attachée.
@@ -529,7 +563,7 @@ pub fn get_license_status(state: State<DbState>) -> Result<StatutLicence, String
     let id = identifiant_affiche(&id_herite, empreinte.as_deref(), licence_liee_a_l_id_herite);
 
     if let Some(cle) = cle_enregistree {
-        return Ok(match verifier_cle_sur_cette_machine(&cle) {
+        return match verifier_cle_sur_cette_machine(&cle) {
             Some(expiration) => {
                 let jours = (expiration - maintenant.date_naive()).num_days();
                 StatutLicence {
@@ -545,17 +579,17 @@ pub fn get_license_status(state: State<DbState>) -> Result<StatutLicence, String
                 machine_id: id,
                 date_expiration: None,
             },
-        });
+        };
     }
 
-    let debut = db::get_setting(&conn, "essai_debut")
+    let debut = db::get_setting(conn, "essai_debut")
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
         .map(|d| d.with_timezone(&Local))
         .unwrap_or_else(Local::now);
     let jours_ecoules = (maintenant - debut).num_days();
     let jours_restants = DUREE_ESSAI_JOURS - jours_ecoules;
 
-    Ok(StatutLicence {
+    StatutLicence {
         statut: if jours_restants > 0 {
             "essai"
         } else {
@@ -565,7 +599,7 @@ pub fn get_license_status(state: State<DbState>) -> Result<StatutLicence, String
         jours_restants: jours_restants.max(0),
         machine_id: id,
         date_expiration: None,
-    })
+    }
 }
 
 #[tauri::command]
@@ -575,6 +609,10 @@ pub fn set_license_key(state: State<DbState>, cle: String) -> Result<bool, Strin
         return Ok(false);
     }
     db::set_setting(&conn, "cle_licence", &cle).map_err(|e| e.to_string())?;
+    // Nouvelle clé : le verrou se réévalue tout de suite.
+    if let Ok(mut a) = AUTORISATION.lock() {
+        *a = None;
+    }
     Ok(true)
 }
 
@@ -604,6 +642,9 @@ pub fn tenter_activation_depuis_usb(app: &tauri::AppHandle, contenu: &str) {
     if reussi {
         let cle_normalisee: String = contenu.chars().filter(|c| !c.is_whitespace()).collect();
         let _ = db::set_setting(&conn, "cle_licence", &cle_normalisee.to_uppercase());
+        if let Ok(mut a) = AUTORISATION.lock() {
+            *a = None;
+        }
     }
     drop(conn);
 
