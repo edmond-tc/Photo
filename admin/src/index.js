@@ -1021,7 +1021,7 @@ function pageApplication(navigateur, tailleApk, whatsapp) {
         <li>Si Android dit « Pour votre sécurité… » : <b class="b">Paramètres</b>, activez <b class="b">Autoriser cette source</b>, puis revenez en arrière ‹</li>
         <li><b class="b">Installer</b></li>
         <li>Si Android dit « Application non vérifiée » ou « Play Protect » : <b class="b">Plus de détails</b> puis <b class="b">Installer quand même</b></li>
-        <li><b class="b">Ouvrir</b>, puis <b class="b">Autoriser</b> une seule fois. C'est fini.</li>
+        <li><b class="b">Ouvrir</b>. Ensuite, l'application vous guide pas à pas, à l'écran et à voix haute, jusqu'à l'envoi de vos documents.</li>
       </ol>
       <p class="rassure">Gratuite, sans publicité pendant vos envois. Elle ne demande ni argent, ni mot de passe, ni compte.</p>
     </section>
