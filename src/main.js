@@ -485,8 +485,7 @@ function creerLigne(item) {
   // (boîte de dialogue Windows native) — les détails de facturation sont
   // secondaires et n'empêchent jamais d'imprimer ou d'éditer directement.
   if (item.kind === "imprimable") {
-    actions.appendChild(bouton("Aperçu", "btn-secondaire", () => ouvrirApercu(item)));
-    actions.appendChild(bouton("Imprimer", "btn-primaire", () => imprimer(item.id)));
+    actions.appendChild(bouton("🖨️ Ouvrir pour imprimer", "btn-primaire", () => imprimer(item.id)));
     actions.appendChild(bouton("Encaisser", "btn-secondaire", () => ouvrirEncaissement(item)));
     actions.appendChild(bouton("Détails", "btn-discret", () => ouvrirOptions(item)));
   } else if (item.kind === "editable") {
@@ -748,17 +747,12 @@ async function chargerFile() {
   mettreAJourBadgeOublies();
 }
 
-// Liste déroulante d'imprimante : "" veut dire "imprimante par défaut du
-// PC" (comportement inchangé) — voir chargerImprimantes().
-function imprimanteChoisie() {
-  const valeur = document.querySelector("#imprimante-choisie")?.value;
-  return valeur ? valeur : undefined;
-}
-
 async function imprimer(id) {
   try {
-    await invoke("print_file", { id, imprimante: imprimanteChoisie() });
-    jouerSonImpression();
+    // Le document s'ouvre dans son programme habituel : le gérant y fait
+    // Ctrl+P et choisit l'imprimante, les propriétés, les pages…
+    await invoke("print_file", { id });
+    toast("Document ouvert. Faites Ctrl+P (ou Fichier → Imprimer) : vous choisissez l'imprimante et ses propriétés.", "info", 7000);
     // Le client suit sa commande sur son téléphone : elle passe « En impression ».
     const carte = document.querySelector(`.ligne-fichier[data-id="${id}"]`)?.closest(".carte-commande");
     if (carte?.dataset.commande && carte.dataset.etape === "recu") {
@@ -766,35 +760,8 @@ async function imprimer(id) {
       appliquerEtape(carte, "impression");
     }
   } catch (e) {
-    alert(`⚠️ L'impression n'a pas pu démarrer. Vérifiez que l'imprimante est allumée et connectée, puis réessayez.\n\nDétail : ${e}`);
+    alert(`⚠️ Le document n'a pas pu s'ouvrir. Il est peut-être abîmé, ou aucun programme de ce PC ne sait l'ouvrir (installez un lecteur PDF).\n\nDétail : ${e}`);
   }
-}
-
-// Rempli une seule fois au démarrage : la liste des imprimantes installées
-// ne change pas pendant qu'on utilise l'application. Masqué s'il n'y a
-// qu'une seule imprimante (ou aucune détectée) — rien à choisir.
-async function chargerImprimantes() {
-  let imprimantes = [];
-  try {
-    imprimantes = await invoke("lister_imprimantes");
-  } catch {
-    return;
-  }
-  if (imprimantes.length < 2) return;
-
-  const select = document.querySelector("#imprimante-choisie");
-  select.innerHTML = "";
-  const optionDefaut = document.createElement("option");
-  optionDefaut.value = "";
-  optionDefaut.textContent = "Imprimante par défaut";
-  select.appendChild(optionDefaut);
-  for (const nom of imprimantes) {
-    const option = document.createElement("option");
-    option.value = nom;
-    option.textContent = nom;
-    select.appendChild(option);
-  }
-  document.querySelector("#selecteur-imprimante").hidden = false;
 }
 
 let idApercuEnCours = null;
@@ -1458,11 +1425,9 @@ const AIDES_ECRAN = {
       "Vous pouvez aussi GLISSER des fichiers directement sur cette fenêtre — pratique quand un client vient avec un câble : " +
       "ouvrez son téléphone dans l'Explorateur, sélectionnez, et lâchez ici.",
     boutons: [
-      ["Aperçu", "Regarder le document avant de l'imprimer, sans ouvrir un autre programme."],
-      ["Imprimer", "Envoie le document à l'imprimante. Windows ouvre sa fenêtre d'impression habituelle."],
+      ["Ouvrir pour imprimer", "Ouvre le document dans son programme habituel (lecteur PDF, Photos, Word…). Faites Ctrl+P : vous choisissez l'imprimante, ses propriétés, les pages, tout."],
       ["Encaisser", "Enregistre le paiement du client et retire la commande de la liste."],
       ["Détails", "Ce qu'on facture : nombre de pages, couleur, recto-verso, format, finitions."],
-      ["Imprimer sur", "Change d'imprimante sans passer par les réglages de Windows. N'apparaît que si le PC en a plusieurs."],
       ["📶 en haut", "Affiche le QR code que le client scanne pour envoyer son document depuis son téléphone."],
       ["⋮ en haut", "Le menu : historique, recherche, rapports et réglages."],
     ],
@@ -1542,7 +1507,7 @@ const ETAPES_VISITE = [
   {
     titre: "2. Vous imprimez",
     texte:
-      "« Aperçu » pour vérifier le document, puis « Imprimer ». L'application surveille ensuite l'imprimante et affiche « ✓ Impression confirmée » quand le papier est vraiment sorti — ou l'erreur si l'imprimante bourre ou n'a plus de papier.",
+      "« Ouvrir pour imprimer » : le document s'ouvre comme un fichier normal. Faites Ctrl+P, choisissez l'imprimante et ses propriétés. Le journal des impressions compte les pages réellement sorties.",
   },
   {
     titre: "3. Vous encaissez",
@@ -1607,8 +1572,8 @@ function imprimerGuideGerant() {
         <tr><td><strong>1. Le document arrive</strong></td><td>Le client scanne le QR code (bouton 📶) et envoie depuis son téléphone,
           ou vous branchez sa clé USB, ou vous déposez le fichier dans le dossier surveillé.
           Il apparaît tout seul dans la liste.</td></tr>
-        <tr><td><strong>2. Vous imprimez</strong></td><td>« Aperçu » pour vérifier, puis « Imprimer ».
-          L'application affiche « ✓ Impression confirmée » quand le papier est vraiment sorti.</td></tr>
+        <tr><td><strong>2. Vous imprimez</strong></td><td>« Ouvrir pour imprimer » : le document s'ouvre comme un fichier
+          normal. Ctrl+P, puis choisissez l'imprimante et ses propriétés.</td></tr>
         <tr><td><strong>3. Vous encaissez</strong></td><td>« Détails » pour dire ce qu'on facture, puis « Encaisser ».
           Le prix est calculé tout seul ; il reste modifiable en disant pourquoi.</td></tr>
       </tbody>
@@ -3345,7 +3310,8 @@ async function lancerAssistantPremierDemarrage() {
 async function demarrerApplication() {
   const premierLancement = await lancerAssistantPremierDemarrage();
   await chargerFile();
-  await chargerImprimantes();
+  // Plus de liste d'imprimantes ici : le choix se fait dans la fenêtre
+  // d'impression de Windows, document ouvert (voir imprimer()).
   await rafraichirBadgeAbonnement();
   await verifierBlocageLicence();
   // Jamais au tout premier lancement : ce gérant n'a encore rien "gagné",

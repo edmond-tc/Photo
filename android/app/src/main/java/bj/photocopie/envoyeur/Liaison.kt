@@ -2,6 +2,9 @@ package bj.photocopie.envoyeur
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pManager
@@ -11,18 +14,28 @@ import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.HttpURLConnection
 import java.net.Socket
+import java.net.URL
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Le lien entre le téléphone et le PC du kiosque, sans internet :
+ * Le lien entre le téléphone et le PC du kiosque, sans internet.
+ *
+ * Première méthode (la principale) : le PC crée son Wi-Fi, le client scanne
+ * le QR Wi-Fi du guichet avec l'appareil photo et accepte. Le téléphone est
+ * alors sur le réseau du PC : on le trouve tout de suite (voir [pcSurLeWifi]).
+ *
+ * Seconde méthode (secours, PC qui ne sait pas créer de Wi-Fi) :
  * 1. le téléphone crée son propre réseau (Wi-Fi Direct), avec le mot de
- *    passe de la boutique — rien à allumer à la main, pas de forfait utilisé ;
+ *    passe de la boutique ;
  * 2. le PC du kiosque le repère et le rejoint tout seul ;
  * 3. le téléphone trouve l'adresse du PC.
+ * Pendant l'attente, la première méthode reste guettée : un client qui
+ * scanne le QR Wi-Fi entre-temps est relié aussitôt.
  *
  * L'envoi lui-même est fait par l'interface (client-web/index.html), qui
  * affiche la progression. Bloquant : à lancer hors du fil de l'interface.
@@ -50,6 +63,10 @@ class Liaison(
             return null
         }
         val debut = System.currentTimeMillis()
+        pcSurLeWifi()?.let { pc ->
+            dire("✅ Téléphone sur le Wi-Fi du guichet : PC à ${pc.hostAddress}.")
+            return pc
+        }
         val nom = creerReseau()
         if (nom == null) {
             raison = "Le téléphone n'a pas pu créer son réseau. Réessayez."
@@ -64,6 +81,8 @@ class Liaison(
             supprimerReseau()
             return null
         }
+        // Relié par le Wi-Fi du guichet : le réseau du téléphone ne sert plus.
+        if (reseauWifi != null) supprimerReseau()
         val secondes = (System.currentTimeMillis() - debut) / 1000.0
         dire("✅ PC trouvé à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
         return pc
@@ -74,6 +93,10 @@ class Liaison(
 
     /** Supprime le réseau : le PC est libéré pour le client suivant. */
     fun fermer() {
+        if (reseauWifi != null) {
+            reseauWifi = null
+            try { ctx.getSystemService(ConnectivityManager::class.java)?.bindProcessToNetwork(null) } catch (_: Exception) {}
+        }
         supprimerReseau()
         dire("Réseau supprimé.")
     }
@@ -200,6 +223,12 @@ class Liaison(
         val pool = Executors.newFixedThreadPool(48)
         try {
             while (trouve.get() == null && System.currentTimeMillis() < fin) {
+                // Le client a peut-être scanné le QR Wi-Fi du guichet entre-temps.
+                pcSurLeWifi()?.let { pc ->
+                    dire("✅ Le téléphone a rejoint le Wi-Fi du guichet : PC à ${pc.hostAddress}.")
+                    trouve.compareAndSet(null, pc)
+                }
+                if (trouve.get() != null) break
                 val moi = adresseReseauDirect()
                 if (moi != null) {
                     val base = moi.address
@@ -220,6 +249,52 @@ class Liaison(
         }
         ecoute.join(1500)
         return trouve.get()
+    }
+
+    // ───────────────────────────── Première méthode ─────────────────────────────
+
+    /** Le réseau Wi-Fi du PC, quand le téléphone y est (première méthode). */
+    @Volatile private var reseauWifi: Network? = null
+
+    /**
+     * Le téléphone est-il sur le Wi-Fi créé par le PC du guichet ? Le PC est
+     * alors la passerelle de ce réseau (192.168.137.1 en général) et répond
+     * sur /infos. Les échanges sont ensuite forcés sur ce Wi-Fi : sans
+     * internet, Android enverrait sinon tout par les données mobiles.
+     */
+    @Suppress("DEPRECATION")
+    fun pcSurLeWifi(): InetAddress? {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return null
+        val wifis = try {
+            cm.allNetworks.filter { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        for (reseau in wifis) {
+            val proprietes = cm.getLinkProperties(reseau) ?: continue
+            val candidats = buildList<InetAddress> {
+                if (android.os.Build.VERSION.SDK_INT >= 30) proprietes.dhcpServerAddress?.let { add(it) }
+                proprietes.routes.filter { it.hasGateway() }.mapNotNull { it.gateway }.forEach { add(it) }
+                add(InetAddress.getByAddress(byteArrayOf(192.toByte(), 168.toByte(), 137.toByte(), 1)))
+            }.filterIsInstance<Inet4Address>().filter { !it.isAnyLocalAddress }.distinct()
+            for (ip in candidats) {
+                if (reponduParLePc(reseau, ip)) {
+                    reseauWifi = reseau
+                    try { cm.bindProcessToNetwork(reseau) } catch (_: Exception) {}
+                    return ip
+                }
+            }
+        }
+        return null
+    }
+
+    private fun reponduParLePc(reseau: Network, ip: InetAddress): Boolean = try {
+        val c = reseau.openConnection(URL("http://${ip.hostAddress}:${Reglages.PORT_PC}/infos")) as HttpURLConnection
+        c.connectTimeout = 800
+        c.readTimeout = 1500
+        try { c.responseCode == 200 } finally { c.disconnect() }
+    } catch (_: Exception) {
+        false
     }
 
     /** Adresse du téléphone sur son propre réseau Wi-Fi Direct (192.168.49.1 en général). */

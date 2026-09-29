@@ -560,7 +560,12 @@ pub fn demarrer(app: AppHandle) {
                 garder_eveille(reglages.active);
                 empeche_veille = reglages.active;
             }
-            if reglages.active {
+            if reglages.active && crate::hotspot::point_acces_actif() {
+                // Première méthode en marche : le PC a créé son Wi-Fi et les
+                // clients le rejoignent. Toucher la carte Wi-Fi ici (balayer,
+                // rejoindre un téléphone) couperait ce Wi-Fi à tout le monde.
+                etat("En pause : le Wi-Fi du PC est allumé, les clients le rejoignent (QR du guichet).");
+            } else if reglages.active {
                 un_tour(&app, &reglages, &mut mis_a_l_ecart, &mut fond);
             } else {
                 etat("Arrêtée");

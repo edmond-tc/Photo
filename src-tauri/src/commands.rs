@@ -233,25 +233,15 @@ pub fn print_file(
     if crate::signature_maj::est_programme(&path) {
         return Err("Un programme ne s'imprime pas.".to_string());
     }
-    let nom_original: String = {
-        let conn = state.0.lock().map_err(|e| e.to_string())?;
-        conn.query_row(
-            "SELECT original_name FROM files_queue WHERE id = ?1",
-            params![id],
-            |r| r.get(0),
-        )
-        .map_err(|_| "Fichier introuvable dans la file d'attente".to_string())?
-    };
-    match &imprimante {
-        Some(nom) => files::shell_print_vers(&path, nom)?,
-        None => files::shell_open(&path, "print")?,
-    }
-    // Ne bloque jamais le clic "Imprimer" : la confirmation se fait en
-    // arrière-plan et prévient l'écran quand elle est connue (voir
-    // impression.rs). Si le fichier venait à être introuvable dans la file
-    // (course improbable avec une suppression concurrente), la confirmation
-    // n'aura simplement personne à mettre à jour.
-    impression::confirmer_en_arriere_plan(app, id, nom_original, imprimante);
+    // Demandé par une gérante sur le terrain : « Imprimer » ouvre le
+    // document dans son programme habituel (lecteur PDF, Photos, Word…),
+    // exactement comme un fichier reçu normalement. Le gérant y choisit
+    // l'imprimante, ses propriétés, les pages, le recto-verso — tout ce que
+    // Windows propose (Ctrl+P). Plus d'envoi direct vers une imprimante
+    // imposée. Le journal des impressions (impression.rs) compte toujours
+    // les pages réellement sorties, quelle que soit l'imprimante.
+    let _ = (&app, imprimante);
+    files::shell_open(&path, "open")?;
     Ok(())
 }
 

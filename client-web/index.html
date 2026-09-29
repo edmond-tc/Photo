@@ -947,13 +947,13 @@ p { margin: 0; }
     try {
       // 1. Connexion (déjà faite, le plus souvent)
       if (connexion.etat !== "ok") {
-        etape(0, "encours", "Le téléphone prépare le lien avec l'ordinateur…");
+        etape(0, "encours", "Liaison avec l'ordinateur… Si le guichet affiche un QR Wi-Fi, scannez-le avec l'appareil photo et acceptez : l'envoi part aussitôt.");
         if (app) {
           if (connexion.etat !== "encours") { connexion = { etat: "aucune" }; demarrerConnexion(); }
           const ok = await new Promise((r) => { attenteConnexion = r; setTimeout(() => { if (attenteConnexion === r) { attenteConnexion = null; r(false); } }, 95000); });
           if (!ok) throw new Error(connexion.etat === "wifi"
             ? "Le Wi-Fi du téléphone est éteint. Allumez-le (bouton sur l'écran précédent), puis réessayez."
-            : "L'ordinateur de la boutique ne s'est pas relié au téléphone. Approchez-vous du guichet et vérifiez que le logiciel est ouvert.");
+            : "L'ordinateur de la boutique n'a pas été trouvé. Scannez le QR Wi-Fi du guichet avec l'appareil photo, acceptez, puis touchez « Réessayer ».");
         }
       }
       etape(0, "fait", "Relié au guichet.");
