@@ -33,6 +33,8 @@ pub const MOT_DE_PASSE_PAR_DEFAUT: &str = "kiosque2026";
 /// Force de signal minimale (0 à 100, telle que Windows la donne) pour
 /// considérer qu'un téléphone est au guichet.
 pub const SEUIL_PAR_DEFAUT: u32 = 60;
+/// Seuil maximal pour un réseau de l'application sans numéro de kiosque.
+const SEUIL_SANS_NUMERO: u32 = 25;
 
 /// Sans envoi dans ce délai après la connexion, on libère : le client est
 /// peut-être parti, ou ce n'était pas un client.
@@ -48,7 +50,7 @@ const MISE_A_L_ECART_ECHEC: Duration = Duration::from_secs(30 * 60);
 fn envoi_recu() -> bool {
     DERNIER_ENVOI.lock().ok().and_then(|d| *d).is_some()
 }
-const PAUSE_ENTRE_TOURS: Duration = Duration::from_secs(4);
+const PAUSE_ENTRE_TOURS: Duration = Duration::from_secs(1);
 
 // ───────────────────────────── Journal de diagnostic ─────────────────────────────
 
@@ -99,6 +101,22 @@ fn derniere_activite() -> Option<Instant> {
     DERNIERE_ACTIVITE.lock().ok().and_then(|a| *a)
 }
 
+static DEJA_NOTES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Une ligne de journal par réseau, pas une toutes les 5 secondes.
+fn noter_une_fois(ssid: &str, ligne: String) {
+    if let Ok(mut d) = DEJA_NOTES.lock() {
+        if d.iter().any(|s| s == ssid) {
+            return;
+        }
+        d.push(ssid.to_string());
+        if d.len() > 100 {
+            d.remove(0);
+        }
+    }
+    noter(ligne);
+}
+
 pub fn signaler_envoi() {
     if let Ok(mut d) = DERNIER_ENVOI.lock() {
         *d = Some(Instant::now());
@@ -143,13 +161,25 @@ pub fn choisir<'a>(
     fond: &HashSet<String>,
     mon_numero: &str,
 ) -> Option<&'a Reseau> {
+    let _ = fond;
     reseaux
         .iter()
-        .filter(|r| r.protege && !r.connu && r.signal >= seuil && !r.ssid.is_empty())
-        .filter(|r| est_envoyeur(&r.ssid) || !fond.contains(&r.ssid))
-        // Autres réseaux Wi-Fi Direct : « Main à main » entre deux
-        // téléphones (DIRECT-KM-…), imprimantes, télévisions… jamais pour nous.
-        .filter(|r| est_envoyeur(&r.ssid) || !r.ssid.starts_with("DIRECT-"))
+        // SEULS les réseaux de l'application (« DIRECT-KQ-… ») : constaté
+        // sur le terrain, tenter les partages de connexion et box du
+        // voisinage faisait se connecter et se déconnecter le PC en boucle
+        // pendant que le vrai client attendait.
+        .filter(|r| est_envoyeur(&r.ssid) && r.protege && !r.connu)
+        // Le réseau porte le numéro de CE kiosque : c'est forcément son
+        // client, quel que soit le signal (PC à antenne faible, téléphone
+        // dans la main à un mètre). Constaté : un seuil de 60 % cachait le
+        // téléphone, et le journal ne disait rien. Sans numéro : seuil bas.
+        .filter(|r| {
+            if kiosque_du_reseau(&r.ssid) == Some(mon_numero) {
+                r.signal >= 1
+            } else {
+                r.signal >= seuil.min(SEUIL_SANS_NUMERO)
+            }
+        })
         // Le téléphone d'un client qui envoie à un AUTRE kiosque.
         .filter(|r| kiosque_du_reseau(&r.ssid).is_none_or(|n| n == mon_numero))
         .filter(|r| !a_l_ecart(&r.ssid) && !ignorer.iter().any(|i| i == &r.ssid))
@@ -561,10 +591,18 @@ pub fn demarrer(app: AppHandle) {
                 empeche_veille = reglages.active;
             }
             if reglages.active && crate::hotspot::point_acces_actif() {
-                // Première méthode en marche : le PC a créé son Wi-Fi et les
-                // clients le rejoignent. Toucher la carte Wi-Fi ici (balayer,
-                // rejoindre un téléphone) couperait ce Wi-Fi à tout le monde.
-                etat("En pause : le Wi-Fi du PC est allumé, les clients le rejoignent (QR du guichet).");
+                // Les deux méthodes se disputent la même carte Wi-Fi : une
+                // carte ne peut pas à la fois créer un réseau et rejoindre
+                // sans cesse ceux des téléphones. La réception directe,
+                // choisie par le gérant, a la priorité : on coupe le Wi-Fi
+                // créé par le PC (et le gardien ne le rallume plus).
+                etat("Arrêt du Wi-Fi créé par le PC : la réception directe a besoin de la carte Wi-Fi…");
+                noter("📴 Wi-Fi créé par le PC arrêté : la réception directe (le PC rejoint le téléphone) a la carte Wi-Fi.".to_string());
+                let app2 = app.clone();
+                let _ = tauri::async_runtime::block_on(async move {
+                    crate::commands::desactiver_point_acces_local(app2.state(), app2.clone()).await
+                });
+                crate::hotspot::definir_adresse_active(None);
             } else if reglages.active {
                 un_tour(&app, &reglages, &mut mis_a_l_ecart, &mut fond);
             } else {
@@ -618,8 +656,9 @@ fn un_tour(
     };
 
     etat("En attente d'un téléphone…");
+    // Attendre la FIN de la recherche : lire la liste trop tôt rendait
+    // celle d'avant, où le téléphone qui vient d'arriver n'est pas encore.
     client.scanner();
-    std::thread::sleep(Duration::from_secs(3));
     let reseaux = match client.reseaux() {
         Ok(r) => r,
         Err(code) => {
@@ -647,20 +686,25 @@ fn un_tour(
             .into_iter()
             .collect()
     };
-    let fond = fond.get_or_insert_with(|| {
-        let appris: HashSet<String> = reseaux
-            .iter()
-            .filter(|r| !est_envoyeur(&r.ssid))
-            .map(|r| r.ssid.clone())
-            .collect();
-        noter(format!(
-            "🧭 {} réseau(x) du voisinage appris : ils ne seront jamais tentés.",
-            appris.len()
-        ));
-        appris
-    });
+    let fond = fond.get_or_insert_with(HashSet::new);
     let a_l_ecart = |ssid: &str| mis_a_l_ecart.contains_key(ssid);
     let mon_numero = numero_kiosque(app);
+    // Chaque téléphone de l'application vu, une fois, avec ce qu'on en fait :
+    // si le PC ne le rejoint pas, le journal dit pourquoi.
+    for r in reseaux.iter().filter(|r| est_envoyeur(&r.ssid)) {
+        let pourquoi = match kiosque_du_reseau(&r.ssid) {
+            Some(n) if n != mon_numero => Some(format!("envoie au kiosque {n}, pas à celui-ci ({mon_numero})")),
+            None if r.signal < reglages.seuil.min(SEUIL_SANS_NUMERO) => {
+                Some(format!("signal trop faible ({} %) et sans numéro de kiosque", r.signal))
+            }
+            _ if r.connu => Some("réseau déjà connu de ce PC".to_string()),
+            _ if a_l_ecart(&r.ssid) => Some("déjà servi ou en échec, attente".to_string()),
+            _ => None,
+        };
+        if let Some(pourquoi) = pourquoi {
+            noter_une_fois(&r.ssid, format!("👀 « {} » vu (signal {} %) mais pas rejoint : {pourquoi}.", r.ssid, r.signal));
+        }
+    }
     let Some(cible) = choisir(&reseaux, reglages.seuil, &a_l_ecart, &ignorer, fond, &mon_numero).cloned() else {
         return;
     };
@@ -849,6 +893,9 @@ mod wlan {
     /// connexion réussie au bout d'une seconde, à chaque essai.
     static EVENEMENTS: Mutex<VecDeque<(String, Evenement)>> = Mutex::new(VecDeque::new());
 
+    /// Windows a fini la recherche demandée par `scanner`.
+    static RECHERCHE_FINIE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
     fn pousser(ssid: String, e: Evenement) {
         if let Ok(mut liste) = EVENEMENTS.lock() {
             liste.push_back((ssid, e));
@@ -892,6 +939,12 @@ mod wlan {
     unsafe extern "system" fn rappel(donnees: *mut L2_NOTIFICATION_DATA, _contexte: *mut core::ffi::c_void) {
         let Some(d) = donnees.as_ref() else { return };
         let code = d.NotificationCode as i32;
+        if d.NotificationSource == WLAN_NOTIFICATION_SOURCE_ACM
+            && (code == wlan_notification_acm_scan_complete.0 || code == wlan_notification_acm_scan_fail.0)
+        {
+            RECHERCHE_FINIE.store(true, std::sync::atomic::Ordering::SeqCst);
+            return;
+        }
         if d.NotificationSource == WLAN_NOTIFICATION_SOURCE_ACM {
             let ssid = if !d.pData.is_null()
                 && d.dwDataSize as usize
@@ -1006,9 +1059,23 @@ mod wlan {
                 .unwrap_or_default()
         }
 
+        /// Lance une recherche et attend sa fin (4 s au plus).
         pub fn scanner(&self) {
+            use std::sync::atomic::Ordering;
+            RECHERCHE_FINIE.store(false, Ordering::SeqCst);
             // SAFETY : poignée et GUID valides ; les autres paramètres sont facultatifs.
-            unsafe { WlanScan(self.poignee, &self.interface, None, None, None) };
+            let code = unsafe { WlanScan(self.poignee, &self.interface, None, None, None) };
+            let debut = std::time::Instant::now();
+            while code == 0
+                && !RECHERCHE_FINIE.load(Ordering::SeqCst)
+                && debut.elapsed() < std::time::Duration::from_secs(4)
+            {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+            }
+            if code != 0 {
+                // Recherche refusée (déjà en cours) : laisser Windows finir.
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
         }
 
         /// Les réseaux autour. Erreur = code Windows (5 = accès refusé :
@@ -1210,7 +1277,7 @@ mod tests {
         let mut ouvert = r("Ouvert", 99);
         ouvert.protege = false;
         ouvert.ssid = "DIRECT-KQ-OUVE".into();
-        let reseaux = vec![ouvert, r("DIRECT-KQ-FAIB", 40), r("DIRECT-KQ-DEJA", 95), r("DIRECT-KQ-NOUS", 98)];
+        let reseaux = vec![ouvert, r("DIRECT-KQ-FAIB", 20), r("DIRECT-KQ-DEJA", 95), r("DIRECT-KQ-NOUS", 98)];
         let a_l_ecart = |s: &str| s == "DIRECT-KQ-DEJA";
         assert!(choisir(&reseaux, 60, &a_l_ecart, &["DIRECT-KQ-NOUS".to_string()], &HashSet::new(), "3FA92C").is_none());
     }
@@ -1228,11 +1295,15 @@ mod tests {
         // L'envoyeur Android passe toujours, même devant un partage plus fort.
         let reseaux = vec![r("iPhone de Koffi", 95), r("DIRECT-KQ-7H2M", 70)];
         assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &fond, "3FA92C").unwrap().ssid, "DIRECT-KQ-7H2M");
-        // Un partage de connexion apparu depuis (iPhone au guichet) est tenté.
+        // Plus aucun partage de connexion tenté, même apparu au guichet :
+        // seuls les réseaux de l'application.
         let reseaux = vec![r("TECNO SPARK 6 Go", 95), r("iPhone de Koffi", 80)];
-        assert_eq!(choisir(&reseaux, 60, &|_| false, &[], &fond, "3FA92C").unwrap().ssid, "iPhone de Koffi");
-        // Et jamais sous le seuil.
-        assert!(choisir(&[r("iPhone de Koffi", 50)], 60, &|_| false, &[], &fond, "3FA92C").is_none());
+        assert!(choisir(&reseaux, 60, &|_| false, &[], &HashSet::new(), "3FA92C").is_none());
+        // Le réseau qui porte le numéro de ce kiosque passe même au signal faible.
+        assert_eq!(
+            choisir(&[r("DIRECT-KQ-3FA92C-QW2E", 12)], 60, &|_| false, &[], &fond, "3FA92C").unwrap().ssid,
+            "DIRECT-KQ-3FA92C-QW2E"
+        );
     }
 
     /// Deux kiosques voisins : chacun ne rejoint que les téléphones qui lui

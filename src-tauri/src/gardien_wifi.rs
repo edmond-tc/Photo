@@ -67,6 +67,7 @@ pub fn demarrer(app: tauri::AppHandle) {
             }
             if reglage(&app, "wifi_garder_allume").as_deref() != Some("oui")
                 || reglage(&app, "wifi_type_reseau").as_deref() == Some("routeur_externe")
+                || crate::reception_directe::est_active(&app)
             {
                 continue;
             }

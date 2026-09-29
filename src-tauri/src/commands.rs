@@ -923,6 +923,11 @@ pub async fn activer_point_acces_local(
 
     // Le gardien (gardien_wifi.rs) le rallumera désormais tout seul s'il
     // s'éteint, par cette même méthode.
+    // Le gérant a choisi le Wi-Fi créé par le PC : la réception directe
+    // (le PC rejoint les téléphones) lâche la carte Wi-Fi.
+    if let Ok(conn) = state.0.lock() {
+        let _ = db::set_setting(&conn, "reception_directe_active", "non");
+    }
     crate::gardien_wifi::retenir_allume(&app, Some(activation.methode));
     Ok(ResultatActivationWifi {
         methode: activation.methode.to_string(),

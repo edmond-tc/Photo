@@ -567,6 +567,12 @@ class MainActivity : Activity() {
             requestPermissions(manquantes.toTypedArray(), DEMANDE_MAM)
             return
         }
+        if (localisationEteinte()) {
+            signaler(JSONObject().put("type", "mam").put("etat", "erreur")
+                .put("message", "Allumez la « Localisation » du téléphone (Android l'exige pour trouver l'autre téléphone), puis réessayez."))
+            ouvrirReglagesLocalisation()
+            return
+        }
         if (!wifiAllume()) {
             signaler(JSONObject().put("type", "mam").put("etat", "wifi"))
             return
@@ -667,6 +673,15 @@ class MainActivity : Activity() {
                 .put("message", "Autorisations manquantes."))
             return
         }
+        // Android 10 à 12 refuse de créer le lien sans fil (et d'entendre la
+        // balise du guichet) quand la Localisation est éteinte — le cas de
+        // beaucoup de téléphones. Sans ce contrôle, l'échec était muet.
+        if (localisationEteinte()) {
+            signaler(JSONObject().put("type", "connexion").put("etat", "echec")
+                .put("message", "Allumez la « Localisation » du téléphone (Android l'exige pour se relier au guichet), puis revenez ici."))
+            ouvrirReglagesLocalisation()
+            return
+        }
         // Wi-Fi éteint : l'interface le dit au client et lui propose de
         // l'allumer ; la connexion repart d'elle-même une fois allumé.
         if (!wifiAllume()) {
@@ -693,6 +708,19 @@ class MainActivity : Activity() {
                         .put("message", l.raison ?: "Guichet introuvable."))
                 }
             }
+        }
+    }
+
+    private fun localisationEteinte(): Boolean {
+        if (Build.VERSION.SDK_INT >= 33) return false
+        val lm = getSystemService(android.location.LocationManager::class.java) ?: return false
+        return !lm.isLocationEnabled
+    }
+
+    private fun ouvrirReglagesLocalisation() {
+        try {
+            startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        } catch (_: Exception) {
         }
     }
 

@@ -2109,6 +2109,11 @@ async function rendreReceptionDirecte(corps) {
       <input type="checkbox" id="rd-active" ${e.reglages.active ? "checked" : ""}>
       <strong>Réception directe active</strong>
     </label>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin:0.3rem 0 0">
+      Le PC rejoint tout seul le téléphone du client qui ouvre l'application Envoyeur au guichet.
+      Elle prend la carte Wi-Fi : le Wi-Fi créé par le PC (QR Wi-Fi) est alors coupé. Rallumer ce
+      Wi-Fi (« Activer le Wi-Fi local ») arrête la réception directe.
+    </p>
     <p style="margin:0.6rem 0 0.2rem">Mot de passe du réseau créé par l'application du téléphone (le même des deux côtés) :</p>
     <input id="rd-mdp" type="text" value="${echapperHtml(e.reglages.mot_de_passe)}" style="width:14rem">
     <p style="margin:0.6rem 0 0.2rem">Force de signal minimale (téléphone au guichet), de 1 à 100 :</p>
