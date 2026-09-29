@@ -534,17 +534,14 @@ class MainActivity : Activity() {
         }
 
         /**
-         * Télécharge un fichier du PC du kiosque (renvoyé par la boutique ou
-         * déposé pour ce client) dans Téléchargements/Kiosque. Seulement
-         * depuis le PC relié. L'avancée arrive en événements « telechargement ».
+         * La personne passe à « Main à main » : le réseau du kiosque est
+         * refermé. Les deux fonctions ne tournent jamais en même temps.
          */
         @JavascriptInterface
-        fun telecharger(url: String, nom: String, cle: String): Boolean {
-            val adresse = try { Uri.parse(url) } catch (_: Exception) { return false }
-            if (adresse.scheme != "http" || adresse.host == null || adresse.host != adressePc) return false
-            Thread({ telechargerDuPc(url, nom, cle) }, "telechargement").start()
-            return true
+        fun quitterKiosque() {
+            principal.post { fermerLiaison() }
         }
+
     }
 
     // ───────────────────────────── Main à main ─────────────────────────────
@@ -643,54 +640,6 @@ class MainActivity : Activity() {
         try {
             startActivity(Intent.createChooser(envoi, "Donner l'application").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
         } catch (_: ActivityNotFoundException) {
-        }
-    }
-
-    /** Fichier du PC → Téléchargements/Kiosque, par morceaux, avec l'avancée. */
-    private fun telechargerDuPc(url: String, nom: String, cle: String) {
-        fun dire(etat: String, remplir: JSONObject.() -> Unit = {}) =
-            signaler(JSONObject().put("type", "telechargement").put("cle", cle).put("etat", etat).apply(remplir))
-        var cible: Uri? = null
-        try {
-            val lien = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-            lien.connectTimeout = 8000
-            lien.readTimeout = 60_000
-            if (lien.responseCode != 200) throw java.io.IOException("Le PC répond ${lien.responseCode}.")
-            val total = lien.contentLengthLong
-            val type = lien.contentType?.substringBefore(';')?.trim() ?: "application/octet-stream"
-            val valeurs = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, nom.replace('/', '_').take(150).ifBlank { "fichier" })
-                put(MediaStore.Downloads.MIME_TYPE, type)
-                put(MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/Kiosque")
-                put(MediaStore.Downloads.IS_PENDING, 1)
-            }
-            val destination = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, valeurs)
-                ?: throw java.io.IOException("Impossible d'écrire dans Téléchargements.")
-            cible = destination
-            var fait = 0L
-            var dernier = 0L
-            lien.inputStream.use { entree ->
-                contentResolver.openOutputStream(destination)!!.use { sortie ->
-                    val tampon = ByteArray(256 * 1024)
-                    while (true) {
-                        val n = entree.read(tampon)
-                        if (n < 0) break
-                        sortie.write(tampon, 0, n)
-                        fait += n
-                        val t = SystemClock.elapsedRealtime()
-                        if (t - dernier > 400) {
-                            dernier = t
-                            dire("encours") { put("fait", fait); put("total", total) }
-                        }
-                    }
-                }
-            }
-            contentResolver.update(destination, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-            val n = synchronized(MainAMain.recus) { MainAMain.recus.add(destination to type); MainAMain.recus.size - 1 }
-            dire("fini") { put("n", n); put("fait", fait) }
-        } catch (e: Exception) {
-            cible?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) {} }
-            dire("echec") { put("message", e.message ?: "Téléchargement interrompu.") }
         }
     }
 

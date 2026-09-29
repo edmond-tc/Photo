@@ -147,6 +147,9 @@ pub fn choisir<'a>(
         .iter()
         .filter(|r| r.protege && !r.connu && r.signal >= seuil && !r.ssid.is_empty())
         .filter(|r| est_envoyeur(&r.ssid) || !fond.contains(&r.ssid))
+        // Autres réseaux Wi-Fi Direct : « Main à main » entre deux
+        // téléphones (DIRECT-KM-…), imprimantes, télévisions… jamais pour nous.
+        .filter(|r| est_envoyeur(&r.ssid) || !r.ssid.starts_with("DIRECT-"))
         // Le téléphone d'un client qui envoie à un AUTRE kiosque.
         .filter(|r| kiosque_du_reseau(&r.ssid).is_none_or(|n| n == mon_numero))
         .filter(|r| !a_l_ecart(&r.ssid) && !ignorer.iter().any(|i| i == &r.ssid))
@@ -1131,6 +1134,15 @@ mod tests {
 
     /// Deux kiosques voisins : chacun ne rejoint que les téléphones qui lui
     /// envoient, et ceux qui n'ont entendu aucune balise (réseau sans numéro).
+    #[test]
+    fn ignore_les_autres_reseaux_wifi_direct() {
+        let reseaux = vec![r("DIRECT-KM-3FA92C", 99), r("DIRECT-5C-HP LaserJet", 95), r("DIRECT-KQ-K4G7", 60)];
+        let choisi = choisir(&reseaux, 50, &|_| false, &[], &HashSet::new(), "3FA92C").unwrap();
+        assert_eq!(choisi.ssid, "DIRECT-KQ-K4G7");
+        let sans_client = vec![r("DIRECT-KM-3FA92C", 99)];
+        assert!(choisir(&sans_client, 50, &|_| false, &[], &HashSet::new(), "3FA92C").is_none());
+    }
+
     #[test]
     fn chaque_kiosque_ne_rejoint_que_ses_clients() {
         let reseaux = vec![r("DIRECT-KQ-A1B2C3-XY7K", 95), r("DIRECT-KQ-3FA92C-QW2E", 60)];
