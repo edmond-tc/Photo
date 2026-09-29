@@ -2241,14 +2241,16 @@ async function rendreReceptionDirecte(corps) {
 function imprimerAfficheReception(qrApplication) {
   const affiche = document.querySelector("#affiche-reception");
   affiche.innerHTML = `
-    <h1>Envoyez vos documents sans câble</h1>
+    <h1>Envoyez vos documents depuis votre téléphone</h1>
     <div><img src="${qrApplication}" alt=""></div>
     <p class="mdp">Scannez avec l'appareil photo</p>
     <ol>
-      <li><strong>Android</strong> : installez l'application une seule fois. Ensuite, au guichet, touchez la notification.</li>
-      <li><strong>iPhone</strong> : envoyez votre document par WhatsApp, en un geste.</li>
+      <li>✓ Sans câble, sans WhatsApp</li>
+      <li>✓ Sans internet au guichet : votre forfait n'est pas utilisé</li>
+      <li>✓ Vous choisissez copies et couleur, vous voyez le prix</li>
+      <li>✓ Prévenu quand c'est prêt</li>
     </ol>
-    <p class="pied">Android : sans internet au guichet, votre forfait n'est pas utilisé.</p>`;
+    <p class="pied">Android : application gratuite, installée en 1 minute, une seule fois. iPhone : envoi par WhatsApp.</p>`;
   imprimerPage("impression-reception");
 }
 
