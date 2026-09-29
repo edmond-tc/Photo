@@ -559,9 +559,15 @@ where
 /// gérant connecte un téléphone, appuie ici, et la réponse ne se discute
 /// plus.
 #[tauri::command]
-pub fn journal_des_telephones() -> Vec<String> {
+pub async fn journal_des_telephones() -> Vec<String> {
     let adresses = crate::dhcp::journal();
     let noms = crate::dns::journal();
+    // Lus à côté de l'interface : `netsh` et PowerShell prennent une seconde.
+    let (clients, pare_feux) = tauri::async_runtime::spawn_blocking(|| {
+        (crate::hotspot::clients_reseau_heberge(), crate::pare_feu::pare_feux_tiers())
+    })
+    .await
+    .unwrap_or((None, Vec::new()));
 
     let mut lignes = Vec::new();
     // La première chose à savoir : Android n'ouvre la page que si le PC lui
@@ -573,6 +579,40 @@ pub fn journal_des_telephones() -> Vec<String> {
          Touchez « Activer le Wi-Fi local » et répondez « Oui » à Windows."
             .to_string()
     });
+    // Un journal vide ne dit pas, à lui seul, si le téléphone était sur un
+    // autre réseau ou si ses messages ont été jetés en route : ce que
+    // Windows voit connecté tranche entre les deux.
+    match &clients {
+        Some(macs) if macs.is_empty() => lignes.push(
+            "📶 Téléphones connectés au Wi-Fi de ce PC (d'après Windows) : AUCUN. Le téléphone \
+             n'est pas sur le Wi-Fi de ce PC en ce moment. Vérifiez le nom du Wi-Fi affiché sur \
+             le téléphone, et laissez-le connecté pendant que vous ouvrez cet écran."
+                .to_string(),
+        ),
+        Some(macs) => {
+            lignes.push(format!(
+                "📶 Téléphones connectés au Wi-Fi de ce PC (d'après Windows) : {} — {}",
+                macs.len(),
+                macs.join(", ")
+            ));
+            if adresses.is_empty() {
+                lignes.push(
+                    "⚠️ Un téléphone est connecté, mais AUCUN de ses messages n'arrive au \
+                     logiciel : ils sont bloqués avant lui (pare-feu d'un antivirus, ou partage \
+                     de connexion Windows)."
+                        .to_string(),
+                );
+            }
+        }
+        None => {}
+    }
+    if !pare_feux.is_empty() {
+        lignes.push(format!(
+            "🛡️ Pare-feu d'antivirus sur ce PC : {}. Il peut bloquer les téléphones : ajoutez \
+             « photocopie-benin » à ses exceptions (ou coupez son pare-feu le temps d'un essai).",
+            pare_feux.join(", ")
+        ));
+    }
     lignes.push(String::new());
     lignes.push("— Demandes d'adresse reçues —".to_string());
     if adresses.is_empty() {

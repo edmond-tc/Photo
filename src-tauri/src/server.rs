@@ -373,7 +373,7 @@ pub async fn portail_repond(adresse: Ipv4Addr) -> bool {
         return false;
     };
 
-    let requete = b"GET /generate_204 HTTP/1.0\r\nHost: connectivitycheck.gstatic.com\r\n\r\n";
+    let requete = b"GET /generate_204 HTTP/1.0\r\nHost: connectivitycheck.gstatic.com\r\nUser-Agent: test-du-PC\r\n\r\n";
     if flux.write_all(requete).await.is_err() {
         return false;
     }
@@ -408,7 +408,7 @@ pub async fn api_portail_repond(adresse: Ipv4Addr) -> bool {
         return false;
     };
 
-    let requete = format!("GET {CHEMIN_API_PORTAIL} HTTP/1.0\r\nHost: {adresse}\r\n\r\n");
+    let requete = format!("GET {CHEMIN_API_PORTAIL} HTTP/1.0\r\nHost: {adresse}\r\nUser-Agent: test-du-PC\r\n\r\n");
     if flux.write_all(requete.as_bytes()).await.is_err() {
         return false;
     }
@@ -661,6 +661,11 @@ pub fn journal_pages() -> Vec<String> {
 const MAX_JOURNAL_PAGES: usize = 60;
 
 fn noter_visite(hote: &str, chemin: &str, navigateur: &str) {
+    // Le PC qui se teste lui-même n'est pas un téléphone (voir
+    // `portail_repond`).
+    if navigateur == "test-du-PC" {
+        return;
+    }
     if let Ok(mut journal) = JOURNAL_PAGES.lock() {
         // Le nom du navigateur est long : on n'en garde que le début, qui
         // suffit à distinguer un iPhone d'un Android.

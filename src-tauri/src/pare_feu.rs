@@ -183,6 +183,38 @@ pub fn autoriser() -> Result<(), String> {
     Err("Disponible uniquement sur Windows".to_string())
 }
 
+/// Les pare-feu d'antivirus (McAfee, Norton, Kaspersky…) déclarés à Windows.
+/// Ils remplacent celui de Windows : nos règles n'y sont pas, et ils peuvent
+/// jeter tout ce qui vient des téléphones pendant que le PC, qui se teste
+/// lui-même, voit tout répondre.
+#[cfg(windows)]
+pub fn pare_feux_tiers() -> Vec<String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance -Namespace root/SecurityCenter2 -ClassName FirewallProduct \
+             -ErrorAction SilentlyContinue | ForEach-Object { $_.displayName }",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|sortie| {
+            String::from_utf8_lossy(&sortie.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(not(windows))]
+pub fn pare_feux_tiers() -> Vec<String> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

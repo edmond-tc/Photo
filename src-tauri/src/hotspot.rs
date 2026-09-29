@@ -342,6 +342,42 @@ pub fn reseau_heberge_demarre() -> Option<bool> {
     None
 }
 
+/// Les téléphones que Windows voit connectés au réseau hébergé : la ligne
+/// « Nombre de clients » de `netsh wlan show hostednetwork`, suivie d'une
+/// adresse matérielle par téléphone. `None` quand la ligne manque (réseau
+/// arrêté, ou autre méthode que le réseau hébergé).
+///
+/// C'est la seule preuve qu'un téléphone est bien sur NOTRE Wi-Fi : sans
+/// elle, un journal vide ne dit pas si le téléphone n'a rien envoyé ou s'il
+/// était sur un autre réseau.
+pub fn lire_clients_reseau_heberge(sortie: &str) -> Option<Vec<String>> {
+    let normalisee = normaliser(sortie);
+    let mut lignes = normalisee.lines();
+    lignes.find(|ligne| ligne.contains("nombre de clients") || ligne.contains("number of clients"))?;
+    let est_mac = |mot: &str| {
+        let parties: Vec<&str> = mot.split(':').collect();
+        parties.len() == 6
+            && parties.iter().all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_hexdigit()))
+    };
+    Some(
+        lignes
+            .flat_map(|ligne| ligne.split_whitespace().map(str::to_string).collect::<Vec<_>>())
+            .filter(|mot| est_mac(mot))
+            .map(|mot| mot.to_uppercase())
+            .collect(),
+    )
+}
+
+#[cfg(windows)]
+pub fn clients_reseau_heberge() -> Option<Vec<String>> {
+    lire_clients_reseau_heberge(&executer_netsh(&["wlan", "show", "hostednetwork"]))
+}
+
+#[cfg(not(windows))]
+pub fn clients_reseau_heberge() -> Option<Vec<String>> {
+    None
+}
+
 /// Méthode 1 à sauter : sur ce PC, une autre méthode a déjà réussi. La
 /// retenter demanderait « Oui » administrateur pour rien à chaque relance.
 pub static SAUTER_RESEAU_HEBERGE: std::sync::atomic::AtomicBool =
@@ -2027,6 +2063,15 @@ pub fn desactiver() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lit_les_telephones_connectes_au_reseau_heberge() {
+        let francais = "Paramètres du réseau hébergé\r\n    Mode : Autorisé\r\n    Nom du SSID : « Photocopie »\r\n\r\nÉtat du réseau hébergé\r\n    État : Démarré\r\n    BSSID : 3a:ab:cd:ef:01:23\r\n    Nombre de clients : 1\r\n        be:12:34:56:78:9a        Authentifié\r\n";
+        assert_eq!(super::lire_clients_reseau_heberge(francais), Some(vec!["BE:12:34:56:78:9A".to_string()]));
+        let vide = "    Status : Started\r\n    BSSID : 3a:ab:cd:ef:01:23\r\n    Number of clients : 0\r\n";
+        assert_eq!(super::lire_clients_reseau_heberge(vide), Some(vec![]));
+        assert_eq!(super::lire_clients_reseau_heberge("    Status : Not available\r\n"), None);
+    }
+
     use super::*;
 
     /// Reproduit le bug exact trouvé sur le terrain : avant ce correctif,

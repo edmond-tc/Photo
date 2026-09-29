@@ -204,7 +204,8 @@ pub async fn repond(adresse: Ipv4Addr) -> bool {
         .ok()
         .is_some_and(|reponse| {
             reponse.answers.iter().any(
-                |enregistrement| matches!(&enregistrement.data, RData::A(A(ip)) if *ip == adresse),
+                |enregistrement| matches!(&enregistrement.data, RData::A(A(ip))
+                    if *ip == adresse || *ip == crate::hotspot::ADRESSE_PORTAIL),
             )
         })
 }
@@ -258,7 +259,11 @@ async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
         let admis = dans_le_bon_reseau(*expediteur.ip(), adresse);
         if let Ok(demande) = hickory_proto::op::Message::from_vec(&tampon[..taille]) {
             if let Some(question) = demande.queries.first() {
-                if admis {
+                // La question que le PC se pose à lui-même pour se tester
+                // n'est pas celle d'un téléphone : la noter a déjà fait
+                // croire, sur le terrain, qu'un téléphone avait parlé.
+                if *expediteur.ip() == adresse {
+                } else if admis {
                     crate::arrivees::vu(*expediteur.ip());
                     noter(*expediteur.ip(), &question.name().to_string());
                 } else {
