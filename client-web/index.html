@@ -283,6 +283,19 @@ p { margin: 0; }
     </div>
   </section>
 
+  <!-- Petite fenêtre « Se connecter au réseau » d'Android : elle ne sait
+       ouvrir aucun fichier. La page part aussitôt vers le navigateur ; il ne
+       reste au client qu'à confirmer l'écran d'Android. -->
+  <section class="ecran" data-ecran="navigateur" hidden>
+    <div class="entete"><h1 data-boutique>Photocopie</h1></div>
+    <div class="contenu" style="justify-content:center; text-align:center; gap:18px">
+      <p style="font-size:1.25rem"><strong>Ouverture dans votre navigateur…</strong></p>
+      <p>Votre téléphone va vous demander de confirmer.<br>Touchez :</p>
+      <p style="font-size:1.1rem; font-weight:800; color:var(--accent)">« CONTINUER QUAND MÊME DANS LE NAVIGATEUR »</p>
+      <a class="btn grand" id="lien-navigateur-direct" href="/">Ouvrir dans le navigateur</a>
+    </div>
+  </section>
+
   <!-- Main à main : envoyer n'importe quel fichier d'un téléphone à un autre (application seulement) -->
   <section class="ecran" data-ecran="mam" hidden>
     <div class="entete"><h1>Main à main</h1></div>
@@ -1576,6 +1589,19 @@ p { margin: 0; }
   if (!app) chargerInfos();
   let premier = "accueil";
   try { if (app && !app.autorise()) premier = "bienvenue"; } catch (_) {}
+  // Ouverte dans la petite fenêtre « Se connecter au réseau » d'Android (une
+  // WebView : « ; wv) » dans son identité), la page ne pourrait choisir
+  // aucun fichier. Elle part donc tout de suite vers le navigateur : un seul
+  // toucher reste au client, sur l'écran de confirmation d'Android.
+  const petiteFenetre = !app && /Android/i.test(navigator.userAgent) && /; wv\)/.test(navigator.userAgent);
+  if (petiteFenetre) {
+    const versNavigateur = `intent://${location.host}/#Intent;scheme=http;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(location.origin + "/")};end`;
+    $("#lien-navigateur-direct").href = versNavigateur;
+    premier = "navigateur";
+    // La page simple ne marcherait pas mieux dans cette petite fenêtre.
+    $$("[data-mode-web]").forEach((e) => (e.hidden = true));
+    setTimeout(() => { location.href = versNavigateur; }, 1500);
+  }
   aller(premier);
   if (premier === "accueil") chargerPartages();
 })();
