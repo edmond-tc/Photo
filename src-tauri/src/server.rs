@@ -319,7 +319,13 @@ async fn infos_boutique(State(app): State<AppHandle>) -> impl IntoResponse {
                 })
         })
         .unwrap_or_default();
-    Json(serde_json::json!({ "boutique": nom, "tarifs": tarifs }))
+    // Les deux autres façons d'envoyer, montrées en bas de la page d'envoi
+    // dans le navigateur (comme sur la page simple).
+    let whatsapp = crate::db::get_setting(&conn, "boutique_whatsapp")
+        .as_deref()
+        .and_then(normalize_phone);
+    let bluetooth = crate::db::get_setting(&conn, "bluetooth_nom").filter(|n| !n.trim().is_empty());
+    Json(serde_json::json!({ "boutique": nom, "tarifs": tarifs, "whatsapp": whatsapp, "bluetooth": bluetooth }))
 }
 
 /// Portail captif, façon Wi-Fi d'hôtel : le téléphone qui rejoint un réseau
@@ -845,570 +851,80 @@ const INTERFACE_CLIENT: &str = include_str!("../../client-web/index.html");
 
 /// L'ancienne page d'envoi, gardée en secours (lien en bas de l'interface).
 async fn page_classique(State(app): State<AppHandle>) -> Html<String> {
-    let (whatsapp, bluetooth_nom) = {
+    let (nom, whatsapp, bluetooth_nom) = {
         let state = app.state::<crate::db::DbState>();
         let Ok(conn) = state.0.lock() else {
             return Html("<p>Service temporairement indisponible, réessayez.</p>".to_string());
         };
         (
+            crate::db::get_setting(&conn, "boutique_nom"),
             crate::db::get_setting(&conn, "boutique_whatsapp"),
             crate::db::get_setting(&conn, "bluetooth_nom"),
         )
     };
-    Html(construire_page_accueil(whatsapp, bluetooth_nom))
+    Html(construire_page_simple(nom, whatsapp, bluetooth_nom))
 }
 
 /// Séparée de `page_accueil` pour être vérifiable sans base ni serveur : la
 /// page change de forme selon les réglages de la boutique, et c'est
 /// justement une de ces variantes qui a cassé l'envoi sur le terrain.
-fn construire_page_accueil(whatsapp: Option<String>, bluetooth_nom: Option<String>) -> String {
-    // Les deux autres façons d'envoyer sont présentées comme des cartes à
-    // part entière, en bas de page — et non comme des liens en petit au pied
-    // de la page d'envoi. Un client qui n'arrive pas à passer par le Wi-Fi
-    // doit voir tout de suite qu'il lui reste deux chemins, pas déchiffrer
-    // une ligne grise.
-    //
+/// La page d'envoi simple (`/classique`) : même apparence et mêmes réglages
+/// que la page principale, moteur léger pour les vieux téléphones (voir
+/// `page_simple.html`). En bas, les deux autres façons d'envoyer.
+fn construire_page_simple(
+    nom_boutique: Option<String>,
+    whatsapp: Option<String>,
+    bluetooth_nom: Option<String>,
+) -> String {
+    const MODELE: &str = include_str!("page_simple.html");
+
     // WhatsApp ouvre directement la discussion avec le gérant, sans que le
     // client ait à retenir ou recopier un numéro.
     let carte_whatsapp = match whatsapp.as_deref().and_then(normalize_phone) {
         Some(numero) => format!(
-            r#"<section class="carte carte-alternative">
-      <h2><span>📱</span> Envoyer par WhatsApp</h2>
-      <p class="aide">
-        Pour envoyer vos documents directement au gérant sur WhatsApp, avec vos
-        propres données mobiles.
-      </p>
-      <p class="avertissement-reseau">
-        ⚠️ Le Wi-Fi de la boutique n'a pas internet : WhatsApp ne pourra pas
-        envoyer tant que votre téléphone y reste connecté.
-      </p>
-      <ol class="etapes">
-        <li><strong>Coupez le Wi-Fi</strong> de votre téléphone (ou oubliez ce réseau).</li>
-        <li>Vérifiez que vos <strong>données mobiles</strong> sont activées.</li>
-        <li>Touchez le bouton ci-dessous, puis joignez vos documents.</li>
+            r#"<details>
+      <summary>📱 WhatsApp</summary>
+      <ol>
+        <li><strong>Coupez le Wi-Fi</strong> (WhatsApp a besoin de vos données mobiles).</li>
+        <li>Touchez le bouton, puis joignez vos documents.</li>
       </ol>
-      <a class="bouton bouton-secondaire" href="whatsapp://send?phone={numero}">
-        Ouvrir la discussion WhatsApp
-      </a>
-      <p class="rappel">
-        Si rien ne s'ouvre, WhatsApp n'est pas installé sur ce téléphone :
-        <a href="https://wa.me/{numero}" target="_blank" rel="noopener">essayez ce lien</a>.
-      </p>
-    </section>"#
+      <a class="btn second" href="whatsapp://send?phone={numero}">Ouvrir la discussion WhatsApp</a>
+      <p class="aide">Rien ne s'ouvre ? <a href="https://wa.me/{numero}" target="_blank" rel="noopener">Essayez ce lien</a>.</p>
+    </details>"#
         ),
         None => String::new(),
     };
 
-    // Sans nom configuré, on reste sur une instruction générique plutôt que
-    // de dire au client de chercher un appareil "vide" — mieux vaut ne rien
-    // promettre de précis que d'induire en erreur.
-    // Le Bluetooth ne consomme aucune donnée et ne dépend d'aucun réseau :
-    // c'est le vrai secours quand le Wi-Fi de la boutique ne veut pas.
-    //
-    // La carte EXPLIQUE au lieu d'agir, et c'est une limite du navigateur,
-    // pas un choix : le partage de fichiers depuis une page web n'est
-    // autorisé qu'en `https://`, impossible à obtenir pour une adresse
-    // locale sans coller un avertissement de sécurité sous les yeux du
-    // client. Le bouton natif (voir `#btn-partager-bluetooth`) reste présent
-    // et apparaîtra tout seul le jour où la page sera servie autrement.
-    //
-    // Sans nom configuré, on reste sur une consigne générique plutôt que
-    // d'envoyer le client chercher un appareil "vide".
     let carte_bluetooth = match bluetooth_nom.filter(|n| !n.trim().is_empty()) {
         Some(nom) => format!(
-            r#"<section class="carte carte-alternative">
-      <h2><span>📶</span> Envoyer par Bluetooth</h2>
-      <p class="aide">
-        Sans internet et sans consommer vos données. Vos documents arrivent
-        directement sur l'ordinateur du gérant.
-      </p>
-      <ol class="etapes">
-        <li>Activez le <strong>Bluetooth</strong> sur votre téléphone.</li>
-        <li>Ouvrez vos documents, sélectionnez-en un ou plusieurs.</li>
-        <li>Appuyez sur <strong>Partager</strong>, puis <strong>Bluetooth</strong>.</li>
-        <li>Choisissez l'appareil nommé :</li>
+            r#"<details>
+      <summary>📶 Bluetooth</summary>
+      <ol>
+        <li>Activez le <strong>Bluetooth</strong>.</li>
+        <li>Sélectionnez vos documents, touchez <strong>Partager</strong> puis <strong>Bluetooth</strong>.</li>
+        <li>Choisissez l'ordinateur nommé : <strong class="bluetooth-nom">{nom}</strong></li>
       </ol>
-      <p class="bluetooth-nom">{nom}</p>
-      <button type="button" id="btn-partager-bluetooth" class="bouton bouton-secondaire" hidden>
-        Partager maintenant par Bluetooth
-      </button>
-      <p class="rappel">
-        Si le gérant vous demande d'accepter la connexion sur son écran, c'est normal :
-        il doit autoriser votre téléphone une première fois.
-      </p>
-    </section>"#,
+      <button type="button" id="btn-partager-bluetooth" class="btn second" hidden>Partager maintenant par Bluetooth</button>
+    </details>"#,
             nom = echapper_html(&nom)
         ),
-        None => r#"<section class="carte carte-alternative">
-      <h2><span>📶</span> Envoyer par Bluetooth</h2>
-      <p class="aide">
-        Activez le Bluetooth sur votre téléphone, puis Partager → Bluetooth, et
-        choisissez l'ordinateur de la boutique. Demandez son nom au gérant.
-      </p>
-    </section>"#
+        None => r#"<details>
+      <summary>📶 Bluetooth</summary>
+      <p class="aide">Activez le Bluetooth, puis Partager → Bluetooth, et choisissez l'ordinateur de la boutique. Demandez son nom au gérant.</p>
+    </details>"#
             .to_string(),
     };
 
-    format!(
-        r#"<!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Envoyer un fichier à la boutique</title>
-<style>
-  :root {{
-    --bleu: #2b579a;
-    --bleu-clair: #eef3fa;
-    --gris-fond: #f3f2f1;
-    --gris-bord: #e1dfdd;
-    --gris-texte: #605e5c;
-    --texte: #252423;
-    --espace: 1rem;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    font-family: "Segoe UI", Calibri, Arial, sans-serif;
-    background: var(--gris-fond);
-    margin: 0;
-    padding: var(--espace);
-    color: var(--texte);
-    line-height: 1.55;
-  }}
-  .page {{ max-width: 460px; margin: 0 auto; }}
-
-  /* Chaque bloc est une carte distincte, séparée des autres par un vrai
-     espace. Constaté sur une photo du terrain : tout était collé, et le
-     bouton d'envoi passait par-dessus le texte qui le suivait. */
-  .carte {{
-    background: #fff;
-    border-radius: 10px;
-    padding: 1.25rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    margin-bottom: var(--espace);
-  }}
-  .carte:last-child {{ margin-bottom: 0; }}
-
-  h1 {{ font-size: 1.25rem; color: var(--bleu); margin: 0 0 0.35rem; }}
-  h2 {{ font-size: 1rem; color: var(--bleu); margin: 0 0 0.5rem; display:flex; align-items:center; gap:0.5rem; }}
-  .sous-titre {{ font-size: 0.85rem; color: var(--gris-texte); margin: 0 0 1.25rem; }}
-
-  .champ {{ margin-bottom: 1.1rem; }}
-  .champ > label {{ display:block; font-size:0.9rem; font-weight:600; margin-bottom:0.15rem; }}
-  .aide {{ font-size: 0.78rem; color: var(--gris-texte); margin: 0 0 0.45rem; }}
-
-  input[type=text], input[type=tel] {{
-    width: 100%;
-    padding: 0.7rem 0.75rem;
-    border: 1px solid var(--gris-bord);
-    border-radius: 6px;
-    font-size: 1rem;
-    background: #fff;
-  }}
-  input[type=text]:focus, input[type=tel]:focus {{ outline: 2px solid var(--bleu); border-color: var(--bleu); }}
-  input[type=file] {{ width: 100%; font-size: 0.9rem; }}
-
-  button, .bouton {{
-    display: block;
-    width: 100%;
-    padding: 0.9rem;
-    background: var(--bleu);
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    font-size: 1.05rem;
-    font-weight: 600;
-    cursor: pointer;
-    text-align: center;
-    text-decoration: none;
-    font-family: inherit;
-  }}
-  .bouton-secondaire {{
-    background: #fff;
-    color: var(--bleu);
-    border: 1.5px solid var(--bleu);
-  }}
-
-  /* Plus aucune marge négative ici : c'est elle qui faisait remonter ce
-     texte SOUS le bouton d'envoi. */
-  .note-prix {{ font-size: 0.78rem; color: var(--gris-texte); text-align: center; margin: 0.75rem 0 0; }}
-  .note-confidentialite {{
-    font-size: 0.78rem; color: var(--gris-texte);
-    background: var(--gris-fond); padding: 0.85rem; border-radius: 8px; margin: 1.1rem 0 0;
-  }}
-
-  #confirmation {{ display:none; text-align:center; color:#107c10; font-weight:600; margin: 1rem 0 0; }}
-  .liberer-place {{ display:block; font-weight:400; font-size:0.92rem; margin-top:0.5rem; opacity:0.9; }}
-  #statut-fidelite {{ display:none; text-align:center; background:#dff6dd; color:#107c10; font-weight:600; padding:0.8rem; border-radius:8px; margin: 0.8rem 0 0; }}
-  #progression {{ display:none; height:8px; background:var(--gris-bord); border-radius:4px; overflow:hidden; margin: 0 0 0.5rem; }}
-  #progression > div {{ height:100%; width:0%; background:var(--bleu); transition:width .15s; }}
-  #texte-progression {{ display:none; text-align:center; font-size:0.8rem; color:var(--gris-texte); margin: 0 0 0.75rem; }}
-
-  .fichier {{ border:1px solid var(--gris-bord); border-radius:8px; padding:0.75rem; margin-bottom:0.65rem; }}
-  .fichier-entete {{ display:flex; align-items:center; gap:0.5rem; }}
-  .fichier-nom {{ flex:1; font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-  .fichier-retirer {{
-    width:auto; flex:0 0 auto; background:none; border:none; color:var(--gris-texte);
-    font-size:1.1rem; line-height:1; padding:0.2rem 0.35rem; cursor:pointer;
-  }}
-  .fichier-toggle {{ background:none; border:none; color:var(--bleu); font-size:0.82rem; padding:0.35rem 0 0; cursor:pointer; width:auto; text-align:left; font-weight:500; }}
-  .fichier-options {{ display:none; margin-top:0.6rem; font-size:0.85rem; }}
-  .fichier-options.ouvert {{ display:block; }}
-  .fichier-options label {{ display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem; }}
-  .fichier-options select, .fichier-options input[type=number], .fichier-options input[type=text] {{
-    width:auto; flex:1; padding:0.4rem; margin:0; border:1px solid var(--gris-bord); border-radius:5px;
-  }}
-
-  /* Les deux autres façons d'envoyer, en bas, chacune dans sa carte. */
-  .carte-alternative {{ background:#fff; border:1px solid var(--gris-bord); box-shadow:none; }}
-  .etapes {{ margin: 0.5rem 0 0.9rem; padding-left: 1.15rem; font-size: 0.85rem; color: var(--gris-texte); }}
-  .etapes li {{ margin-bottom: 0.35rem; }}
-  .bluetooth-nom {{
-    text-align:center; font-size:1.3rem; font-weight:700; color:var(--bleu);
-    background:var(--bleu-clair); border:2px dashed var(--bleu); border-radius:8px;
-    padding:0.85rem 0.6rem; margin:0 0 0.9rem; word-break:break-word; letter-spacing:0.02em;
-  }}
-  .rappel {{ font-size:0.78rem; color:var(--gris-texte); margin:0.75rem 0 0; }}
-  .avertissement-reseau {{
-    font-size:0.8rem; background:#fff4ce; border-left:3px solid #d29200;
-    padding:0.6rem 0.75rem; border-radius:0 6px 6px 0; margin:0 0 0.5rem;
-  }}
-</style>
-</head>
-<body>
-  <div class="page">
-    <section class="carte">
-      <h1>Envoyer vos documents</h1>
-      <p class="sous-titre">Choisissez vos fichiers, le gérant les reçoit aussitôt.</p>
-
-      <form id="form-envoi">
-        <div class="champ">
-          <label for="champ-nom">Votre nom <span style="font-weight:400; color:var(--gris-texte)">(facultatif)</span></label>
-          <p class="aide">Aide la boutique à savoir à qui appartient votre fichier, surtout si plusieurs personnes envoient en même temps.</p>
-          <input type="text" id="champ-nom" name="nom" placeholder="Votre nom" />
-        </div>
-
-        <div class="champ">
-          <label for="champ-tel">Votre numéro <span style="font-weight:400; color:var(--gris-texte)">(facultatif)</span></label>
-          <p class="aide">Vous permet de profiter d'une réduction après plusieurs commandes chez cette boutique.</p>
-          <input type="tel" id="champ-tel" name="telephone" placeholder="Votre numéro" />
-        </div>
-
-        <div class="champ">
-          <label for="champ-fichiers">Vos documents</label>
-          <p class="aide">
-            Vous pouvez les ajouter <strong>un par un</strong> : chaque choix s'ajoute
-            à la liste, rien ne remplace ce que vous avez déjà mis.
-          </p>
-          <input type="file" id="champ-fichiers" multiple />
-        </div>
-
-        <div id="liste-fichiers"></div>
-        <div id="progression"><div></div></div>
-        <p id="texte-progression"></p>
-
-        <button type="submit">Envoyer à la boutique</button>
-        <p class="note-prix">Le prix est à régler directement avec le gérant, sur place.</p>
-      </form>
-
-      <p id="confirmation">Fichier(s) envoyé(s), merci ! Le gérant a été prévenu.<br>
-        <span class="liberer-place">Vous pouvez maintenant <strong>quitter le Wi-Fi de la
-        boutique</strong> : cela libère une place pour le client suivant.</span></p>
-      <p id="statut-fidelite"></p>
-
-      <p class="note-confidentialite">
-        🔒 Votre document reste sur l'ordinateur de la boutique : il ne passe
-        par aucun site internet et n'est envoyé à personne d'autre. Il est
-        effacé automatiquement quelque temps après votre commande. Votre nom
-        et votre numéro ne servent qu'à retrouver votre document et à votre
-        réduction fidélité ; demandez au gérant si vous voulez qu'ils soient
-        effacés.
-      </p>
-    </section>
-
-    {carte_whatsapp}
-    {carte_bluetooth}
-  </div>
-  <script>
-    const champFichiers = document.getElementById('champ-fichiers');
-    const listeFichiers = document.getElementById('liste-fichiers');
-
-    // La sélection est CUMULÉE ici, au lieu de vivre dans le champ.
-    //
-    // Sur iPhone, choisir des documents ne permet souvent d'en prendre qu'un
-    // seul à la fois — c'est le sélecteur d'Apple qui l'impose, pas notre
-    // page, et la fenêtre réduite qu'ouvre un portail captif est encore plus
-    // limitée. Tant que la liste vivait dans le champ, un second choix
-    // EFFAÇAIT le premier : le client ne pouvait donc envoyer qu'un seul
-    // document, sans que rien ne le prévienne.
-    //
-    // En gardant la liste de notre côté, ajouter se fait autant de fois
-    // qu'on veut — un par un s'il le faut — et l'on peut aussi retirer une
-    // ligne. Le champ est vidé après chaque choix, sinon reprendre le même
-    // fichier ne déclencherait aucun événement.
-    //
-    // Chaque ligne garde SES options (Noir & Blanc, A4, 1 copie par défaut,
-    // le client ne les voit qu'en cliquant "Personnaliser") : elles vivent
-    // dans l'objet et non dans le HTML, pour survivre au réaffichage
-    // provoqué par un ajout ou un retrait.
-    let fichiersChoisis = [];
-
-    function memeFichier(a, b) {{
-      return a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
-    }}
-
-    function afficherFichiers() {{
-      listeFichiers.innerHTML = '';
-      fichiersChoisis.forEach((choix, i) => {{
-        const bloc = document.createElement('div');
-        bloc.className = 'fichier';
-        bloc.innerHTML = `
-          <div class="fichier-entete">
-            <div class="fichier-nom">${{choix.fichier.name}}</div>
-            <button type="button" class="fichier-retirer" aria-label="Retirer">✕</button>
-          </div>
-          <button type="button" class="fichier-toggle">Personnaliser (couleur, format, copies)…</button>
-          <div class="fichier-options">
-            <label><input type="checkbox" class="opt-couleur" /> Couleur (sinon Noir &amp; Blanc)</label>
-            <label>Format
-              <select class="opt-format">
-                <option value="A4">A4</option>
-                <option value="A3">A3</option>
-                <option value="A5">A5</option>
-              </select>
-            </label>
-            <label>Copies <input type="number" class="opt-copies" min="1" value="1" /></label>
-            <label>Pages (ex: 1-5) <input type="text" class="opt-pages" placeholder="toutes" /></label>
-          </div>
-        `;
-        const couleur = bloc.querySelector('.opt-couleur');
-        const format = bloc.querySelector('.opt-format');
-        const copies = bloc.querySelector('.opt-copies');
-        const pages = bloc.querySelector('.opt-pages');
-        couleur.checked = choix.couleur;
-        format.value = choix.format;
-        copies.value = choix.copies;
-        pages.value = choix.pages;
-        couleur.addEventListener('change', () => {{ choix.couleur = couleur.checked; }});
-        format.addEventListener('change', () => {{ choix.format = format.value; }});
-        copies.addEventListener('change', () => {{ choix.copies = copies.value || '1'; }});
-        pages.addEventListener('input', () => {{ choix.pages = pages.value; }});
-
-        bloc.querySelector('.fichier-toggle').addEventListener('click', () => {{
-          bloc.querySelector('.fichier-options').classList.toggle('ouvert');
-        }});
-        bloc.querySelector('.fichier-retirer').addEventListener('click', () => {{
-          fichiersChoisis.splice(i, 1);
-          afficherFichiers();
-        }});
-        listeFichiers.appendChild(bloc);
-      }});
-      majBoutonBluetooth();
-    }}
-
-    champFichiers.addEventListener('change', () => {{
-      [...champFichiers.files].forEach((fichier) => {{
-        if (!fichiersChoisis.some((c) => memeFichier(c.fichier, fichier))) {{
-          fichiersChoisis.push({{ fichier, couleur: false, format: 'A4', copies: '1', pages: '' }});
-        }}
-      }});
-      // Vidé pour que rechoisir le même fichier déclenche bien un événement.
-      champFichiers.value = '';
-      afficherFichiers();
-    }});
-
-    // Le bouton Bluetooth n'apparaît que si le téléphone sait le faire
-    // (surtout Android) et que des fichiers sont bien sélectionnés —
-    // sinon les instructions manuelles restent le seul recours.
-    // Ce bouton N'EXISTE PAS quand aucun nom Bluetooth n'est configuré : sa
-    // carte affiche alors une consigne générale, sans bouton.
-    //
-    // Sans les gardes ci-dessous, le script levait une erreur ici même, et
-    // s'arrêtait AVANT d'installer l'interception du formulaire. Le
-    // navigateur retombait alors sur l'envoi classique d'un formulaire HTML :
-    // la page se rechargeait, vide, et les fichiers ne partaient jamais.
-    // Constaté sur le terrain, sur les deux téléphones à la fois.
-    //
-    // Règle qui en découle : tout élément facultatif de cette page doit être
-    // lu avec une garde. Un détail absent ne doit jamais pouvoir emporter
-    // l'envoi lui-même, qui est la seule chose indispensable ici.
-    const btnBluetooth = document.getElementById('btn-partager-bluetooth');
-    function majBoutonBluetooth() {{
-      if (!btnBluetooth) return;
-      const fichiers = fichiersChoisis.map((c) => c.fichier);
-      const peutPartager =
-        fichiers.length > 0 &&
-        typeof navigator.canShare === 'function' &&
-        navigator.canShare({{ files: fichiers }});
-      btnBluetooth.hidden = !peutPartager;
-    }}
-    if (btnBluetooth) {{
-      btnBluetooth.addEventListener('click', async () => {{
-        try {{
-          await navigator.share({{ files: fichiersChoisis.map((c) => c.fichier) }});
-        }} catch {{
-          // Annulé par le client, ou échec — pas grave, il peut toujours
-          // utiliser "Envoyer à la boutique" ou les instructions manuelles.
-        }}
-      }});
-    }}
-
-    // Créé ici, pendant le clic (geste utilisateur) — les téléphones
-    // bloquent le son créé plus tard par du code, mais celui-ci reste
-    // utilisable pour le petit bip joué à la fin, une fois débloqué ainsi.
-    let audioClient = null;
-
-    document.getElementById('form-envoi').addEventListener('submit', (e) => {{
-      e.preventDefault();
-      try {{
-        audioClient = new (window.AudioContext || window.webkitAudioContext)();
-      }} catch {{}}
-      const form = e.target;
-      if (fichiersChoisis.length === 0) {{
-        alert('Choisissez au moins un document avant d\'envoyer.');
-        return;
-      }}
-      const donnees = new FormData();
-      donnees.append('nom', form.nom.value);
-      donnees.append('telephone', form.telephone.value);
-      fichiersChoisis.forEach((choix, i) => {{
-        donnees.append(`fichier_${{i}}`, choix.fichier);
-        donnees.append(`couleur_${{i}}`, choix.couleur ? '1' : '0');
-        donnees.append(`format_${{i}}`, choix.format || 'A4');
-        donnees.append(`copies_${{i}}`, choix.copies || '1');
-        donnees.append(`pages_${{i}}`, choix.pages || '');
-      }});
-      donnees.append('nombre_fichiers', String(fichiersChoisis.length));
-
-      const bouton = form.querySelector('button');
-      const barre = document.querySelector('#progression');
-      const remplissage = barre.querySelector('div');
-      const texte = document.querySelector('#texte-progression');
-      bouton.disabled = true;
-      bouton.textContent = 'Envoi en cours…';
-      barre.style.display = 'block';
-      texte.style.display = 'block';
-
-      // L'iPhone SUSPEND la page dès que l'écran s'éteint ou que le client
-      // passe à une autre application : l'envoi en cours meurt, et au retour
-      // la page est parfois rechargée à vide — la liste des documents
-      // choisis a disparu. Constaté en boutique, sur iPhone seulement ;
-      // Android laisse la page vivre.
-      //
-      // On ne peut pas empêcher iOS de le faire (le verrou d'écran demande
-      // une page en https, impossible ici). On peut en revanche le DIRE
-      // avant, et le NOMMER après — au lieu d'un « échec d'envoi » qui ne
-      // dit rien et qu'on croit venir du logiciel.
-      let passeEnArrierePlan = false;
-      const guetteur = () => {{ if (document.hidden) passeEnArrierePlan = true; }};
-      document.addEventListener('visibilitychange', guetteur);
-      // Certains navigateurs l'accordent malgré tout : on essaie, sans en
-      // dépendre.
-      let veille = null;
-      try {{
-        if (navigator.wakeLock) {{
-          navigator.wakeLock.request('screen').then((v) => {{ veille = v; }}).catch(() => {{}});
-        }}
-      }} catch {{}}
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/envoyer');
-      xhr.upload.addEventListener('progress', (ev) => {{
-        if (!ev.lengthComputable) return;
-        const pourcent = Math.round((ev.loaded / ev.total) * 100);
-        remplissage.style.width = pourcent + '%';
-        texte.textContent =
-          `Envoi… ${{pourcent}}%  — gardez l'écran allumé jusqu'à la fin`;
-      }});
-      xhr.addEventListener('load', () => {{
-        if (xhr.status >= 200 && xhr.status < 300) {{
-          form.hidden = true;
-          barre.style.display = 'none';
-          texte.style.display = 'none';
-          document.getElementById('confirmation').style.display = 'block';
-          try {{
-            const reponse = JSON.parse(xhr.responseText);
-            if (reponse.jetons && reponse.jetons.length) surveillerStatut(reponse.jetons);
-          }} catch {{}}
-        }} else {{
-          bouton.disabled = false;
-          bouton.textContent = 'Envoyer à la boutique';
-          // Le serveur explique la cause (fichier trop gros pour le disque,
-          // envoi interrompu…) : la montrer plutôt qu'un échec muet.
-          const raison = (xhr.responseText || '').trim();
-          alert(raison && raison.length < 300 && raison[0] !== '{{' && raison[0] !== '<'
-            ? raison
-            : "L'envoi a échoué, réessayez.");
-        }}
-      }});
-      const terminer = () => {{
-        document.removeEventListener('visibilitychange', guetteur);
-        try {{ if (veille) veille.release(); }} catch {{}}
-      }};
-      xhr.addEventListener('loadend', terminer);
-      xhr.addEventListener('error', () => {{
-        bouton.disabled = false;
-        bouton.textContent = 'Envoyer à la boutique';
-        alert(
-          passeEnArrierePlan
-            ? "L'envoi s'est arrêté parce que le téléphone s'est verrouillé ou "
-              + "que vous avez changé d'application. Appuyez de nouveau sur "
-              + "Envoyer, et gardez l'écran allumé jusqu'à la fin."
-            : "L'envoi a échoué, réessayez."
-        );
-      }});
-      xhr.send(donnees);
-    }});
-
-    // Tant que le client reste sur le Wi-Fi de la boutique (donc pas encore
-    // parti), on regarde discrètement si le gérant a encaissé — pour lui
-    // montrer un mot de remerciement en direct, sans imprimer de reçu ni
-    // passer par internet.
-    function jouerSonClient() {{
-      try {{
-        const ctx = audioClient || new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0.18, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.35);
-      }} catch {{}}
-      if (navigator.vibrate) navigator.vibrate(200);
-    }}
-
-    function surveillerStatut(jetons) {{
-      const statutEl = document.getElementById('statut-fidelite');
-      let tentatives = 0;
-      const maxTentatives = 200; // ~15 minutes, le temps d'un passage en boutique
-      const minuteur = setInterval(async () => {{
-        tentatives++;
-        if (tentatives > maxTentatives) {{
-          clearInterval(minuteur);
-          return;
-        }}
-        for (const jeton of jetons) {{
-          try {{
-            const r = await fetch(`/statut/${{jeton}}`);
-            const data = await r.json();
-            if (data.paye && data.message) {{
-              statutEl.textContent = data.message;
-              statutEl.style.display = 'block';
-              jouerSonClient();
-              clearInterval(minuteur);
-              return;
-            }}
-          }} catch {{}}
-        }}
-      }}, 4500);
-    }}
-  </script>
-</body>
-</html>"#
-    )
+    let autres = format!(
+        r#"<div class="autres"><span class="autres-titre">Autres façons d'envoyer :</span>{carte_whatsapp}{carte_bluetooth}</div>"#
+    );
+    let titre = nom_boutique
+        .filter(|n| !n.trim().is_empty())
+        .map(|n| echapper_html(&n))
+        .unwrap_or_else(|| "Envoyer vos documents".to_string());
+    MODELE
+        .replace("__BOUTIQUE__", &titre)
+        .replace("__AUTRES_FACONS__", &autres)
 }
 
 struct FichierRecu {
@@ -2318,7 +1834,7 @@ mod tests {
     /// manquer un jour.
     #[test]
     fn le_script_ne_lit_aucun_element_absent_de_la_page() {
-        use super::construire_page_accueil;
+        use super::construire_page_simple;
 
         // Facultatifs par construction, donc lus avec une garde dans le
         // script (`if (btnBluetooth)`).
@@ -2336,7 +1852,7 @@ mod tests {
         ];
 
         for (nom_variante, whatsapp, bluetooth) in variantes {
-            let page = construire_page_accueil(whatsapp, bluetooth);
+            let page = construire_page_simple(None, whatsapp, bluetooth);
 
             // Tous les identifiants que le script va chercher.
             let mut reste = page.as_str();
@@ -2362,9 +1878,9 @@ mod tests {
     /// retirer reproduirait exactement la panne du terrain.
     #[test]
     fn le_bouton_bluetooth_facultatif_reste_lu_derriere_une_garde() {
-        use super::construire_page_accueil;
+        use super::construire_page_simple;
 
-        let sans_bluetooth = construire_page_accueil(None, None);
+        let sans_bluetooth = construire_page_simple(None, None, None);
         assert!(
             !sans_bluetooth.contains("id=\"btn-partager-bluetooth\""),
             "sans nom configuré, ce bouton n'a pas lieu d'être"
@@ -2375,7 +1891,7 @@ mod tests {
              avant d'installer l'envoi"
         );
 
-        let avec_bluetooth = construire_page_accueil(None, Some("PC-BOUTIQUE".to_string()));
+        let avec_bluetooth = construire_page_simple(None, None, Some("PC-BOUTIQUE".to_string()));
         assert!(avec_bluetooth.contains("id=\"btn-partager-bluetooth\""));
         assert!(avec_bluetooth.contains("PC-BOUTIQUE"));
     }

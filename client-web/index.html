@@ -101,6 +101,15 @@ p { margin: 0; }
 .vocal audio { width: 100%; height: 36px; }
 /* Aucun prix affiché au client (demande du terrain) : seul le résumé reste. */
 [data-prix] { display: none !important; }
+.autres { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; font-size: 0.9rem; color: var(--discret); }
+.autres-titre { width: 100%; }
+.autres details { flex: 1 1 140px; }
+.autres details[open] { flex-basis: 100%; }
+.autres summary { list-style: none; cursor: pointer; background: var(--surface-2); color: var(--encre); border-radius: 10px; padding: 8px 12px; font-weight: 700; text-align: center; }
+.autres summary::-webkit-details-marker { display: none; }
+.autres ol { margin: 8px 0; padding-left: 1.3rem; display: grid; gap: 4px; color: var(--encre); }
+.autres a.btn { text-decoration: none; font-size: 0.95rem; padding: 11px 14px; }
+#nom-bluetooth { font-size: 1.1rem; white-space: nowrap; }
 .prix-doc { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid var(--trait); padding-top: 10px; font-variant-numeric: tabular-nums; }
 .ajout { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .total { display: flex; justify-content: space-between; align-items: baseline; font-variant-numeric: tabular-nums; }
@@ -267,6 +276,27 @@ p { margin: 0; }
       </div>
       <div class="bandeau bloquant" id="memoire-pleine" hidden>
         <p><strong>Votre téléphone a manqué de mémoire pendant le choix du fichier.</strong> Le navigateur a dû se relancer et a perdu votre choix. Fermez les autres applications (enregistrement d'écran, jeux, vidéos) et les onglets inutiles du navigateur, puis touchez à nouveau « Choisir mes documents ».</p>
+      </div>
+      <!-- Dans le navigateur seulement : les deux autres façons d'envoyer,
+           comme sur la page simple. -->
+      <div class="autres" id="autres-facons" data-mode-web hidden>
+        <span class="autres-titre">Autres façons d'envoyer :</span>
+        <details id="autre-whatsapp" hidden>
+          <summary>📱 WhatsApp</summary>
+          <ol>
+            <li><strong>Coupez le Wi-Fi</strong> (WhatsApp a besoin de vos données mobiles).</li>
+            <li>Touchez le bouton, puis joignez vos documents.</li>
+          </ol>
+          <a class="btn second" id="lien-whatsapp" href="#">Ouvrir la discussion WhatsApp</a>
+        </details>
+        <details>
+          <summary>📶 Bluetooth</summary>
+          <ol>
+            <li>Activez le <strong>Bluetooth</strong>.</li>
+            <li>Sélectionnez vos documents, touchez <strong>Partager</strong> puis <strong>Bluetooth</strong>.</li>
+            <li>Choisissez <span id="consigne-bluetooth">l'ordinateur de la boutique (demandez son nom au gérant)</span> <strong id="nom-bluetooth" hidden></strong></li>
+          </ol>
+        </details>
       </div>
       <p class="aide centre" data-mode-app hidden>La liaison avec le guichet se fait pendant votre choix.</p>
       <div class="pied-appli">
@@ -593,6 +623,17 @@ p { margin: 0; }
       }
       if (Object.keys(recus).length) { tarifs = Object.assign(tarifs, recus); ecrire("kiosque.tarifs", recus); }
       if (infos.boutique) { ecrire("kiosque.boutique", infos.boutique); afficherBoutique(); }
+      // Autres façons d'envoyer : numéro vérifié (chiffres seuls), nom
+      // Bluetooth posé comme texte, jamais comme HTML.
+      if (typeof infos.whatsapp === "string" && /^[0-9]{8,15}$/.test(infos.whatsapp)) {
+        $("#lien-whatsapp").href = `whatsapp://send?phone=${infos.whatsapp}`;
+        $("#autre-whatsapp").hidden = false;
+      }
+      if (typeof infos.bluetooth === "string" && infos.bluetooth.trim()) {
+        $("#nom-bluetooth").textContent = infos.bluetooth.trim().slice(0, 40);
+        $("#nom-bluetooth").hidden = false;
+        $("#consigne-bluetooth").textContent = "l'ordinateur nommé :";
+      }
       if (courant === "documents") rendreDocs();
     } catch (_) {}
   }

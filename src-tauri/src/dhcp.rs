@@ -447,6 +447,8 @@ mod tests {
 
     #[test]
     fn offre_une_adresse_dans_la_plage_attendue() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
         let requete = fabriquer_requete(MessageType::Discover, &[1, 2, 3, 4, 5, 6]);
 
@@ -472,6 +474,8 @@ mod tests {
 
     #[test]
     fn la_meme_adresse_mac_recoit_toujours_la_meme_adresse_ip() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
         let mac = [0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33];
 
@@ -532,6 +536,8 @@ mod tests {
     /// refuser NET pour qu'il reparte de zéro et aboutisse.
     #[test]
     fn refuse_net_une_adresse_venue_d_un_autre_reseau() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
         let ancienne = Ipv4Addr::new(192, 168, 1, 57); // le Wi-Fi de la maison
         let brut = construire_reponse(
@@ -557,6 +563,8 @@ mod tests {
     /// choisie. Répondre autre chose relancerait la même boucle.
     #[test]
     fn accorde_telle_quelle_une_adresse_coherente_avec_notre_reseau() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
         let demandee = Ipv4Addr::new(192, 168, 73, 44);
         let brut = construire_reponse(
@@ -578,6 +586,8 @@ mod tests {
     /// PC, les autres ne désignent aucun appareil.
     #[test]
     fn n_accorde_jamais_l_adresse_du_pc_ni_les_adresses_reservees() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
         assert!(!dans_notre_reseau(serveur, serveur));
         assert!(!dans_notre_reseau(Ipv4Addr::new(192, 168, 73, 0), serveur));
@@ -597,6 +607,8 @@ mod tests {
     /// cas du tout premier téléphone, qui n'a encore rien à réclamer.
     #[test]
     fn une_demande_sans_adresse_precise_recoit_toujours_une_adresse() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
         let brut = construire_reponse(
             &fabriquer_requete(MessageType::Request, &[1, 2, 3, 4, 5, 6]),
@@ -757,11 +769,15 @@ mod tests {
 
     #[test]
     fn ignore_un_paquet_illisible_sans_planter() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
         assert!(construire_reponse(&[9, 9, 9], Ipv4Addr::new(192, 168, 73, 1)).is_none());
     }
 
     #[test]
     fn ignore_les_types_de_messages_qu_on_ne_traite_pas() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
         // RELEASE, DECLINE... : on n'a rien à répondre, pas de bail à tenir.
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
         let requete = fabriquer_requete(MessageType::Release, &[1, 2, 3, 4, 5, 6]);
