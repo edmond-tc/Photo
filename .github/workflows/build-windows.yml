@@ -140,6 +140,10 @@ jobs:
             }
           }
 
+          # Le numéro de version, lu par la page de téléchargement (voir
+          # CLE_VERSION_WINDOWS dans admin/src/index.js).
+          Set-Content -Path "$sortie/version-windows.txt" -Value $version -NoNewline
+
           foreach ($paire in @(
             @{ Fichier = "GestionPhotocopie-Installateur.exe"; Empreinte = "empreinte-sha256.txt" },
             @{ Fichier = "GestionPhotocopie-MiseAJour.exe";    Empreinte = "empreinte-sha256-mise-a-jour.txt" }
@@ -198,7 +202,8 @@ jobs:
             "GestionPhotocopie-Installateur.exe",
             "GestionPhotocopie-MiseAJour.exe",
             "empreinte-sha256.txt",
-            "empreinte-sha256-mise-a-jour.txt"
+            "empreinte-sha256-mise-a-jour.txt",
+            "version-windows.txt"
           )) {
             npx wrangler r2 object put "photocopie-telechargements/$nom" --file="$racine/installateurs/$nom" --remote
           }

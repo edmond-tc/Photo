@@ -839,6 +839,52 @@ const CLE_EMPREINTE_LEGER = "empreinte-sha256-mise-a-jour.txt";
 const CLE_APK = "EnvoyeurKiosque.apk";
 const CLE_EMPREINTE_APK = "empreinte-sha256-envoyeur.txt";
 
+// Numéros de version, déposés par les deux constructions à côté des
+// fichiers (version-windows.txt vaut pour la complète ET la légère, qui
+// sont la même version). Affichés sur la page et mis dans le nom du fichier
+// téléchargé : sur le terrain, on voit d'un coup d'œil ce qu'on a en main.
+const CLE_VERSION_WINDOWS = "version-windows.txt";
+const CLE_VERSION_APK = "version-envoyeur.txt";
+
+async function lireVersion(env, cle) {
+  try {
+    const fichier = await env.TELECHARGEMENTS.get(cle);
+    if (!fichier) return null;
+    const texte = (await fichier.text()).trim();
+    return /^[0-9][0-9A-Za-z.-]{0,19}$/.test(texte) ? texte : null;
+  } catch {
+    return null;
+  }
+}
+
+/// « GestionPhotocopie-MiseAJour.exe » → « GestionPhotocopie-MiseAJour-0.5.14.exe ».
+function nomAvecVersion(nom, version) {
+  if (!version) return nom;
+  const point = nom.lastIndexOf(".");
+  return `${nom.slice(0, point)}-${version}${nom.slice(point)}`;
+}
+
+/// Date de publication à l'heure du Bénin.
+function datePublication(date) {
+  if (!date) return "";
+  return new Date(date).toLocaleString("fr-FR", {
+    timeZone: "Africa/Porto-Novo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function ligneVersion(version, publie) {
+  if (!version && !publie) return "";
+  const morceaux = [];
+  if (version) morceaux.push(`<strong>Version ${echapper(version)}</strong>`);
+  if (publie) morceaux.push(`publiée le ${echapper(datePublication(publie))}`);
+  return `<p style="font-size:0.9rem; margin:0 0 0.6rem; background:#eef6fc; padding:0.4rem 0.6rem; border-radius:4px; text-align:left">${morceaux.join(" · ")}</p>`;
+}
+
 /// Taille lisible par un humain qui compte son forfait : c'est le chiffre
 /// qui décide s'il peut télécharger ou non.
 function tailleLisible(octets) {
@@ -869,6 +915,7 @@ function blocTelephone(telephone) {
         📱 Version téléphone (Android) — ${echapper(tailleLisible(telephone.taille))}
         <span style="font-size:0.75rem; background:#fff4ce; padding:0.1rem 0.4rem; border-radius:4px">essai</span>
       </h2>
+      ${ligneVersion(telephone.version, telephone.publie)}
       <p style="font-size:0.85rem; margin:0 0 0.6rem">
         <strong>Envoyeur Kiosque</strong> : le client envoie ses documents au PC du
         kiosque sans internet et sans forfait. Près du guichet, le téléphone le
@@ -894,12 +941,12 @@ function blocTelephone(telephone) {
     </div>`;
 }
 
-function pageTelecharger(disponible, empreinte, taille, leger, telephone) {
+function pageTelecharger(disponible, empreinte, taille, leger, telephone, windows) {
   // L'empreinte remplace ce qu'aurait apporté un certificat de signature :
   // elle ne supprime pas l'avertissement de Windows, mais elle permet de
   // vérifier que le fichier téléchargé est bien celui qui a été compilé, et
   // pas une version modifiée en route.
-  const blocEmpreinte = blocVerification(empreinte, CLE_INSTALLATEUR);
+  const blocEmpreinte = blocVerification(empreinte, nomAvecVersion(CLE_INSTALLATEUR, windows.version));
 
   // Le second bloc n'apparaît que si la compilation a bien produit la
   // version légère : la page reste utilisable sinon.
@@ -909,6 +956,7 @@ function pageTelecharger(disponible, empreinte, taille, leger, telephone) {
            Version légère — ${echapper(tailleLisible(leger.taille))} au lieu de
            ${echapper(taille ? tailleLisible(taille) : "plus de 200 Mo")}
          </h2>
+         ${ligneVersion(windows.version, leger.publie)}
          <p style="font-size:0.85rem; margin:0 0 0.6rem">
            <strong>À prendre si l'application est déjà installée sur ce PC</strong>
            — par exemple pour passer à une version plus récente.
@@ -934,7 +982,7 @@ function pageTelecharger(disponible, empreinte, taille, leger, telephone) {
            prenez la version complète plus haut. Celle-ci y chercherait le
            moteur d'affichage sur internet, et échouerait.
          </p>
-         ${blocVerification(leger.empreinte, CLE_INSTALLATEUR_LEGER)}
+         ${blocVerification(leger.empreinte, nomAvecVersion(CLE_INSTALLATEUR_LEGER, windows.version))}
        </div>`
     : "";
 
@@ -949,6 +997,7 @@ function pageTelecharger(disponible, empreinte, taille, leger, telephone) {
       ${
         disponible
           ? `<h2 style="font-size:1rem; margin:1.2rem 0 0.3rem; text-align:left">Version complète — pour un PC neuf</h2>
+             ${ligneVersion(windows.version, windows.publie)}
              <p style="font-size:0.82rem; color:#605e5c; text-align:left; margin:0">
                À prendre la toute première fois sur un PC donné. Elle embarque
                tout ce qu'il faut, y compris le moteur d'affichage de Windows :
@@ -1397,6 +1446,11 @@ async function router(request, env) {
           disponible: !!objetLeger,
           taille: objetLeger ? objetLeger.size : null,
           empreinte: empreinteLeger,
+          publie: objetLeger ? objetLeger.uploaded : null,
+        };
+        const windows = {
+          version: await lireVersion(env, CLE_VERSION_WINDOWS),
+          publie: objet ? objet.uploaded : null,
         };
         const objetApk = await env.TELECHARGEMENTS.head(CLE_APK);
         let empreinteApk = null;
@@ -1412,6 +1466,8 @@ async function router(request, env) {
           disponible: !!objetApk,
           taille: objetApk ? objetApk.size : null,
           empreinte: empreinteApk,
+          version: await lireVersion(env, CLE_VERSION_APK),
+          publie: objetApk ? objetApk.uploaded : null,
         };
         // Pas nommée `page` : ce nom est déjà celui du gabarit HTML global,
         // et le masquer ici serait un piège pour la prochaine modification.
@@ -1420,7 +1476,8 @@ async function router(request, env) {
           empreinte,
           objet ? objet.size : null,
           leger,
-          telephone
+          telephone,
+          windows
         );
         return new Response(corps, {
           headers: { "content-type": "text/html; charset=utf-8" },
@@ -1432,7 +1489,7 @@ async function router(request, env) {
         return new Response(objet.body, {
           headers: {
             "content-type": "application/octet-stream",
-            "content-disposition": `attachment; filename="${CLE_INSTALLATEUR_LEGER}"`,
+            "content-disposition": `attachment; filename="${nomAvecVersion(CLE_INSTALLATEUR_LEGER, await lireVersion(env, CLE_VERSION_WINDOWS))}"`,
           },
         });
       }
@@ -1444,7 +1501,7 @@ async function router(request, env) {
             // Type officiel : sans lui, certains navigateurs Android
             // enregistrent un fichier qu'ils ne proposent pas d'installer.
             "content-type": "application/vnd.android.package-archive",
-            "content-disposition": `attachment; filename="${CLE_APK}"`,
+            "content-disposition": `attachment; filename="${nomAvecVersion(CLE_APK, await lireVersion(env, CLE_VERSION_APK))}"`,
           },
         });
       }
@@ -1454,7 +1511,7 @@ async function router(request, env) {
         return new Response(objet.body, {
           headers: {
             "content-type": "application/octet-stream",
-            "content-disposition": `attachment; filename="${CLE_INSTALLATEUR}"`,
+            "content-disposition": `attachment; filename="${nomAvecVersion(CLE_INSTALLATEUR, await lireVersion(env, CLE_VERSION_WINDOWS))}"`,
           },
         });
       }

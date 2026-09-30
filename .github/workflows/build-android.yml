@@ -62,6 +62,8 @@ jobs:
           mkdir -p sortie
           cp android/app/build/outputs/apk/release/app-release.apk sortie/EnvoyeurKiosque.apk
           (cd sortie && sha256sum EnvoyeurKiosque.apk > empreinte-sha256-envoyeur.txt)
+          # Lu par la page de téléchargement (CLE_VERSION_APK, admin/src/index.js).
+          grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts | tr -d '\n' > sortie/version-envoyeur.txt
 
       - name: Publier l'APK sur la page de téléchargement
         if: github.ref == 'refs/heads/main'
@@ -69,7 +71,7 @@ jobs:
         run: |
           cd admin
           npm ci
-          for nom in EnvoyeurKiosque.apk empreinte-sha256-envoyeur.txt; do
+          for nom in EnvoyeurKiosque.apk empreinte-sha256-envoyeur.txt version-envoyeur.txt; do
             npx wrangler r2 object put "photocopie-telechargements/$nom" --file="../sortie/$nom" --remote
           done
         env:
