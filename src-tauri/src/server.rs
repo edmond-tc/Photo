@@ -119,32 +119,40 @@ pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let app_pour_etat = app.clone();
         let router = construire_router(app);
-
         let addr = format!("0.0.0.0:{PORT}");
-        match tokio::net::TcpListener::bind(&addr).await {
-            Ok(listener) => {
-                app_pour_etat
-                    .state::<EtatServeur>()
-                    .0
-                    .store(true, Ordering::SeqCst);
-                let service = router.into_make_service_with_connect_info::<std::net::SocketAddr>();
-                if let Err(e) = axum::serve(listener, service).await {
-                    eprintln!("Serveur local arrêté avec une erreur : {e}");
+        // Réessaie sans fin : juste après une mise à jour, l'ancienne
+        // version tient encore le port quelques secondes. Un seul essai
+        // laissait la boutique sans réception jusqu'au prochain redémarrage
+        // de l'application, sans rien afficher.
+        let mut essais = 0u32;
+        loop {
+            match tokio::net::TcpListener::bind(&addr).await {
+                Ok(listener) => {
+                    essais = 0;
+                    app_pour_etat.state::<EtatServeur>().0.store(true, Ordering::SeqCst);
+                    let service = router
+                        .clone()
+                        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+                    if let Err(e) = axum::serve(listener, service).await {
+                        eprintln!("Serveur local arrêté avec une erreur : {e}");
+                    }
+                    app_pour_etat.state::<EtatServeur>().0.store(false, Ordering::SeqCst);
                 }
-                app_pour_etat
-                    .state::<EtatServeur>()
-                    .0
-                    .store(false, Ordering::SeqCst);
+                Err(e) => {
+                    if essais == 0 {
+                        eprintln!("Port {PORT} indisponible ({e}) : nouvel essai dans quelques secondes.");
+                    }
+                    essais = essais.saturating_add(1);
+                }
             }
-            Err(e) => {
-                eprintln!(
-                    "Impossible de démarrer le serveur local sur le port {PORT} : {e}. \
-                     La réception par QR/Wi-Fi local est indisponible, les autres canaux \
-                     (dossier surveillé, clé USB) continuent de fonctionner."
-                );
-            }
+            tokio::time::sleep(pause_avant_nouvel_essai(essais)).await;
         }
     });
+}
+
+/// 2 s pendant la première minute, puis 15 s.
+fn pause_avant_nouvel_essai(essais: u32) -> std::time::Duration {
+    std::time::Duration::from_secs(if essais < 30 { 2 } else { 15 })
 }
 
 /// Toute adresse inconnue reçoit LA PAGE elle-même, et non une redirection.
@@ -395,7 +403,7 @@ pub fn refuser_le_port_securise() {
         loop {
             match ecoute.accept().await {
                 Ok((flux, _)) => drop(flux),
-                Err(_) => continue,
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(200)).await,
             }
         }
     });
@@ -476,25 +484,36 @@ fn demarrer_portail_captif(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let router = construire_router(app);
         let addr = format!("0.0.0.0:{PORT_PORTAIL_CAPTIF}");
-        match tokio::net::TcpListener::bind(&addr).await {
-            Ok(listener) => {
-                if let Ok(mut garde) = PROBLEME_PORTAIL_CAPTIF.lock() {
-                    *garde = None;
+        // Même règle que le serveur principal : on réessaie sans fin, le
+        // port peut se libérer (ancienne version qui se ferme, logiciel
+        // arrêté) — l'ouverture automatique revient alors toute seule.
+        let mut essais = 0u32;
+        loop {
+            match tokio::net::TcpListener::bind(&addr).await {
+                Ok(listener) => {
+                    essais = 0;
+                    if let Ok(mut garde) = PROBLEME_PORTAIL_CAPTIF.lock() {
+                        *garde = None;
+                    }
+                    let service = router
+                        .clone()
+                        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+                    let _ = axum::serve(listener, service).await;
                 }
-                let service = router.into_make_service_with_connect_info::<std::net::SocketAddr>();
-                let _ = axum::serve(listener, service).await;
-            }
-            Err(e) => {
-                if let Ok(mut garde) = PROBLEME_PORTAIL_CAPTIF.lock() {
-                    *garde = Some(format!(
-                        "L'ouverture automatique de la page est indisponible (port \
-                         {PORT_PORTAIL_CAPTIF} : {e}). Le Wi-Fi et l'envoi fonctionnent, mais le \
-                         client devra scanner le petit second QR pour ouvrir la page. Cause \
-                         habituelle : un autre logiciel occupe déjà ce port sur ce PC (serveur \
-                         web, Skype ancien, outil de développement)."
-                    ));
+                Err(e) => {
+                    essais = essais.saturating_add(1);
+                    if let Ok(mut garde) = PROBLEME_PORTAIL_CAPTIF.lock() {
+                        *garde = Some(format!(
+                            "L'ouverture automatique de la page est indisponible (port \
+                             {PORT_PORTAIL_CAPTIF} : {e}). Le Wi-Fi et l'envoi fonctionnent, mais le \
+                             client devra scanner le petit second QR pour ouvrir la page. Cause \
+                             habituelle : un autre logiciel occupe déjà ce port sur ce PC (serveur \
+                             web, Skype ancien, outil de développement)."
+                        ));
+                    }
                 }
             }
+            tokio::time::sleep(pause_avant_nouvel_essai(essais)).await;
         }
     });
 }

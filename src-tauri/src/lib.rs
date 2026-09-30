@@ -34,7 +34,6 @@ pub mod wifi_direct;
 
 use db::DbState;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -90,7 +89,7 @@ pub fn run() {
             license::assurer_debut_essai(&conn);
             let watched_folder = db::get_setting(&conn, "dossier_surveille");
 
-            app.manage(DbState(Mutex::new(conn)));
+            app.manage(DbState(db::VerrouSain::new(conn)));
             app.manage(server::EtatServeur::default());
             app.manage(hotspot::EtatPointAcces::default());
 

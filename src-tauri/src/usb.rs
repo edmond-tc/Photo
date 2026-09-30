@@ -66,7 +66,15 @@ pub fn documents_cle_usb() -> Vec<DocumentUsb> {
 
 /// Met en file d'attente UNIQUEMENT les documents choisis, et rien d'autre.
 #[tauri::command]
-pub fn importer_documents_usb(app: AppHandle, chemins: Vec<String>) -> usize {
+pub async fn importer_documents_usb(app: AppHandle, chemins: Vec<String>) -> usize {
+    // Copier depuis une clé peut prendre longtemps (gros fichiers, clé
+    // lente) : hors du fil de la fenêtre, qui sinon se figeait.
+    tauri::async_runtime::spawn_blocking(move || importer(&app, chemins))
+        .await
+        .unwrap_or(0)
+}
+
+fn importer(app: &AppHandle, chemins: Vec<String>) -> usize {
     // On ne prend que des chemins qui étaient réellement proposés : sans
     // cette vérification, cette commande permettrait de faire lire n'importe
     // quel fichier du PC depuis la page.
@@ -78,8 +86,8 @@ pub fn importer_documents_usb(app: AppHandle, chemins: Vec<String>) -> usize {
             continue;
         }
         let source = PathBuf::from(&chemin);
-        let chemin_a_enregistrer = copier_en_local(&app, &source).unwrap_or(source);
-        if enqueue_file(&app, &chemin_a_enregistrer, "usb", None, None).is_some() {
+        let chemin_a_enregistrer = copier_en_local(app, &source).unwrap_or(source);
+        if enqueue_file(app, &chemin_a_enregistrer, "usb", None, None).is_some() {
             importes += 1;
         }
     }

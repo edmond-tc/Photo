@@ -111,18 +111,24 @@ pub fn rechercher_client(state: State<DbState>, terme: String) -> Result<Vec<Que
 }
 
 #[tauri::command]
-pub fn get_thumbnail(state: State<DbState>, id: i64) -> Result<Option<String>, String> {
+pub async fn get_thumbnail(state: State<'_, DbState>, id: i64) -> Result<Option<String>, String> {
     let path = queue_item_path(&state, id)?;
-    Ok(files::miniature_base64(&path))
+    // Lire et réduire une grosse photo prend du temps : hors du fil de la
+    // fenêtre (la liste se figeait à l'arrivée de plusieurs photos).
+    tauri::async_runtime::spawn_blocking(move || files::miniature_base64(&path))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Pour l'aperçu intégré avant impression (voir modal-apercu côté
 /// interface) : évite d'avoir à ouvrir une autre application pour
 /// simplement regarder le document.
 #[tauri::command]
-pub fn get_apercu(state: State<DbState>, id: i64) -> Result<String, String> {
+pub async fn get_apercu(state: State<'_, DbState>, id: i64) -> Result<String, String> {
     let path = queue_item_path(&state, id)?;
-    files::apercu_data_uri(&path)
+    tauri::async_runtime::spawn_blocking(move || files::apercu_data_uri(&path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -306,8 +312,12 @@ pub fn print_file(
 /// liste déroulante à côté du bouton "Imprimer" — la même liste que celle
 /// des paramètres Windows, rien à configurer côté application.
 #[tauri::command]
-pub fn lister_imprimantes() -> Vec<String> {
-    impression::imprimantes_disponibles()
+pub async fn lister_imprimantes() -> Vec<String> {
+    // Une imprimante réseau éteinte fait attendre Windows plusieurs
+    // secondes : hors du fil de la fenêtre.
+    tauri::async_runtime::spawn_blocking(impression::imprimantes_disponibles)
+        .await
+        .unwrap_or_default()
 }
 
 /// Retire un fichier de la file sans encaissement (ex: format non
@@ -1085,8 +1095,12 @@ pub async fn desactiver_point_acces_local(
 /// demander les droits administrateur. Joint la sortie brute de Windows, à
 /// transmettre au support quand le verdict reste indécis.
 #[tauri::command]
-pub fn diagnostiquer_poste() -> crate::hotspot::DiagnosticPoste {
-    crate::hotspot::diagnostiquer()
+pub async fn diagnostiquer_poste() -> Result<crate::hotspot::DiagnosticPoste, String> {
+    // Plusieurs appels à netsh, jusqu'à plusieurs secondes : hors du fil de
+    // la fenêtre, sinon l'application affichait « Ne répond pas ».
+    tauri::async_runtime::spawn_blocking(crate::hotspot::diagnostiquer)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize)]

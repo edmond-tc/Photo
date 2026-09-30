@@ -143,7 +143,7 @@ pub fn demarrer(app: tauri::AppHandle) {
             }
             derniere_relance = Some(Instant::now());
             let _ = app.emit("wifi-relance", "en cours");
-            if relancer(&app, &methode) {
+            if relancer(&app, &methode, echecs_suivis) {
                 echecs_suivis = 0;
                 let _ = app.emit("wifi-relance", "ok");
             } else {
@@ -171,8 +171,11 @@ fn lancer_tache_demarrage() {
 /// Rallume le réseau. Méthode 1 (réseau hébergé) : par la tâche Windows de
 /// démarrage, qui a déjà les droits — aucune fenêtre « Oui » au gérant.
 /// Autres méthodes : la même activation que le bouton, sans la méthode 1.
-fn relancer(app: &tauri::AppHandle, methode: &str) -> bool {
-    if methode == "réseau hébergé" {
+fn relancer(app: &tauri::AppHandle, methode: &str, echecs_suivis: u32) -> bool {
+    // Après deux échecs par la tâche Windows (tâche effacée, pas encore
+    // créée), on refait l'activation complète, comme le bouton : sinon le
+    // gardien réessaierait le même chemin cassé indéfiniment.
+    if methode == "réseau hébergé" && echecs_suivis < 2 {
         lancer_tache_demarrage();
         std::thread::sleep(Duration::from_secs(20));
         // Après un redémarrage du PC, l'application ne connaît pas encore
@@ -184,7 +187,11 @@ fn relancer(app: &tauri::AppHandle, methode: &str) -> bool {
         return reseau_vivant(methode);
     }
 
-    crate::hotspot::SAUTER_RESEAU_HEBERGE.store(true, std::sync::atomic::Ordering::SeqCst);
+    // Méthode 1 déjà connue pour marcher ici : on la retente en premier.
+    // Une autre méthode a marché : on la saute (elle a échoué sur ce PC).
+    // Aucune méthode connue (jamais activé) : on essaie tout, comme le bouton.
+    let sauter = !methode.is_empty() && methode != "réseau hébergé";
+    crate::hotspot::SAUTER_RESEAU_HEBERGE.store(sauter, std::sync::atomic::Ordering::SeqCst);
     let app2 = app.clone();
     let resultat = tauri::async_runtime::block_on(async move {
         crate::commands::activer_point_acces_local(app2.state(), app2.state(), app2.clone()).await

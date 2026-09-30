@@ -1175,7 +1175,9 @@ p { margin: 0; }
     return new Promise((ok, ko) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${baseUrl()}/envoyer`);
-      xhr.timeout = 15 * 60 * 1000;
+      // Pas de durée maximale : un gros fichier sur un Wi-Fi lent peut
+      // dépasser 15 minutes en avançant bien. C'est l'absence de progrès
+      // (ci-dessous) qui arrête un envoi, pas sa durée.
       // Plus rien ne passe depuis 45 s (Wi-Fi coupé, écran verrouillé) : on
       // le dit au client au lieu de le laisser devant une barre figée.
       let dernierProgres = Date.now();

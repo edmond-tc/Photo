@@ -2,7 +2,30 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-pub struct DbState(pub Mutex<Connection>);
+pub struct DbState(pub VerrouSain<Connection>);
+
+/// Un verrou qui ne reste jamais « empoisonné ».
+///
+/// Avec un `Mutex` ordinaire, une seule erreur imprévue (un plantage d'une
+/// tâche pendant qu'elle tenait la base) rendait la base inaccessible à
+/// TOUT le reste de l'application, jusqu'à son redémarrage : plus de file
+/// d'attente, plus de réception, plus de réglages — en silence. Ici, le
+/// verrou suivant reprend simplement la main : chaque écriture SQLite est
+/// déjà complète ou annulée, la base reste cohérente.
+pub struct VerrouSain<T>(Mutex<T>);
+
+impl<T> VerrouSain<T> {
+    pub fn new(valeur: T) -> Self {
+        Self(Mutex::new(valeur))
+    }
+
+    pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, T>> {
+        Ok(self.0.lock().unwrap_or_else(|empoisonne| {
+            self.0.clear_poison();
+            empoisonne.into_inner()
+        }))
+    }
+}
 
 pub fn open(data_dir: &Path) -> rusqlite::Result<Connection> {
     std::fs::create_dir_all(data_dir).expect("impossible de créer le dossier de données");

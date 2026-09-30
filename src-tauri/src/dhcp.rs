@@ -105,7 +105,13 @@ async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
     loop {
         let taille = match socket.recv(&mut tampon).await {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(_) => {
+                // Carte Wi-Fi réinitialisée, téléphone parti (Windows signale
+                // alors une erreur à chaque lecture) : une courte pause, sinon
+                // cette boucle tournerait à vide et chaufferait le PC.
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                continue;
+            }
         };
         if let Ok(demande) = decoder_requete(&tampon[..taille]) {
             let type_demande = match demande.opts().get(OptionCode::MessageType) {

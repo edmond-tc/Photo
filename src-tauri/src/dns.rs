@@ -270,7 +270,13 @@ async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
     loop {
         let (taille, expediteur) = match socket.recv_from(&mut tampon).await {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(_) => {
+                // Carte Wi-Fi réinitialisée, téléphone parti (Windows signale
+                // alors une erreur à chaque lecture) : une courte pause, sinon
+                // cette boucle tournerait à vide et chaufferait le PC.
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                continue;
+            }
         };
         let std::net::SocketAddr::V4(expediteur) = expediteur else {
             continue;
