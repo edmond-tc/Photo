@@ -1119,14 +1119,26 @@ async function afficherQr() {
     // le monde sait déjà faire. L'affiche ne dit que lui — pas de
     // « Réglages », où les clients se perdent — avec le nom choisi par le
     // gérant, en gros sous le code, pour qu'on le reconnaisse dans la liste.
+    //
+    // Ce geste ne marche que si le PC répond lui-même aux téléphones
+    // (`ouverture_auto`, vérifié par le PC). Sur certains PC, Windows garde
+    // cette réponse : l'affiche montre alors deux codes — le Wi-Fi, puis la
+    // page — plutôt que de promettre une page qui ne s'ouvrira pas.
     const nomReseau = info.qr_page_data_uri ? info.reseau : null;
+    const deuxCodes = Boolean(nomReseau && !info.ouverture_auto);
+    if (deuxCodes) conteneur.classList.add("deux-qr");
     const blocQr = ajouterQr(
       info.qr_data_uri,
       null,
-      nomReseau
-        ? `② Touchez « Rejoindre »\n③ Ouvrez votre Wi-Fi et touchez « ${nomReseau} » : la page d'envoi s'ouvre`
-        : "Scannez pour envoyer vos documents"
+      !nomReseau
+        ? "Scannez pour envoyer vos documents"
+        : deuxCodes
+          ? "② Touchez « Rejoindre »"
+          : `② Touchez « Rejoindre »\n③ Ouvrez votre Wi-Fi et touchez « ${nomReseau} » : la page d'envoi s'ouvre`
     );
+    if (deuxCodes) {
+      ajouterQr(info.qr_page_data_uri, null, "③ Puis scannez ce code : la page d'envoi s'ouvre");
+    }
     if (nomReseau) {
       const etiquette = document.createElement("p");
       etiquette.className = "qr-nom-reseau";
@@ -1262,7 +1274,7 @@ async function alerterTelephoneSansPage() {
 
 /// Ce qui, s'il change, rend le QR affiché faux.
 function signatureInfoQr(info) {
-  return [info.url, info.mode, info.qr_data_uri, info.qr_page_data_uri || "", info.reseau || ""].join("|");
+  return [info.url, info.mode, info.qr_data_uri, info.qr_page_data_uri || "", info.reseau || "", info.ouverture_auto].join("|");
 }
 
 /// Trouvé à l'audit : le QR était calculé UNE fois, à l'ouverture de la

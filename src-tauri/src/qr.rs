@@ -45,6 +45,15 @@ pub struct ServerInfo {
     /// les QR (vieux modèles) — il choisit le réseau dans sa liste.
     pub reseau: Option<String>,
     pub mot_de_passe: Option<String>,
+    /// La page s'ouvre-t-elle en touchant le réseau ? Vrai seulement quand
+    /// NOTRE serveur de noms répond aux téléphones et que le portail tourne :
+    /// l'affiche ne promet alors qu'un seul code. Sinon (Windows garde les
+    /// noms, sur certains PC), elle en montre deux et ne promet rien de faux.
+    pub ouverture_auto: bool,
+}
+
+fn ouverture_auto() -> bool {
+    crate::dns::en_service() && crate::server::probleme_portail_captif().is_none()
 }
 
 /// Construit le QR à montrer aux clients, en fonction de ce qui tourne
@@ -84,6 +93,7 @@ pub fn build_server_info(
             mode: MODE_RESEAU_PARTAGE,
             reseau: None,
             mot_de_passe: None,
+            ouverture_auto: false,
         });
     };
 
@@ -117,6 +127,7 @@ pub fn build_server_info(
                 // Le mot de passe de CE réseau est celui du routeur ou du
                 // téléphone, que l'application ne connaît pas forcément.
                 mot_de_passe: None,
+                ouverture_auto: ouverture_auto(),
             },
             None => ServerInfo {
                 qr_data_uri: build_qr_data_uri(&url)?,
@@ -125,6 +136,7 @@ pub fn build_server_info(
                 mode,
                 reseau: None,
                 mot_de_passe: None,
+                ouverture_auto: false,
             },
         });
     }
@@ -136,6 +148,7 @@ pub fn build_server_info(
         mode,
         reseau: Some(ssid),
         mot_de_passe: wifi_mot_de_passe.filter(|m| !m.is_empty()),
+        ouverture_auto: crate::hotspot::point_acces_actif() && ouverture_auto(),
     })
 }
 

@@ -843,13 +843,32 @@ pub async fn activer_point_acces_local(
         activation.methode == crate::hotspot::METHODE_POINT_ACCES_MOBILE;
     if windows_distribue {
         recapitulatif.push(
-            "ℹ️ Adresses et noms distribués par Windows (point d'accès mobile)".to_string(),
+            "ℹ️ Adresses distribuées par Windows (point d'accès mobile)".to_string(),
         );
-        recapitulatif.push(
-            "ℹ️ La page ne s'ouvre pas toute seule : le client scanne le 1er QR (Wi-Fi) puis \
-             le 2e QR (page)"
-                .to_string(),
-        );
+        // Windows donne son adresse aux téléphones comme serveur de noms.
+        // Selon le PC, il y répond lui-même ou laisse la question arriver
+        // au nôtre : on démarre donc le nôtre, et on ne garde que ce qu'on
+        // a vu répondre. S'il répond, la page s'ouvre en touchant le réseau,
+        // comme avec les autres méthodes ; sinon l'affiche passe à deux codes.
+        let mieux = match crate::dns::demarrer(activation.adresse).await {
+            Ok(tache) => {
+                if reessayer(|| crate::dns::repond(activation.adresse)).await {
+                    nouvelles_taches.push(tache);
+                    true
+                } else {
+                    tache.abort();
+                    false
+                }
+            }
+            Err(_) => false,
+        };
+        recapitulatif.push(if mieux {
+            "✅ Noms de domaine — testé, répond : la page s'ouvre en touchant le réseau".to_string()
+        } else {
+            "ℹ️ Windows garde les noms de domaine sur ce PC : la page ne s'ouvre pas toute \
+             seule, l'autocollant montre deux codes (Wi-Fi, puis page)"
+                .to_string()
+        });
         recapitulatif.push(
             "ℹ️ Point d'accès mobile de Windows : 8 téléphones connectés en même temps au \
              maximum"

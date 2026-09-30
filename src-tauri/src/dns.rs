@@ -246,7 +246,26 @@ fn dans_le_bon_reseau(expediteur: Ipv4Addr, adresse: Ipv4Addr) -> bool {
     expediteur.is_unspecified() || expediteur.octets()[..2] == [169, 254]
 }
 
+/// Serveurs de noms en service en ce moment. Un serveur arrêté (tâche
+/// annulée à la désactivation) se retire lui-même en disparaissant.
+static EN_SERVICE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Un de nos serveurs de noms répond-il aux téléphones ? C'est lui qui leur
+/// fait découvrir la page : sans lui, rien ne s'ouvre en touchant le réseau.
+pub fn en_service() -> bool {
+    EN_SERVICE.load(std::sync::atomic::Ordering::SeqCst) > 0
+}
+
+struct PresenceEnService;
+impl Drop for PresenceEnService {
+    fn drop(&mut self) {
+        EN_SERVICE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 async fn servir(socket: UdpSocket, adresse: Ipv4Addr) {
+    EN_SERVICE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let _presence = PresenceEnService;
     let mut tampon = [0u8; 512];
     loop {
         let (taille, expediteur) = match socket.recv_from(&mut tampon).await {

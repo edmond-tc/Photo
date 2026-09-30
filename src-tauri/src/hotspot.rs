@@ -1916,6 +1916,21 @@ pub fn reprendre_point_acces_existant(app: tauri::AppHandle) {
                 .unwrap_or(false);
             if windows_distribue {
                 definir_adresse_active(Some(adresse));
+                // Même règle qu'à l'activation : notre serveur de noms n'est
+                // gardé que s'il répond vraiment aux téléphones.
+                if let Ok(tache) = crate::dns::demarrer(adresse).await {
+                    if crate::dns::repond(adresse).await {
+                        if let Some(etat) = app.try_state::<EtatPointAcces>() {
+                            if let Ok(mut garde) = etat.0.lock() {
+                                for ancienne in std::mem::replace(&mut *garde, vec![tache]) {
+                                    ancienne.abort();
+                                }
+                            }
+                        }
+                    } else {
+                        tache.abort();
+                    }
+                }
                 return;
             }
 
