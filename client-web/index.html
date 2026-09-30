@@ -1099,8 +1099,29 @@ p { margin: 0; }
       for (const d of docs) fichiers.push(await preparer(d));
       etape(1, "fait");
 
-      // 3. Envoi
+      // 3. Envoi : d'abord les fichiers, par morceaux qui reprennent tout
+      // seuls si la liaison saute (voir televerserParMorceaux), puis la
+      // commande elle-même, toute petite.
       etape(2, "encours");
+      debutEnvoi = Date.now();
+      const total = fichiers.reduce((t, f) => t + f.size, 0);
+      let termines = 0;
+      const reprises = [];
+      for (let i = 0; i < docs.length; i++) {
+        const f = fichiers[i];
+        if (!f.size) { reprises.push(null); continue; }
+        const d = docs[i];
+        if (!d._reprise || d._reprise.taille !== f.size) d._reprise = { id: idAleatoire(), taille: f.size };
+        await televerserParMorceaux(f, d._reprise.id, (dansCeFichier) => {
+          const envoye = termines + dansCeFichier;
+          const pct = total ? Math.min(99, Math.round((envoye / total) * 100)) : 99;
+          $("#barre").style.width = pct + "%";
+          $("#chiffres").textContent = `${pct} % · ${mo(envoye)} sur ${mo(total)}${vitesse(envoye, total)} — gardez l'écran allumé`;
+          try { app && app.garderLien(); } catch (_) {}
+        });
+        termines += f.size;
+        reprises.push(d._reprise.id);
+      }
       const p = profil();
       const form = new FormData();
       form.append("nom", p.prenom || "");
@@ -1122,9 +1143,15 @@ p { margin: 0; }
         form.append(`papier_${i}`, d.papier + (d.format === "10x15" ? " · format photo 10×15" : ""));
         if (d.description.trim()) form.append(`description_${i}`, d.description.trim());
         if (d.vocal) form.append(`vocal_${i}`, d.vocal.blob, `vocal.${/ogg/.test(d.vocal.blob.type) ? "ogg" : /mp4|aac/.test(d.vocal.blob.type) ? "m4a" : "webm"}`);
-        form.append(`fichier_${i}`, fichiers[i], fichiers[i].name || d.nom);
+        if (reprises[i]) {
+          form.append(`nomreprise_${i}`, fichiers[i].name || d.nom);
+          form.append(`reprise_${i}`, reprises[i]);
+        } else {
+          form.append(`fichier_${i}`, fichiers[i], fichiers[i].name || d.nom);
+        }
       });
       const reponse = await televerser(form);
+      docs.forEach((d) => { delete d._reprise; });
       $("#barre").style.width = "100%";
       etape(2, "fait");
       etape(3, "fait");
@@ -1153,8 +1180,77 @@ p { margin: 0; }
     const resteTexte = reste >= 60 ? `${Math.floor(reste / 60)} min ${reste % 60} s` : `${reste} s`;
     return ` · ${(debit / 1048576).toFixed(1).replace(".", ",")} Mo/s, encore ${resteTexte}`;
   }
+  // ─── Envoi par morceaux, qui reprend là où il s'est arrêté ───
+  // Constaté chez une cliente : un téléphone lâche le Wi-Fi de la boutique
+  // (pas d'internet : il bascule sur ses données mobiles) et l'envoi
+  // s'arrêtait à 65 %, à chaque essai. Chaque fichier part donc en
+  // morceaux ; si la liaison saute, on demande au PC où il en est et on
+  // repart de là, sans rien recommencer.
+  const TAILLE_MORCEAU = 1024 * 1024;
+  function idAleatoire() {
+    const octets = new Uint8Array(12);
+    try { crypto.getRandomValues(octets); } catch (_) { for (let i = 0; i < 12; i++) octets[i] = Math.floor(Math.random() * 256); }
+    return Array.from(octets, (o) => o.toString(16).padStart(2, "0")).join("");
+  }
+  const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
+  function envoyerMorceau(id, debut, morceau, surProgres) {
+    return new Promise((ok, ko) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${baseUrl()}/morceau/${id}?debut=${debut}`);
+      xhr.timeout = 45000;
+      xhr.upload.onprogress = (e) => surProgres(e.loaded);
+      xhr.onload = () => {
+        let recu = null;
+        try { recu = JSON.parse(xhr.responseText).recu; } catch (_) {}
+        if (xhr.status === 200 && typeof recu === "number") ok(recu);
+        else if (xhr.status === 409 && typeof recu === "number") ko({ recu });
+        else if (xhr.status >= 400 && xhr.status < 500 && xhr.status !== 408 && xhr.status !== 409 || xhr.status === 503 || xhr.status === 507)
+          ko({ fatal: new Error(xhr.responseText && xhr.responseText.length < 200 ? xhr.responseText : "La boutique a refusé l'envoi.") });
+        else ko({});
+      };
+      xhr.onerror = () => ko({});
+      xhr.ontimeout = () => ko({});
+      xhr.send(morceau);
+    });
+  }
+  async function positionAuPc(id) {
+    const r = await fetch(`${baseUrl()}/morceau/${id}`, { cache: "no-store" });
+    const j = await r.json();
+    return typeof j.recu === "number" ? j.recu : 0;
+  }
+  async function televerserParMorceaux(fichier, id, avancer) {
+    let recu = 0;
+    try { recu = await positionAuPc(id); } catch (_) {}
+    if (recu > fichier.size) recu = 0;
+    let echecs = 0;
+    const debutCoupure = { t: 0 };
+    while (recu < fichier.size) {
+      const fin = Math.min(recu + TAILLE_MORCEAU, fichier.size);
+      const depart = recu;
+      try {
+        recu = await envoyerMorceau(id, depart, fichier.slice(depart, fin), (l) => avancer(depart + l));
+        if (echecs) { $("#erreur-envoi").hidden = true; }
+        echecs = 0;
+        debutCoupure.t = 0;
+        avancer(recu);
+      } catch (e) {
+        if (e && e.fatal) throw e.fatal;
+        if (e && typeof e.recu === "number") { recu = e.recu; continue; }
+        echecs += 1;
+        if (!debutCoupure.t) debutCoupure.t = Date.now();
+        // Plus de 10 minutes sans liaison : on arrête et on le dit.
+        if (Date.now() - debutCoupure.t > 10 * 60 * 1000) {
+          throw new Error("La liaison avec la boutique est coupée depuis trop longtemps. Vérifiez que vous êtes sur le Wi-Fi de la boutique, puis touchez « Réessayer » : l'envoi reprendra là où il s'est arrêté.");
+        }
+        $("#erreur-envoi").textContent = "Liaison perdue… reprise automatique. Restez sur le Wi-Fi de la boutique, écran allumé (coupez les données mobiles si besoin).";
+        $("#erreur-envoi").hidden = false;
+        await attendre(Math.min(2000 * echecs, 8000));
+        try { recu = await positionAuPc(id); } catch (_) {}
+      }
+    }
+  }
+
   function televerser(form) {
-    debutEnvoi = Date.now();
     return new Promise((ok, ko) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${baseUrl()}/envoyer`);
@@ -1171,7 +1267,9 @@ p { margin: 0; }
       const fini = () => clearInterval(surveillance);
       xhr.upload.onprogress = (e) => {
         dernierProgres = Date.now();
-        if (!e.lengthComputable) return;
+        // Les fichiers sont déjà partis par morceaux : la commande seule
+        // est minuscule, la barre n'a pas à revenir en arrière.
+        if (!e.lengthComputable || e.total < 256 * 1024) return;
         const pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
         $("#barre").style.width = pct + "%";
         $("#chiffres").textContent = `${pct} % · ${mo(e.loaded)} sur ${mo(e.total)}${vitesse(e.loaded, e.total)} — gardez l'écran allumé`;

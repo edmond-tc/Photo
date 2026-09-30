@@ -206,6 +206,10 @@ async fn api_portail(State(app): State<AppHandle>) -> impl IntoResponse {
 fn construire_router(app: AppHandle) -> Router {
     Router::new()
         .route("/envoyer", post(recevoir_fichier).options(preflight))
+        .route(
+            "/morceau/:id",
+            get(etat_morceaux).post(recevoir_morceau).options(preflight),
+        )
         .route("/statut/:jeton", get(statut_fichier).options(preflight))
         .route("/infos", get(infos_boutique).options(preflight))
         .route("/classique", get(page_classique))
@@ -1133,6 +1137,173 @@ async fn recevoir_fichier(
     }
 }
 
+// ───────────── Envoi par morceaux, qui reprend là où il s'est arrêté ─────────────
+//
+// Constaté chez une cliente : l'envoi s'arrêtait à 65 %, deux fois de suite.
+// Le téléphone lâche le Wi-Fi de la boutique (pas d'internet : il bascule
+// sur ses données mobiles, ou l'écran se verrouille), et une requête coupée
+// est perdue en entier : tout était à recommencer, pour s'arrêter au même
+// endroit.
+//
+// La page envoie donc chaque fichier par petits morceaux, AVANT la commande
+// elle-même. Si la liaison saute, elle demande « où en es-tu ? » (GET) et
+// repart du dernier octet reçu. La commande (`/envoyer`) ne porte plus que
+// l'identifiant du fichier déjà arrivé en entier.
+
+/// Un morceau lu reste ouvert au plus ce temps sans rien recevoir : une
+/// liaison morte doit libérer le fichier vite, pour que la reprise démarre.
+const DELAI_MORCEAU: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Un seul morceau écrit à la fois par fichier.
+static VERROUS_MORCEAUX: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// Identifiant choisi par la page : 16 à 40 caractères hexadécimaux, rien
+/// d'autre (il devient un nom de fichier).
+fn identifiant_morceaux_valide(id: &str) -> bool {
+    (16..=40).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn chemin_morceaux(dossier_en_cours: &std::path::Path, id: &str) -> std::path::PathBuf {
+    dossier_en_cours.join(format!("reprise-{}.part", id.to_ascii_lowercase()))
+}
+
+fn reponse_recu(statut: StatusCode, recu: u64) -> axum::response::Response {
+    (statut, Json(serde_json::json!({ "recu": recu }))).into_response()
+}
+
+/// « Où en es-tu ? » : le nombre d'octets déjà reçus pour ce fichier.
+async fn etat_morceaux(
+    State(app): State<AppHandle>,
+    Path(id): Path<String>,
+) -> axum::response::Response {
+    if !identifiant_morceaux_valide(&id) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Ok(data_dir) = app.path().app_data_dir() else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let recu = tokio::fs::metadata(chemin_morceaux(&data_dir.join(DOSSIER_EN_COURS), &id))
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+    reponse_recu(StatusCode::OK, recu)
+}
+
+#[derive(serde::Deserialize)]
+struct PositionMorceau {
+    debut: u64,
+}
+
+/// Ajoute un morceau à la suite du fichier, s'il commence bien là où le
+/// fichier s'arrête. Sinon, rend la bonne position (409) : la page repart
+/// de là. Ce qui arrive avant une coupure est gardé.
+async fn recevoir_morceau(
+    State(app): State<AppHandle>,
+    Path(id): Path<String>,
+    axum::extract::Query(position): axum::extract::Query<PositionMorceau>,
+    corps: axum::body::Body,
+) -> axum::response::Response {
+    if !identifiant_morceaux_valide(&id) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Ok(data_dir) = app.path().app_data_dir() else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let autorise = {
+        let state = app.state::<crate::db::DbState>();
+        let conn = state.0.lock();
+        conn.as_ref().map(|c| crate::license::utilisation_autorisee(c)).unwrap_or(true)
+    };
+    if !autorise {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "La réception de documents est suspendue dans cette boutique. Donnez votre document au guichet.",
+        )
+            .into_response();
+    }
+    if espace_disque_insuffisant(&data_dir) {
+        return (
+            StatusCode::INSUFFICIENT_STORAGE,
+            "L'ordinateur de la boutique n'a plus assez d'espace. Prévenez le gérant.",
+        )
+            .into_response();
+    }
+    let dossier_en_cours = data_dir.join(DOSSIER_EN_COURS);
+    if tokio::fs::create_dir_all(&dossier_en_cours).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    let budget = budget_envoi(espace_disque_libre(&data_dir));
+    ajouter_morceau(&dossier_en_cours, &id, position.debut, corps, budget).await
+}
+
+/// Le cœur de `recevoir_morceau`, sans l'application (testable).
+async fn ajouter_morceau(
+    dossier_en_cours: &std::path::Path,
+    id: &str,
+    debut: u64,
+    corps: axum::body::Body,
+    budget: u64,
+) -> axum::response::Response {
+    use http_body_util::BodyExt;
+    use tokio::io::AsyncWriteExt;
+
+    let chemin = chemin_morceaux(dossier_en_cours, id);
+
+    // Un morceau précédent de la même liaison morte peut encore tenir le
+    // fichier : on attend qu'il lâche (DELAI_MORCEAU au plus).
+    let verrou = {
+        let Ok(mut verrous) = VERROUS_MORCEAUX.lock() else {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        };
+        verrous.entry(id.to_ascii_lowercase()).or_default().clone()
+    };
+    let Ok(_garde) = tokio::time::timeout(DELAI_MORCEAU * 2, verrou.lock()).await else {
+        return reponse_recu(StatusCode::CONFLICT, 0);
+    };
+
+    let deja = tokio::fs::metadata(&chemin).await.map(|m| m.len()).unwrap_or(0);
+    if debut != deja {
+        return reponse_recu(StatusCode::CONFLICT, deja);
+    }
+    let Ok(mut sortie) = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&chemin)
+        .await
+    else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let mut recu = deja;
+    let mut corps = corps;
+    loop {
+        let trame = match tokio::time::timeout(DELAI_MORCEAU, corps.frame()).await {
+            Ok(Some(Ok(trame))) => trame,
+            Ok(None) => break,
+            // Liaison coupée en plein morceau : ce qui est arrivé est gardé,
+            // la page reprendra à partir de là.
+            Ok(Some(Err(_))) | Err(_) => break,
+        };
+        let Ok(donnees) = trame.into_data() else { continue };
+        if recu + donnees.len() as u64 > budget {
+            let _ = sortie.flush().await;
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "Le fichier est trop gros pour l'espace libre de l'ordinateur de la boutique. Prévenez le gérant.",
+            )
+                .into_response();
+        }
+        if sortie.write_all(&donnees).await.is_err() {
+            break;
+        }
+        recu += donnees.len() as u64;
+        crate::reception_directe::signaler_activite();
+    }
+    let _ = sortie.flush().await;
+    reponse_recu(StatusCode::OK, recu)
+}
+
 /// Efface les fichiers d'un envoi qui n'ira pas jusqu'au bout.
 async fn effacer_temporaires(fichiers: &std::collections::HashMap<usize, FichierRecu>) {
     for fichier in fichiers.values() {
@@ -1271,6 +1442,7 @@ async fn lire_champs(
     envoi: &mut EnvoiClient,
 ) -> Result<(), EchecLecture> {
     let mut deja_recu = 0u64;
+    let mut noms_reprise: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
 
     loop {
         let mut field = match tokio::time::timeout(DELAI_SANS_PROGRES, multipart.next_field()).await {
@@ -1327,6 +1499,37 @@ async fn lire_champs(
         };
 
         match prefixe {
+            // Nom d'un fichier envoyé par morceaux (voir `recevoir_morceau`).
+            "nomreprise" => {
+                if let Ok(v) = field.text().await {
+                    noms_reprise.insert(indice, nom_fichier_sans_chemin(&v));
+                }
+            }
+            // Fichier déjà arrivé en entier par morceaux : on le reprend tel
+            // quel, sans le recevoir une seconde fois.
+            "reprise" => {
+                let Ok(id) = field.text().await else { continue };
+                if !identifiant_morceaux_valide(&id) || envoi.fichiers.len() >= FICHIERS_MAX_PAR_ENVOI {
+                    continue;
+                }
+                let chemin_temporaire = chemin_morceaux(dossier_en_cours, &id);
+                if !tokio::fs::metadata(&chemin_temporaire).await.is_ok_and(|m| m.len() > 0) {
+                    continue;
+                }
+                let original_name = noms_reprise
+                    .remove(&indice)
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| "fichier_recu".to_string());
+                if let Some(ancien) = envoi.fichiers.insert(
+                    indice,
+                    FichierRecu {
+                        original_name,
+                        chemin_temporaire,
+                    },
+                ) {
+                    let _ = tokio::fs::remove_file(&ancien.chemin_temporaire).await;
+                }
+            }
             "fichier" | "vocal" => {
                 let est_vocal = prefixe == "vocal";
                 // Au-delà de la limite, les fichiers suivants sont ignorés
@@ -1729,6 +1932,63 @@ mod tests_envoi_volumineux {
         let adresse = ecoute.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(ecoute, router).await.unwrap() });
         adresse
+    }
+
+    /// Fichier déjà arrivé par morceaux : la commande ne porte que son
+    /// identifiant et son nom, et le fichier est repris tel quel.
+    #[tokio::test]
+    async fn reprend_un_fichier_arrive_par_morceaux() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let dossier = tempfile::tempdir().unwrap();
+        let id = "0123456789abcdef0123";
+        std::fs::write(super::chemin_morceaux(dossier.path(), id), vec![7u8; 5000]).unwrap();
+        let adresse = serveur_de_test(dossier.path().to_path_buf(), u64::MAX).await;
+        let frontiere = "----frontiere-de-test";
+        let corps = format!(
+            "--{frontiere}\r\nContent-Disposition: form-data; name=\"nomreprise_0\"\r\n\r\nmemoire.pdf\r\n\
+             --{frontiere}\r\nContent-Disposition: form-data; name=\"reprise_0\"\r\n\r\n{id}\r\n\
+             --{frontiere}--\r\n"
+        );
+        let mut flux = tokio::net::TcpStream::connect(adresse).await.unwrap();
+        let requete = format!(
+            "POST /envoyer HTTP/1.1\r\nHost: test\r\nContent-Type: multipart/form-data; boundary={frontiere}\r\n\
+             Content-Length: {}\r\nConnection: close\r\n\r\n{corps}",
+            corps.len()
+        );
+        flux.write_all(requete.as_bytes()).await.unwrap();
+        let mut reponse = String::new();
+        flux.read_to_string(&mut reponse).await.unwrap();
+        assert!(reponse.contains("OK 5000 memoire.pdf"), "{reponse}");
+    }
+
+    /// Un morceau au bon endroit s'ajoute ; au mauvais endroit, le PC rend
+    /// la bonne position ; le fichier final est complet et dans l'ordre.
+    #[tokio::test]
+    async fn assemble_les_morceaux_et_corrige_la_position() {
+        let dossier = tempfile::tempdir().unwrap();
+        let id = "abcdefabcdefabcdef12";
+        let r = super::ajouter_morceau(dossier.path(), id, 0, axum::body::Body::from(vec![1u8; 300]), u64::MAX).await;
+        assert_eq!(r.status(), StatusCode::OK);
+        // Reprise annoncée au mauvais endroit : 409 et la vraie position.
+        let r = super::ajouter_morceau(dossier.path(), id, 100, axum::body::Body::from(vec![9u8; 10]), u64::MAX).await;
+        assert_eq!(r.status(), StatusCode::CONFLICT);
+        let corps = http_body_util::BodyExt::collect(r.into_body()).await.unwrap().to_bytes();
+        assert_eq!(&corps[..], br#"{"recu":300}"#);
+        let r = super::ajouter_morceau(dossier.path(), id, 300, axum::body::Body::from(vec![2u8; 200]), u64::MAX).await;
+        assert_eq!(r.status(), StatusCode::OK);
+        let contenu = std::fs::read(super::chemin_morceaux(dossier.path(), id)).unwrap();
+        assert_eq!(contenu.len(), 500);
+        assert!(contenu[..300].iter().all(|&o| o == 1) && contenu[300..].iter().all(|&o| o == 2));
+        // Au-delà du budget : refusé.
+        let r = super::ajouter_morceau(dossier.path(), id, 500, axum::body::Body::from(vec![0u8; 100]), 550).await;
+        assert_eq!(r.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[test]
+    fn identifiant_de_morceaux_sans_danger() {
+        assert!(super::identifiant_morceaux_valide("0123456789abcdef"));
+        assert!(!super::identifiant_morceaux_valide("../../windows/x"));
+        assert!(!super::identifiant_morceaux_valide("abc"));
     }
 
     /// Envoie un fichier de `taille` octets, morceau par morceau, comme le

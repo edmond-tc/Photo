@@ -224,13 +224,131 @@
     };
   }
 
+  // Envoi par morceaux qui reprend là où il s'est arrêté (même principe que
+  // la page principale) : un téléphone qui lâche le Wi-Fi en route ne
+  // recommence plus tout depuis zéro.
+  var TAILLE_MORCEAU = 1024 * 1024;
+  var peutDecouper = typeof Blob !== 'undefined' && typeof Blob.prototype.slice === 'function';
+  function idAleatoire() {
+    var t = '';
+    for (var i = 0; i < 24; i++) t += Math.floor(Math.random() * 16).toString(16);
+    return t;
+  }
+  function positionAuPc(id, suite) {
+    var x = new XMLHttpRequest();
+    x.open('GET', '/morceau/' + id);
+    x.timeout = 10000;
+    x.onload = function () {
+      var r = null;
+      try { r = JSON.parse(x.responseText).recu; } catch (e) {}
+      suite(typeof r === 'number' ? r : null);
+    };
+    x.onerror = function () { suite(null); };
+    x.ontimeout = function () { suite(null); };
+    x.send();
+  }
+  function televerserFichier(fichier, id, avancer, termine) {
+    var recu = 0, echecs = 0, debutCoupure = 0;
+    function suivant() {
+      if (recu >= fichier.size) { termine(null); return; }
+      var depart = recu, fin = Math.min(recu + TAILLE_MORCEAU, fichier.size);
+      var x = new XMLHttpRequest();
+      x.open('POST', '/morceau/' + id + '?debut=' + depart);
+      x.timeout = 45000;
+      if (x.upload) x.upload.onprogress = function (ev) { avancer(depart + ev.loaded); };
+      x.onload = function () {
+        var r = null;
+        try { r = JSON.parse(x.responseText).recu; } catch (e) {}
+        if (x.status === 200 && typeof r === 'number') {
+          recu = r; echecs = 0; debutCoupure = 0; erreur.hidden = true; avancer(recu); suivant();
+        } else if (x.status === 409 && typeof r === 'number') {
+          recu = r; suivant();
+        } else if ((x.status >= 400 && x.status < 500 && x.status !== 408) || x.status === 503 || x.status === 507) {
+          var t = (x.responseText || '').replace(/^\s+|\s+$/g, '');
+          termine(t && t.length < 300 && t.charAt(0) !== '{' && t.charAt(0) !== '<' ? t : "La boutique a refusé l'envoi.");
+        } else {
+          rater();
+        }
+      };
+      x.onerror = rater;
+      x.ontimeout = rater;
+      x.send(fichier.slice(depart, fin));
+    }
+    function rater() {
+      echecs++;
+      var maintenant = new Date().getTime();
+      if (!debutCoupure) debutCoupure = maintenant;
+      if (maintenant - debutCoupure > 600000) {
+        termine("La liaison avec la boutique est coupée depuis trop longtemps. Vérifiez que vous êtes sur le Wi-Fi de la boutique, puis touchez « Envoyer » : l'envoi reprendra là où il s'est arrêté.");
+        return;
+      }
+      erreur.textContent = 'Liaison perdue… reprise automatique. Restez sur le Wi-Fi de la boutique, écran allumé (coupez les données mobiles si besoin).';
+      erreur.hidden = false;
+      setTimeout(function () {
+        positionAuPc(id, function (r) {
+          if (r !== null && r <= fichier.size) recu = r;
+          suivant();
+        });
+      }, Math.min(2000 * echecs, 8000));
+    }
+    positionAuPc(id, function (r) {
+      if (r !== null && r <= fichier.size) recu = r;
+      suivant();
+    });
+  }
+
   btnEnvoyer.onclick = function () {
     if (!docs.length) return;
+    var progression = document.getElementById('progression');
+    var remplissage = document.getElementById('remplissage');
+    var texte = document.getElementById('texte-progression');
+    var cache = false;
+    var guetteur = function () { if (document.hidden) cache = true; };
+    document.addEventListener('visibilitychange', guetteur);
+    btnEnvoyer.disabled = true;
+    btnEnvoyer.textContent = 'Envoi en cours…';
+    erreur.hidden = true;
+    progression.hidden = false;
+    var surveillance = null;
+    var fin = function () {
+      if (surveillance) clearInterval(surveillance);
+      document.removeEventListener('visibilitychange', guetteur);
+      btnEnvoyer.disabled = false;
+      btnEnvoyer.textContent = 'Envoyer à la boutique';
+      progression.hidden = true;
+    };
+
+    var total = 0, termines = 0, reprises = [];
+    for (var k = 0; k < docs.length; k++) total += docs[k].fichier.size || 0;
+    var afficher = function (envoye) {
+      var p = total ? Math.min(99, Math.round(envoye / total * 100)) : 99;
+      remplissage.style.width = p + '%';
+      texte.textContent = 'Envoi… ' + p + ' % — gardez l\'écran allumé';
+    };
+    var prochain = function (i) {
+      if (i >= docs.length) { envoyerCommande(); return; }
+      var d = docs[i], f = d.fichier;
+      if (!peutDecouper || !f.size) { reprises[i] = null; prochain(i + 1); return; }
+      if (!d._reprise || d._reprise.taille !== f.size) d._reprise = { id: idAleatoire(), taille: f.size };
+      televerserFichier(f, d._reprise.id, function (x) { afficher(termines + x); }, function (err) {
+        if (err) { fin(); erreur.textContent = err; erreur.hidden = false; return; }
+        termines += f.size;
+        reprises[i] = d._reprise.id;
+        prochain(i + 1);
+      });
+    };
+
+    var envoyerCommande = function () {
     var donnees = new FormData();
     for (var i = 0; i < docs.length; i++) {
       var d = docs[i], services = [];
       for (var s in d.services) if (d.services[s]) services.push(s);
-      donnees.append('fichier_' + i, d.fichier);
+      if (reprises[i]) {
+        donnees.append('nomreprise_' + i, d.fichier.name || 'document');
+        donnees.append('reprise_' + i, reprises[i]);
+      } else {
+        donnees.append('fichier_' + i, d.fichier);
+      }
       donnees.append('copies_' + i, String(d.copies));
       donnees.append('couleur_' + i, d.couleur);
       donnees.append('rv_' + i, d.rv);
@@ -246,43 +364,26 @@
     donnees.append('nombre_fichiers', String(docs.length));
     donnees.append('origine', 'page-simple');
 
-    var progression = document.getElementById('progression');
-    var remplissage = document.getElementById('remplissage');
-    var texte = document.getElementById('texte-progression');
-    var cache = false;
-    var guetteur = function () { if (document.hidden) cache = true; };
-    document.addEventListener('visibilitychange', guetteur);
-    btnEnvoyer.disabled = true;
-    btnEnvoyer.textContent = 'Envoi en cours…';
-    erreur.hidden = true;
-    progression.hidden = false;
-
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/envoyer');
     // Plus rien ne passe depuis 45 s : on le dit, au lieu d'une barre figée.
     var dernierProgres = new Date().getTime();
-    var surveillance = setInterval(function () {
+    surveillance = setInterval(function () {
       if (new Date().getTime() - dernierProgres > 45000) { xhr.abort(); }
     }, 5000);
     if (xhr.upload) {
       xhr.upload.onprogress = function (ev) {
         dernierProgres = new Date().getTime();
-        if (!ev.lengthComputable) return;
+        if (!ev.lengthComputable || ev.total < 262144) return;
         var p = Math.round(ev.loaded / ev.total * 100);
         remplissage.style.width = p + '%';
         texte.textContent = 'Envoi… ' + p + ' % — gardez l\'écran allumé';
       };
     }
-    var fin = function () {
-      clearInterval(surveillance);
-      document.removeEventListener('visibilitychange', guetteur);
-      btnEnvoyer.disabled = false;
-      btnEnvoyer.textContent = 'Envoyer à la boutique';
-      progression.hidden = true;
-    };
     xhr.onload = function () {
       fin();
       if (xhr.status >= 200 && xhr.status < 300) {
+        for (var j = 0; j < docs.length; j++) docs[j]._reprise = null;
         var r = {};
         try { r = JSON.parse(xhr.responseText); } catch (e) {}
         document.getElementById('numero').textContent = r.numero || '✓';
@@ -309,6 +410,10 @@
       erreur.hidden = false;
     };
     xhr.send(donnees);
+    };
+
+    afficher(0);
+    prochain(0);
   };
 
   // Suivi de la commande : tant que le téléphone est sur le Wi-Fi.

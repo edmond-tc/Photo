@@ -3239,7 +3239,7 @@ dependencies = [
 
 [[package]]
 name = "photocopie-benin"
-version = "0.5.26"
+version = "0.5.27"
 dependencies = [
  "axum",
  "base32",
@@ -3248,6 +3248,7 @@ dependencies = [
  "dhcproto",
  "ed25519-dalek",
  "hickory-proto",
+ "http-body-util",
  "image",
  "local-ip-address",
  "machine-uid",

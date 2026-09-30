@@ -1,6 +1,6 @@
 [package]
 name = "photocopie-benin"
-version = "0.5.26"
+version = "0.5.27"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -30,6 +30,7 @@ notify = "6"
 chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.31"
 axum = { version = "0.7", features = ["multipart"] }
+http-body-util = "0.1"
 tokio = { version = "1", features = ["full"] }
 qrcode = "0.14"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
