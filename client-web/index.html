@@ -475,28 +475,11 @@ p { margin: 0; }
         <h2>🎉 Bravo, votre premier envoi est fait !</h2>
         <p style="margin:0">La suite est encore plus simple :</p>
         <ul>
-          <li data-mode-app hidden><strong>Plus rien à scanner.</strong> La prochaine fois, ouvrez l'application au guichet, ou touchez la notification « Kiosque à côté ».</li>
+          <li data-mode-app hidden><strong>La prochaine fois :</strong> rejoignez le Wi-Fi de la boutique et ouvrez l'application.</li>
           <li data-mode-app hidden><strong>Partout pareil :</strong> elle marche dans toutes les boutiques équipées (photocopie, cyber, restaurant…). Demandez au gérant.</li>
           <li><strong>Suivez votre commande ici :</strong> cet écran vous dit quand c'est imprimé, puis prêt. Donnez votre numéro au guichet.</li>
           <li>Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">01 51 22 67 41</a>.</li>
         </ul>
-      </div>
-      <div class="suite" id="offre-appli" hidden>
-        <h2>La prochaine fois, encore plus simple</h2>
-        <p style="margin:0">Installez l'application : à votre prochaine visite, votre téléphone vous prévient et la page s'ouvre toute seule.</p>
-        <p class="aide" style="margin:0">Gratuit · Sans internet · Quelques secondes</p>
-        <a class="btn" id="btn-installer-appli" href="/application.apk" download="EnvoyeurKiosque.apk">Installer l'application</a>
-        <button type="button" class="btn second" id="btn-refuser-appli">Non merci</button>
-        <div id="offre-appli-etapes" hidden>
-          <p style="margin:0"><strong>Téléchargement depuis le guichet…</strong></p>
-          <p style="margin:0">Votre téléphone va ensuite vous poser quelques questions :</p>
-          <ol>
-            <li>« Télécharger quand même ? » → touchez <strong>Télécharger</strong>.</li>
-            <li>Téléchargement fini → touchez <strong>Ouvrir</strong>.</li>
-            <li>« Autoriser cette source ? » → touchez <strong>Paramètres</strong>, activez <strong>Autoriser</strong>, puis revenez.</li>
-            <li>Touchez <strong>Installer</strong>. Si « Appli bloquée » s'affiche → touchez <strong>Installer quand même</strong> (le petit texte, pas OK).</li>
-          </ol>
-        </div>
       </div>
       <p class="aide" id="message-fidelite" hidden></p>
     </div>
@@ -1567,33 +1550,12 @@ p { margin: 0; }
     pretAnnonce = false;
     majSuivi(null);
     $("#suite-premiere").hidden = !premiereFois();
-    proposerApplication();
     ecrire("kiosque.premier_envoi", true);
     aller("recu");
     signal("succes", r.numero ? `C'est envoyé. Votre numéro est ${numeroDit(r.numero)}.` : "C'est envoyé.", [120, 60, 120]);
     try { app && app.envoiTermine(r.numero || ""); } catch (_) {}
     suivreCommande((r.jetons || [])[0]);
   }
-  // L'application, donnée par le PC lui-même (sans internet), proposée
-  // après un envoi réussi : c'est elle qui ouvre tout seule la page aux
-  // visites suivantes. Android seulement (l'iPhone n'installe rien hors de
-  // son magasin), jamais dans l'application elle-même, et plus de la
-  // journée après un « Non merci ».
-  const OFFRE_REFUSEE = "kiosque.offre_appli_refusee";
-  async function proposerApplication() {
-    const offre = $("#offre-appli");
-    offre.hidden = true;
-    if (app || !/Android/i.test(navigator.userAgent)) return;
-    if (Date.now() - lire(OFFRE_REFUSEE, 0) < 24 * 60 * 60 * 1000) return;
-    try {
-      const r = await fetch("/application.apk", { method: "HEAD", cache: "no-store" });
-      if (!r.ok) return;
-    } catch (_) { return; }
-    $("#offre-appli-etapes").hidden = true;
-    offre.hidden = false;
-  }
-  $("#btn-installer-appli").addEventListener("click", () => { $("#offre-appli-etapes").hidden = false; });
-  $("#btn-refuser-appli").addEventListener("click", () => { ecrire(OFFRE_REFUSEE, Date.now()); $("#offre-appli").hidden = true; });
   function majSuivi(etapeCommande) {
     const rang = { recu: 0, impression: 1, pret: 2 }[etapeCommande] ?? 0;
     const imp = document.querySelector('[data-suivi="impression"]');

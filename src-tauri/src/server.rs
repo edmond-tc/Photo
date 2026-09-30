@@ -203,46 +203,12 @@ async fn api_portail(State(app): State<AppHandle>) -> impl IntoResponse {
     )
 }
 
-/// L'application Android, donnée aux clients par le Wi-Fi de la boutique :
-/// sur ce réseau sans internet, c'est le seul endroit d'où la télécharger.
-/// La page d'envoi la propose après un premier envoi (voir client-web).
-pub const CHEMIN_APPLICATION: &str = "/application.apk";
-
-/// Sert l'application embarquée avec le logiciel (voir
-/// `ressources/LISEZMOI.txt`). Absente d'une construction qui n'a pas pu la
-/// récupérer : la page, qui demande d'abord si elle existe, ne propose
-/// alors rien.
-async fn donner_application(State(app): State<AppHandle>) -> axum::response::Response {
-    use axum::response::IntoResponse;
-    let chemin = app
-        .path()
-        .resolve("ressources/EnvoyeurKiosque.apk", tauri::path::BaseDirectory::Resource);
-    let Ok(contenu) = (match chemin {
-        Ok(chemin) => tokio::fs::read(chemin).await,
-        Err(e) => Err(std::io::Error::other(e.to_string())),
-    }) else {
-        return axum::http::StatusCode::NOT_FOUND.into_response();
-    };
-    (
-        [
-            (axum::http::header::CONTENT_TYPE, "application/vnd.android.package-archive"),
-            (
-                axum::http::header::CONTENT_DISPOSITION,
-                "attachment; filename=\"EnvoyeurKiosque.apk\"",
-            ),
-        ],
-        contenu,
-    )
-        .into_response()
-}
-
 fn construire_router(app: AppHandle) -> Router {
     Router::new()
         .route("/envoyer", post(recevoir_fichier).options(preflight))
         .route("/statut/:jeton", get(statut_fichier).options(preflight))
         .route("/infos", get(infos_boutique).options(preflight))
         .route("/classique", get(page_classique))
-        .route(CHEMIN_APPLICATION, get(donner_application))
         .route(CHEMIN_API_PORTAIL, get(api_portail))
         // Toute autre adresse, `/` comprise : la page d'envoi, en 200.
         .fallback(page_accueil)

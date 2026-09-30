@@ -1,6 +1,4 @@
 Fichiers livrés avec le logiciel du PC.
 
-EnvoyeurKiosque.apk : l'application Android, téléchargée depuis la page
-publique au moment de la construction (voir .github/workflows/build-windows.yml)
-et donnée aux téléphones des clients par le Wi-Fi de la boutique, sans
-internet (route /application.apk de server.rs). Jamais versionnée ici.
+(Vide pour l'instant. L'application Android n'est plus embarquée : elle
+servait à la réception directe, retirée.)
