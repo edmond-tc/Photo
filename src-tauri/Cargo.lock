@@ -3239,7 +3239,7 @@ dependencies = [
 
 [[package]]
 name = "photocopie-benin"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "axum",
  "base32",

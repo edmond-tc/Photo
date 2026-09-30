@@ -169,7 +169,14 @@ fn decoder_requete(brut: &[u8]) -> DecodeResult<DhcpMessage> {
 
 /// Qui a reçu quelle adresse. Vide au démarrage du Wi-Fi, ce qui est
 /// voulu : un nouveau point d'accès repart d'une feuille blanche.
-static BAUX: std::sync::Mutex<Vec<(Vec<u8>, u8)>> = std::sync::Mutex::new(Vec::new());
+static BAUX: std::sync::Mutex<Vec<(Vec<u8>, u8, std::time::Instant)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Un téléphone qui n'a rien redemandé depuis ce délai est parti : son
+/// adresse peut resservir. Un téléphone encore là renouvelle son bail à la
+/// moitié de sa durée (norme DHCP), donc bien avant.
+const BAIL_EXPIRE_APRES: std::time::Duration =
+    std::time::Duration::from_secs(DUREE_BAIL_SECONDES as u64 + 5 * 60);
 
 /// Adresse offerte à ce téléphone précis, et à lui seul.
 ///
@@ -193,24 +200,53 @@ fn adresse_pour(chaddr: &[u8]) -> u8 {
         return adresse_de_secours(chaddr);
     };
 
-    if let Some((_, deja)) = baux.iter().find(|(mac, _)| mac == chaddr) {
+    let maintenant = std::time::Instant::now();
+    if let Some((_, deja, vu)) = baux.iter_mut().find(|(mac, _, _)| mac == chaddr) {
+        *vu = maintenant;
         return *deja;
     }
 
+    // Les adresses des téléphones partis reviennent dans la plage. Sans
+    // cela, chaque téléphone de passage gardait la sienne jusqu'au prochain
+    // démarrage du Wi-Fi : après 200 téléphones différents (une journée
+    // chargée), plus aucune adresse libre, et deux clients recevaient la
+    // même — la page ne s'ouvre pas, ou disparaît en cours d'envoi.
+    baux.retain(|(_, _, vu)| maintenant.duration_since(*vu) < BAIL_EXPIRE_APRES);
+
     let derniere = PREMIERE_ADRESSE.saturating_add(NOMBRE_ADRESSES - 1);
     let libre = (PREMIERE_ADRESSE..=derniere)
-        .find(|candidate| !baux.iter().any(|(_, attribuee)| attribuee == candidate));
+        .find(|candidate| !baux.iter().any(|(_, attribuee, _)| attribuee == candidate));
 
     match libre {
         Some(adresse) => {
-            baux.push((chaddr.to_vec(), adresse));
+            baux.push((chaddr.to_vec(), adresse, maintenant));
             adresse
         }
-        // Plus de 200 téléphones en même temps : au-delà, on ne peut plus
-        // rien promettre, mais mieux vaut une adresse peut-être partagée
-        // que pas d'adresse du tout.
+        // Plus de 200 téléphones présents EN MÊME TEMPS : au-delà, on ne
+        // peut plus rien promettre, mais mieux vaut une adresse peut-être
+        // partagée que pas d'adresse du tout.
         None => adresse_de_secours(chaddr),
     }
+}
+
+/// Le téléphone redemande une adresse précise (souvent la sienne d'hier).
+/// Accordée seulement si aucun AUTRE téléphone présent ne la tient : sinon
+/// deux clients auraient la même, et ni l'un ni l'autre n'arriverait plus à
+/// la page. Accordée, elle devient la sienne dans le registre.
+fn accorder_si_libre(chaddr: &[u8], octet: u8) -> bool {
+    let Ok(mut baux) = BAUX.lock() else { return true };
+    if baux.iter().any(|(mac, attribuee, _)| mac != chaddr && *attribuee == octet) {
+        return false;
+    }
+    let maintenant = std::time::Instant::now();
+    match baux.iter_mut().find(|(mac, _, _)| mac == chaddr) {
+        Some(bail) => {
+            bail.1 = octet;
+            bail.2 = maintenant;
+        }
+        None => baux.push((chaddr.to_vec(), octet, maintenant)),
+    }
+    true
 }
 
 /// Le calcul d'avant, gardé pour le seul cas où le registre est
@@ -276,7 +312,15 @@ fn construire_reponse(brut: &[u8], adresse_serveur: Ipv4Addr) -> Option<Vec<u8>>
         MessageType::Request => match demandee {
             // Adresse cohérente avec notre réseau : on l'accorde telle
             // quelle, même si ce n'est pas celle qu'on aurait choisie.
-            Some(ip) if dans_notre_reseau(ip, adresse_serveur) => (MessageType::Ack, ip),
+            Some(ip) if dans_notre_reseau(ip, adresse_serveur) => {
+                if accorder_si_libre(requete.chaddr(), ip.octets()[3]) {
+                    (MessageType::Ack, ip)
+                } else {
+                    // Déjà à un autre téléphone : un refus net fait repartir
+                    // celui-ci de zéro, vers une adresse libre.
+                    (MessageType::Nak, Ipv4Addr::UNSPECIFIED)
+                }
+            }
             // Adresse d'un AUTRE réseau : il faut dire NON, explicitement.
             //
             // C'est le second défaut trouvé ici, et il expliquait à lui seul
@@ -622,6 +666,58 @@ mod tests {
             20,
             "deux téléphones ont reçu la même adresse : {donnees:?}"
         );
+        oublier_les_baux();
+    }
+
+    /// Le téléphone d'hier redemande son ancienne adresse, donnée entre-temps
+    /// à un autre : refus net, jamais deux téléphones sur la même.
+    #[test]
+    fn refuse_l_adresse_deja_tenue_par_un_autre_telephone() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
+        let serveur = Ipv4Addr::new(192, 168, 73, 1);
+        let present = [0x02, 0x10, 0x10, 0x10, 0x10, 0x10];
+        let tenue = decoder_requete(
+            &construire_reponse(&fabriquer_requete(MessageType::Discover, &present), serveur).unwrap(),
+        )
+        .unwrap()
+        .yiaddr();
+
+        let revenant = [0x02, 0x20, 0x20, 0x20, 0x20, 0x20];
+        let mut requete = decoder_requete(&fabriquer_requete(MessageType::Request, &revenant)).unwrap();
+        requete.opts_mut().insert(DhcpOption::RequestedIpAddress(tenue));
+        let mut brut = Vec::new();
+        requete.encode(&mut Encoder::new(&mut brut)).unwrap();
+        let reponse = decoder_requete(&construire_reponse(&brut, serveur).unwrap()).unwrap();
+        assert!(
+            matches!(reponse.opts().get(OptionCode::MessageType), Some(DhcpOption::MessageType(MessageType::Nak))),
+            "l'adresse d'un autre téléphone ne doit pas être accordée"
+        );
+        oublier_les_baux();
+    }
+
+    /// Une journée chargée : 200 téléphones sont passés et repartis. Le
+    /// suivant doit recevoir une adresse libérée, pas celle d'un autre.
+    #[test]
+    fn les_adresses_des_telephones_partis_resservent() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
+        oublier_les_baux();
+        let il_y_a_longtemps = std::time::Instant::now()
+            .checked_sub(BAIL_EXPIRE_APRES + std::time::Duration::from_secs(60))
+            .expect("horloge trop jeune pour le test");
+        {
+            let mut baux = BAUX.lock().unwrap();
+            for n in 0..NOMBRE_ADRESSES {
+                baux.push((vec![0x02, 0x99, 0, 0, 1, n], PREMIERE_ADRESSE + n, il_y_a_longtemps));
+            }
+        }
+        // Un téléphone toujours là (bail récent) garde la sienne.
+        let present = [0x02, 0x99, 0, 0, 1, 7];
+        let a = adresse_pour(&present);
+        assert_eq!(a, PREMIERE_ADRESSE + 7);
+        let nouveau = adresse_pour(&[0x02, 0x42, 0x42, 0x42, 0x42, 0x42]);
+        assert_ne!(nouveau, a, "le nouveau venu a reçu l'adresse d'un téléphone présent");
+        assert_eq!(BAUX.lock().unwrap().len(), 2, "les baux expirés doivent être libérés");
         oublier_les_baux();
     }
 
