@@ -329,7 +329,10 @@ class MainActivity : Activity() {
 
     private inner class Pont {
         @JavascriptInterface
-        fun autorise(): Boolean = autorisationsManquantes().isEmpty()
+        // Plus d'écran d'autorisations au premier lancement : elles ne
+        // servaient qu'à la réception directe (balise, réseau Wi-Fi Direct),
+        // retirée. « Main à main » demande les siennes au moment voulu.
+        fun autorise(): Boolean = true
 
         @JavascriptInterface
         fun autoriser() {
@@ -692,20 +695,9 @@ class MainActivity : Activity() {
             return
         }
         if (liaison != null) return // déjà en cours
-        if (autorisationsManquantes().isNotEmpty()) {
-            signaler(JSONObject().put("type", "connexion").put("etat", "echec")
-                .put("message", "Autorisations manquantes."))
-            return
-        }
-        // Android 10 à 12 refuse de créer le lien sans fil (et d'entendre la
-        // balise du guichet) quand la Localisation est éteinte — le cas de
-        // beaucoup de téléphones. Sans ce contrôle, l'échec était muet.
-        if (localisationEteinte()) {
-            signaler(JSONObject().put("type", "connexion").put("etat", "echec")
-                .put("message", "Allumez la « Localisation » du téléphone (Android l'exige pour se relier au guichet), puis revenez ici."))
-            ouvrirReglagesLocalisation()
-            return
-        }
+        // Plus d'autorisation ni de Localisation exigées ici : elles ne
+        // servaient qu'au réseau Wi-Fi Direct (réception directe, retirée).
+        // Rejoindre le Wi-Fi de la boutique n'en demande aucune.
         // Wi-Fi éteint : l'interface le dit au client et lui propose de
         // l'allumer ; la connexion repart d'elle-même une fois allumé.
         if (!wifiAllume()) {

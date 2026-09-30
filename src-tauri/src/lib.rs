@@ -103,7 +103,14 @@ pub fn run() {
             backup::start(app.handle().clone());
             retention::start(app.handle().clone());
             bluetooth::demarrer(app.handle().clone());
-            reception_directe::demarrer(app.handle().clone());
+            // Réception directe (le PC rejoint le réseau du téléphone) :
+            // retirée. Une seule carte Wi-Fi ne peut pas à la fois tenir le
+            // Wi-Fi de la boutique, allumé en permanence, et partir
+            // rejoindre les téléphones. Ancien réglage éteint pour de bon
+            // (la balise Bluetooth, qui en dépend, se tait avec).
+            if let Ok(conn) = app.state::<DbState>().0.lock() {
+                let _ = db::set_setting(&conn, "reception_directe_active", "non");
+            }
             arrivees::demarrer(app.handle().clone());
             hotspot::rafraichir_script_demarrage();
             gardien_wifi::demarrer(app.handle().clone());
@@ -142,6 +149,7 @@ pub fn run() {
             commands::desactiver_point_acces_local,
             commands::diagnostiquer_poste,
             usb::documents_cle_usb,
+            usb::relire_cles_usb,
             usb::importer_documents_usb,
             telephone_usb::documents_whatsapp_telephone,
             telephone_usb::importer_documents_telephone,

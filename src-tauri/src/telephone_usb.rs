@@ -517,6 +517,10 @@ mod direct {
         let mut fichiers = HashMap::new();
         for i in 0..appareils.Size().unwrap_or(0) {
             let Ok(appareil) = appareils.GetAt(i) else { continue };
+            // Une clé USB n'est pas un téléphone (voir `est_stockage_de_masse`).
+            if appareil.Id().map(|id| super::est_stockage_de_masse(&id.to_string())).unwrap_or(false) {
+                continue;
+            }
             let nom_appareil = appareil.Name().map(|n| n.to_string()).unwrap_or_default();
             let Ok(racine) = appareil.Id().and_then(|id| StorageDevice::FromId(&id)) else { continue };
             let stockages = racine
@@ -737,8 +741,13 @@ pub async fn importer_documents_telephone(
 /// et prévient l'interface, qui ouvre la liste toute seule : le gérant n'a
 /// même plus à appuyer sur 📱.
 ///
-/// Une clé USB apparaît aussi comme « appareil portable » pour Windows :
-/// l'interface ne dit rien quand la lecture ne trouve aucun téléphone.
+/// Constaté sur le terrain : « la détection ne donne rien ». Le téléphone
+/// apparaît à Windows AVANT d'être lisible — écran encore verrouillé,
+/// question « Autoriser l'accès aux données ? » pas encore touchée. On le
+/// lisait une seule fois, à ce moment-là : aucun fichier, et plus rien
+/// ensuite. Maintenant, après un branchement, on relit toutes les 4
+/// secondes pendant 90 secondes, et on dit au gérant quoi faire en
+/// attendant.
 pub fn surveiller_telephones(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         use tauri::Emitter;
@@ -746,32 +755,70 @@ pub fn surveiller_telephones(app: tauri::AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(3));
             let Some(actuels) = identifiants_telephones() else { continue };
-            if actuels.difference(&connus).next().is_some() {
-                let _ = app.emit("telephone-branche", ());
-            }
+            let nouveau = actuels.difference(&connus).next().is_some();
             // Débranché : la liste affichée ne correspond plus à rien.
             if connus.difference(&actuels).next().is_some() {
                 let _ = app.emit("telephone-debranche", ());
             }
             connus = actuels;
+            if !nouveau {
+                continue;
+            }
+            let debut = std::time::Instant::now();
+            let mut consigne_donnee = false;
+            while debut.elapsed() < std::time::Duration::from_secs(90) {
+                let lecture = lire_telephone().unwrap_or_default();
+                if lecture.dossiers_whatsapp > 0 {
+                    let _ = app.emit("telephone-branche", ());
+                    break;
+                }
+                if !consigne_donnee {
+                    consigne_donnee = true;
+                    let _ = app.emit("telephone-attente", ());
+                }
+                std::thread::sleep(std::time::Duration::from_secs(4));
+                // Débranché pendant l'attente : on arrête.
+                let Some(encore) = identifiants_telephones() else { break };
+                if encore.is_empty() {
+                    let _ = app.emit("telephone-debranche", ());
+                    connus = encore;
+                    break;
+                }
+            }
         }
     });
 }
 
+/// Un appareil portable qui est une clé ou un disque USB, pas un téléphone.
+/// Windows présente aussi les clés comme « appareils portables » : sans ce
+/// tri, brancher une clé faisait croire à un téléphone.
+fn est_stockage_de_masse(id: &str) -> bool {
+    let id = id.to_ascii_uppercase();
+    id.contains("USBSTOR") || id.contains("WPDBUSENUM") || id.contains("SCSI#") || id.contains("SD#")
+}
+
+/// Les téléphones (et appareils photo) branchés, par leur identifiant.
+///
+/// Par la classe « appareil portable » de Windows (MTP/PTP), la même que
+/// l'Explorateur : l'ancienne recherche (appareils de stockage amovible) ne
+/// voyait pas tous les téléphones.
 #[cfg(windows)]
 fn identifiants_telephones() -> Option<std::collections::HashSet<String>> {
+    use windows::core::HSTRING;
     use windows::Devices::Enumeration::DeviceInformation;
-    use windows::Devices::Portable::StorageDevice;
 
-    let selecteur = StorageDevice::GetDeviceSelector().ok()?;
-    let appareils = DeviceInformation::FindAllAsyncAqsFilter(&selecteur)
+    const SELECTEUR_WPD: &str = "System.Devices.InterfaceClassGuid:=\"{6AC27878-A6FA-4155-BA85-F98F491D4F33}\" AND System.Devices.InterfaceEnabled:=System.StructuredQueryType.Boolean#True";
+    let appareils = DeviceInformation::FindAllAsyncAqsFilter(&HSTRING::from(SELECTEUR_WPD))
         .ok()?
         .get()
         .ok()?;
     let mut ids = std::collections::HashSet::new();
     for indice in 0..appareils.Size().unwrap_or(0) {
         if let Ok(id) = appareils.GetAt(indice).and_then(|a| a.Id()) {
-            ids.insert(id.to_string());
+            let id = id.to_string();
+            if !est_stockage_de_masse(&id) {
+                ids.insert(id);
+            }
         }
     }
     Some(ids)
@@ -812,6 +859,12 @@ async fn attendre_copie_complete(chemin: &std::path::Path, taille_attendue: u64)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn une_cle_usb_n_est_pas_un_telephone() {
+        assert!(super::est_stockage_de_masse(r"\\?\SWD#WPDBUSENUM#_??_USBSTOR#Disk&Ven_SanDisk&Prod_Ultra#4C53#{6ac27878-a6fa-4155-ba85-f98f491d4f33}"));
+        assert!(!super::est_stockage_de_masse(r"\\?\usb#vid_04e8&pid_6860&ms_comp_mtp&samsung_android#6&1a2b&0&0000#{6ac27878-a6fa-4155-ba85-f98f491d4f33}"));
+    }
+
     use super::*;
 
     #[test]

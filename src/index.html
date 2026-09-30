@@ -9,9 +9,6 @@
   </head>
 
   <body>
-    <!-- Affiche du guichet pour la réception directe : n'existe que sur le
-         papier (voir `imprimerAfficheReception` et styles.css). -->
-    <div id="affiche-reception" hidden></div>
     <header class="topbar">
       <h1>Gestion Photocopie</h1>
       <div class="topbar-right">
@@ -19,6 +16,7 @@
         <span id="badge-abonnement" class="badge-abonnement" hidden></span>
         <span id="badge-maj" class="badge-maj" hidden></span>
         <button id="btn-recevoir-qr" class="btn-icon" title="Recevoir un fichier par QR">📶</button>
+        <button id="btn-cle-usb" class="btn-icon" title="Documents de la clé USB branchée" aria-label="Documents de la clé USB">💾</button>
         <button id="btn-telephone" class="btn-icon" title="Fichiers WhatsApp du téléphone branché par câble" aria-label="Fichiers WhatsApp du téléphone">📱</button>
         <button id="btn-aide" class="btn-icon" title="Aide — à quoi sert cet écran" aria-label="Aide">?</button>
         <button id="btn-menu" class="btn-icon" title="Menu" aria-label="Ouvrir le menu">⋮</button>
@@ -329,7 +327,6 @@
         <button class="item-nav" data-section="historique">Historique</button>
         <button class="item-nav" data-section="recherche">Documents reçus / Recherche client</button>
         <button class="item-nav" data-section="activite">Activité des machines (en direct)</button>
-        <button class="item-nav" data-section="reception">Réception directe (essai)</button>
         <button class="item-nav" data-section="rapports">Rapports</button>
         <button class="item-nav" data-section="reglages">Réglages</button>
       </nav>

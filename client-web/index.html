@@ -604,7 +604,7 @@ p { margin: 0; }
     try { app.demarrer(); } catch (_) {}
   }
   function majPuces() {
-    const textes = { aucune: "Pas encore relié", encours: "Connexion au guichet…", ok: "Relié au guichet", echec: "Guichet introuvable, nouvel essai à l'envoi", wifi: "Wi-Fi éteint" };
+    const textes = { aucune: "Pas encore relié", encours: "En attente du Wi-Fi de la boutique…", ok: "Relié au guichet", echec: "Pas sur le Wi-Fi de la boutique", wifi: "Wi-Fi éteint" };
     $$("[data-puce]").forEach((p) => {
       p.classList.toggle("ok", connexion.etat === "ok");
       p.classList.toggle("echec", connexion.etat === "echec" || connexion.etat === "wifi");
@@ -1099,7 +1099,7 @@ p { margin: 0; }
     try {
       // 1. Connexion (déjà faite, le plus souvent)
       if (connexion.etat !== "ok") {
-        etape(0, "encours", "Liaison avec l'ordinateur… Si le guichet affiche un QR Wi-Fi, scannez-le avec l'appareil photo et acceptez : l'envoi part aussitôt.");
+        etape(0, "encours", "Rejoignez le Wi-Fi de la boutique : scannez le code du guichet, ou choisissez son nom dans vos réseaux Wi-Fi. L'envoi part aussitôt.");
         if (app) {
           if (connexion.etat !== "encours") { connexion = { etat: "aucune" }; demarrerConnexion(); }
           const ok = await new Promise((r) => { attenteConnexion = r; setTimeout(() => { if (attenteConnexion === r) { attenteConnexion = null; r(false); } }, 95000); });

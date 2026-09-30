@@ -1449,7 +1449,6 @@ const TITRES_SECTION = {
   rapports: "Rapports",
   reglages: "Réglages",
   activite: "Activité des machines (en direct)",
-  reception: "Réception directe (essai)",
 };
 
 // Une phrase en haut de chaque écran : un gérant qui découvre l'application
@@ -1462,8 +1461,6 @@ const AIDES_SECTION = {
   recherche: "Retrouver un document par nom de client, numéro de téléphone ou nom de fichier — même vieux de plusieurs semaines.",
   rapports: "L'argent du jour, les impayés à relancer, le stock, et le rapport imprimable à garder ou à montrer au propriétaire.",
   reglages: "Le nom de la boutique, le dossier surveillé, les tarifs, les employés et la sauvegarde. À régler une fois, rarement retouché ensuite.",
-  reception:
-    "Le PC rejoint tout seul le réseau du téléphone du client (application Envoyeur Kiosque sur Android, partage de connexion allumé au guichet sur iPhone), reçoit la commande, puis se libère pour le suivant. Les Wi-Fi du voisinage, repérés au démarrage, ne sont jamais tentés. Version d'essai : chaque étape est notée ci-dessous.",
   activite: "Ce que font les imprimantes et photocopieurs, à chaque instant : chaque impression partie du PC, et les photocopies faites sur la vitre des machines branchées en réseau. Mis à jour tout seul.",
 };
 
@@ -1486,7 +1483,6 @@ async function ouvrirSection(section) {
     rapports: rendreRapports,
     reglages: rendreReglages,
     activite: rendreActivite,
-    reception: rendreReceptionDirecte,
   };
   await rendus[section]?.(corps);
 
@@ -2131,189 +2127,6 @@ async function rendreActivite(corps) {
     liste.appendChild(ligne);
   }
   corps.appendChild(liste);
-}
-
-/// Réception directe : le PC rejoint le téléphone du client (voir
-/// `reception_directe.rs`). Écran d'essai : réglages, état, journal.
-let minuterieReception = null;
-
-async function rendreReceptionDirecte(corps) {
-  const e = await invoke("reception_directe_etat");
-  corps.innerHTML = "";
-
-  const reglages = document.createElement("div");
-  reglages.className = "carte-rapport";
-  reglages.innerHTML = `
-    <h3>Réglages</h3>
-    <label style="display:flex; gap:0.5rem; align-items:center">
-      <input type="checkbox" id="rd-active" ${e.reglages.active ? "checked" : ""}>
-      <strong>Réception directe active</strong>
-    </label>
-    <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin:0.3rem 0 0">
-      Le PC rejoint tout seul le téléphone du client qui ouvre l'application Envoyeur au guichet.
-      Elle prend la carte Wi-Fi : le Wi-Fi créé par le PC (QR Wi-Fi) est alors coupé. Rallumer ce
-      Wi-Fi (« Activer le Wi-Fi local ») arrête la réception directe.
-    </p>
-    <p style="margin:0.6rem 0 0.2rem">Mot de passe du réseau créé par l'application du téléphone (le même des deux côtés) :</p>
-    <input id="rd-mdp" type="text" value="${echapperHtml(e.reglages.mot_de_passe)}" style="width:14rem">
-    <p style="margin:0.6rem 0 0.2rem">Force de signal minimale (téléphone au guichet), de 1 à 100 :</p>
-    <input id="rd-seuil" type="number" min="1" max="100" value="${e.reglages.seuil}" style="width:6rem">
-    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
-      S'il ne voit jamais le téléphone posé au guichet, baissez ce chiffre. Le journal montre
-      le signal de chaque téléphone vu.
-    </p>`;
-  reglages.appendChild(
-    bouton("Enregistrer", "btn-primaire", async () => {
-      try {
-        await invoke("reception_directe_regler", {
-          active: document.querySelector("#rd-active").checked,
-          motDePasse: document.querySelector("#rd-mdp").value.trim(),
-          seuil: Number(document.querySelector("#rd-seuil").value) || 60,
-        });
-        toast("✓ Enregistré.");
-        await ouvrirSection("reception");
-      } catch (err) {
-        toast(`${err}`, "attention", 8000);
-      }
-    })
-  );
-  corps.appendChild(reglages);
-
-  const preparation = document.createElement("div");
-  preparation.className = "carte-rapport";
-  preparation.innerHTML = `
-    <h3>Préparer ce PC (une seule fois)</h3>
-    <p style="font-size:0.9rem">1. Ouvrir le pare-feu : Windows demande « Oui » une fois.<br>
-    2. Si le journal dit « autorisez la LOCALISATION » : ouvrez la page, activez
-    « Services de localisation » et « Autoriser les applications de bureau à accéder à votre position ».</p>`;
-  preparation.appendChild(
-    bouton("1. Ouvrir le pare-feu", "btn-secondaire", async () => {
-      try {
-        await invoke("reception_directe_preparer");
-        toast("✓ Pare-feu préparé.");
-      } catch (err) {
-        toast(`Préparation impossible : ${err}`, "attention", 8000);
-      }
-    })
-  );
-  preparation.appendChild(
-    bouton("2. Page Localisation de Windows", "btn-secondaire", async () => {
-      try {
-        await invoke("reception_directe_ouvrir_localisation");
-      } catch (err) {
-        toast(`${err}`, "attention", 8000);
-      }
-    })
-  );
-  corps.appendChild(preparation);
-
-  const qr = await invoke("reception_directe_qr");
-  const carteQr = document.createElement("div");
-  carteQr.className = "carte-rapport";
-  carteQr.innerHTML = `
-    <h3>QR de l'application (affiche du guichet)</h3>
-    <p style="font-size:0.9rem">Le client le scanne avec l'appareil photo, avec sa connexion internet
-      (quelques Mo, une seule fois). La page reconnaît le téléphone : <strong>Android</strong> installe
-      l'application Envoyeur Kiosque ; <strong>iPhone</strong> envoie par WhatsApp au numéro de la
-      boutique (Réglages → WhatsApp de la boutique).</p>
-    <img src="${qr.application}" alt="QR d'installation de l'application" style="width:200px; height:200px; image-rendering:pixelated">
-    <p style="font-size:0.85rem; overflow-wrap:anywhere"><strong>Lien à partager</strong> (statut WhatsApp,
-      Facebook…) pour installer à l'avance, de chez soi : ${echapperHtml(qr.application_url)}</p>
-    <details style="font-size:0.85rem; margin-top:0.5rem">
-      <summary>QR pour un client déjà relié au PC (partage de connexion)</summary>
-      <img src="${qr.fixe}" alt="QR de la page d'envoi" style="width:140px; height:140px; image-rendering:pixelated">
-      <p style="color:var(--gris-texte-discret)">${echapperHtml(qr.fixe_url)}</p>
-    </details>`;
-  carteQr.appendChild(
-    bouton("Imprimer l'affiche du guichet", "btn-secondaire", () =>
-      imprimerAfficheReception(qr.application)
-    )
-  );
-  corps.appendChild(carteQr);
-
-  const etat = document.createElement("div");
-  etat.className = "carte-rapport";
-  etat.innerHTML = `<h3>En ce moment</h3>
-    <p id="rd-etat" style="font-size:1.05rem"></p>
-    <p id="rd-adresse" style="font-size:0.9rem"></p>
-    <div id="rd-qr-direct" hidden>
-      <p style="font-size:0.9rem"><strong>Si le QR du guichet n'ouvre rien</strong>, le client scanne
-        celui-ci sur l'écran du PC :</p>
-      <img alt="QR de secours" style="width:180px; height:180px; image-rendering:pixelated">
-    </div>`;
-  corps.appendChild(etat);
-  let adresseQr = null;
-
-  const journal = document.createElement("section");
-  journal.innerHTML = `<h3>Journal (le plus récent en haut)</h3>
-    <div id="rd-journal" style="font-family:monospace; font-size:0.85rem"></div>`;
-  corps.appendChild(journal);
-
-  const remplir = (x) => {
-    const zoneEtat = document.querySelector("#rd-etat");
-    if (!zoneEtat) return false;
-    zoneEtat.textContent = x.etat || "—";
-    document.querySelector("#rd-adresse").textContent = x.adresse
-      ? `Adresse du PC sur le téléphone du client : ${x.adresse} — page : http://kiosque.local:4173 ou http://${x.adresse}:4173`
-      : "";
-    // QR de secours (adresse en chiffres), recalculé seulement quand
-    // l'adresse change : un nouveau client, un nouveau téléphone.
-    if (x.adresse !== adresseQr) {
-      adresseQr = x.adresse;
-      const bloc = document.querySelector("#rd-qr-direct");
-      bloc.hidden = !x.adresse;
-      if (x.adresse) {
-        invoke("reception_directe_qr")
-          .then((q) => {
-            if (q.direct) bloc.querySelector("img").src = q.direct;
-          })
-          .catch(() => {});
-      }
-    }
-    const zone = document.querySelector("#rd-journal");
-    zone.innerHTML = "";
-    if (!x.journal.length) zone.textContent = "Rien encore.";
-    for (const [heure, texte] of x.journal) {
-      const ligne = document.createElement("div");
-      ligne.className = "ligne-liste";
-      ligne.textContent = `${heure}  ${texte}`;
-      zone.appendChild(ligne);
-    }
-    return true;
-  };
-  remplir(e);
-
-  clearInterval(minuterieReception);
-  minuterieReception = setInterval(async () => {
-    const panneau = document.querySelector("#panneau-contenu");
-    if (sectionOuverte !== "reception" || !panneau || panneau.hidden) {
-      clearInterval(minuterieReception);
-      return;
-    }
-    try {
-      if (!remplir(await invoke("reception_directe_etat"))) clearInterval(minuterieReception);
-    } catch (_) {}
-  }, 2000);
-}
-
-/// Affiche A4 du guichet : UN seul QR pour tous. La page qu'il ouvre
-/// reconnaît le téléphone (Android : installer l'application ; iPhone :
-/// envoyer par WhatsApp à la boutique). Voir admin/src/index.js, `/app`.
-function imprimerAfficheReception(qrApplication) {
-  const affiche = document.querySelector("#affiche-reception");
-  affiche.innerHTML = `
-    <h1>Envoyez vos documents depuis votre téléphone</h1>
-    <div><img src="${qrApplication}" alt=""></div>
-    <p class="mdp">Scannez avec l'appareil photo</p>
-    <ol>
-      <li>✓ Sans câble, sans WhatsApp</li>
-      <li>✓ Sans internet au guichet : votre forfait n'est pas utilisé</li>
-      <li>✓ Vous choisissez copies et couleur, vous voyez le prix</li>
-      <li>✓ Prévenu quand c'est prêt</li>
-    </ol>
-    <p class="pied">Android : application gratuite, installée en 1 minute, une seule fois. iPhone : envoi par WhatsApp.</p>
-    <p class="pied">Déjà l'application ? Rien à scanner : elle marche dans toutes les boutiques équipées. Boutique non équipée : 01 51 22 67 41.</p>`;
-  imprimerPage("impression-reception");
 }
 
 async function rendreRapports(corps) {
@@ -3504,7 +3317,7 @@ async function demarrerApplication() {
   await listen("cle-usb-inseree", async (event) => {
     const nombre = event.payload ?? 0;
     if (!nombre) {
-      toast("Clé USB branchée, mais aucun document imprimable dessus.", "attention");
+      toast("Clé USB branchée, mais aucun document imprimable dessus (PDF, Word, photos…).", "attention", 9000);
       return;
     }
     await afficherDocumentsUsb();
@@ -3513,6 +3326,17 @@ async function demarrerApplication() {
   // Téléphone du gérant branché en « Transfert de fichiers » : la liste
   // s'ouvre seule (voir `telephone_usb::surveiller_telephones`).
   await listen("telephone-branche", () => afficherDocumentsTelephone({ auto: true }));
+  // Téléphone vu par Windows mais pas encore lisible (verrouillé, ou
+  // « Transfert de fichiers » pas encore choisi) : on dit quoi faire. Le PC
+  // relit tout seul pendant 90 s, la liste s'ouvrira dès que possible.
+  await listen("telephone-attente", () => {
+    toast(
+      "📱 Téléphone branché. DÉVERROUILLEZ-le, touchez la notification « USB » et choisissez " +
+        "« Transfert de fichiers » (et « Autoriser » si le téléphone le demande). La liste s'ouvrira toute seule.",
+      "attention",
+      15000
+    );
+  });
 
   // Nouvelle activité des machines : l'écran se met à jour tout seul s'il
   // est ouvert.
@@ -3602,6 +3426,38 @@ async function afficherDocumentsUsb() {
 
   ouvrirModal("modal-usb");
   majBoutonUsb();
+}
+
+/// Bouton 💾 : relit la clé tout de suite (liste fermée par erreur, clé
+/// branchée avant l'ouverture de l'application).
+async function relireClesUsb() {
+  const bouton = document.querySelector("#btn-cle-usb");
+  if (bouton.disabled) return;
+  bouton.disabled = true;
+  toast("Lecture de la clé USB…", "succes", 4000);
+  let nombre;
+  try {
+    nombre = await invoke("relire_cles_usb");
+  } catch (e) {
+    toast(String(e), "attention", 9000);
+    return;
+  } finally {
+    bouton.disabled = false;
+  }
+  if (nombre === null || nombre === undefined) {
+    alert("💾 Aucune clé USB n'est visible.\n\n" +
+      "1. Enfoncez bien la clé, ou essayez un autre port USB du PC.\n" +
+      "2. Attendez 5 secondes, puis réappuyez sur 💾.\n\n" +
+      "Si la clé n'apparaît pas non plus dans l'Explorateur de Windows (Ce PC), " +
+      "c'est la clé ou le port qui ne marche pas, pas l'application.");
+    return;
+  }
+  if (!nombre) {
+    alert("💾 La clé est bien lue, mais elle ne contient aucun document imprimable " +
+      "(PDF, Word, Excel, PowerPoint, photos).");
+    return;
+  }
+  await afficherDocumentsUsb();
 }
 
 /// Le client a envoyé son document au gérant par WhatsApp : le téléphone
@@ -3861,6 +3717,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#btn-recevoir-qr").addEventListener("click", afficherQr);
   setInterval(verifierQrAJour, 5000);
   document.querySelector("#btn-telephone").addEventListener("click", afficherDocumentsTelephone);
+  document.querySelector("#btn-cle-usb").addEventListener("click", relireClesUsb);
   document.querySelector("#form-licence-blocage").addEventListener("submit", async (e) => {
     e.preventDefault();
     const champ = document.querySelector("#cle-licence-blocage");

@@ -54,38 +54,29 @@ class Liaison(
 
     /** Crée le réseau et attend le PC. Rend son adresse, ou null (et la raison dans [raison]). */
     fun ouvrir(): InetAddress? {
-        if (p2p == null || canal == null) {
-            raison = "Ce téléphone ne sait pas créer de réseau Wi-Fi Direct."
-            return null
-        }
         if (!attendreWifi()) {
-            raison = "Le Wi-Fi est resté éteint. Allumez-le (sans choisir de réseau)."
+            raison = "Le Wi-Fi est resté éteint. Allumez-le, puis rejoignez le Wi-Fi de la boutique."
             return null
         }
         val debut = System.currentTimeMillis()
-        pcSurLeWifi()?.let { pc ->
-            dire("✅ Téléphone sur le Wi-Fi du guichet : PC à ${pc.hostAddress}.")
-            return pc
+        // Le téléphone doit être sur le Wi-Fi de la boutique (créé par le PC,
+        // allumé en permanence). L'ancienne seconde méthode — le téléphone
+        // crée son réseau et le PC le rejoint — est retirée : une seule
+        // carte Wi-Fi ne peut pas faire les deux à la fois. On attend donc
+        // que le client rejoigne le Wi-Fi (QR du guichet ou liste Wi-Fi).
+        dire("📶 En attente du Wi-Fi de la boutique…")
+        val fin = debut + 90_000
+        while (System.currentTimeMillis() < fin) {
+            pcSurLeWifi()?.let { pc ->
+                val secondes = (System.currentTimeMillis() - debut) / 1000.0
+                dire("✅ Téléphone sur le Wi-Fi de la boutique : PC à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
+                return pc
+            }
+            Thread.sleep(2000)
         }
-        val nom = creerReseau()
-        if (nom == null) {
-            raison = "Le téléphone n'a pas pu créer son réseau. Réessayez."
-            return null
-        }
-        nomReseau = nom
-        dire("📶 Réseau « $nom » créé. Le PC du kiosque va le rejoindre…")
-        val pc = trouverPc(90_000)
-        if (pc == null) {
-            raison = "L'ordinateur de la boutique ne s'est pas relié. Approchez-vous du guichet et vérifiez que le logiciel est ouvert."
-            dire("❌ Le PC ne s'est pas connecté en 90 s.")
-            supprimerReseau()
-            return null
-        }
-        // Relié par le Wi-Fi du guichet : le réseau du téléphone ne sert plus.
-        if (reseauWifi != null) supprimerReseau()
-        val secondes = (System.currentTimeMillis() - debut) / 1000.0
-        dire("✅ PC trouvé à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
-        return pc
+        raison = "Rejoignez d'abord le Wi-Fi de la boutique : scannez le code du guichet, ou choisissez son nom dans vos réseaux Wi-Fi. Puis revenez ici."
+        dire("❌ Pas sur le Wi-Fi de la boutique après 90 s.")
+        return null
     }
 
     var raison: String? = null

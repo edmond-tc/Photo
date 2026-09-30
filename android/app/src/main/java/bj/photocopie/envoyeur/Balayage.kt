@@ -33,28 +33,19 @@ object Balayage {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
     )
 
-    /** Rend un message d'état, affiché dans l'application. */
+    /**
+     * Rend un message d'état. La réception directe est retirée : le PC du
+     * kiosque n'émet plus de balise, le téléphone n'a plus rien à écouter.
+     * On arrête seulement l'écoute laissée par une ancienne version.
+     */
     @SuppressLint("MissingPermission")
     fun demarrer(ctx: Context): String {
-        val adaptateur = ctx.getSystemService(BluetoothManager::class.java)?.adapter
-            ?: return "Pas de Bluetooth sur ce téléphone : pas de proposition automatique."
-        if (!adaptateur.isEnabled) {
-            return "Bluetooth éteint : le téléphone ne peut pas entendre le kiosque. L'envoi reste possible en ouvrant l'application."
+        try {
+            ctx.getSystemService(BluetoothManager::class.java)?.adapter?.bluetoothLeScanner
+                ?.stopScan(intention(ctx))
+        } catch (_: Exception) {
         }
-        val scanner = adaptateur.bluetoothLeScanner ?: return "Bluetooth indisponible pour l'instant."
-        val filtre = ScanFilter.Builder()
-            .setManufacturerData(Reglages.FABRICANT_BLE, Reglages.DONNEES_BLE)
-            .build()
-        val reglages = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
-            .build()
-        return try {
-            scanner.stopScan(intention(ctx))
-            val code = scanner.startScan(listOf(filtre), reglages, intention(ctx))
-            if (code == 0) "Écoute du kiosque active." else "Écoute du kiosque refusée (code $code)."
-        } catch (e: SecurityException) {
-            "Autorisation Bluetooth manquante : touchez « Autoriser »."
-        }
+        return "Rejoignez le Wi-Fi de la boutique pour envoyer."
     }
 }
 
