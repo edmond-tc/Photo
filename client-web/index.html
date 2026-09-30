@@ -831,7 +831,7 @@ p { margin: 0; }
       <div class="ligne"><span>Pages par feuille</span>${segment("par_feuille", [["1", "1"], ["2", "2"], ["4", "4"]], d.par_feuille)}</div>
       <div class="ligne"><span>Papier</span>${segment("papier", [["Ordinaire", "Ordinaire"], ["Photo brillant", "Photo brillant"], ["Cartonné", "Cartonné"]], d.papier)}</div>
       <div class="services">${SERVICES.map(([cle, nom]) => `
-        <label><input type="checkbox" data-service="${cle}" ${d.services[cle] ? "checked" : ""}><span>${nom}<small>${f(tarifs[cle] || 0)}</small></span></label>`).join("")}</div>
+        <label><input type="checkbox" data-service="${cle}" ${d.services[cle] ? "checked" : ""}><span>${nom}<small data-prix>${f(tarifs[cle] || 0)}</small></span></label>`).join("")}</div>
       <div class="champ"><label for="desc-${d.id}">Ce que vous voulez</label>
         <textarea class="saisie" id="desc-${d.id}" rows="2" maxlength="500" data-texte="description" placeholder="ex. Agrandir la photo, mettre le logo en couleur…">${echapper(d.description)}</textarea></div>
       ${vocalPossible ? `<div class="vocal ${d.enreg ? "enreg" : ""}">
