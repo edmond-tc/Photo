@@ -1138,9 +1138,17 @@ async function afficherQr() {
 
       const parWifi = document.createElement("section");
       parWifi.className = "methode";
-      parWifi.innerHTML = `<h3 class="methode-titre">Par le Wi-Fi</h3>`;
+      // Le grand symbole Wi-Fi tient la place du code de l'autre colonne :
+      // les deux méthodes ont le même poids à l'œil.
+      parWifi.innerHTML = `<h3 class="methode-titre">Par le Wi-Fi</h3>
+        <svg class="methode-icone" viewBox="0 0 120 100" width="150" height="125" aria-hidden="true">
+          <path d="M6 38 a78 78 0 0 1 108 0" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round"/>
+          <path d="M24 58 a52 52 0 0 1 72 0" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round"/>
+          <path d="M42 77 a26 26 0 0 1 36 0" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round"/>
+          <circle cx="60" cy="92" r="7" fill="currentColor"/>
+        </svg>`;
       parWifi.appendChild(etapes([
-        "Ouvrez le <strong>Wi-Fi</strong> de votre téléphone.",
+        "Ouvrez le <strong>Wi-Fi</strong> : tirez le haut de l'écran vers le bas et appuyez longuement sur l'icône Wi-Fi.",
         `Touchez ${nom}`,
         ...(info.mot_de_passe
           ? [`Mot de passe <strong class="methode-grand methode-mdp">${echapperHtml(info.mot_de_passe)}</strong>`]

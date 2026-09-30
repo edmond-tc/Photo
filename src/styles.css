@@ -1278,7 +1278,8 @@ fieldset {
   flex-direction: column;
   gap: 0.5rem;
 }
-.methode .qr-bloc {
+.methode .qr-bloc,
+.methode-icone {
   align-self: center;
 }
 .methode-titre {
