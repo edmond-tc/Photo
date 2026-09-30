@@ -961,13 +961,30 @@ fieldset {
   /* Plus petit que le reste : c'est un recours, pas une consigne. Le
      client qui n'en a pas besoin ne doit pas croire qu'il y a une
      troisième étape. */
+  /* Seconde méthode, lisible de loin : nom du Wi-Fi et mot de passe en gros. */
   body.impression-qr #qr-affiche-secours {
     display: block !important;
     text-align: center;
-    font-size: 0.9rem;
+    font-size: 1.1rem;
     margin-top: 0.8rem;
     padding-top: 0.6rem;
-    border-top: 1px solid #bbb;
+    border-top: 2px solid #333;
+  }
+  body.impression-qr #qr-affiche-secours .secours-titre,
+  body.impression-qr #qr-affiche-secours .secours-ligne,
+  body.impression-qr #qr-affiche-secours .secours-fin {
+    display: block;
+    margin: 0.2rem 0;
+  }
+  body.impression-qr #qr-affiche-secours .secours-titre {
+    font-weight: 700;
+  }
+  body.impression-qr #qr-affiche-secours strong {
+    font-size: 1.8rem;
+  }
+  body.impression-qr #qr-affiche-secours .secours-mdp {
+    font-family: Consolas, "Courier New", monospace;
+    letter-spacing: 0.15em;
   }
   body.impression-qr #qr-affiche-pied {
     display: block !important;

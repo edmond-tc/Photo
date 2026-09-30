@@ -1151,7 +1151,19 @@ async function afficherQr() {
     // qui échoue) : le nom du Wi-Fi et son mot de passe, en clair sur
     // l'affiche. Choisi dans la liste Wi-Fi, le réseau ouvre la page.
     const secours = document.querySelector("#qr-affiche-secours");
-    if (secours) {
+    // Seconde méthode, en gros sous le QR (demande du terrain) : rejoindre
+    // le Wi-Fi à la main, depuis la liste du téléphone. Choisi là, le réseau
+    // ouvre la page tout seul (Android comme iPhone). Nom et mot de passe
+    // sont ceux réglés sur CE PC.
+    if (secours && info.reseau) {
+      secours.innerHTML =
+        `<span class="secours-titre">Problème avec le QR ? Rejoignez directement le Wi-Fi :</span>` +
+        `<span class="secours-ligne">Wi-Fi <strong>${echapperHtml(info.reseau)}</strong></span>` +
+        (info.mot_de_passe
+          ? `<span class="secours-ligne">Mot de passe <strong class="secours-mdp">${echapperHtml(info.mot_de_passe)}</strong></span>`
+          : "") +
+        `<span class="secours-fin">${deuxCodes ? "Puis scannez le code ③ : la page d'envoi s'ouvre." : "La page d'envoi s'ouvre toute seule."}</span>`;
+    } else if (secours) {
       secours.textContent = info.reseau
         ? `Le code ne se lit pas ? Dans votre Wi-Fi, touchez « ${info.reseau} »` +
           (info.mot_de_passe ? `, mot de passe ${info.mot_de_passe}` : "") +
@@ -2656,14 +2668,24 @@ async function rendreReglages(corps) {
       </select>
     </label>
     <label>Nom du réseau (SSID) <input type="text" id="reg-wifi-ssid" value="${echapperHtml(params.wifi_ssid)}" /></label>
-    <label>Mot de passe <input type="text" id="reg-wifi-mdp" value="${echapperHtml(params.wifi_mot_de_passe)}" /></label>
+    <label>Mot de passe <input type="text" id="reg-wifi-mdp" minlength="8" value="${echapperHtml(params.wifi_mot_de_passe)}" /></label>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin:0">
+      Il est écrit sur l'autocollant : prenez <strong>8 chiffres</strong>, par exemple <strong>12345678</strong>.
+      Sans lettre, pas de piège de majuscule, et tout le monde le tape du premier coup.
+      8 caractères au minimum : c'est la règle du Wi-Fi.
+    </p>
     <button type="submit" class="btn-secondaire">Enregistrer</button>
   `;
   formWifi.addEventListener("submit", async (e) => {
     e.preventDefault();
     await invoke("set_boutique_setting", { cle: "wifi_type_reseau", valeur: document.querySelector("#reg-wifi-type").value });
     await invoke("set_boutique_setting", { cle: "wifi_ssid", valeur: document.querySelector("#reg-wifi-ssid").value });
-    await invoke("set_boutique_setting", { cle: "wifi_mot_de_passe", valeur: document.querySelector("#reg-wifi-mdp").value });
+    const mdp = document.querySelector("#reg-wifi-mdp").value;
+    if (mdp && mdp.length < 8) {
+      alert("Le mot de passe du Wi-Fi doit avoir au moins 8 caractères (règle du Wi-Fi). Par exemple : 12345678.");
+      return;
+    }
+    await invoke("set_boutique_setting", { cle: "wifi_mot_de_passe", valeur: mdp });
     toast("✓ Wi-Fi enregistré — le QR l'utilisera dès maintenant");
   });
   secWifi.appendChild(formWifi);

@@ -231,7 +231,12 @@ fn ecrire_script_demarrage() -> Result<std::path::PathBuf, String> {
 /// Il n'a pas à être secret : le QR que le client scanne le contient, par
 /// construction. Ce qui compte, c'est que le gérant puisse le lire dans
 /// Réglages et le changer s'il le souhaite.
-pub const MOT_DE_PASSE_PAR_DEFAUT: &str = "photocopie";
+///
+/// Des chiffres seulement : il est aussi écrit en gros sur l'autocollant,
+/// pour les clients qui rejoignent le Wi-Fi à la main. Avec une lettre, une
+/// bonne partie d'entre eux tape une majuscule par réflexe, et le Wi-Fi, qui
+/// distingue majuscules et minuscules, refuse sans explication.
+pub const MOT_DE_PASSE_PAR_DEFAUT: &str = "12345678";
 
 /// Nom de réseau posé d'office sur une installation neuve, tiré du nom de la
 /// boutique quand il y en a un — le client reconnaît alors l'endroit où il
