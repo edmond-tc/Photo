@@ -1257,3 +1257,59 @@ fieldset {
     margin-top: 0.8rem;
   }
 }
+
+/* Affiche : deux méthodes au même niveau, côte à côte (Scanner, Wi-Fi). */
+.qr-conteneur {
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.deux-methodes {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  text-align: left;
+}
+.methode {
+  border: 2px solid currentColor;
+  border-radius: 10px;
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.methode .qr-bloc {
+  align-self: center;
+}
+.methode-titre {
+  margin: 0;
+  text-align: center;
+  font-size: 1.2rem;
+}
+.methode-etapes {
+  margin: 0;
+  padding-left: 1.3rem;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+.methode-grand {
+  font-size: 1.3rem;
+}
+.methode-mdp {
+  font-family: Consolas, "Courier New", monospace;
+  letter-spacing: 0.12em;
+}
+.methode-fin {
+  margin: 0;
+  font-weight: 700;
+}
+@media print {
+  body.impression-qr .deux-methodes { gap: 0.8rem; }
+  body.impression-qr .methode { border-color: #000; }
+  body.impression-qr .methode-titre { font-size: 1.6rem; }
+  body.impression-qr .methode-etapes { font-size: 1.05rem; }
+  body.impression-qr .methode-grand { font-size: 1.9rem; }
+  body.impression-qr .methode-fin { font-size: 1.1rem; }
+  body.impression-qr #qr-affiche-secours:empty { display: none !important; }
+}

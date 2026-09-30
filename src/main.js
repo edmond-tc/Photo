@@ -1065,110 +1065,97 @@ async function afficherQr() {
     // n'est plus qu'un secours, sur l'écran du PC seulement (plus bas).
     conteneur.classList.remove("deux-qr");
 
-    // Cette phrase part à l'impression sur l'affiche collée à l'entrée :
-    // c'est souvent la seule consigne que le client lira. Elle annonce UN
-    // seul geste, parce que c'est le cas normal — le second code n'est qu'un
-    // filet, et l'annoncer d'emblée ferait croire qu'il faut deux scans.
-    document.querySelector("#qr-intro").textContent =
-      info.qr_page_data_uri
-        ? "① Scannez ce code avec l'appareil photo de votre téléphone"
-        : "Scannez ce code avec l'appareil photo de votre téléphone";
-
-    // DEUX scans, annoncés comme tels, et de même taille.
+    // DEUX MÉTHODES, au même niveau, côte à côte (demande du terrain) :
+    // le Scanner du téléphone, et le Wi-Fi rejoint à la main. Aucune n'est
+    // « de secours » : beaucoup de téléphones n'ont pas de Scanner facile à
+    // trouver, et choisi dans la liste Wi-Fi, le réseau ouvre la page tout
+    // seul (Android comme iPhone) — ce que le scan ne fait pas.
     //
-    // On a longtemps présenté le second comme un filet discret, en 110 px
-    // sous un grand code de 220, en promettant que la page s'ouvrirait
-    // toute seule. Sur le terrain, elle ne s'est jamais ouverte toute
-    // seule : jamais une fois, sur aucun des deux téléphones d'essai, et le
-    // seul chemin qui ait marché passait par les réglages Wi-Fi du
-    // téléphone — ce qu'aucun client ne fera.
+    // « Scanner » = l'application Scanner du téléphone, pas l'appareil
+    // photo : l'affiche dit où la trouver.
     //
-    // L'ouverture automatique dépend d'un mécanisme que les téléphones
-    // appliquent chacun à leur façon, que les fabricants changent sans
-    // prévenir, et que des portails d'entreprise bien plus dotés que nous
-    // ne maîtrisent pas davantage. Le second QR, lui, ne dépend de rien :
-    // il porte l'adresse de la page, le téléphone l'ouvre, c'est tout.
-    //
-    // Deux gestes qui marchent valent mieux qu'un seul qui échoue, et la
-    // promesse faite aux gérants reste tenue : le client ne tape JAMAIS
-    // rien. C'est l'ouverture automatique qu'on abandonne, pas elle.
-    const ajouterQr = (source, numero, legende) => {
+    // La page ne s'ouvre en touchant le réseau que si le PC répond lui-même
+    // aux téléphones (`ouverture_auto`, vérifié par le PC). Sinon l'affiche
+    // ajoute le code de la page, en bas, commun aux deux méthodes, plutôt
+    // que de promettre une page qui ne s'ouvrira pas.
+    const ajouterQr = (source, legende, parent = conteneur) => {
       const bloc = document.createElement("figure");
       bloc.className = "qr-bloc";
-      if (numero) {
-        const rang = document.createElement("span");
-        rang.className = "qr-numero";
-        rang.textContent = numero;
-        bloc.appendChild(rang);
-      }
       const img = document.createElement("img");
       img.src = source;
-      img.alt = legende;
+      img.alt = legende || "Code à scanner";
       img.width = 180;
       img.height = 180;
       bloc.appendChild(img);
-      const texte = document.createElement("figcaption");
-      texte.textContent = legende;
-      bloc.appendChild(texte);
-      conteneur.appendChild(bloc);
+      if (legende) {
+        const texte = document.createElement("figcaption");
+        texte.textContent = legende;
+        bloc.appendChild(texte);
+      }
+      parent.appendChild(bloc);
       return bloc;
     };
+    const etapes = (lignes) => {
+      const liste = document.createElement("ol");
+      liste.className = "methode-etapes";
+      for (const html of lignes) {
+        const li = document.createElement("li");
+        li.innerHTML = html;
+        liste.appendChild(li);
+      }
+      return liste;
+    };
 
-    // Ni Android ni l'iPhone n'ouvrent la page tout seuls après un scan de
-    // QR Wi-Fi (constaté sur le terrain : Samsung A07 sous Android 16,
-    // iPhone). Mais les deux l'ouvrent dès qu'on touche le nom du réseau
-    // dans le Wi-Fi du téléphone : un seul geste, le même partout, que tout
-    // le monde sait déjà faire. L'affiche ne dit que lui — pas de
-    // « Réglages », où les clients se perdent — avec le nom choisi par le
-    // gérant, en gros sous le code, pour qu'on le reconnaisse dans la liste.
-    //
-    // Ce geste ne marche que si le PC répond lui-même aux téléphones
-    // (`ouverture_auto`, vérifié par le PC). Sur certains PC, Windows garde
-    // cette réponse : l'affiche montre alors deux codes — le Wi-Fi, puis la
-    // page — plutôt que de promettre une page qui ne s'ouvrira pas.
+    const intro = document.querySelector("#qr-intro");
+    const secours = document.querySelector("#qr-affiche-secours");
+    if (secours) secours.textContent = "";
     const nomReseau = info.qr_page_data_uri ? info.reseau : null;
     const deuxCodes = Boolean(nomReseau && !info.ouverture_auto);
-    if (deuxCodes) conteneur.classList.add("deux-qr");
-    const blocQr = ajouterQr(
-      info.qr_data_uri,
-      null,
-      !nomReseau
-        ? "Scannez pour envoyer vos documents"
-        : deuxCodes
-          ? "② Touchez « Rejoindre »"
-          : `② Touchez « Rejoindre »\n③ Ouvrez votre Wi-Fi et touchez « ${nomReseau} » : la page d'envoi s'ouvre`
-    );
-    if (deuxCodes) {
-      ajouterQr(info.qr_page_data_uri, null, "③ Puis scannez ce code : la page d'envoi s'ouvre");
-    }
-    if (nomReseau) {
-      const etiquette = document.createElement("p");
-      etiquette.className = "qr-nom-reseau";
-      etiquette.textContent = `Wi-Fi : ${nomReseau}`;
-      blocQr.insertBefore(etiquette, blocQr.querySelector("figcaption"));
-    }
-    // Pour les téléphones qui ne lisent pas les QR (pas de scanner, Lens
-    // qui échoue) : le nom du Wi-Fi et son mot de passe, en clair sur
-    // l'affiche. Choisi dans la liste Wi-Fi, le réseau ouvre la page.
-    const secours = document.querySelector("#qr-affiche-secours");
-    // Seconde méthode, en gros sous le QR (demande du terrain) : rejoindre
-    // le Wi-Fi à la main, depuis la liste du téléphone. Choisi là, le réseau
-    // ouvre la page tout seul (Android comme iPhone). Nom et mot de passe
-    // sont ceux réglés sur CE PC.
-    if (secours && info.reseau) {
-      secours.innerHTML =
-        `<span class="secours-titre">Problème avec le QR ? Rejoignez directement le Wi-Fi :</span>` +
-        `<span class="secours-ligne">Wi-Fi <strong>${echapperHtml(info.reseau)}</strong></span>` +
-        (info.mot_de_passe
-          ? `<span class="secours-ligne">Mot de passe <strong class="secours-mdp">${echapperHtml(info.mot_de_passe)}</strong></span>`
-          : "") +
-        `<span class="secours-fin">${deuxCodes ? "Puis scannez le code ③ : la page d'envoi s'ouvre." : "La page d'envoi s'ouvre toute seule."}</span>`;
-    } else if (secours) {
-      secours.textContent = info.reseau
-        ? `Le code ne se lit pas ? Dans votre Wi-Fi, touchez « ${info.reseau} »` +
-          (info.mot_de_passe ? `, mot de passe ${info.mot_de_passe}` : "") +
-          `.`
-        : "Le réseau ne se connecte pas ? Appuyez sur son nom dans la liste affichée.";
+    const finPage = deuxCodes
+      ? "Puis scannez le code du bas : la page d'envoi s'ouvre."
+      : "La page d'envoi s'ouvre toute seule.";
+
+    if (!nomReseau) {
+      intro.textContent = "Scannez ce code avec le Scanner de votre téléphone";
+      ajouterQr(info.qr_data_uri, "Scannez pour envoyer vos documents");
+    } else {
+      intro.textContent = "Deux façons, au choix :";
+      const nom = `<strong class="methode-grand">${echapperHtml(nomReseau)}</strong>`;
+      const methodes = document.createElement("div");
+      methodes.className = "deux-methodes";
+
+      const parScanner = document.createElement("section");
+      parScanner.className = "methode";
+      parScanner.innerHTML = `<h3 class="methode-titre">Avec le Scanner</h3>`;
+      ajouterQr(info.qr_data_uri, "", parScanner);
+      parScanner.appendChild(etapes([
+        "Ouvrez le <strong>Scanner</strong> : tirez le haut de l'écran vers le bas, ou tapez « Scanner » dans la recherche du téléphone.",
+        "Visez ce code, touchez <strong>« Rejoindre »</strong>.",
+        deuxCodes
+          ? "Scannez le code du bas : la page d'envoi s'ouvre."
+          : `Ouvrez votre Wi-Fi et touchez ${nom} : la page d'envoi s'ouvre.`,
+      ]));
+
+      const parWifi = document.createElement("section");
+      parWifi.className = "methode";
+      parWifi.innerHTML = `<h3 class="methode-titre">Par le Wi-Fi</h3>`;
+      parWifi.appendChild(etapes([
+        "Ouvrez le <strong>Wi-Fi</strong> de votre téléphone.",
+        `Touchez ${nom}`,
+        ...(info.mot_de_passe
+          ? [`Mot de passe <strong class="methode-grand methode-mdp">${echapperHtml(info.mot_de_passe)}</strong>`]
+          : []),
+      ]));
+      const fin = document.createElement("p");
+      fin.className = "methode-fin";
+      fin.textContent = `➜ ${finPage}`;
+      parWifi.appendChild(fin);
+
+      methodes.append(parScanner, parWifi);
+      conteneur.appendChild(methodes);
+      if (deuxCodes) {
+        ajouterQr(info.qr_page_data_uri, "Scannez ce code : la page d'envoi s'ouvre");
+      }
     }
     // Chaque installation appelle une consigne différente : dire au gérant
     // une phrase qui ne correspond pas à son poste le laisserait sans réponse
