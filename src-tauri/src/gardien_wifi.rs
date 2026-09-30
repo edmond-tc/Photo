@@ -54,14 +54,28 @@ fn reglage(app: &tauri::AppHandle, cle: &str) -> Option<String> {
     crate::db::get_setting(&conn, cle)
 }
 
-/// Le gérant a allumé le Wi-Fi de la boutique (et ne l'a pas coupé).
+/// Retient la méthode qui a marché (`Some`), ou que le gérant a coupé le
+/// Wi-Fi exprès (`None`) : seul ce geste arrête le gardien.
 pub fn retenir_allume(app: &tauri::AppHandle, methode: Option<&str>) {
     let state = app.state::<crate::db::DbState>();
     let Ok(conn) = state.0.lock() else { return };
-    let _ = crate::db::set_setting(&conn, "wifi_garder_allume", if methode.is_some() { "oui" } else { "non" });
+    let _ = crate::db::set_setting(&conn, "wifi_coupe_par_gerant", if methode.is_some() { "non" } else { "oui" });
     if let Some(m) = methode {
         let _ = crate::db::set_setting(&conn, "wifi_methode", m);
     }
+}
+
+/// Le Wi-Fi de la boutique doit-il être allumé ? OUI, par défaut, dès que
+/// l'application tourne — comme une box. Constaté sur le terrain : il
+/// fallait appuyer sur « Activer le Wi-Fi local » avant que le QR marche.
+/// L'ancien réglage (« wifi_garder_allume ») ne passait à « oui » qu'après
+/// ce bouton, et la réception directe le remettait à « non » en coupant le
+/// Wi-Fi : le gardien restait alors éteint pour toujours, sans le dire.
+/// Désormais, seul un arrêt voulu par le gérant l'arrête (ou un routeur à
+/// part, qui fait le Wi-Fi à notre place).
+pub fn doit_rester_allume(app: &tauri::AppHandle) -> bool {
+    reglage(app, "wifi_coupe_par_gerant").as_deref() != Some("oui")
+        && reglage(app, "wifi_type_reseau").as_deref() != Some("routeur_externe")
 }
 
 /// Le réseau tourne-t-il vraiment, selon la méthode qui l'a créé ?
@@ -94,8 +108,7 @@ pub fn demarrer(app: tauri::AppHandle) {
             }
             // La réception directe ne l'arrête plus : le Wi-Fi de la
             // boutique passe avant elle (voir reception_directe.rs).
-            let garder = reglage(&app, "wifi_garder_allume").as_deref() == Some("oui")
-                && reglage(&app, "wifi_type_reseau").as_deref() != Some("routeur_externe");
+            let garder = doit_rester_allume(&app);
             // Comme une box : le PC ne s'endort plus tant que le Wi-Fi de
             // la boutique doit rester allumé (en veille, plus de Wi-Fi du
             // tout). L'écran, lui, peut s'éteindre.

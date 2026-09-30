@@ -614,10 +614,7 @@ fn wifi_boutique_prioritaire(app: &AppHandle) -> bool {
     if crate::hotspot::point_acces_actif() {
         return true;
     }
-    let state = app.state::<crate::db::DbState>();
-    let Ok(conn) = state.0.lock() else { return false };
-    crate::db::get_setting(&conn, "wifi_garder_allume").as_deref() == Some("oui")
-        && crate::db::get_setting(&conn, "wifi_type_reseau").as_deref() != Some("routeur_externe")
+    crate::gardien_wifi::doit_rester_allume(app)
 }
 
 /// Empêche le PC de se mettre en veille tout seul tant que la réception
