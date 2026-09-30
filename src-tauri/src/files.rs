@@ -253,6 +253,71 @@ fn shell_executer(path: &Path, verb: &str, parametres: Option<&str>) -> Result<(
     Ok(())
 }
 
+/// Les documents qu'une boutique ouvre tous les jours, et eux seuls, sont
+/// ouverts directement. Tout autre fichier reçu — script, raccourci, page
+/// web, archive, type inconnu — pourrait exécuter quelque chose au simple
+/// « Ouvrir » : il est montré dans son dossier, jamais lancé. Une liste de
+/// ce qui est permis, pas de ce qui est interdit : un type dangereux oublié
+/// reste ainsi fermé par défaut.
+pub fn ouvrable_sans_risque(path: &Path) -> bool {
+    const DOCUMENTS: [&str; 25] = [
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pub", "odt", "ods", "odp", "rtf",
+        "txt", "csv", "jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "heif", "tif", "tiff",
+        "xps",
+    ];
+    crate::signature_maj::extension_reelle(path).is_some_and(|e| DOCUMENTS.contains(&e.as_str()))
+}
+
+/// Ouvre l'Explorateur sur le dossier du fichier, le fichier sélectionné,
+/// sans rien lancer.
+pub fn montrer_dans_dossier(path: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut argument = std::ffi::OsString::from("/select,");
+        argument.push(path.as_os_str());
+        std::process::Command::new("explorer.exe")
+            .raw_arg(argument)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Impossible d'ouvrir le dossier : {e}"))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("disponible seulement sous Windows".to_string())
+    }
+}
+
+/// Le message rendu au gérant quand un fichier n'est pas ouvert : il
+/// commence par 🔒, que l'interface affiche tel quel.
+pub fn refus_type_inconnu(path: &Path) -> String {
+    let extension = crate::signature_maj::extension_reelle(path)
+        .map(|e| format!(".{e}"))
+        .unwrap_or_else(|| "sans extension".to_string());
+    format!(
+        "🔒 Par sécurité, ce type de fichier ({extension}) n'est pas ouvert directement : il pourrait \
+         lancer un programme. Son dossier vient de s'ouvrir. N'y touchez que si vous connaissez \
+         le client et le fichier."
+    )
+}
+
+#[cfg(test)]
+mod tests_types_ouvrables {
+    use std::path::Path;
+    #[test]
+    fn seuls_les_documents_courants_s_ouvrent() {
+        assert!(super::ouvrable_sans_risque(Path::new("CV Koffi.PDF")));
+        assert!(super::ouvrable_sans_risque(Path::new("photo.jpeg")));
+        assert!(!super::ouvrable_sans_risque(Path::new("facture.pdf.url")));
+        assert!(!super::ouvrable_sans_risque(Path::new("script.wsf")));
+        assert!(!super::ouvrable_sans_risque(Path::new("page.html")));
+        assert!(!super::ouvrable_sans_risque(Path::new("macro.docm")));
+        assert!(!super::ouvrable_sans_risque(Path::new("sans_extension")));
+        assert!(!super::ouvrable_sans_risque(Path::new("virus.exe.")));
+    }
+}
+
 /// Ouvre un document comme le gérant en a l'habitude. Pour un PDF : dans le
 /// vrai lecteur PDF installé sur le PC (Adobe, Foxit, Sumatra…), même si
 /// Windows a mis Edge par défaut — demandé sur le terrain : la fenêtre

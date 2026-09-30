@@ -1484,7 +1484,10 @@ pub fn nom_fichier_sans_chemin(nom_brut: &str) -> String {
         .filter(|c| !c.is_control() && !r#":*?"<>|"#.contains(*c))
         .take(150)
         .collect();
-    let nom = nom.trim();
+    // Windows efface les points et espaces de fin : « virus.exe. » devient
+    // « virus.exe » sur le disque, alors que son extension apparente est
+    // vide et échappe à tout contrôle. On les retire avant qu'il ne le fasse.
+    let nom = nom.trim().trim_end_matches(['.', ' ']);
 
     const NOMS_RESERVES_WINDOWS: [&str; 22] = [
         "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
@@ -1521,7 +1524,41 @@ impl Drop for EnvoiEnCours {
     }
 }
 
-async fn recevoir_fichier(State(app): State<AppHandle>, multipart: Multipart) -> impl IntoResponse {
+/// Envois acceptés par téléphone, sur une fenêtre glissante : de quoi
+/// servir un vrai client (plusieurs commandes d'affilée), pas de quoi
+/// remplir la file de fausses commandes et faire parler la voix du guichet
+/// sans arrêt.
+const ENVOIS_MAX_PAR_TELEPHONE: usize = 12;
+const FENETRE_ENVOIS: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+static ENVOIS_RECENTS: std::sync::Mutex<Vec<(std::net::IpAddr, std::time::Instant)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Compte cet envoi pour ce téléphone ; faux s'il en a déjà trop fait.
+fn envoi_permis(ip: std::net::IpAddr) -> bool {
+    let Ok(mut recents) = ENVOIS_RECENTS.lock() else { return true };
+    let maintenant = std::time::Instant::now();
+    recents.retain(|(_, quand)| maintenant.duration_since(*quand) < FENETRE_ENVOIS);
+    if recents.iter().filter(|(qui, _)| *qui == ip).count() >= ENVOIS_MAX_PAR_TELEPHONE {
+        return false;
+    }
+    recents.push((ip, maintenant));
+    true
+}
+
+async fn recevoir_fichier(
+    State(app): State<AppHandle>,
+    axum::extract::ConnectInfo(appelant): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    multipart: Multipart,
+) -> impl IntoResponse {
+    // Le PC lui-même (essais, application sur ce PC) n'est jamais limité.
+    if !appelant.ip().is_loopback() && !envoi_permis(appelant.ip()) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            "Trop d'envois depuis ce téléphone en peu de temps. Attendez quelques minutes, ou voyez le guichet.",
+        )
+            .into_response();
+    }
     let _envoi = EnvoiEnCours::commencer();
     // Licence terminée : rien ne s'accumule en silence dans une file que
     // personne ne peut plus traiter ; le client le sait tout de suite.
@@ -2392,6 +2429,17 @@ mod tests {
     // ── Noms de fichiers : tout vient d'un inconnu sur le Wi-Fi ──
 
     #[test]
+    fn un_telephone_ne_peut_pas_inonder_la_file() {
+        let ip: std::net::IpAddr = "192.168.73.250".parse().unwrap();
+        for _ in 0..ENVOIS_MAX_PAR_TELEPHONE {
+            assert!(envoi_permis(ip));
+        }
+        assert!(!envoi_permis(ip), "l'envoi de trop doit être refusé");
+        let autre: std::net::IpAddr = "192.168.73.251".parse().unwrap();
+        assert!(envoi_permis(autre), "un autre téléphone n'est pas pénalisé");
+    }
+
+    #[test]
     fn retire_le_chemin_pour_empecher_d_ecrire_ailleurs() {
         // Sans cela, un nom forgé écrirait hors du dossier de réception —
         // par exemple dans le démarrage de Windows.
@@ -2400,6 +2448,9 @@ mod tests {
             "virus.exe"
         );
         assert_eq!(nom_fichier_sans_chemin("../../etc/passwd"), "passwd");
+        // Windows effacerait ces points et espaces de fin sur le disque.
+        assert_eq!(nom_fichier_sans_chemin("virus.exe."), "virus.exe");
+        assert_eq!(nom_fichier_sans_chemin("virus.exe . . "), "virus.exe");
         assert_eq!(
             nom_fichier_sans_chemin("/absolu/document.pdf"),
             "document.pdf"

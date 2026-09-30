@@ -760,6 +760,7 @@ async function imprimer(id) {
       appliquerEtape(carte, "impression");
     }
   } catch (e) {
+    if (String(e).startsWith("🔒")) { alert(String(e)); return; }
     alert(`⚠️ Le document n'a pas pu s'ouvrir. Il est peut-être abîmé, ou aucun programme de ce PC ne sait l'ouvrir (installez un lecteur PDF).\n\nDétail : ${e}`);
   }
 }
@@ -803,6 +804,7 @@ async function ouvrir(id) {
   try {
     await invoke("open_file", { id });
   } catch (e) {
+    if (String(e).startsWith("🔒")) { alert(String(e)); return; }
     alert(`⚠️ Ce fichier n'a pas pu s'ouvrir — il est peut-être corrompu ou dans un format non pris en charge.\n\nDétail : ${e}`);
   }
 }

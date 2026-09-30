@@ -192,6 +192,10 @@ pub fn open_file(app: AppHandle, state: State<DbState>, id: i64) -> Result<(), S
         }
     } else {
         exiger_licence(&state)?;
+        if !files::ouvrable_sans_risque(&path) {
+            files::montrer_dans_dossier(&path)?;
+            return Err(files::refus_type_inconnu(&path));
+        }
     }
     files::ouvrir_document(&path)?;
     suivre_impression(&app, &state, id, &path);
@@ -252,6 +256,10 @@ pub fn print_file(
     let path = queue_item_path(&state, id)?;
     if crate::signature_maj::est_programme(&path) {
         return Err("Un programme ne s'imprime pas.".to_string());
+    }
+    if !files::ouvrable_sans_risque(&path) {
+        files::montrer_dans_dossier(&path)?;
+        return Err(files::refus_type_inconnu(&path));
     }
     // Demandé par une gérante sur le terrain : « Imprimer » ouvre le
     // document dans son programme habituel (lecteur PDF, Photos, Word…),

@@ -89,10 +89,17 @@ pub fn est_programme(chemin: &Path) -> bool {
         "exe", "msi", "bat", "cmd", "com", "scr", "pif", "ps1", "vbs", "vbe", "js", "jse", "hta",
         "lnk",
     ];
-    chemin
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| PROGRAMMES.contains(&e.to_ascii_lowercase().as_str()))
+    extension_reelle(chemin).is_some_and(|e| PROGRAMMES.contains(&e.as_str()))
+}
+
+/// L'extension que Windows retiendra : en minuscules, après avoir ôté les
+/// points et espaces de fin qu'il efface lui-même (« virus.exe. » est un
+/// .exe pour Windows, pas un fichier sans extension).
+pub fn extension_reelle(chemin: &Path) -> Option<String> {
+    let nom = chemin.file_name()?.to_string_lossy();
+    let nom = nom.trim_end_matches(['.', ' ']);
+    let (_, extension) = nom.rsplit_once('.')?;
+    (!extension.is_empty()).then(|| extension.to_ascii_lowercase())
 }
 
 #[cfg(test)]
@@ -158,5 +165,7 @@ mod tests {
         assert!(est_programme(Path::new("facture.pdf.lnk")));
         assert!(!est_programme(Path::new("cv.pdf")));
         assert!(!est_programme(Path::new("sans-extension")));
+        assert!(est_programme(Path::new("virus.exe.")));
+        assert!(est_programme(Path::new("virus.EXE . ")));
     }
 }
