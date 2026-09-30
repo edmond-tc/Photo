@@ -16,6 +16,14 @@ on:
       - ".github/workflows/build-windows.yml"
   workflow_dispatch: {}
 
+
+# Une seule construction à la fois : une version plus récente annule celle
+# en cours. Sinon une ANCIENNE version pouvait finir la dernière et
+# remplacer la bonne sur la page de téléchargement.
+concurrency:
+  group: build-windows
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest

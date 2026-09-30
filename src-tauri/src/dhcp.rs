@@ -101,9 +101,11 @@ pub async fn demarrer(
 /// Tourne indéfiniment (jusqu'à ce que le point d'accès soit désactivé —
 /// voir `hotspot::desactiver`, qui annule cette tâche).
 async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
-    let mut tampon = [0u8; 576];
+    // 1500 et non 576 : certains téléphones envoient des demandes plus
+    // longues que le minimum de la norme, et une demande tronquée est perdue.
+    let mut tampon = [0u8; 1500];
     loop {
-        let taille = match socket.recv(&mut tampon).await {
+        let (taille, expediteur) = match socket.recv_from(&mut tampon).await {
             Ok(v) => v,
             Err(_) => {
                 // Carte Wi-Fi réinitialisée, téléphone parti (Windows signale
@@ -131,7 +133,17 @@ async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
             // s'est tu.
             let [a, b, c, _] = adresse_serveur.octets();
             let donnee = Ipv4Addr::new(a, b, c, adresse_pour(demande.chaddr()));
-            noter(format!("{type_demande} de {mac} → {donnee}"));
+            if type_demande == "?" {
+                // Demande illisible : on note d'où elle vient et son début
+                // brut, pour comprendre sur le terrain qui l'envoie.
+                let debut: String = tampon[..taille.min(48)]
+                    .iter()
+                    .map(|o| format!("{o:02x}"))
+                    .collect();
+                noter(format!("? illisible de {expediteur}, {taille} octets : {debut}"));
+            } else {
+                noter(format!("{type_demande} de {mac} → {donnee}"));
+            }
             if type_demande == "Request" {
                 crate::arrivees::vu(donnee);
             }
