@@ -1176,20 +1176,36 @@ p { margin: 0; }
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${baseUrl()}/envoyer`);
       xhr.timeout = 15 * 60 * 1000;
+      // Plus rien ne passe depuis 45 s (Wi-Fi coupé, écran verrouillé) : on
+      // le dit au client au lieu de le laisser devant une barre figée.
+      let dernierProgres = Date.now();
+      let bloque = false;
+      const surveillance = setInterval(() => {
+        if (Date.now() - dernierProgres > 45000) { bloque = true; xhr.abort(); }
+      }, 5000);
+      const fini = () => clearInterval(surveillance);
       xhr.upload.onprogress = (e) => {
+        dernierProgres = Date.now();
         if (!e.lengthComputable) return;
         const pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
         $("#barre").style.width = pct + "%";
-        $("#chiffres").textContent = `${pct} % · ${mo(e.loaded)} sur ${mo(e.total)}${vitesse(e.loaded, e.total)}`;
+        $("#chiffres").textContent = `${pct} % · ${mo(e.loaded)} sur ${mo(e.total)}${vitesse(e.loaded, e.total)} — gardez l'écran allumé`;
         try { app && app.garderLien(); } catch (_) {}
       };
-      xhr.upload.onload = () => { $("#chiffres").textContent = "Enregistrement par la boutique…"; };
+      xhr.upload.onload = () => { fini(); $("#chiffres").textContent = "Enregistrement par la boutique…"; };
       xhr.onload = () => {
+        fini();
         if (xhr.status >= 200 && xhr.status < 300) { try { ok(JSON.parse(xhr.responseText)); } catch (_) { ok({}); } }
         else ko(new Error(xhr.responseText && xhr.responseText.length < 200 ? xhr.responseText : "La boutique a refusé l'envoi. Réessayez."));
       };
-      xhr.onerror = () => ko(new Error("La liaison avec la boutique a été coupée. Restez près du guichet et réessayez."));
-      xhr.ontimeout = () => ko(new Error("L'envoi a pris trop de temps. Réessayez."));
+      xhr.onerror = () => { fini(); ko(new Error("La liaison avec la boutique a été coupée. Restez près du guichet et réessayez.")); };
+      xhr.ontimeout = () => { fini(); ko(new Error("L'envoi a pris trop de temps. Réessayez.")); };
+      xhr.onabort = () => {
+        fini();
+        ko(new Error(bloque
+          ? "L'envoi s'est arrêté : le Wi-Fi de la boutique a été coupé, ou l'écran s'est verrouillé. Vérifiez que vous êtes toujours sur le Wi-Fi de la boutique, puis touchez de nouveau « Envoyer », écran allumé."
+          : "Envoi annulé."));
+      };
       xhr.send(form);
     });
   }

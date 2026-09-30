@@ -14,11 +14,36 @@
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 
-const PERIODE: Duration = Duration::from_secs(20);
+const PERIODE: Duration = Duration::from_secs(10);
 
 /// Au démarrage, `hotspot::reprendre_point_acces_existant` et la tâche de
-/// démarrage de Windows ont une minute pour faire leur travail d'abord.
-const ATTENTE_DEMARRAGE: Duration = Duration::from_secs(75);
+/// démarrage de Windows travaillent d'abord (une relance du gardien pendant
+/// ce temps ne ferait que refaire la même chose).
+const ATTENTE_DEMARRAGE: Duration = Duration::from_secs(30);
+
+/// Posé quand le gérant ouvre la fenêtre du QR : le gardien vérifie tout de
+/// suite, sans attendre son tour ni la pause entre deux relances. Un client
+/// est sans doute devant lui, prêt à scanner.
+static VERIFIER_MAINTENANT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Demande une vérification immédiate du Wi-Fi (fenêtre du QR ouverte).
+#[tauri::command]
+pub fn wifi_verifier_maintenant() {
+    VERIFIER_MAINTENANT.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Attend la prochaine vérification : `PERIODE`, ou moins si le gérant
+/// vient d'ouvrir le QR. Rend `true` dans ce second cas.
+fn attendre_tour() -> bool {
+    let debut = Instant::now();
+    while debut.elapsed() < PERIODE {
+        if VERIFIER_MAINTENANT.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    false
+}
 
 /// Entre deux relances : une relance prend jusqu'à une minute.
 const ENTRE_RELANCES: Duration = Duration::from_secs(60);
@@ -61,15 +86,24 @@ pub fn demarrer(app: tauri::AppHandle) {
         let mut derniere_relance: Option<Instant> = None;
         let mut echecs_suivis = 0u32;
         let mut derniere_facade: Option<Instant> = None;
+        let mut empeche_veille = false;
         loop {
-            std::thread::sleep(PERIODE);
-            if debut.elapsed() < ATTENTE_DEMARRAGE {
+            let demande_du_gerant = attendre_tour();
+            if debut.elapsed() < ATTENTE_DEMARRAGE && !demande_du_gerant {
                 continue;
             }
-            if reglage(&app, "wifi_garder_allume").as_deref() != Some("oui")
-                || reglage(&app, "wifi_type_reseau").as_deref() == Some("routeur_externe")
-                || crate::reception_directe::est_active(&app)
-            {
+            // La réception directe ne l'arrête plus : le Wi-Fi de la
+            // boutique passe avant elle (voir reception_directe.rs).
+            let garder = reglage(&app, "wifi_garder_allume").as_deref() == Some("oui")
+                && reglage(&app, "wifi_type_reseau").as_deref() != Some("routeur_externe");
+            // Comme une box : le PC ne s'endort plus tant que le Wi-Fi de
+            // la boutique doit rester allumé (en veille, plus de Wi-Fi du
+            // tout). L'écran, lui, peut s'éteindre.
+            if garder != empeche_veille {
+                crate::reception_directe::garder_eveille(garder);
+                empeche_veille = garder;
+            }
+            if !garder {
                 continue;
             }
             let methode = reglage(&app, "wifi_methode").unwrap_or_default();
@@ -90,6 +124,7 @@ pub fn demarrer(app: tauri::AppHandle) {
             // Relances espacées, et de plus en plus après des échecs : une
             // carte vraiment en panne ne doit pas faire tourner le PC en rond.
             let pause = ENTRE_RELANCES * (1 + echecs_suivis.min(9));
+            let pause = if demande_du_gerant { Duration::from_secs(15) } else { pause };
             if derniere_relance.is_some_and(|t| t.elapsed() < pause) {
                 continue;
             }

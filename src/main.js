@@ -1056,6 +1056,9 @@ async function afficherQr() {
     </p>`;
   urlEl.textContent = "";
   ouvrirModal("modal-qr");
+  // Un client est sans doute là, prêt à scanner : le PC vérifie tout de
+  // suite que son Wi-Fi est bien allumé, et le rallume sinon.
+  invoke("wifi_verifier_maintenant").catch(() => {});
 
   try {
     const info = await invoke("get_server_info");
@@ -2545,6 +2548,20 @@ async function rendreReglages(corps) {
     })
   );
   corps.appendChild(secDossier);
+
+  // Programme d'ouverture des documents (fenêtre « Ouvrir avec » de Windows)
+  const secOuverture = document.createElement("section");
+  secOuverture.innerHTML = `<h3>Ouverture des documents</h3>
+    <p style="font-size:0.85rem; margin:0 0 0.6rem">La première fois qu'un type de document est ouvert
+    (PDF, Word, photo…), Windows demande avec quel programme l'ouvrir. Choisissez votre lecteur
+    et touchez « Toujours » : il sera utilisé à chaque fois ensuite.</p>`;
+  secOuverture.appendChild(
+    bouton("Redemander le programme", "btn-secondaire", async () => {
+      await invoke("oublier_programmes_ouverture");
+      toast("✓ Windows redemandera le programme à la prochaine ouverture");
+    })
+  );
+  corps.appendChild(secOuverture);
 
   // Annonce des commandes (voix de Windows, sans internet)
   const secAnnonce = document.createElement("section");

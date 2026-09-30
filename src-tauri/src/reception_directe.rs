@@ -590,19 +590,14 @@ pub fn demarrer(app: AppHandle) {
                 garder_eveille(reglages.active);
                 empeche_veille = reglages.active;
             }
-            if reglages.active && crate::hotspot::point_acces_actif() {
+            if reglages.active && wifi_boutique_prioritaire(&app) {
                 // Les deux méthodes se disputent la même carte Wi-Fi : une
                 // carte ne peut pas à la fois créer un réseau et rejoindre
-                // sans cesse ceux des téléphones. La réception directe,
-                // choisie par le gérant, a la priorité : on coupe le Wi-Fi
-                // créé par le PC (et le gardien ne le rallume plus).
-                etat("Arrêt du Wi-Fi créé par le PC : la réception directe a besoin de la carte Wi-Fi…");
-                noter("📴 Wi-Fi créé par le PC arrêté : la réception directe (le PC rejoint le téléphone) a la carte Wi-Fi.".to_string());
-                let app2 = app.clone();
-                let _ = tauri::async_runtime::block_on(async move {
-                    crate::commands::desactiver_point_acces_local(app2.state(), app2.clone()).await
-                });
-                crate::hotspot::definir_adresse_active(None);
+                // sans cesse ceux des téléphones. Le Wi-Fi de la boutique a
+                // la priorité (demande du terrain : il doit être allumé en
+                // permanence, comme une box). La réception directe attend
+                // donc, sans rien couper, que le gérant l'éteigne.
+                etat("En pause : le Wi-Fi de la boutique est allumé et a la priorité.");
             } else if reglages.active {
                 un_tour(&app, &reglages, &mut mis_a_l_ecart, &mut fond);
             } else {
@@ -613,11 +608,23 @@ pub fn demarrer(app: AppHandle) {
     });
 }
 
+/// Le gérant garde le Wi-Fi de la boutique allumé (ou il l'est déjà) :
+/// la réception directe ne touche pas à la carte Wi-Fi.
+fn wifi_boutique_prioritaire(app: &AppHandle) -> bool {
+    if crate::hotspot::point_acces_actif() {
+        return true;
+    }
+    let state = app.state::<crate::db::DbState>();
+    let Ok(conn) = state.0.lock() else { return false };
+    crate::db::get_setting(&conn, "wifi_garder_allume").as_deref() == Some("oui")
+        && crate::db::get_setting(&conn, "wifi_type_reseau").as_deref() != Some("routeur_externe")
+}
+
 /// Empêche le PC de se mettre en veille tout seul tant que la réception
 /// directe est active (l'écran, lui, peut s'éteindre). En veille, plus rien
 /// ne tourne : aucun client ne pourrait être servi.
 #[cfg(windows)]
-fn garder_eveille(oui: bool) {
+pub(crate) fn garder_eveille(oui: bool) {
     use windows::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
     // SAFETY : appel sans pointeur ; l'état reste attaché à ce fil, qui vit
     // aussi longtemps que l'application.
@@ -627,7 +634,7 @@ fn garder_eveille(oui: bool) {
 }
 
 #[cfg(not(windows))]
-fn garder_eveille(_oui: bool) {}
+pub(crate) fn garder_eveille(_oui: bool) {}
 
 fn un_tour(
     app: &AppHandle,

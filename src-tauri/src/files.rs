@@ -318,97 +318,70 @@ mod tests_types_ouvrables {
     }
 }
 
-/// Ouvre un document comme le gérant en a l'habitude. Pour un PDF : dans le
-/// vrai lecteur PDF installé sur le PC (Adobe, Foxit, Sumatra…), même si
-/// Windows a mis Edge par défaut — demandé sur le terrain : la fenêtre
-/// d'impression d'Edge n'offre pas les « Propriétés » de l'imprimante.
-pub fn ouvrir_document(path: &Path) -> Result<(), String> {
-    let est_pdf = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
-    if est_pdf {
-        if let Some(lecteur) = lecteur_pdf_installe() {
-            if std::process::Command::new(&lecteur).arg(path).spawn().is_ok() {
-                return Ok(());
-            }
-        }
+/// Ouvre un document dans le programme que le gérant a choisi.
+///
+/// `demander` : la PREMIÈRE fois pour ce type de fichier (voir
+/// `commands::premiere_ouverture`), Windows montre sa fenêtre « Comment
+/// voulez-vous ouvrir ce fichier ? », avec « Toujours ». Le gérant choisit
+/// son lecteur (Adobe, Foxit, Word…) une fois pour toutes ; ensuite on
+/// ouvre simplement avec ce choix. Demandé sur le terrain : l'application
+/// ouvrait tout dans Edge, sans jamais demander.
+pub fn ouvrir_document(path: &Path, demander: bool) -> Result<(), String> {
+    if demander {
+        return ouvrir_avec_choix(path);
     }
     shell_open(path, "open")
 }
 
-/// Le premier lecteur PDF « de bureau » trouvé sur ce PC.
+/// La fenêtre « Ouvrir avec » de Windows, qui ouvre ensuite le document.
 #[cfg(windows)]
-pub fn lecteur_pdf_installe() -> Option<std::path::PathBuf> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const PROGRAMMES: [&str; 10] = [
-        "AcroRd32.exe", "Acrobat.exe", "FoxitPDFReader.exe", "FoxitReader.exe",
-        "FoxitPDFEditor.exe", "SumatraPDF.exe", "PDFXEdit.exe", "PDFXCview.exe",
-        "NitroPDF.exe", "NitroPDFReader.exe",
-    ];
-    const RACINES: [&str; 3] = [
-        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths",
-        r"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths",
-        r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths",
-    ];
-    for programme in PROGRAMMES {
-        for racine in RACINES {
-            let Ok(sortie) = std::process::Command::new("reg")
-                .args(["query", &format!("{racine}\\{programme}"), "/ve"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output()
-            else {
-                continue;
-            };
-            if let Some(chemin) = lire_valeur_reg(&String::from_utf8_lossy(&sortie.stdout)) {
-                let chemin = std::path::PathBuf::from(chemin);
-                if chemin.is_file() {
-                    return Some(chemin);
-                }
+fn ouvrir_avec_choix(path: &Path) -> Result<(), String> {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{
+        SHOpenWithDialog, OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OAIF_REGISTER_EXT, OPENASINFO,
+        OPEN_AS_INFO_FLAGS,
+    };
+    // Choix annulé par le gérant (« ERROR_CANCELLED ») : on n'ouvre rien.
+    const ANNULE: i32 = 0x800704C7_u32 as i32;
+    let chemin = path.to_path_buf();
+    // La fenêtre attend le choix du gérant : dans son propre fil, pour ne
+    // pas figer l'application pendant ce temps.
+    std::thread::spawn(move || {
+        let fichier = HSTRING::from(chemin.as_os_str());
+        let info = OPENASINFO {
+            pcszFile: PCWSTR(fichier.as_ptr()),
+            pcszClass: PCWSTR::null(),
+            oaifInFlags: OPEN_AS_INFO_FLAGS(OAIF_ALLOW_REGISTRATION.0 | OAIF_REGISTER_EXT.0 | OAIF_EXEC.0),
+        };
+        // SAFETY : `fichier` vit jusqu'à la fin de l'appel ; la fenêtre est
+        // modale et ne garde rien après.
+        let resultat = unsafe {
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            SHOpenWithDialog(HWND(std::ptr::null_mut()), &info)
+        };
+        if let Err(e) = resultat {
+            if e.code().0 != ANNULE {
+                let _ = shell_open(&chemin, "open");
             }
         }
-    }
-    // Emplacements habituels, pour une installation sans « App Paths ».
-    for base in [std::env::var("ProgramFiles").ok(), std::env::var("ProgramFiles(x86)").ok()].into_iter().flatten() {
-        for relatif in [
-            r"Adobe\Acrobat DC\Acrobat\Acrobat.exe",
-            r"Adobe\Acrobat Reader DC\Reader\AcroRd32.exe",
-            r"Adobe\Acrobat Reader\Reader\AcroRd32.exe",
-            r"Foxit Software\Foxit PDF Reader\FoxitPDFReader.exe",
-            r"SumatraPDF\SumatraPDF.exe",
-        ] {
-            let chemin = std::path::Path::new(&base).join(relatif);
-            if chemin.is_file() {
-                return Some(chemin);
-            }
-        }
-    }
-    None
+    });
+    Ok(())
 }
 
 #[cfg(not(windows))]
-pub fn lecteur_pdf_installe() -> Option<std::path::PathBuf> {
-    None
+fn ouvrir_avec_choix(path: &Path) -> Result<(), String> {
+    shell_open(path, "open")
 }
 
-/// Lit la valeur d'une ligne `reg query … /ve` : « (par défaut) REG_SZ C:\… ».
-fn lire_valeur_reg(sortie: &str) -> Option<String> {
-    sortie.lines().find_map(|ligne| {
-        let (_, valeur) = ligne.split_once("REG_SZ").or_else(|| ligne.split_once("REG_EXPAND_SZ"))?;
-        let valeur = valeur.trim().trim_matches('"').to_string();
-        (!valeur.is_empty()).then_some(valeur)
-    })
-}
-
-#[cfg(test)]
-mod tests_lecteur_pdf {
-    #[test]
-    fn lit_le_chemin_du_lecteur_dans_la_reponse_du_registre() {
-        let sortie = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\...\\AcroRd32.exe\r\n    (par défaut)    REG_SZ    \"C:\\Program Files\\Adobe\\AcroRd32.exe\"\r\n";
-        assert_eq!(super::lire_valeur_reg(sortie).as_deref(), Some("C:\\Program Files\\Adobe\\AcroRd32.exe"));
-        assert_eq!(super::lire_valeur_reg("ERREUR : clé introuvable"), None);
-    }
+/// Extension du fichier, en minuscules : la clé du « programme déjà
+/// choisi » (voir `commands::premiere_ouverture`).
+pub fn extension_minuscule(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.trim_end_matches(['.', ' ']).to_ascii_lowercase())
+        .filter(|e| !e.is_empty())
 }
 
 #[cfg(not(windows))]

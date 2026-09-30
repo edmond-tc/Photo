@@ -259,8 +259,14 @@
 
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/envoyer');
+    // Plus rien ne passe depuis 45 s : on le dit, au lieu d'une barre figée.
+    var dernierProgres = new Date().getTime();
+    var surveillance = setInterval(function () {
+      if (new Date().getTime() - dernierProgres > 45000) { xhr.abort(); }
+    }, 5000);
     if (xhr.upload) {
       xhr.upload.onprogress = function (ev) {
+        dernierProgres = new Date().getTime();
         if (!ev.lengthComputable) return;
         var p = Math.round(ev.loaded / ev.total * 100);
         remplissage.style.width = p + '%';
@@ -268,6 +274,7 @@
       };
     }
     var fin = function () {
+      clearInterval(surveillance);
       document.removeEventListener('visibilitychange', guetteur);
       btnEnvoyer.disabled = false;
       btnEnvoyer.textContent = 'Envoyer à la boutique';
@@ -294,6 +301,11 @@
       erreur.textContent = cache
         ? "L'envoi s'est arrêté : le téléphone s'est verrouillé ou vous avez changé d'application. Touchez de nouveau « Envoyer », écran allumé."
         : "L'envoi a échoué. Vérifiez que vous êtes sur le Wi-Fi de la boutique, puis réessayez.";
+      erreur.hidden = false;
+    };
+    xhr.onabort = function () {
+      fin();
+      erreur.textContent = "L'envoi s'est arrêté : le Wi-Fi de la boutique a été coupé, ou l'écran s'est verrouillé. Vérifiez que vous êtes toujours sur le Wi-Fi de la boutique, puis touchez de nouveau « Envoyer », écran allumé.";
       erreur.hidden = false;
     };
     xhr.send(donnees);

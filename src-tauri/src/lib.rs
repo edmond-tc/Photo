@@ -150,6 +150,8 @@ pub fn run() {
             controle_impressions::activer_controle_impressions,
             activite::activite_du_jour,
             reception_directe::reception_directe_etat,
+            gardien_wifi::wifi_verifier_maintenant,
+            commands::oublier_programmes_ouverture,
             reception_directe::reception_directe_regler,
             reception_directe::reception_directe_preparer,
             reception_directe::reception_directe_qr,

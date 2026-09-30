@@ -1016,13 +1016,27 @@ fieldset {
   body.impression-qr #modal-qr #qr-url {
     display: none !important;
   }
+  /* Sur le papier, la fenêtre n'est plus une fenêtre : ni hauteur limitée
+     ni barre de défilement (sinon l'affiche sortait coupée, avec les
+     barres de Windows imprimées dessus). */
+  body.impression-qr #modal-qr {
+    padding: 0;
+  }
   body.impression-qr #modal-qr .modal-carte {
     box-shadow: none;
     max-width: none;
+    max-height: none;
+    overflow: visible;
+    width: auto;
+    padding: 0;
+    border-radius: 0;
   }
+  /* En centimètres : le code tient toujours dans sa colonne, quelle que
+     soit la marge choisie dans la fenêtre d'impression. */
   body.impression-qr #qr-conteneur img {
-    width: 320px;
-    height: 320px;
+    width: 6.5cm;
+    height: 6.5cm;
+    max-width: 100%;
   }
   /* Sur l'affiche, les deux codes ont la MÊME taille : il faut vraiment
      scanner les deux. Le second a longtemps été imprimé en 120 px sous un
@@ -1031,8 +1045,8 @@ fieldset {
      client debout devant l'affiche ne scanne pas un code qu'on a dessiné
      comme accessoire. */
   body.impression-qr #qr-conteneur.deux-qr img {
-    width: 260px;
-    height: 260px;
+    width: 6cm;
+    height: 6cm;
   }
   body.impression-qr #qr-intro {
     text-align: center;
@@ -1305,8 +1319,20 @@ fieldset {
   margin: 0;
   font-weight: 700;
 }
+/* Une feuille A4 blanche, rien d'autre. */
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
 @media print {
-  body.impression-qr .deux-methodes { gap: 0.8rem; }
+  html:has(body.impression-qr),
+  body.impression-qr {
+    background: #fff;
+    overflow: visible !important;
+    height: auto;
+  }
+  body.impression-qr .deux-methodes { gap: 0.8rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  body.impression-qr .methode { break-inside: avoid; }
   body.impression-qr .methode { border-color: #000; }
   body.impression-qr .methode-titre { font-size: 1.6rem; }
   body.impression-qr .methode-etapes { font-size: 1.05rem; }

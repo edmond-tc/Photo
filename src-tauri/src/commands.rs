@@ -197,9 +197,36 @@ pub fn open_file(app: AppHandle, state: State<DbState>, id: i64) -> Result<(), S
             return Err(files::refus_type_inconnu(&path));
         }
     }
-    files::ouvrir_document(&path)?;
+    let demander = !crate::signature_maj::est_programme(&path) && premiere_ouverture(&state, &path);
+    files::ouvrir_document(&path, demander)?;
     suivre_impression(&app, &state, id, &path);
     Ok(())
+}
+
+/// Types de fichiers pour lesquels le gérant a déjà vu la fenêtre « Ouvrir
+/// avec » de Windows (« pdf,docx,jpg »).
+const CLE_PROGRAMMES_CHOISIS: &str = "ouverture_programmes_choisis";
+
+/// Première ouverture de ce type de fichier sur ce PC ? Si oui, le retient :
+/// la fenêtre « Ouvrir avec » n'apparaît qu'une fois par type.
+fn premiere_ouverture(state: &State<DbState>, path: &std::path::Path) -> bool {
+    let Some(extension) = files::extension_minuscule(path) else { return false };
+    let Ok(conn) = state.0.lock() else { return false };
+    let deja = db::get_setting(&conn, CLE_PROGRAMMES_CHOISIS).unwrap_or_default();
+    if deja.split(',').any(|e| e == extension) {
+        return false;
+    }
+    let liste = if deja.is_empty() { extension } else { format!("{deja},{extension}") };
+    let _ = db::set_setting(&conn, CLE_PROGRAMMES_CHOISIS, &liste);
+    true
+}
+
+/// Réglages → « Redemander le programme » : la prochaine ouverture de
+/// chaque type de fichier montre de nouveau la fenêtre « Ouvrir avec ».
+#[tauri::command]
+pub fn oublier_programmes_ouverture(state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::set_setting(&conn, CLE_PROGRAMMES_CHOISIS, "").map_err(|e| e.to_string())
 }
 
 /// Document ouvert dans son programme : son impression, quand elle aura
@@ -269,7 +296,8 @@ pub fn print_file(
     // imposée. Le journal des impressions (impression.rs) compte toujours
     // les pages réellement sorties, quelle que soit l'imprimante.
     let _ = imprimante;
-    files::ouvrir_document(&path)?;
+    let demander = premiere_ouverture(&state, &path);
+    files::ouvrir_document(&path, demander)?;
     suivre_impression(&app, &state, id, &path);
     Ok(())
 }

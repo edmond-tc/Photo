@@ -173,6 +173,14 @@ pub const NOM_TACHE_DEMARRAGE: &str = "Photocopie Benin - Wi-Fi boutique";
 /// reste là, et lui dira ce qui ne va pas.
 const SCRIPT_DEMARRAGE: &str = r#"
 $ErrorActionPreference = 'SilentlyContinue'
+# Windows ne doit plus éteindre la carte Wi-Fi « pour économiser l'énergie » :
+# le Wi-Fi de la boutique disparaissait sans prévenir, en pleine journée.
+Get-NetAdapter -Physical | Where-Object { $_.PhysicalMediaType -like '*802.11*' } | ForEach-Object {
+    $gestion = Get-NetAdapterPowerManagement -Name $_.Name
+    if ($gestion -and $gestion.AllowComputerToTurnOffDevice -ne 'Disabled') {
+        Disable-NetAdapterPowerManagement -Name $_.Name -NoRestart
+    }
+}
 # À l'ouverture de session, le service Wi-Fi et la carte ne sont souvent
 # pas encore prêts : un seul essai échouait en silence, et le gérant
 # trouvait le Wi-Fi éteint (trouvé à l'audit). On insiste 2 minutes.
@@ -184,9 +192,17 @@ for ($i = 0; $i -lt 40; $i++) {
 }
 $adaptateur = Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*Hosted Network Virtual Adapter*' } | Select-Object -First 1
 if ($adaptateur) {
-    Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
-    New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "__ADRESSE__" -PrefixLength 24 -ErrorAction SilentlyContinue | Out-Null
-    New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "4.3.2.1" -PrefixLength 32 -SkipAsSource $true -ErrorAction SilentlyContinue | Out-Null
+    # On ne touche aux adresses que s'il en manque une : les retirer coupait
+    # net les envois en cours (le gardien relance ce script en journée).
+    $adresses = @(Get-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -AddressFamily IPv4 | ForEach-Object { $_.IPAddress })
+    if ($adresses -notcontains "__ADRESSE__") {
+        Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
+        New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "__ADRESSE__" -PrefixLength 24 -ErrorAction SilentlyContinue | Out-Null
+        $adresses = @()
+    }
+    if ($adresses -notcontains "4.3.2.1") {
+        New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "4.3.2.1" -PrefixLength 32 -SkipAsSource $true -ErrorAction SilentlyContinue | Out-Null
+    }
     Set-NetIPInterface -InterfaceIndex $adaptateur.InterfaceIndex -WeakHostReceive Enabled -ErrorAction SilentlyContinue
 }
 "#;
