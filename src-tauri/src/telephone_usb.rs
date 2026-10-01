@@ -824,8 +824,12 @@ pub fn surveiller_telephones(app: tauri::AppHandle) {
             if !nouveau {
                 continue;
             }
+            // L'écran montre tout de suite « Lecture du téléphone… » : sans
+            // signe de vie, le gérant croyait que rien ne se passait.
+            let _ = app.emit("telephone-lecture", ());
             let debut = std::time::Instant::now();
             let mut consigne_donnee = false;
+            let mut trouve = false;
             while debut.elapsed() < std::time::Duration::from_secs(90) {
                 // Accès direct seulement (rapide) pendant la première
                 // minute : relire par PowerShell toutes les 4 s, pendant que
@@ -833,6 +837,7 @@ pub fn surveiller_telephones(app: tauri::AppHandle) {
                 let secours = debut.elapsed() > std::time::Duration::from_secs(60);
                 let lecture = lire_telephone_avec(secours).unwrap_or_default();
                 if lecture.dossiers_whatsapp > 0 {
+                    trouve = true;
                     let _ = app.emit("telephone-branche", ());
                     break;
                 }
@@ -848,6 +853,9 @@ pub fn surveiller_telephones(app: tauri::AppHandle) {
                     connus = encore;
                     break;
                 }
+            }
+            if !trouve {
+                let _ = app.emit("telephone-abandon", ());
             }
         }
     });

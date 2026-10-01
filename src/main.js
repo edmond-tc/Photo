@@ -3329,7 +3329,21 @@ async function demarrerApplication() {
   // Téléphone vu par Windows mais pas encore lisible (verrouillé, ou
   // « Transfert de fichiers » pas encore choisi) : on dit quoi faire. Le PC
   // relit tout seul pendant 90 s, la liste s'ouvrira dès que possible.
+  await listen("telephone-lecture", () => montrerLectureTelephone());
+  await listen("telephone-abandon", () => {
+    if (modeListe === "telephone-lecture") {
+      fermerLectureTelephone();
+      toast("📱 Le téléphone n'a pas montré ses fichiers. Déverrouillez-le, choisissez « Transfert de fichiers », puis appuyez sur 📱.", "attention", 12000);
+    }
+  });
   await listen("telephone-attente", () => {
+    if (modeListe === "telephone-lecture" && !document.querySelector("#modal-usb").hidden) {
+      montrerLectureTelephone(
+        "📱 DÉVERROUILLEZ le téléphone, touchez la notification « USB » et choisissez « Transfert de fichiers » " +
+          "(et « Autoriser » si demandé). La liste s'affichera ici toute seule."
+      );
+      return;
+    }
     toast(
       "📱 Téléphone branché. DÉVERROUILLEZ-le, touchez la notification « USB » et choisissez " +
         "« Transfert de fichiers » (et « Autoriser » si le téléphone le demande). La liste s'ouvrira toute seule.",
@@ -3345,6 +3359,10 @@ async function demarrerApplication() {
   });
   await listen("telephone-debranche", () => {
     const modal = document.querySelector("#modal-usb");
+    if (modeListe === "telephone-lecture") {
+      fermerLectureTelephone();
+      return;
+    }
     const copieEnCours = document.querySelector("#btn-usb-importer").disabled;
     // Pendant une copie, on laisse le résultat s'afficher : il dira ce qui
     // est arrivé en entier et ce qui manque.
@@ -3463,24 +3481,49 @@ async function relireClesUsb() {
 /// Le client a envoyé son document au gérant par WhatsApp : le téléphone
 /// est branché par câble, et on montre ses derniers fichiers reçus, le plus
 /// récent en haut. Un clic, une case, et le fichier est dans la file.
+/// Fenêtre « Lecture du téléphone… », ouverte tout de suite (branchement ou
+/// bouton 📱) : la lecture prend quelques secondes, et sans signe de vie le
+/// gérant croyait que rien ne se passait. La liste la remplace ensuite.
+function montrerLectureTelephone(message) {
+  const modal = document.querySelector("#modal-usb");
+  // Ne pas écraser une liste déjà affichée (clé USB, ou téléphone).
+  if (!modal.hidden && modeListe !== "telephone-lecture") return;
+  modeListe = "telephone-lecture";
+  document.querySelector("#usb-titre").textContent = "Fichiers WhatsApp du téléphone";
+  document.querySelector("#usb-intro").textContent = message || "Lecture du téléphone…";
+  document.querySelector("#usb-liste").innerHTML =
+    `<li class="chargement"><span class="chargement-rond" aria-hidden="true"></span> Lecture du téléphone, quelques secondes…</li>`;
+  const bouton = document.querySelector("#btn-usb-importer");
+  bouton.disabled = true;
+  bouton.textContent = "Patientez…";
+  ouvrirModal("modal-usb");
+}
+
+function fermerLectureTelephone() {
+  if (modeListe === "telephone-lecture") document.querySelector("#modal-usb").hidden = true;
+}
+
 async function afficherDocumentsTelephone(options) {
   // `auto` : ouverture déclenchée par le branchement, pas par le bouton.
   const auto = Boolean(options && options.auto === true);
   const bouton = document.querySelector("#btn-telephone");
   if (bouton.disabled) return;
   const modal = document.querySelector("#modal-usb");
-  if (auto && modal && !modal.hidden) return;
+  if (auto && modal && !modal.hidden && modeListe !== "telephone-lecture") return;
   bouton.disabled = true;
-  if (!auto) toast("Lecture du téléphone… (quelques secondes)", "succes", 6000);
+  montrerLectureTelephone();
   let lecture;
   try {
     lecture = await invoke("documents_whatsapp_telephone", { frais: !auto });
   } catch (e) {
+    fermerLectureTelephone();
     if (!auto) toast(String(e), "attention", 9000);
     return;
   } finally {
     bouton.disabled = false;
   }
+  // Rien à montrer : la fenêtre « Lecture… » se referme avant tout message.
+  if (!lecture.telephones || !lecture.dossiers_whatsapp || !lecture.documents.length) fermerLectureTelephone();
 
   const conseil =
     "Branchez le câble, DÉVERROUILLEZ le téléphone, puis dans la notification « USB » " +
