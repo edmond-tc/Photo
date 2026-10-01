@@ -410,6 +410,14 @@ pub fn clients_reseau_heberge() -> Option<Vec<String>> {
 
 /// Méthode 1 à sauter : sur ce PC, une autre méthode a déjà réussi. La
 /// retenter demanderait « Oui » administrateur pour rien à chaque relance.
+/// Méthodes à ne pas essayer (assistant « Tester avec mon téléphone » :
+/// une méthode que Windows accepte mais où le téléphone n'arrive pas).
+pub static METHODES_EXCLUES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn methode_exclue(nom: &str) -> bool {
+    METHODES_EXCLUES.lock().map(|l| l.iter().any(|m| m == nom)).unwrap_or(false)
+}
+
 pub static SAUTER_RESEAU_HEBERGE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -1622,7 +1630,7 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
 
     // Méthode 1 : sautée seulement quand Windows affirme qu'elle est
     // impossible — en cas de doute (`None`), on essaie quand même.
-    if SAUTER_RESEAU_HEBERGE.load(std::sync::atomic::Ordering::SeqCst) {
+    if SAUTER_RESEAU_HEBERGE.load(std::sync::atomic::Ordering::SeqCst) || methode_exclue("réseau hébergé") {
         echecs.push(
             "Méthode 1 (réseau hébergé) : sautée, une autre méthode a déjà marché sur ce PC."
                 .to_string(),
@@ -1651,7 +1659,9 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
         }
     }
 
-    if diagnostic.wifi_direct_go_supporte == Some(false) {
+    if methode_exclue("Wi-Fi Direct") {
+        echecs.push("Méthode 2 (Wi-Fi Direct) : écartée, le téléphone d'essai n'y arrivait pas.".to_string());
+    } else if diagnostic.wifi_direct_go_supporte == Some(false) {
         echecs.push(
             "Méthode 2 (Wi-Fi Direct) : la carte Wi-Fi de ce PC déclare ne pas savoir créer de \
              groupe Wi-Fi Direct."
@@ -1697,7 +1707,9 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
     // Méthode 3 : le « Point d'accès mobile » de Windows, seule voie que
     // les cartes récentes (Intel, Realtek…) acceptent encore. Voir
     // `point_acces_mobile.rs` pour le pourquoi.
-    match activer_point_acces_mobile(ssid, mot_de_passe) {
+    if methode_exclue(METHODE_POINT_ACCES_MOBILE) {
+        echecs.push("Méthode 3 (point d'accès mobile) : écartée, le téléphone d'essai n'y arrivait pas.".to_string());
+    } else { match activer_point_acces_mobile(ssid, mot_de_passe) {
         Ok(adresse) => {
             if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
                 *garde = Some(adresse);
@@ -1709,7 +1721,7 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
             });
         }
         Err(e) => echecs.push(format!("Méthode 3 (point d'accès mobile) : {e}")),
-    }
+    } }
 
     Err(format!(
         "Aucune des méthodes disponibles n'a pu créer le réseau Wi-Fi sur ce PC.\n\n{}",

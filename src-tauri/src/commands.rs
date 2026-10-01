@@ -1072,6 +1072,60 @@ pub async fn activer_point_acces_local(
     })
 }
 
+/// Assistant « Tester avec mon téléphone » : (téléphones vus, pages
+/// ouvertes) depuis le lancement, à comparer avant et après l'essai.
+#[tauri::command]
+pub fn assistant_compteurs() -> (u64, u64) {
+    crate::arrivees::compteurs()
+}
+
+/// Assistant : la méthode Wi-Fi en place sur ce PC (vide si jamais activé).
+#[tauri::command]
+pub fn assistant_methode_actuelle(state: State<DbState>) -> String {
+    state
+        .0
+        .lock()
+        .ok()
+        .and_then(|c| db::get_setting(&c, "wifi_methode"))
+        .unwrap_or_default()
+}
+
+/// Assistant : les antivirus à pare-feu présents (Kaspersky, Avast…), qui
+/// bloquent souvent les téléphones.
+#[tauri::command]
+pub async fn assistant_pare_feux() -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(crate::pare_feu::pare_feux_tiers)
+        .await
+        .unwrap_or_default()
+}
+
+/// Assistant : le téléphone n'arrive pas avec la méthode en place. On
+/// l'arrête et on rallume le Wi-Fi en écartant les méthodes déjà essayées.
+#[tauri::command]
+pub async fn assistant_methode_suivante(
+    state: State<'_, DbState>,
+    etat_point_acces: State<'_, crate::hotspot::EtatPointAcces>,
+    app: AppHandle,
+    deja_essayees: Vec<String>,
+) -> Result<ResultatActivationWifi, String> {
+    {
+        let taches = std::mem::take(&mut *etat_point_acces.0.lock().map_err(|e| e.to_string())?);
+        for tache in taches {
+            tache.abort();
+        }
+    }
+    let _ = tauri::async_runtime::spawn_blocking(crate::hotspot::desactiver_par_tous_les_moyens).await;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    if let Ok(mut exclues) = crate::hotspot::METHODES_EXCLUES.lock() {
+        *exclues = deja_essayees;
+    }
+    let resultat = activer_point_acces_local(state, etat_point_acces, app).await;
+    if let Ok(mut exclues) = crate::hotspot::METHODES_EXCLUES.lock() {
+        exclues.clear();
+    }
+    resultat
+}
+
 /// Coupe le point d'accès Wi-Fi local activé par `activer_point_acces_local`,
 /// ainsi que les serveurs DHCP/DNS qui l'accompagnent.
 #[tauri::command]

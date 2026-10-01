@@ -665,6 +665,7 @@ mod tests {
     /// réglages Wi-Fi — exactement ce qui était constaté en boutique.
     #[test]
     fn n_annonce_pas_d_option_114_qu_on_ne_peut_pas_honorer() {
+        let _garde = VERROU_BAUX.lock().unwrap_or_else(|e| e.into_inner());
         let serveur = Ipv4Addr::new(192, 168, 73, 1);
 
         for type_demande in [MessageType::Discover, MessageType::Request] {

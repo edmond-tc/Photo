@@ -1164,6 +1164,15 @@ async function afficherQr() {
 
       methodes.append(parScanner, parWifi);
       conteneur.appendChild(methodes);
+      // Dernier recours, commun aux deux méthodes : l'adresse à taper si la
+      // page ne s'ouvre pas toute seule (certains téléphones ne l'ouvrent
+      // jamais). Courte, en gros, lisible de loin.
+      if (info.url) {
+        const adresse = document.createElement("p");
+        adresse.className = "adresse-a-taper";
+        adresse.innerHTML = `Rien ne s'ouvre ? Dans Chrome ou Safari, tapez : <strong>${echapperHtml(new URL(info.url).hostname)}</strong>`;
+        conteneur.appendChild(adresse);
+      }
       if (deuxCodes) {
         ajouterQr(info.qr_page_data_uri, "Scannez ce code : la page d'envoi s'ouvre");
       }
@@ -3481,6 +3490,149 @@ async function relireClesUsb() {
 /// Le client a envoyé son document au gérant par WhatsApp : le téléphone
 /// est branché par câble, et on montre ses derniers fichiers reçus, le plus
 /// récent en haut. Un clic, une case, et le fichier est dans la file.
+// ───────────── Assistant « Tester avec mon téléphone » ─────────────
+//
+// Constaté chez une cliente : Windows acceptait d'allumer le Wi-Fi par la
+// première méthode, mais les téléphones ne pouvaient pas s'y connecter. On
+// gardait quand même cette méthode. L'assistant vérifie avec un VRAI
+// téléphone (il compte les téléphones qui parlent au PC et les pages
+// ouvertes) et, si rien n'arrive, passe tout seul à la méthode suivante.
+const NOMS_METHODES = {
+  "réseau hébergé": "Méthode 1 (réseau hébergé)",
+  "Wi-Fi Direct": "Méthode 2 (Wi-Fi Direct)",
+  "point d'accès mobile": "Méthode 3 (point d'accès mobile de Windows)",
+  "réseau externe": "Box ou routeur de la boutique",
+};
+let assistantEnCours = 0;
+
+function assistantAfficher(html, boutons = []) {
+  const corps = document.querySelector("#assistant-corps");
+  if (corps.innerHTML !== html) corps.innerHTML = html;
+  // Les boutons ne sont recréés que s'ils changent : l'écran se met à jour
+  // chaque seconde, et un bouton remplacé pendant le clic le perdait.
+  const actions = document.querySelector("#assistant-actions");
+  const cle = boutons.map((b) => b[0]).join("|");
+  if (actions.dataset.cle === cle) {
+    // Mêmes boutons : on garde les éléments, mais on met à jour leur action.
+    Array.from(actions.children).forEach((el, i) => { el.onclick = boutons[i][2]; });
+    return;
+  }
+  actions.dataset.cle = cle;
+  actions.innerHTML = "";
+  for (const [texte, classe, action] of boutons) {
+    const b = bouton(texte, classe, () => {});
+    b.onclick = action;
+    actions.appendChild(b);
+  }
+}
+
+async function lancerAssistant() {
+  const jeton = ++assistantEnCours;
+  ouvrirModal("modal-assistant");
+  const essayees = [];
+  assistantAfficher(`<p class="chargement"><span class="chargement-rond" aria-hidden="true"></span> Allumage du Wi-Fi de la boutique…</p>`);
+  let methode = "";
+  try {
+    const info = await invoke("get_server_info");
+    methode = await invoke("assistant_methode_actuelle");
+    if (info.mode !== "point_acces_actif" || !methode) {
+      methode = (await invoke("activer_point_acces_local")).methode;
+    }
+  } catch (e) {
+    return assistantEchecFinal(String(e));
+  }
+  while (jeton === assistantEnCours) {
+    const resultat = await assistantEssai(jeton, methode);
+    if (resultat === "reussi" || resultat === "arrete") return;
+    if (resultat === "page-bloquee") return; // conseils affichés, le gérant choisit
+    // Personne n'est arrivé : méthode suivante.
+    essayees.push(methode);
+    assistantAfficher(`<p>❌ Avec la <strong>${echapperHtml(NOMS_METHODES[methode] || methode)}</strong>, le téléphone n'a pas pu rejoindre le Wi-Fi.</p>
+      <p class="chargement"><span class="chargement-rond" aria-hidden="true"></span> Essai d'une autre méthode… (Windows peut demander « Oui »)</p>`);
+    try {
+      methode = (await invoke("assistant_methode_suivante", { dejaEssayees: essayees })).methode;
+    } catch (e) {
+      return assistantEchecFinal(String(e));
+    }
+  }
+}
+
+/// Un essai avec la méthode en place. Rend « reussi », « personne »
+/// (aucun téléphone n'a parlé au PC), « page-bloquee » ou « arrete ».
+async function assistantEssai(jeton, methode) {
+  const info = await invoke("get_server_info").catch(() => ({}));
+  const [vusAvant, pagesAvant] = await invoke("assistant_compteurs");
+  const debut = Date.now();
+  let limite = 90;
+  let telephoneVu = false;
+  while (jeton === assistantEnCours) {
+    const [vus, pages] = await invoke("assistant_compteurs");
+    if (pages > pagesAvant) {
+      assistantAfficher(`<p style="font-size:1.2rem">✅ <strong>Ce PC est prêt.</strong></p>
+        <p>Le téléphone a rejoint le Wi-Fi et la page d'envoi s'est ouverte.</p>
+        <p>Méthode retenue : <strong>${echapperHtml(NOMS_METHODES[methode] || methode)}</strong>. Elle sera rallumée toute seule.</p>`,
+        [["Terminé", "btn-principal", () => (document.querySelector("#modal-assistant").hidden = true)]]);
+      return "reussi";
+    }
+    if (vus > vusAvant && !telephoneVu) {
+      telephoneVu = true;
+      limite = Math.max(limite, Math.round((Date.now() - debut) / 1000) + 60);
+    }
+    const reste = limite - Math.round((Date.now() - debut) / 1000);
+    if (reste <= 0) break;
+    assistantAfficher(
+      telephoneVu
+        ? `<p>📶 <strong>Le téléphone est connecté au Wi-Fi.</strong></p>
+           <p>Ouvrez maintenant la page : touchez la notification « Se connecter au réseau », ou ouvrez Chrome / Safari et tapez <strong style="font-size:1.3rem">${echapperHtml(info.url ? new URL(info.url).hostname : "4.3.2.1")}</strong></p>
+           <p class="chargement"><span class="chargement-rond" aria-hidden="true"></span> J'attends la page… ${reste} s</p>`
+        : `<p>Méthode essayée : <strong>${echapperHtml(NOMS_METHODES[methode] || methode)}</strong></p>
+           <p>Sur votre téléphone, ouvrez le <strong>Wi-Fi</strong> et touchez :</p>
+           <p style="font-size:1.5rem; font-weight:800; margin:0.2rem 0">${echapperHtml(info.reseau || "")}</p>
+           ${info.mot_de_passe ? `<p>Mot de passe : <strong style="font-size:1.4rem; letter-spacing:0.1em">${echapperHtml(info.mot_de_passe)}</strong></p>` : ""}
+           <p class="chargement"><span class="chargement-rond" aria-hidden="true"></span> J'attends le téléphone… ${reste} s</p>`,
+      [
+        ["Arrêter", "btn-secondaire", () => { assistantEnCours++; document.querySelector("#modal-assistant").hidden = true; }],
+        ...(telephoneVu ? [] : [["Le téléphone n'y arrive pas", "btn-secondaire", () => { limite = 0; }]]),
+      ]
+    );
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (jeton !== assistantEnCours) return "arrete";
+  if (!telephoneVu) return "personne";
+
+  // Le téléphone est sur le Wi-Fi mais la page n'arrive jamais : presque
+  // toujours un pare-feu d'antivirus.
+  const pareFeux = await invoke("assistant_pare_feux").catch(() => []);
+  assistantAfficher(`<p>⚠️ <strong>Le téléphone est bien connecté au Wi-Fi, mais n'arrive pas jusqu'à la page.</strong></p>
+    ${pareFeux.length
+      ? `<p>Cause très probable : le pare-feu de <strong>${echapperHtml(pareFeux.join(", "))}</strong> bloque les téléphones.</p>
+         <ol><li>Ouvrez cet antivirus, allez dans ses <strong>paramètres</strong>, puis <strong>Pare-feu</strong>.</li>
+         <li>Ajoutez <strong>photocopie-benin</strong> aux applications autorisées (ou de confiance), et mettez le réseau de la boutique en « réseau de confiance ».</li>
+         <li>S'il a une « protection contre les attaques réseau », ajoutez l'exclusion <strong>192.168.73.0/24</strong>.</li></ol>`
+      : `<p>Vérifiez que le téléphone n'a pas d'autre page ouverte, coupez ses <strong>données mobiles</strong>, puis réessayez.</p>`}`,
+    [
+      ["Réessayer", "btn-principal", () => { const j = ++assistantEnCours; assistantEssai(j, methode).then((r) => { if (r === "personne") lancerAssistant(); }); }],
+      ["Essayer une autre méthode", "btn-secondaire", async () => {
+        const j = ++assistantEnCours;
+        assistantAfficher(`<p class="chargement"><span class="chargement-rond" aria-hidden="true"></span> Essai d'une autre méthode…</p>`);
+        try {
+          const m = (await invoke("assistant_methode_suivante", { dejaEssayees: [methode] })).methode;
+          assistantEssai(j, m);
+        } catch (e) { assistantEchecFinal(String(e)); }
+      }],
+    ]);
+  return "page-bloquee";
+}
+
+function assistantEchecFinal(detail) {
+  assistantAfficher(`<p>❌ <strong>Aucune méthode de ce PC ne laisse entrer les téléphones.</strong></p>
+    <p>Deux solutions :</p>
+    <ol><li><strong>La box ou le MiFi de la boutique</strong> : branchez-y le PC (câble ou Wi-Fi), puis dans Réglages choisissez « Box ou routeur de la boutique ». Les clients rejoignent alors ce Wi-Fi-là.</li>
+    <li><strong>Une petite clé Wi-Fi USB</strong> (adaptateur « compatible point d'accès »), puis relancez ce test.</li></ol>
+    <details><summary>Détail technique</summary><pre style="white-space:pre-wrap; font-size:0.8rem">${echapperHtml(detail)}</pre></details>`,
+    [["Fermer", "btn-secondaire", () => (document.querySelector("#modal-assistant").hidden = true)]]);
+}
+
 /// Fenêtre « Lecture du téléphone… », ouverte tout de suite (branchement ou
 /// bouton 📱) : la lecture prend quelques secondes, et sans signe de vie le
 /// gérant croyait que rien ne se passait. La liste la remplace ensuite.
@@ -3761,6 +3913,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   setInterval(verifierQrAJour, 5000);
   document.querySelector("#btn-telephone").addEventListener("click", afficherDocumentsTelephone);
   document.querySelector("#btn-cle-usb").addEventListener("click", relireClesUsb);
+  document.querySelector("#btn-assistant-test").addEventListener("click", lancerAssistant);
   document.querySelector("#form-licence-blocage").addEventListener("submit", async (e) => {
     e.preventDefault();
     const champ = document.querySelector("#cle-licence-blocage");

@@ -1010,6 +1010,7 @@ fieldset {
   body.impression-qr #modal-qr #qr-aide,
   body.impression-qr #modal-qr #btn-parametres-partage,
   body.impression-qr #modal-qr #btn-activer-wifi-local,
+  body.impression-qr #modal-qr #btn-assistant-test,
   body.impression-qr #modal-qr #wifi-compte-rendu,
   body.impression-qr #modal-qr #btn-journal-telephones,
   body.impression-qr #modal-qr #btn-imprimer-qr,
@@ -1339,4 +1340,20 @@ fieldset {
   body.impression-qr .methode-grand { font-size: 1.9rem; }
   body.impression-qr .methode-fin { font-size: 1.1rem; }
   body.impression-qr #qr-affiche-secours:empty { display: none !important; }
+}
+
+/* Autocollant : l'adresse à taper si la page ne s'ouvre pas toute seule. */
+.adresse-a-taper {
+  flex: 1 1 100%;
+  text-align: center;
+  margin: 0.4rem 0 0;
+  font-size: 1rem;
+}
+.adresse-a-taper strong {
+  font-size: 1.4rem;
+  letter-spacing: 0.04em;
+}
+@media print {
+  body.impression-qr .adresse-a-taper { font-size: 1.15rem; }
+  body.impression-qr .adresse-a-taper strong { font-size: 2rem; }
 }

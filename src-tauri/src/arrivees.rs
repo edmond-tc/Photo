@@ -30,6 +30,20 @@ struct Arrivee {
 
 static ARRIVEES: Mutex<Option<HashMap<Ipv4Addr, Arrivee>>> = Mutex::new(None);
 
+/// Compteurs pour l'assistant « Tester avec mon téléphone » : combien de
+/// fois un téléphone a parlé au PC, et combien de fois une page d'envoi
+/// s'est ouverte, depuis le lancement. L'assistant compare avant et après.
+static TELEPHONES_VUS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PAGES_OUVERTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// (téléphones vus, pages ouvertes) depuis le lancement.
+pub fn compteurs() -> (u64, u64) {
+    (
+        TELEPHONES_VUS.load(std::sync::atomic::Ordering::SeqCst),
+        PAGES_OUVERTES.load(std::sync::atomic::Ordering::SeqCst),
+    )
+}
+
 fn avec<R>(f: impl FnOnce(&mut HashMap<Ipv4Addr, Arrivee>) -> R) -> Option<R> {
     let mut garde = ARRIVEES.lock().ok()?;
     Some(f(garde.get_or_insert_with(HashMap::new)))
@@ -51,6 +65,7 @@ fn vu_a(ip: Ipv4Addr, maintenant: Instant) {
     if ecarte(ip) {
         return;
     }
+    TELEPHONES_VUS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     avec(|m| {
         let a = m.entry(ip).or_insert(Arrivee {
             depuis: maintenant,
@@ -67,6 +82,8 @@ pub fn page_ouverte(ip: Ipv4Addr) {
     if ecarte(ip) {
         return;
     }
+    TELEPHONES_VUS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    PAGES_OUVERTES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let maintenant = Instant::now();
     avec(|m| {
         let a = m.entry(ip).or_insert(Arrivee {

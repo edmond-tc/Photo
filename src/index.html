@@ -112,6 +112,20 @@
       </div>
     </div>
 
+    <!-- Assistant « Tester avec mon téléphone » : vérifie avec un vrai
+         téléphone que le Wi-Fi de ce PC laisse entrer les clients, et change
+         de méthode tout seul sinon (voir lancerAssistant dans main.js). -->
+    <div id="modal-assistant" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2>🧪 Tester avec mon téléphone</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-assistant" aria-label="Fermer">✕</button>
+        </div>
+        <div id="assistant-corps"></div>
+        <div id="assistant-actions" class="usb-actions"></div>
+      </div>
+    </div>
+
     <!-- Panneau QR (réception client) -->
     <div id="modal-qr" class="modal" hidden>
       <div class="modal-carte">
@@ -147,6 +161,7 @@
           Le réseau ne se connecte pas ? Appuyez sur son nom dans la liste affichée.
         </p>
         <p id="qr-url" class="qr-url"></p>
+        <button id="btn-assistant-test" class="btn-principal">🧪 Tester avec mon téléphone</button>
         <button id="btn-activer-wifi-local" class="btn-secondaire">
           📶 Activer le Wi-Fi local de la boutique
         </button>
