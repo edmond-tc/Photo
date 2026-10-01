@@ -3627,7 +3627,7 @@ async function assistantEssai(jeton, methode) {
 function assistantEchecFinal(detail) {
   assistantAfficher(`<p>❌ <strong>Aucune méthode de ce PC ne laisse entrer les téléphones.</strong></p>
     <p>Deux solutions :</p>
-    <ol><li><strong>La box ou le MiFi de la boutique</strong> : branchez-y le PC (câble ou Wi-Fi), puis dans Réglages choisissez « Box ou routeur de la boutique ». Les clients rejoignent alors ce Wi-Fi-là.</li>
+    <ol><li><strong>La box ou le MiFi de la boutique</strong> : branchez-y le PC (câble ou Wi-Fi), puis dans Réglages, partie Wi-Fi, choisissez « Le réseau vient d'ailleurs (box, routeur…) ». Les clients rejoignent alors ce Wi-Fi-là.</li>
     <li><strong>Une petite clé Wi-Fi USB</strong> (adaptateur « compatible point d'accès »), puis relancez ce test.</li></ol>
     <details><summary>Détail technique</summary><pre style="white-space:pre-wrap; font-size:0.8rem">${echapperHtml(detail)}</pre></details>`,
     [["Fermer", "btn-secondaire", () => (document.querySelector("#modal-assistant").hidden = true)]]);
