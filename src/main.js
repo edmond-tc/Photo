@@ -3474,7 +3474,7 @@ async function afficherDocumentsTelephone(options) {
   if (!auto) toast("Lecture du téléphone… (quelques secondes)", "succes", 6000);
   let lecture;
   try {
-    lecture = await invoke("documents_whatsapp_telephone");
+    lecture = await invoke("documents_whatsapp_telephone", { frais: !auto });
   } catch (e) {
     if (!auto) toast(String(e), "attention", 9000);
     return;

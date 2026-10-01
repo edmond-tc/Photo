@@ -475,7 +475,12 @@ mod direct {
     use windows::Devices::Enumeration::DeviceInformation;
     use windows::Devices::Portable::StorageDevice;
     use windows::core::Interface;
+    use windows::Storage::Search::CommonFileQuery;
     use windows::Storage::{IStorageFolder, NameCollisionOption, StorageFile, StorageFolder};
+
+    /// Fichiers lus au plus par dossier : la liste n'en montre que 60 en
+    /// tout, les plus récents.
+    const PAR_DOSSIER: u32 = 60;
 
     /// Un fichier du téléphone, transportable d'un fil à l'autre.
     ///
@@ -534,9 +539,18 @@ mod direct {
                 for (chemin, genre) in DOSSIERS_WHATSAPP {
                     let Some(dossier) = descendre(stockage, chemin) else { continue };
                     sortie.push_str(&format!("DOSSIER\t{chemin}\n"));
+                    // Les plus récents d'abord, et seulement eux : le dossier
+                    // des photos WhatsApp en compte souvent des milliers, et
+                    // les lire tous prenait près d'une minute. Si le
+                    // téléphone ne sait pas trier, on lit tout (comme avant).
                     let Ok(liste) = dossier
-                        .GetFilesAsyncOverloadDefaultOptionsStartAndCount()
+                        .GetFilesAsync(CommonFileQuery::OrderByDate, 0, PAR_DOSSIER)
                         .and_then(|o| o.get())
+                        .or_else(|_| {
+                            dossier
+                                .GetFilesAsyncOverloadDefaultOptionsStartAndCount()
+                                .and_then(|o| o.get())
+                        })
                     else {
                         continue;
                     };
@@ -591,18 +605,53 @@ mod direct {
     }
 }
 
+/// Dernière lecture réussie, et quand. Le branchement est détecté en
+/// lisant déjà le téléphone (voir `surveiller_telephones`) : relire tout de
+/// suite après, pour afficher la liste, doublait l'attente du gérant.
+static DERNIERE_LECTURE: Mutex<Option<(std::time::Instant, LectureTelephone)>> = Mutex::new(None);
+
+/// Lecture toute fraîche (moins de 20 s) si on en a une, sinon on lit.
+fn lire_telephone_ou_reprendre() -> Result<LectureTelephone, String> {
+    if let Ok(garde) = DERNIERE_LECTURE.lock() {
+        if let Some((quand, lecture)) = garde.as_ref() {
+            if quand.elapsed() < std::time::Duration::from_secs(20) {
+                return Ok(lecture.clone());
+            }
+        }
+    }
+    lire_telephone()
+}
+
 /// Lit le téléphone : accès direct de Windows, ou PowerShell en secours.
 fn lire_telephone() -> Result<LectureTelephone, String> {
+    lire_telephone_avec(true)
+}
+
+/// `secours` : essayer aussi PowerShell (lent : plusieurs secondes) si
+/// l'accès direct ne trouve rien.
+fn lire_telephone_avec(secours: bool) -> Result<LectureTelephone, String> {
+    let lecture = lire_telephone_sans_memoire(secours);
+    if let (Ok(l), Ok(mut garde)) = (&lecture, DERNIERE_LECTURE.lock()) {
+        *garde = (l.dossiers_whatsapp > 0).then(|| (std::time::Instant::now(), l.clone()));
+    }
+    lecture
+}
+
+fn lire_telephone_sans_memoire(secours: bool) -> Result<LectureTelephone, String> {
     #[cfg(windows)]
     if let Some((sortie, fichiers)) = direct::lire() {
         let mut lecture = lire_sortie(&sortie);
         if lecture.telephones > 0 && lecture.dossiers_whatsapp > 0 {
             let mut trouves = Vec::new();
-            for document in &mut lecture.documents {
+            for (rang, document) in lecture.documents.iter_mut().enumerate() {
                 if let Some(fichier) = fichiers.get(&direct::cle(&document.emplacement)) {
-                    let taille = direct::taille(fichier);
-                    document.emplacement.taille = taille;
-                    document.taille_ko = taille.div_ceil(1024);
+                    // La taille coûte une question au téléphone par fichier :
+                    // seulement pour les premiers, ceux qu'on voit d'emblée.
+                    if rang < 15 {
+                        let taille = direct::taille(fichier);
+                        document.emplacement.taille = taille;
+                        document.taille_ko = taille.div_ceil(1024);
+                    }
                     trouves.push((document.id.clone(), direct::Fichier(fichier.clone())));
                 }
             }
@@ -616,6 +665,9 @@ fn lire_telephone() -> Result<LectureTelephone, String> {
     if let Ok(mut f) = direct::FICHIERS.lock() {
         f.clear();
     }
+    if !secours {
+        return Ok(LectureTelephone::default());
+    }
     executer_powershell(&script_lecture()).map(|sortie| lire_sortie(&sortie))
 }
 
@@ -623,8 +675,13 @@ fn lire_telephone() -> Result<LectureTelephone, String> {
 #[tauri::command]
 pub async fn documents_whatsapp_telephone(
     app: tauri::AppHandle,
+    frais: Option<bool>,
 ) -> Result<LectureTelephone, String> {
-    let mut lecture = tauri::async_runtime::spawn_blocking(lire_telephone)
+    // Bouton 📱 : toujours une lecture neuve (un fichier vient peut-être
+    // d'arriver). Ouverture automatique au branchement : la lecture qui a
+    // détecté le téléphone sert directement.
+    let lire = if frais.unwrap_or(false) { lire_telephone } else { lire_telephone_ou_reprendre };
+    let mut lecture = tauri::async_runtime::spawn_blocking(lire)
         .await
         .map_err(|e| e.to_string())??;
     let memoire = charger_memoire(&app);
@@ -758,6 +815,9 @@ pub fn surveiller_telephones(app: tauri::AppHandle) {
             let nouveau = actuels.difference(&connus).next().is_some();
             // Débranché : la liste affichée ne correspond plus à rien.
             if connus.difference(&actuels).next().is_some() {
+                if let Ok(mut garde) = DERNIERE_LECTURE.lock() {
+                    *garde = None;
+                }
                 let _ = app.emit("telephone-debranche", ());
             }
             connus = actuels;
@@ -767,7 +827,11 @@ pub fn surveiller_telephones(app: tauri::AppHandle) {
             let debut = std::time::Instant::now();
             let mut consigne_donnee = false;
             while debut.elapsed() < std::time::Duration::from_secs(90) {
-                let lecture = lire_telephone().unwrap_or_default();
+                // Accès direct seulement (rapide) pendant la première
+                // minute : relire par PowerShell toutes les 4 s, pendant que
+                // le téléphone est encore verrouillé, ralentissait tout.
+                let secours = debut.elapsed() > std::time::Duration::from_secs(60);
+                let lecture = lire_telephone_avec(secours).unwrap_or_default();
                 if lecture.dossiers_whatsapp > 0 {
                     let _ = app.emit("telephone-branche", ());
                     break;
