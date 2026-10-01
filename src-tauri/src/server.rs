@@ -192,16 +192,69 @@ pub const CHEMIN_API_PORTAIL: &str = "/api-portail";
 ///
 /// Le type de contenu compte autant que le contenu : `application/captive+json`
 /// est ce à quoi iOS et Android reconnaissent une réponse de portail.
-async fn api_portail(State(app): State<AppHandle>) -> impl IntoResponse {
+async fn api_portail(
+    State(app): State<AppHandle>,
+    connexion: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
+) -> impl IntoResponse {
     let _ = app;
     let adresse = adresse_locale();
+    let captif = !connexion.is_some_and(|c| iphone_admis(c.0.ip()));
     (
         [(axum::http::header::CONTENT_TYPE, "application/captive+json")],
         format!(
-            r#"{{"captive":true,"user-portal-url":"http://{adresse}/","can-extend-session":true}}"#
+            r#"{{"captive":{captif},"user-portal-url":"http://{adresse}/","can-extend-session":true}}"#
         ),
     )
 }
+
+/// iPhone qui a ouvert la page d'envoi : le réseau lui est désormais
+/// « ouvert » (réponse « Success » à son contrôle), pendant deux heures.
+///
+/// Sans cela, l'iPhone garde la page dans sa petite fenêtre de portail, et
+/// la ferme — Wi-Fi compris — dès que l'écran s'éteint : un gros envoi
+/// mourait en route. Une fois « ouvert », l'iPhone reste sur le Wi-Fi de la
+/// boutique, la fenêtre affiche « OK », et Safari (où l'écran peut rester
+/// allumé tout seul) joint la page à 4.3.2.1.
+///
+/// Android n'est pas concerné : il garde la page dans sa fenêtre de portail,
+/// la seule qui passe par le Wi-Fi quand les données mobiles sont allumées.
+static IPHONES_ADMIS: Mutex<Vec<(std::net::IpAddr, std::time::Instant)>> = Mutex::new(Vec::new());
+const DUREE_ADMISSION: std::time::Duration = std::time::Duration::from_secs(2 * 3600);
+
+fn admettre_iphone(ip: std::net::IpAddr) {
+    if ip.is_loopback() {
+        return;
+    }
+    if let Ok(mut admis) = IPHONES_ADMIS.lock() {
+        admis.retain(|(a, quand)| *a != ip && quand.elapsed() < DUREE_ADMISSION);
+        admis.push((ip, std::time::Instant::now()));
+    }
+}
+
+fn iphone_admis(ip: std::net::IpAddr) -> bool {
+    IPHONES_ADMIS
+        .lock()
+        .map(|admis| admis.iter().any(|(a, quand)| *a == ip && quand.elapsed() < DUREE_ADMISSION))
+        .unwrap_or(false)
+}
+
+fn est_appareil_apple(agent: &str) -> bool {
+    ["iPhone", "iPad", "iPod"].iter().any(|m| agent.contains(m))
+}
+
+/// Le contrôle d'Apple (iPhone, iPad), par sa machine ou son chemin.
+fn est_sonde_apple(chemin: &str, hote: &str) -> bool {
+    let hote = hote.to_ascii_lowercase();
+    let hote = hote.split(':').next().unwrap_or("");
+    let chemin = chemin.to_ascii_lowercase();
+    hote == "captive.apple.com"
+        || hote == "netcts.cdn-apple.com"
+        || chemin == "/hotspot-detect.html"
+        || chemin == "/library/test/success.html"
+}
+
+/// La réponse qu'attend un iPhone sur un réseau ouvert.
+const SUCCES_APPLE: &str = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>";
 
 fn construire_router(app: AppHandle) -> Router {
     Router::new()
@@ -804,6 +857,7 @@ fn page_de_controle(adresse: &str) -> String {
 
 async fn page_accueil(
     State(app): State<AppHandle>,
+    connexion: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
     methode: axum::http::Method,
     uri: Uri,
     entetes: axum::http::HeaderMap,
@@ -826,10 +880,18 @@ async fn page_accueil(
     // pas l'application entière. On ne touche même pas à la base de
     // données : cette réponse doit partir tout de suite, une fenêtre de
     // contrôle n'attend pas.
+    let ip = connexion.map(|c| c.0.ip());
     if est_sonde_de_reseau(uri.path(), &lire(axum::http::header::HOST)) {
+        if ip.is_some_and(iphone_admis) && est_sonde_apple(uri.path(), &lire(axum::http::header::HOST)) {
+            return Html(SUCCES_APPLE.to_string());
+        }
         return Html(page_de_controle(&adresse_locale()));
     }
 
+    // La page d'envoi s'ouvre sur un iPhone : voir `IPHONES_ADMIS`.
+    if let Some(ip) = ip.filter(|_| est_appareil_apple(&lire(axum::http::header::USER_AGENT))) {
+        admettre_iphone(ip);
+    }
     let _ = app;
     Html(INTERFACE_CLIENT.to_string())
 }
@@ -2349,6 +2411,23 @@ mod tests {
         assert_eq!(extension_vocal("VOCAL.M4A"), "m4a");
         assert_eq!(extension_vocal("piege.exe"), "audio");
         assert_eq!(extension_vocal("sans_extension"), "audio");
+    }
+
+    #[test]
+    fn l_iphone_qui_a_ouvert_la_page_garde_le_wifi() {
+        let ip: std::net::IpAddr = "192.168.73.42".parse().unwrap();
+        assert!(!iphone_admis(ip));
+        admettre_iphone(ip);
+        assert!(iphone_admis(ip));
+        assert!(!iphone_admis("192.168.73.43".parse().unwrap()));
+        admettre_iphone("127.0.0.1".parse().unwrap());
+        assert!(!iphone_admis("127.0.0.1".parse().unwrap()));
+        assert!(est_sonde_apple("/hotspot-detect.html", "captive.apple.com"));
+        assert!(est_sonde_apple("/", "netcts.cdn-apple.com:80"));
+        assert!(!est_sonde_apple("/generate_204", "connectivitycheck.gstatic.com"));
+        assert!(est_appareil_apple("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"));
+        assert!(!est_appareil_apple("Mozilla/5.0 (Linux; Android 14) Chrome/120"));
+        assert!(SUCCES_APPLE.contains("<TITLE>Success</TITLE>"));
     }
 
     #[test]

@@ -227,6 +227,94 @@ pub fn rafraichir_script_demarrage() {
     }
 }
 
+/// L'argument avec lequel la tâche Windows lance l'application : elle
+/// rallume alors le Wi-Fi de la boutique, sans fenêtre, et s'arrête.
+pub const ARGUMENT_DEMARRAGE_WIFI: &str = "--demarrage-wifi";
+
+/// La création de la tâche de démarrage, dans un script administrateur.
+///
+/// La tâche lance l'APPLICATION, plus `powershell.exe` : PowerShell lancé
+/// par une tâche ouvre une console bleue, vide, en plein écran du gérant —
+/// vue sur le terrain au démarrage du PC et à chaque relance du gardien,
+/// malgré `-WindowStyle Hidden` (appliqué seulement une fois PowerShell
+/// chargé, ce qui prend de longues secondes au démarrage). L'application,
+/// elle, n'a pas de console et lance PowerShell sans fenêtre.
+///
+/// `\"` : PowerShell 5.1 transmet les guillemets à `schtasks` tels quels
+/// seulement s'ils sont protégés ainsi ; sans eux, un chemin avec espaces
+/// (« Gestion Photocopie ») serait coupé.
+pub fn commandes_tache_demarrage(executable: &std::path::Path) -> String {
+    let exe = executable.display().to_string().replace('\'', "''");
+    format!(
+        r#"    $commandeTache = '\"{exe}\" {ARGUMENT_DEMARRAGE_WIFI}'
+    $sortie += (schtasks /Create /TN "{NOM_TACHE_DEMARRAGE}" /TR $commandeTache /SC ONLOGON /RL HIGHEST /F 2>&1 | Out-String)
+    # Windows ne lance pas une tâche sur un portable débranché, par défaut :
+    # le Wi-Fi restait éteint les matins sans courant.
+    $tache = Get-ScheduledTask -TaskName "{NOM_TACHE_DEMARRAGE}" -ErrorAction SilentlyContinue
+    if ($tache) {{
+        $tache.Settings.DisallowStartIfOnBatteries = $false
+        $tache.Settings.StopIfGoingOnBatteries = $false
+        Set-ScheduledTask -InputObject $tache -ErrorAction SilentlyContinue | Out-Null
+    }}"#
+    )
+}
+
+/// Ce que fait l'application lancée par la tâche (voir
+/// [`ARGUMENT_DEMARRAGE_WIFI`]) : le script de démarrage, sans fenêtre.
+pub fn executer_demarrage_wifi() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let Ok(fichier) = ecrire_script_demarrage() else { return };
+        let _ = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&fichier)
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
+/// Les PC équipés avant cette version ont une tâche qui lance encore
+/// `powershell.exe` (la console bleue) : on la remplace, une seule fois.
+/// Il faut l'accord administrateur (un « Oui » de Windows), comme à
+/// l'activation : une tâche « au plus haut niveau » ne se modifie pas sans.
+pub fn remplacer_ancienne_tache_demarrage() {
+    #[cfg(windows)]
+    std::thread::spawn(|| {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let Ok(sortie) = std::process::Command::new("schtasks")
+            .args(["/Query", "/TN", NOM_TACHE_DEMARRAGE, "/XML"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        else {
+            return;
+        };
+        if !tache_lance_powershell(&String::from_utf8_lossy(&sortie.stdout)) {
+            return;
+        }
+        let Ok(exe) = std::env::current_exe() else { return };
+        let resultat = std::env::temp_dir().join("photocopie-benin-hotspot-resultat.txt");
+        let script = format!(
+            "$sortie = @()\n{}\n$sortie -join \"`n\" | Out-File -FilePath \"{}\" -Encoding utf8\n",
+            commandes_tache_demarrage(&exe),
+            resultat.display()
+        );
+        let _ = executer_script_eleve(&script);
+    });
+}
+
+/// La tâche (sa description XML, lue par `schtasks /Query /XML`) lance-t-elle
+/// PowerShell directement ?
+pub fn tache_lance_powershell(xml: &str) -> bool {
+    xml.to_ascii_lowercase()
+        .split("<command>")
+        .nth(1)
+        .and_then(|reste| reste.split("</command>").next())
+        .is_some_and(|commande| commande.contains("powershell"))
+}
+
 /// Écrit le script de démarrage à un endroit stable, et rend son chemin.
 ///
 /// Dans le dossier de l'utilisateur et non dans `%TEMP%` : Windows efface le
@@ -1066,7 +1154,7 @@ fn script_activation(
     ssid: &str,
     mot_de_passe: &str,
     resultat: &std::path::Path,
-    script_demarrage: &std::path::Path,
+    executable: &std::path::Path,
 ) -> String {
     let ssid = echapper_powershell(ssid);
     let mot_de_passe = echapper_powershell(mot_de_passe);
@@ -1193,8 +1281,7 @@ try {{
     #    plus haut niveau de privilèges" ne redemande jamais d'autorisation
     #    par la suite.
     $sortie += "===DEMARRAGE_AUTO==="
-    $commandeTache = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{script_demarrage}"'
-    $sortie += (schtasks /Create /TN "{nom_tache}" /TR $commandeTache /SC ONLOGON /RL HIGHEST /F 2>&1 | Out-String)
+{tache}
 
     $adaptateur = Get-NetAdapter | Where-Object {{ $_.InterfaceDescription -like '*Hosted Network Virtual Adapter*' }} | Select-Object -First 1
     if ($adaptateur) {{
@@ -1231,8 +1318,7 @@ $sortie -join "`n" | Out-File -FilePath "{res}" -Encoding utf8
         marqueur_fin = MARQUEUR_FIN_DEMARRAGE,
         pare_feu = crate::pare_feu::commandes_powershell(),
         journal_impressions = crate::controle_impressions::commandes_activation(),
-        nom_tache = NOM_TACHE_DEMARRAGE,
-        script_demarrage = script_demarrage.display(),
+        tache = commandes_tache_demarrage(executable),
         res = resultat.display(),
     )
 }
@@ -1276,12 +1362,12 @@ pub fn activer(ssid: &str, mot_de_passe: &str) -> Result<(), String> {
     // Écrit avant l'élévation : ce dossier appartient à l'utilisateur, aucun
     // droit administrateur n'y est nécessaire. En cas d'échec on active quand
     // même — le démarrage automatique est un confort, pas une condition.
-    let script_demarrage = ecrire_script_demarrage().unwrap_or_default();
+    let _ = ecrire_script_demarrage();
     let sortie = executer_script_eleve(&script_activation(
         ssid,
         mot_de_passe,
         &fichier_resultat,
-        &script_demarrage,
+        &std::env::current_exe().unwrap_or_default(),
     ))?;
 
     if sortie.trim().is_empty() {
@@ -2710,6 +2796,24 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn la_tache_de_demarrage_lance_l_application_sans_console() {
+        let script = commandes_tache_demarrage(std::path::Path::new(r"C:\Users\O'Neil\Gestion Photocopie\app.exe"));
+        assert!(script.contains(r#"'\"C:\Users\O''Neil\Gestion Photocopie\app.exe\" --demarrage-wifi'"#));
+        assert!(script.contains("/RL HIGHEST") && script.contains("/SC ONLOGON") && script.contains("/F"));
+        assert!(!script.contains("powershell.exe"));
+        assert!(script.contains("DisallowStartIfOnBatteries = $false"));
+    }
+
+    #[test]
+    fn reconnait_l_ancienne_tache_a_console() {
+        let ancienne = "<Actions><Exec><Command>powershell.exe</Command><Arguments>-NoProfile</Arguments></Exec></Actions>";
+        let nouvelle = "<Actions><Exec><Command>\"C:\\Gestion Photocopie\\app.exe\"</Command><Arguments>--demarrage-wifi</Arguments></Exec></Actions>";
+        assert!(tache_lance_powershell(ancienne));
+        assert!(!tache_lance_powershell(nouvelle));
+        assert!(!tache_lance_powershell(""));
+    }
+
     #[cfg(windows)]
     #[test]
     fn echappe_les_caracteres_speciaux_powershell() {
@@ -2725,7 +2829,7 @@ mod tests {
             "Ma Boutique",
             "secret\"123",
             std::path::Path::new("C:\\r.txt"),
-            std::path::Path::new("C:\\demarrage.ps1"),
+            std::path::Path::new("C:\\Program Files\\Gestion Photocopie\\app.exe"),
         );
         assert!(script.contains(r#"ssid="Ma Boutique""#));
         assert!(script.contains(r#"key="secret`"123""#));
@@ -2743,7 +2847,7 @@ mod tests {
             "Boutique",
             "motdepasse",
             std::path::Path::new("C:\\r.txt"),
-            std::path::Path::new("C:\\demarrage.ps1"),
+            std::path::Path::new("C:\\Program Files\\Gestion Photocopie\\app.exe"),
         );
         let position = |aiguille: &str| script.find(aiguille).expect(aiguille);
 

@@ -258,6 +258,7 @@ p { margin: 0; }
         <button type="button" data-aller="mam">📲 Main à main</button>
       </nav>
       <span class="puce" data-puce><span class="point"></span><span data-puce-texte>Connexion au guichet…</span></span>
+      <div class="bandeau" id="conseil-safari" hidden><p><strong>Envoi sûr :</strong> touchez « OK » en haut, ouvrez <strong>Safari</strong> et tapez <strong data-adresse></strong>. L'envoi y continue même si l'écran s'éteint.</p></div>
       <div class="bandeau bloquant" data-bandeau-wifi hidden>
         <p><strong>Le Wi-Fi de votre téléphone est éteint.</strong> Il sert à envoyer vos documents au guichet, sans internet et sans forfait.</p>
         <button type="button" class="btn" data-allumer="wifi">Allumer le Wi-Fi</button>
@@ -623,6 +624,13 @@ setTimeout(function () {
     if (!b || !app) return;
     try { b.dataset.allumer === "wifi" ? app.allumerWifi() : app.allumerBluetooth(); } catch (_) {}
   });
+  // iPhone dans la petite fenêtre du portail (pas Safari) : elle se ferme,
+  // Wi-Fi compris, quand l'écran s'éteint. Le PC laisse désormais le Wi-Fi
+  // à cet iPhone (server.rs, IPHONES_ADMIS) : Safari joint la page.
+  if (!app && /iPhone|iPad|iPod/.test(navigator.userAgent) && !/Safari\//.test(navigator.userAgent)) {
+    $("#conseil-safari [data-adresse]").textContent = location.host;
+    $("#conseil-safari").hidden = false;
+  }
   let attenteConnexion = null;
   function demarrerConnexion() {
     if (!app || connexion.etat === "encours" || connexion.etat === "ok") return;
@@ -1114,9 +1122,16 @@ setTimeout(function () {
   $("#btn-envoyer").addEventListener("click", envoyer);
   $("#btn-reessayer").addEventListener("click", envoyer);
 
+  // L'écran reste allumé pendant l'envoi (Safari, Chrome).
+  let verrouEcran = null;
+  async function garderEcran() {
+    try { if (envoiEnCours && !verrouEcran && navigator.wakeLock) verrouEcran = await navigator.wakeLock.request("screen"); } catch (_) {}
+  }
+  document.addEventListener("visibilitychange", () => { verrouEcran = null; if (!document.hidden) garderEcran(); });
   async function envoyer() {
     if (envoiEnCours) return;
     envoiEnCours = true;
+    garderEcran();
     amorcerSon();
     aller("envoi");
     $("#erreur-envoi").hidden = true;
@@ -1149,6 +1164,7 @@ setTimeout(function () {
       // seuls si la liaison saute (voir televerserParMorceaux), puis la
       // commande elle-même, toute petite.
       etape(2, "encours");
+      $("#chiffres").textContent = connexion.bt ? "Envoi par Bluetooth (plus lent)…" : "Envoi…";
       debutEnvoi = Date.now();
       const total = fichiers.reduce((t, f) => t + f.size, 0);
       let termines = 0;
@@ -1162,7 +1178,7 @@ setTimeout(function () {
           const envoye = termines + dansCeFichier;
           const pct = total ? Math.min(99, Math.round((envoye / total) * 100)) : 99;
           $("#barre").style.width = pct + "%";
-          $("#chiffres").textContent = `${pct} % · ${mo(envoye)} sur ${mo(total)}${vitesse(envoye, total)} — gardez l'écran allumé`;
+          $("#chiffres").textContent = `${pct} % · ${mo(envoye)} sur ${mo(total)}${vitesse(envoye, total)}${connexion.bt ? " · par Bluetooth (lent)" : ""} — gardez l'écran allumé`;
           try { app && app.garderLien(); } catch (_) {}
         });
         termines += f.size;
@@ -1213,6 +1229,8 @@ setTimeout(function () {
       if (app && connexion.etat !== "ok") connexion = { etat: "aucune" };
     } finally {
       envoiEnCours = false;
+      try { verrouEcran && verrouEcran.release(); } catch (_) {}
+      verrouEcran = null;
     }
   }
 
@@ -1233,6 +1251,9 @@ setTimeout(function () {
   // morceaux ; si la liaison saute, on demande au PC où il en est et on
   // repart de là, sans rien recommencer.
   const TAILLE_MORCEAU = 1024 * 1024;
+  // Par Bluetooth, 1 Mo prenait une minute ou plus : la barre restait figée
+  // sur « En attente », et l'envoi semblait bloqué.
+  const TAILLE_MORCEAU_BT = 64 * 1024;
   function idAleatoire() {
     const octets = new Uint8Array(12);
     try { crypto.getRandomValues(octets); } catch (_) { for (let i = 0; i < 12; i++) octets[i] = Math.floor(Math.random() * 256); }
@@ -1283,7 +1304,7 @@ setTimeout(function () {
     let echecs = 0;
     const debutCoupure = { t: 0 };
     while (recu < fichier.size) {
-      const fin = Math.min(recu + TAILLE_MORCEAU, fichier.size);
+      const fin = Math.min(recu + (connexion.bt ? TAILLE_MORCEAU_BT : TAILLE_MORCEAU), fichier.size);
       const depart = recu;
       try {
         recu = await envoyerMorceau(id, depart, fichier.slice(depart, fin), (l) => avancer(depart + l));

@@ -40,6 +40,12 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Lancée par la tâche Windows de démarrage : rallumer le Wi-Fi de la
+    // boutique, sans fenêtre, et s'arrêter là (voir hotspot.rs).
+    if std::env::args().any(|a| a == hotspot::ARGUMENT_DEMARRAGE_WIFI) {
+        hotspot::executer_demarrage_wifi();
+        return;
+    }
     tauri::Builder::default()
         // Trouvé sur le terrain : rien n'empêchait de lancer l'application
         // deux fois (double-clic sur l'icône par habitude, ou parce que le
@@ -113,6 +119,7 @@ pub fn run() {
             reception_directe::demarrer(app.handle().clone());
             arrivees::demarrer(app.handle().clone());
             hotspot::rafraichir_script_demarrage();
+            hotspot::remplacer_ancienne_tache_demarrage();
             gardien_wifi::demarrer(app.handle().clone());
             std::thread::spawn(controle_impressions::fenetre_impression_windows_dans_les_navigateurs);
             mdns::demarrer();

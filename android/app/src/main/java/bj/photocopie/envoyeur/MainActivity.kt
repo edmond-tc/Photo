@@ -752,6 +752,14 @@ class MainActivity : Activity() {
         }
         val l = Liaison(this, ::journal)
         liaison = l
+        l.surWifi = { ip ->
+            principal.post {
+                if (liaison === l && adressePc == PC_PAR_BLUETOOTH) {
+                    adressePc = ip.hostAddress
+                    adressePc?.let { signaler(connexionOk(it)) }
+                }
+            }
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         signaler(JSONObject().put("type", "connexion").put("etat", "encours"))
         executeur.execute {

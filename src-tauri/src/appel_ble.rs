@@ -223,6 +223,14 @@ pub fn demarrer() {
         };
         let mut dernier: Option<Statut> = None;
         loop {
+            // Un téléphone envoie par le canal Bluetooth : on lui laisse la radio.
+            if crate::canal_bt::canal_ouvert() {
+                if oreille.Status().ok() == Some(Statut::Started) {
+                    let _ = oreille.Stop();
+                }
+                std::thread::sleep(Duration::from_secs(1));
+                continue;
+            }
             let statut = oreille.Status().unwrap_or(Statut::Aborted);
             // Bluetooth éteint puis rallumé, pilote réinitialisé : Windows
             // arrête l'écoute (« Aborted ») et ne la reprend jamais seul.

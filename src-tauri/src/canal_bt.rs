@@ -4,6 +4,9 @@
 //! Le téléphone lit l'adresse Bluetooth du PC dans sa balise (voir
 //! `balise_ble.rs`) et s'y relie directement, sans recherche ni appairage.
 //! Sur ce canal :
+//! - « etat » : le Wi-Fi de la boutique tourne-t-il ? Si oui, son nom et
+//!   son mot de passe ; le téléphone passe en Bluetooth tout de suite et
+//!   rejoint ce Wi-Fi pendant ce temps.
 //! - « wifi » : le téléphone donne le nom ET le mot de passe du réseau qu'il
 //!   vient de créer ; le PC le rejoint et répond « relié, voici mon
 //!   adresse », ou « échec, voici pourquoi ». Si le Wi-Fi de la boutique
@@ -26,6 +29,31 @@ pub const SERVICE_UUID: u128 = 0x6b1f0c2e_8a4d_4f3b_9c55_4b5051434f50;
 
 /// Une trame ne dépasse jamais ça : un morceau de fichier fait 1 Mo.
 pub const TAILLE_MAX_TRAME: usize = 8 * 1024 * 1024;
+
+/// Canaux ouverts en ce moment. Pendant ce temps, l'écoute des appels
+/// Bluetooth (`appel_ble.rs`) se tait : elle occupe la même radio, et le
+/// Bluetooth était trop lent pour un envoi.
+static CANAUX_OUVERTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn canal_ouvert() -> bool {
+    CANAUX_OUVERTS.load(std::sync::atomic::Ordering::SeqCst) > 0
+}
+
+/// Compte un canal ouvert tant qu'elle vit.
+struct CanalCompte;
+
+impl CanalCompte {
+    fn nouveau() -> Self {
+        CANAUX_OUVERTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        CanalCompte
+    }
+}
+
+impl Drop for CanalCompte {
+    fn drop(&mut self) {
+        CANAUX_OUVERTS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 pub fn ecrire_trame(entete: &Value, corps: &[u8]) -> Vec<u8> {
     let mut contenu = serde_json::to_vec(entete).unwrap_or_default();
@@ -128,7 +156,17 @@ fn requete_locale(methode: &str, chemin: &str, type_contenu: &str, corps: &[u8])
 pub fn traiter(app: &tauri::AppHandle, entete: &Value, corps: &[u8], appelant: std::net::IpAddr) -> (Value, Vec<u8>) {
     let noter = crate::reception_directe::noter;
     match entete["t"].as_str() {
-        Some("bonjour") => (json!({ "t": "bonjour", "v": 1 }), Vec::new()),
+        Some("bonjour") => (json!({ "t": "bonjour", "v": 2 }), Vec::new()),
+        // Le téléphone demande d'abord : « ton Wi-Fi tourne-t-il ? ». Oui :
+        // il passe aussitôt en Bluetooth et le rejoint pendant ce temps,
+        // sans créer de réseau ni attendre (version 2 du canal).
+        Some("etat") => match wifi_boutique(app).filter(|_| crate::reception_directe::wifi_boutique_prioritaire(app)) {
+            Some((s, m)) => {
+                noter(format!("🔵 Canal Bluetooth : Wi-Fi de la boutique « {s} » donné au téléphone."));
+                (json!({ "t": "etat", "boutique": true, "ssid": s, "mdp": m }), Vec::new())
+            }
+            None => (json!({ "t": "etat", "boutique": false }), Vec::new()),
+        },
         Some("wifi") => {
             let (Some(ssid), Some(mdp)) = (entete["ssid"].as_str(), entete["mdp"].as_str()) else {
                 return (json!({ "t": "wifi", "etat": "echec", "raison": "demande incomplète" }), Vec::new());
@@ -227,6 +265,7 @@ pub fn demarrer(app: tauri::AppHandle) {
         let telephone = socket.Information()?.RemoteAddress()?.DisplayName()?.to_string();
         let appelant = adresse_du_telephone(&telephone);
         crate::reception_directe::noter(format!("🔵 Canal Bluetooth ouvert par un téléphone ({telephone})."));
+        let _compte = CanalCompte::nouveau();
         let lecteur = DataReader::CreateDataReader(&socket.InputStream()?)?;
         let ecrivain = DataWriter::CreateDataWriter(&socket.OutputStream()?)?;
         loop {
@@ -324,6 +363,15 @@ mod tests {
         let r = b"HTTP/1.1 204 No Content\r\n\r\n";
         assert_eq!(lire_reponse_http(r), Some((204, Vec::new())));
         assert_eq!(lire_reponse_http(b"n'importe quoi"), None);
+    }
+
+    #[test]
+    fn compte_les_canaux_ouverts() {
+        assert!(!canal_ouvert());
+        let a = CanalCompte::nouveau();
+        assert!(canal_ouvert());
+        drop(a);
+        assert!(!canal_ouvert());
     }
 
     #[test]

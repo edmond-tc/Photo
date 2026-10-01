@@ -93,6 +93,12 @@ class Liaison(
     @Volatile var canalBt: CanalBt? = null
         private set
 
+    /**
+     * Appelé quand, après un départ en mode Bluetooth, le Wi-Fi de la
+     * boutique est rejoint : la page passe alors au Wi-Fi, même en plein envoi.
+     */
+    @Volatile var surWifi: ((InetAddress) -> Unit)? = null
+
     /** Relie le téléphone au PC, par le meilleur chemin qui marche. Null : échec (raison dans [raison]). */
     fun ouvrir(): Resultat? {
         val debut = System.currentTimeMillis()
@@ -122,6 +128,21 @@ class Liaison(
 
         // 2. Le canal Bluetooth avec le PC : on se dit où se retrouver.
         val c = ouvrirCanal()
+
+        // 2-bis. Le Wi-Fi du PC tourne : le client peut envoyer TOUT DE SUITE
+        // par Bluetooth, et le Wi-Fi se branche pendant ce temps. Avant, il
+        // attendait 1 à 2 minutes (réseau créé pour rien, fenêtre d'Android
+        // « Se connecter » guettée jusqu'à 60 s) avant de pouvoir envoyer.
+        if (c != null) {
+            val etat = try { c.echanger(JSONObject().put("t", "etat"), null).first } catch (_: Exception) { null }
+            if (etat != null && etat.optString("t") == "etat" && etat.optBoolean("boutique")) {
+                val ssid = etat.optString("ssid")
+                dire("🔵 Relié par Bluetooth ; le Wi-Fi « $ssid » du PC se branche en arrière-plan.")
+                canalBt = c
+                if (wifi) brancherWifiBoutique(c, ssid, etat.optString("mdp"))
+                return Resultat(null, c)
+            }
+        }
 
         // 3. Le réseau du téléphone, que le PC rejoint.
         if (wifi) {
@@ -255,6 +276,21 @@ class Liaison(
         } finally {
             arreterAppel()
         }
+    }
+
+    /** Rejoint le Wi-Fi de la boutique en arrière-plan, puis libère la radio Bluetooth. */
+    private fun brancherWifiBoutique(c: CanalBt, ssid: String, mdp: String) {
+        Thread {
+            val pc = (try { rejoindreWifiBoutique(ssid, mdp) } catch (_: Exception) { null }) ?: return@Thread
+            dire("✅ Passage au Wi-Fi de la boutique : PC à ${pc.hostAddress}.")
+            surWifi?.invoke(pc)
+            // Les dernières requêtes en route par Bluetooth finissent d'abord.
+            Thread.sleep(20_000)
+            if (canalBt === c) {
+                canalBt = null
+                c.fermer()
+            }
+        }.start()
     }
 
     private fun joignable(pc: InetAddress): Boolean {
