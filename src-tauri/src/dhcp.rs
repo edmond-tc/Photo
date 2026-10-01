@@ -100,7 +100,26 @@ pub async fn demarrer(
 
 /// Tourne indéfiniment (jusqu'à ce que le point d'accès soit désactivé —
 /// voir `hotspot::desactiver`, qui annule cette tâche).
+/// Distributeurs d'adresses en service en ce moment (même principe que
+/// `dns::en_service`) : une tâche arrêtée se retire en disparaissant.
+static EN_SERVICE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Notre distributeur d'adresses tourne-t-il ? Sans lui, aucun téléphone
+/// n'obtient d'adresse sur le Wi-Fi du PC (méthodes 1 et 2).
+pub fn en_service() -> bool {
+    EN_SERVICE.load(std::sync::atomic::Ordering::SeqCst) > 0
+}
+
+struct PresenceEnService;
+impl Drop for PresenceEnService {
+    fn drop(&mut self) {
+        EN_SERVICE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 async fn servir(socket: UdpSocket, adresse_serveur: Ipv4Addr) {
+    EN_SERVICE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let _presence = PresenceEnService;
     // 1500 et non 576 : certains téléphones envoient des demandes plus
     // longues que le minimum de la norme, et une demande tronquée est perdue.
     let mut tampon = [0u8; 1500];

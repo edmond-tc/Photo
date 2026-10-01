@@ -323,6 +323,8 @@ p { margin: 0; }
       <p>Votre téléphone va vous demander de confirmer.<br>Touchez :</p>
       <p style="font-size:1.1rem; font-weight:800; color:var(--accent)">« CONTINUER QUAND MÊME DANS LE NAVIGATEUR »</p>
       <a class="btn grand" id="lien-navigateur-direct" href="/">Ouvrir dans le navigateur</a>
+      <p style="margin-top:8px">Rien ne s'ouvre ? Fermez cette fenêtre, ouvrez <strong>Chrome</strong> et tapez :</p>
+      <p style="font-size:1.5rem; font-weight:800; letter-spacing:0.03em" id="adresse-a-taper"></p>
     </div>
   </section>
 
@@ -495,6 +497,20 @@ p { margin: 0; }
 <input id="fichiers" type="file" multiple hidden>
 <input id="photo" type="file" accept="image/*" capture="environment" hidden>
 
+<script>
+// Filet de sécurité, en ES5 : si la page n'a toujours rien affiché après
+// 5 s (erreur dans le grand script, navigateur trop vieux, petite fenêtre
+// « Se connecter au réseau » capricieuse), on montre au moins un lien vers
+// la page simple. Plus jamais d'écran tout blanc.
+setTimeout(function () {
+  if (location.protocol.indexOf('http') !== 0) return;
+  if (document.querySelector('.ecran:not([hidden])')) return;
+  document.body.innerHTML = '<div style="font-family:sans-serif;padding:2em;text-align:center">' +
+    '<h1 style="font-size:1.4em">Photocopie</h1>' +
+    '<p><a href="/classique" style="display:inline-block;padding:0.9em 1.3em;background:#0b5cad;color:#fff;border-radius:8px;text-decoration:none;font-size:1.2em">Envoyer vos documents</a></p>' +
+    '<p>Si rien ne marche ici : ouvrez Chrome ou Safari et tapez <strong>' + location.host + '</strong></p></div>';
+}, 5000);
+</script>
 <script>
 (() => {
   "use strict";
@@ -1716,10 +1732,22 @@ p { margin: 0; }
   if (petiteFenetre) {
     const versNavigateur = `intent://${location.host}/#Intent;scheme=http;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(location.origin + "/")};end`;
     $("#lien-navigateur-direct").href = versNavigateur;
+    $("#adresse-a-taper").textContent = location.host;
     premier = "navigateur";
     // La page simple ne marcherait pas mieux dans cette petite fenêtre.
     $$("[data-mode-web]").forEach((e) => (e.hidden = true));
-    setTimeout(() => { location.href = versNavigateur; }, 1500);
+    // Essai automatique dans un cadre caché, et non plus en quittant la
+    // page : sur les téléphones dont la petite fenêtre refuse ce lien, elle
+    // devenait toute BLANCHE (constaté sur le terrain). Ici, au pire, rien
+    // ne se passe et le bouton et l'adresse restent affichés.
+    setTimeout(() => {
+      try {
+        const cadre = document.createElement("iframe");
+        cadre.style.display = "none";
+        cadre.src = versNavigateur;
+        document.body.appendChild(cadre);
+      } catch (_) {}
+    }, 1200);
   }
   aller(premier);
   if (premier === "accueil") chargerPartages();

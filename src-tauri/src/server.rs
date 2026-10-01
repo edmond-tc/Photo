@@ -793,10 +793,11 @@ fn page_de_controle(adresse: &str) -> String {
         "<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"utf-8\">\
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
 <title>Envoyer vos documents</title>\
-<meta http-equiv=\"refresh\" content=\"0; url=http://{adresse}/\"></head>\
+<meta http-equiv=\"refresh\" content=\"1; url=http://{adresse}/\"></head>\
 <body style=\"font-family:sans-serif;text-align:center;padding:2em\">\
 <h1 style=\"font-size:1.3em\">Photocopie</h1>\
-<p><a href=\"http://{adresse}/\" style=\"font-size:1.2em\">Envoyer vos documents</a></p>\
+<p>Ouverture de la page d'envoi…</p>\
+<p><a href=\"http://{adresse}/\" style=\"display:inline-block;padding:0.8em 1.2em;background:#0b5cad;color:#fff;border-radius:8px;text-decoration:none;font-size:1.2em\">Envoyer vos documents</a></p>\
 </body></html>"
     )
 }

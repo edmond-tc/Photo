@@ -101,6 +101,8 @@ pub fn demarrer(app: tauri::AppHandle) {
         let mut echecs_suivis = 0u32;
         let mut derniere_facade: Option<Instant> = None;
         let mut empeche_veille = false;
+        let mut tours_depuis_controle = 0u32;
+        let mut services_en_panne = 0u32;
         loop {
             let demande_du_gerant = attendre_tour();
             if debut.elapsed() < ATTENTE_DEMARRAGE && !demande_du_gerant {
@@ -122,6 +124,40 @@ pub fn demarrer(app: tauri::AppHandle) {
             let methode = reglage(&app, "wifi_methode").unwrap_or_default();
             if reseau_vivant(&methode) {
                 echecs_suivis = 0;
+                // Le Wi-Fi est là, mais ce qui sert les téléphones répond-il ?
+                // (Au gérant, il fallait appuyer sur « Activer » pour que
+                // les téléphones obtiennent une adresse et que la page
+                // s'ouvre : le gardien fait maintenant ce geste lui-même.)
+                // Vérifié toutes les 30 s, ou tout de suite à la demande.
+                tours_depuis_controle += 1;
+                if demande_du_gerant || tours_depuis_controle >= 3 {
+                    tours_depuis_controle = 0;
+                    let app2 = app.clone();
+                    let sains = tauri::async_runtime::block_on(async move {
+                        crate::hotspot::services_repondent(&app2).await
+                    });
+                    if sains {
+                        services_en_panne = 0;
+                    } else {
+                        services_en_panne += 1;
+                        // Deux contrôles ratés de suite (ou demande du
+                        // gérant) : on relance les services.
+                        if services_en_panne >= 2 || demande_du_gerant {
+                            let app2 = app.clone();
+                            let repare = tauri::async_runtime::block_on(async move {
+                                crate::hotspot::redemarrer_services(&app2).await
+                            });
+                            let _ = app.emit("wifi-relance", if repare { "ok" } else { "echec" });
+                            if repare {
+                                services_en_panne = 0;
+                            } else if methode == "réseau hébergé" {
+                                // Adresses de la carte perdues : la tâche de
+                                // démarrage, qui a les droits, les remet.
+                                lancer_tache_demarrage();
+                            }
+                        }
+                    }
+                }
                 // Réseau hébergé sans l'adresse de façade (PC mis à jour sans
                 // réactiver le Wi-Fi) : la tâche de démarrage, qui a déjà les
                 // droits, la pose — sans fenêtre « Oui ».

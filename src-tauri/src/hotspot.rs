@@ -199,6 +199,15 @@ if ($adaptateur) {
         Remove-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
         New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "__ADRESSE__" -PrefixLength 24 -ErrorAction SilentlyContinue | Out-Null
         $adresses = @()
+    } else {
+        # Une adresse en trop (celle du partage de connexion Windows,
+        # 192.168.137.1, laissée derrière lui) lui permet de reprendre la
+        # main sur les téléphones : on la retire, sans toucher aux nôtres.
+        foreach ($autre in $adresses) {
+            if ($autre -ne "__ADRESSE__" -and $autre -ne "4.3.2.1") {
+                Remove-NetIPAddress -IPAddress $autre -InterfaceIndex $adaptateur.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
+            }
+        }
     }
     if ($adresses -notcontains "4.3.2.1") {
         New-NetIPAddress -InterfaceIndex $adaptateur.InterfaceIndex -IPAddress "4.3.2.1" -PrefixLength 32 -SkipAsSource $true -ErrorAction SilentlyContinue | Out-Null
@@ -1932,9 +1941,7 @@ pub fn reprendre_point_acces_existant(app: tauri::AppHandle) {
             // lui-même les adresses. Lancer les nôtres ferait deux
             // distributeurs qui se contredisent ; on retient seulement
             // l'adresse, pour que le QR soit juste.
-            let windows_distribue = tauri::async_runtime::spawn_blocking(partage_windows_actif)
-                .await
-                .unwrap_or(false);
+            let windows_distribue = windows_distribue(&app).await;
             if windows_distribue {
                 definir_adresse_active(Some(adresse));
                 // Même règle qu'à l'activation : notre serveur de noms n'est
@@ -1981,6 +1988,83 @@ pub fn reprendre_point_acces_existant(app: tauri::AppHandle) {
             return;
         }
     });
+}
+
+/// Le réseau en place est-il le point d'accès mobile de Windows (qui
+/// distribue lui-même les adresses) ?
+///
+/// D'abord la méthode qui a marché sur ce PC. Constaté sur le terrain : il
+/// fallait appuyer sur « Activer le Wi-Fi local » pour que les téléphones
+/// obtiennent une adresse. Au démarrage, seul le service de partage de
+/// Windows était regardé — or il tourne souvent sans servir à rien. On le
+/// croyait donc en charge, on ne lançait pas notre distributeur, et les
+/// téléphones restaient sans adresse jusqu'au bouton.
+async fn windows_distribue(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    let methode = app
+        .try_state::<crate::db::DbState>()
+        .and_then(|etat| etat.0.lock().ok().and_then(|c| crate::db::get_setting(&c, "wifi_methode")));
+    match methode.as_deref() {
+        Some(m) if m == METHODE_POINT_ACCES_MOBILE => true,
+        Some(m) if !m.is_empty() => false,
+        _ => tauri::async_runtime::spawn_blocking(partage_windows_actif)
+            .await
+            .unwrap_or(false),
+    }
+}
+
+/// Relance nos serveurs (adresses, noms) sur le Wi-Fi déjà allumé, comme
+/// le bouton « Activer », mais sans rien demander au gérant (aucune fenêtre
+/// « Oui ») : utilisé par le gardien quand un service ne répond plus.
+pub async fn redemarrer_services(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    let Some(adresse) = adresse_point_acces_active() else { return false };
+    if let Some(etat) = app.try_state::<EtatPointAcces>() {
+        if let Ok(mut garde) = etat.0.lock() {
+            for ancienne in std::mem::take(&mut *garde) {
+                ancienne.abort();
+            }
+        }
+    }
+    // Le système rend les ports un instant après l'arrêt des tâches.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let windows_distribue = windows_distribue(app).await;
+    let mut taches = Vec::new();
+    if !windows_distribue {
+        for _ in 0..5 {
+            if let Ok(t) = crate::dhcp::demarrer(adresse).await {
+                taches.push(t);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    }
+    for _ in 0..5 {
+        if let Ok(t) = crate::dns::demarrer(adresse).await {
+            taches.push(t);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    let complet = taches.len() == if windows_distribue { 1 } else { 2 };
+    if let Some(etat) = app.try_state::<EtatPointAcces>() {
+        if let Ok(mut garde) = etat.0.lock() {
+            *garde = taches;
+        }
+    }
+    complet && crate::dns::repond(adresse).await
+}
+
+/// Ce dont un téléphone a besoin pour rejoindre le Wi-Fi et trouver la page
+/// répond-il vraiment ? Adresses (sauf point d'accès mobile, où Windows
+/// s'en charge) et noms.
+pub async fn services_repondent(app: &tauri::AppHandle) -> bool {
+    let Some(adresse) = adresse_point_acces_active() else { return false };
+    let adresses_ok = windows_distribue(app).await || crate::dhcp::en_service();
+    // La page (port 80) n'est pas vérifiée ici : relancer adresses et noms
+    // n'y changerait rien, et redémarrer le distributeur d'adresses pour
+    // rien dérangerait les téléphones déjà connectés.
+    adresses_ok && crate::dns::en_service() && crate::dns::repond(adresse).await
 }
 
 /// QUI écoute réellement sur les ports dont dépend l'ouverture automatique.
