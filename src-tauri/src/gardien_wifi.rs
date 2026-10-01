@@ -48,6 +48,22 @@ fn attendre_tour() -> bool {
 /// Entre deux relances : une relance prend jusqu'à une minute.
 const ENTRE_RELANCES: Duration = Duration::from_secs(60);
 
+/// Relance en cours : la carte Wi-Fi est à elle (la réception directe ne
+/// tente rien pendant ce temps, voir `reception_directe.rs`).
+static RELANCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn relance_en_cours() -> bool {
+    RELANCE.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Aucune méthode n'a jamais marché sur ce PC et ces essais ont tous raté :
+/// ce PC ne sait pas créer de Wi-Fi. Le gardien arrête alors de réessayer
+/// tout seul (chaque essai prend la carte, et peut faire apparaître une
+/// fenêtre « Oui ») : la réception directe, elle, n'a besoin que de
+/// rejoindre, ce que toutes les cartes savent faire. Le bouton « Activer
+/// le Wi-Fi local » ou le QR ouvert relancent quand même un essai.
+const ESSAIS_SANS_METHODE_CONNUE: u32 = 3;
+
 fn reglage(app: &tauri::AppHandle, cle: &str) -> Option<String> {
     let state = app.state::<crate::db::DbState>();
     let conn = state.0.lock().ok()?;
@@ -122,6 +138,11 @@ pub fn demarrer(app: tauri::AppHandle) {
                 continue;
             }
             let methode = reglage(&app, "wifi_methode").unwrap_or_default();
+            // Le PC est relié au téléphone d'un client (réception directe) :
+            // lui reprendre la carte couperait son envoi.
+            if crate::reception_directe::occupee() && !demande_du_gerant {
+                continue;
+            }
             if reseau_vivant(&methode) {
                 echecs_suivis = 0;
                 // Le Wi-Fi est là, mais ce qui sert les téléphones répond-il ?
@@ -177,9 +198,15 @@ pub fn demarrer(app: tauri::AppHandle) {
             if derniere_relance.is_some_and(|t| t.elapsed() < pause) {
                 continue;
             }
+            if methode.is_empty() && echecs_suivis >= ESSAIS_SANS_METHODE_CONNUE && !demande_du_gerant {
+                continue;
+            }
             derniere_relance = Some(Instant::now());
             let _ = app.emit("wifi-relance", "en cours");
-            if relancer(&app, &methode, echecs_suivis) {
+            RELANCE.store(true, std::sync::atomic::Ordering::SeqCst);
+            let reussi = relancer(&app, &methode, echecs_suivis);
+            RELANCE.store(false, std::sync::atomic::Ordering::SeqCst);
+            if reussi {
                 echecs_suivis = 0;
                 let _ = app.emit("wifi-relance", "ok");
             } else {

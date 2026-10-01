@@ -51,6 +51,71 @@ fn envoi_recu() -> bool {
     DERNIER_ENVOI.lock().ok().and_then(|d| *d).is_some()
 }
 const PAUSE_ENTRE_TOURS: Duration = Duration::from_secs(1);
+/// Écoute Bluetooth en marche : le PC attend l'appel d'un téléphone ce
+/// temps-là avant de regarder, en secours, la liste des Wi-Fi.
+const ATTENTE_APPEL: Duration = Duration::from_secs(10);
+
+/// Le PC est relié (ou se relie) au téléphone d'un client : le gardien du
+/// Wi-Fi de la boutique ne doit pas lui reprendre la carte à ce moment-là
+/// (voir `gardien_wifi.rs`).
+static OCCUPEE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn occupee() -> bool {
+    OCCUPEE.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+struct Occupation;
+
+impl Occupation {
+    fn prendre() -> Self {
+        OCCUPEE.store(true, std::sync::atomic::Ordering::SeqCst);
+        Occupation
+    }
+}
+
+impl Drop for Occupation {
+    fn drop(&mut self) {
+        OCCUPEE.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Ratés successifs par réseau appelé (voir `ecart_echec`).
+static RATES_PAR_APPEL: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+
+/// Après un raté. Un téléphone qui APPELLE est là, devant le guichet : on
+/// le retente aussitôt, jusqu'à trois fois (un premier essai raté est
+/// courant : le réseau du téléphone finit à peine de naître). Avant, un
+/// seul raté écartait le téléphone 30 minutes — le client attendait pour
+/// rien.
+fn ecart_echec(ssid: &str, par_appel: bool) -> Duration {
+    if !par_appel {
+        return ecart_apres_echec(ssid);
+    }
+    let Ok(mut rates) = RATES_PAR_APPEL.lock() else { return ecart_apres_echec(ssid) };
+    let n = match rates.iter_mut().find(|(s, _)| s == ssid) {
+        Some((_, n)) => {
+            *n += 1;
+            *n
+        }
+        None => {
+            rates.push((ssid.to_string(), 1));
+            if rates.len() > 50 {
+                rates.remove(0);
+            }
+            1
+        }
+    };
+    delai_apres_rates(n, ssid)
+}
+
+pub fn delai_apres_rates(rates: u32, ssid: &str) -> Duration {
+    if rates < 3 { Duration::from_secs(2) } else { ecart_apres_echec(ssid) }
+}
+
+/// Force d'un appel Bluetooth (dBm) sur l'échelle de Windows (0 à 100).
+pub fn signal_en_pourcentage(dbm: i16) -> u32 {
+    (2 * (i32::from(dbm) + 100)).clamp(1, 100) as u32
+}
 
 // ───────────────────────────── Journal de diagnostic ─────────────────────────────
 
@@ -314,6 +379,11 @@ pub fn nom_profil(ssid: &str) -> String {
 
 /// Profil Wi-Fi Windows pour rejoindre le téléphone du client. En mode
 /// MANUEL : Windows ne s'y reconnectera jamais tout seul plus tard.
+///
+/// « nonBroadcast » : Windows appelle le réseau par son nom au lieu
+/// d'attendre de le voir passer dans sa liste. Un réseau annoncé par
+/// l'appel Bluetooth du téléphone, né il y a deux secondes, est rejoint
+/// sans recherche préalable.
 pub fn profil_xml(ssid: &str, mot_de_passe: &str, wpa3: bool) -> String {
     let hex: String = ssid.bytes().map(|o| format!("{o:02X}")).collect();
     let authentification = if wpa3 { "WPA3SAE" } else { "WPA2PSK" };
@@ -321,7 +391,7 @@ pub fn profil_xml(ssid: &str, mot_de_passe: &str, wpa3: bool) -> String {
         "<?xml version=\"1.0\"?>\
 <WLANProfile xmlns=\"http://www.microsoft.com/networking/WLAN/profile/v1\">\
 <name>{nom}</name>\
-<SSIDConfig><SSID><hex>{hex}</hex><name>{ssid}</name></SSID></SSIDConfig>\
+<SSIDConfig><SSID><hex>{hex}</hex><name>{ssid}</name></SSID><nonBroadcast>true</nonBroadcast></SSIDConfig>\
 <connectionType>ESS</connectionType>\
 <connectionMode>manual</connectionMode>\
 <MSM><security>\
@@ -380,7 +450,11 @@ fn lire_reglages(app: &AppHandle) -> Reglages {
     let conn = state.0.lock();
     let lire = |cle: &str| conn.as_ref().ok().and_then(|c| crate::db::get_setting(c, cle));
     Reglages {
-        active: lire("reception_directe_active").as_deref() == Some("oui"),
+        // Active par défaut : elle ne sert que quand ce PC n'a pas de Wi-Fi
+        // de boutique en marche (voir `wifi_boutique_prioritaire`). Les
+        // anciennes versions forçaient « non » à chaque démarrage : seul
+        // « coupee » (choix exprès) l'arrête désormais.
+        active: lire("reception_directe_active").as_deref() != Some("coupee"),
         mot_de_passe: lire("reception_directe_mdp")
             .filter(|m| m.chars().count() >= 8)
             .unwrap_or_else(|| MOT_DE_PASSE_PAR_DEFAUT.to_string()),
@@ -611,10 +685,19 @@ pub fn demarrer(app: AppHandle) {
 /// Le gérant garde le Wi-Fi de la boutique allumé (ou il l'est déjà) :
 /// la réception directe ne touche pas à la carte Wi-Fi.
 fn wifi_boutique_prioritaire(app: &AppHandle) -> bool {
-    if crate::hotspot::point_acces_actif() {
-        return true;
-    }
-    crate::gardien_wifi::doit_rester_allume(app)
+    // Routeur à part : le PC y est sans doute relié par sa carte Wi-Fi ;
+    // partir rejoindre un téléphone couperait tous les autres clients.
+    let routeur = {
+        let state = app.state::<crate::db::DbState>();
+        let conn = state.0.lock();
+        conn.ok().and_then(|c| crate::db::get_setting(&c, "wifi_type_reseau")).as_deref() == Some("routeur_externe")
+    };
+    // Sinon, seul un Wi-Fi de boutique qui TOURNE (ou que le gardien est en
+    // train de rallumer) a la priorité. Sur un PC qui ne sait pas en créer
+    // — le cas pour lequel la réception directe existe —, la carte est
+    // libre : avant, il suffisait que le gérant VEUILLE un Wi-Fi pour
+    // qu'elle ne serve jamais.
+    routeur || crate::hotspot::point_acces_actif() || crate::gardien_wifi::relance_en_cours()
 }
 
 /// Empêche le PC de se mettre en veille tout seul tant que la réception
@@ -647,6 +730,17 @@ fn un_tour(
             // Carte désactivée, service arrêté, radio coupée : on répare
             // (au plus une fois toutes les 10 minutes, pour ne pas harceler
             // le gérant de fenêtres « Oui/Non »), puis on réessaie aussitôt.
+            // Seulement si un client APPELLE : la réception directe tourne
+            // désormais sur tous les PC, et un PC fixe sans carte Wi-Fi ne
+            // doit pas recevoir une fenêtre « Oui » toutes les 10 minutes.
+            let numero = numero_kiosque(app);
+            let client_attend = crate::appel_ble::appel_a_servir(&numero, &|_: &str| false).is_some();
+            if !client_attend {
+                etat(format!("En veille : {e}"));
+                noter_une_fois("carte-wifi-indisponible", format!("⚠️ Carte Wi-Fi indisponible : {e}"));
+                std::thread::sleep(Duration::from_secs(10));
+                return;
+            }
             if let Some(message) = reparer_wifi() {
                 noter(message);
                 std::thread::sleep(Duration::from_secs(3));
@@ -654,27 +748,6 @@ fn un_tour(
             }
             etat(format!("Bloquée : {e}"));
             noter(format!("❌ {e}"));
-            std::thread::sleep(Duration::from_secs(20));
-            return;
-        }
-    };
-
-    etat("En attente d'un téléphone…");
-    // Attendre la FIN de la recherche : lire la liste trop tôt rendait
-    // celle d'avant, où le téléphone qui vient d'arriver n'est pas encore.
-    client.scanner();
-    let reseaux = match client.reseaux() {
-        Ok(r) => r,
-        Err(code) => {
-            let message = if code == 5 {
-                "Windows refuse de montrer les Wi-Fi autour : autorisez la LOCALISATION pour \
-                 cette application (Paramètres → Confidentialité → Localisation)."
-                    .to_string()
-            } else {
-                format!("Lecture des Wi-Fi impossible (code {code}).")
-            };
-            etat(format!("Bloquée : {message}"));
-            noter(format!("❌ {message}"));
             std::thread::sleep(Duration::from_secs(20));
             return;
         }
@@ -691,8 +764,65 @@ fn un_tour(
             .collect()
     };
     let fond = fond.get_or_insert_with(HashSet::new);
-    let a_l_ecart = |ssid: &str| mis_a_l_ecart.contains_key(ssid);
     let mon_numero = numero_kiosque(app);
+
+    // 1. L'appel Bluetooth du téléphone (voir `appel_ble.rs`) : le PC sait
+    //    tout de suite quel réseau rejoindre, sans le chercher.
+    let ecoute = crate::appel_ble::ecoute_active();
+    etat(if ecoute {
+        "En attente d'un téléphone (écoute Bluetooth)…"
+    } else {
+        "En attente d'un téléphone…"
+    });
+    let appel = crate::appel_ble::attendre_appel(
+        if ecoute { ATTENTE_APPEL } else { Duration::ZERO },
+        &mon_numero,
+        &|ssid: &str| mis_a_l_ecart.contains_key(ssid),
+    );
+    if let Some(appel) = appel {
+        let cible = Reseau {
+            ssid: appel.ssid.clone(),
+            signal: signal_en_pourcentage(appel.signal),
+            wpa3: false,
+            protege: true,
+            connu: false,
+            securite: format!("appel Bluetooth, {} dBm", appel.signal),
+        };
+        // Une recherche du SEUL réseau annoncé : rapide, et elle aide les
+        // cartes qui refusent de rejoindre un réseau jamais vu.
+        client.scanner_cible(&cible.ssid);
+        servir(app, &client, &cible, true, reglages, mis_a_l_ecart, &ignorer, &mon_numero);
+        return;
+    }
+
+    // 2. Secours : la liste des Wi-Fi autour (PC sans Bluetooth, téléphone
+    //    qui ne sait pas appeler).
+    // Attendre la FIN de la recherche : lire la liste trop tôt rendait
+    // celle d'avant, où le téléphone qui vient d'arriver n'est pas encore.
+    client.scanner();
+    let reseaux = match client.reseaux() {
+        Ok(r) => r,
+        Err(code) => {
+            let message = if code == 5 {
+                "Windows refuse de montrer les Wi-Fi autour : autorisez la LOCALISATION pour \
+                 cette application (Paramètres → Confidentialité → Localisation)."
+                    .to_string()
+            } else {
+                format!("Lecture des Wi-Fi impossible (code {code}).")
+            };
+            if ecoute {
+                // L'appel Bluetooth suffit : la liste n'était qu'un secours.
+                noter_une_fois("liste-wifi-refusee", format!("⚠️ {message} L'appel Bluetooth des téléphones reste entendu."));
+                return;
+            }
+            etat(format!("Bloquée : {message}"));
+            noter(format!("❌ {message}"));
+            std::thread::sleep(Duration::from_secs(20));
+            return;
+        }
+    };
+
+    let a_l_ecart = |ssid: &str| mis_a_l_ecart.contains_key(ssid);
     // Chaque téléphone de l'application vu, une fois, avec ce qu'on en fait :
     // si le PC ne le rejoint pas, le journal dit pourquoi.
     for r in reseaux.iter().filter(|r| est_envoyeur(&r.ssid)) {
@@ -712,10 +842,31 @@ fn un_tour(
     let Some(cible) = choisir(&reseaux, reglages.seuil, &a_l_ecart, &ignorer, fond, &mon_numero).cloned() else {
         return;
     };
+    servir(app, &client, &cible, false, reglages, mis_a_l_ecart, &ignorer, &mon_numero);
+}
 
+/// Rejoint le téléphone du client, attend ses envois, puis le libère.
+/// `par_appel` : le téléphone a appelé par Bluetooth (il est donc là, et
+/// réessayer vite a du sens s'il y a un raté).
+#[allow(clippy::too_many_arguments)]
+fn servir(
+    app: &AppHandle,
+    client: &wlan::Client,
+    cible: &Reseau,
+    par_appel: bool,
+    reglages: &Reglages,
+    mis_a_l_ecart: &mut HashMap<String, Instant>,
+    ignorer: &[String],
+    mon_numero: &str,
+) {
+    let _occupation = Occupation::prendre();
+    let cible = cible.clone();
     noter(format!(
-        "📶 Téléphone vu : « {} » (signal {} %, {})",
-        cible.ssid, cible.signal, cible.securite
+        "📶 Téléphone {} : « {} » (signal {} %, {})",
+        if par_appel { "appelle" } else { "vu" },
+        cible.ssid,
+        cible.signal,
+        cible.securite
     ));
     etat(format!("Connexion à « {} »…", cible.ssid));
     if let Ok(mut d) = DERNIER_ENVOI.lock() {
@@ -726,13 +877,14 @@ fn un_tour(
     }
     let avant = adresses_ipv4();
     let mot_de_passe = if kiosque_du_reseau(&cible.ssid).is_some() {
-        mot_de_passe_kiosque(&mon_numero)
+        mot_de_passe_kiosque(mon_numero)
     } else {
         reglages.mot_de_passe.clone()
     };
     if let Err(e) = client.rejoindre(&cible.ssid, &mot_de_passe, cible.wpa3) {
         noter(format!("❌ Connexion refusée à « {} » : {e}", cible.ssid));
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
+        client.oublier(&cible.ssid);
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_echec(&cible.ssid, par_appel));
         return;
     }
 
@@ -796,6 +948,7 @@ fn un_tour(
                 std::thread::sleep(Duration::from_secs(1));
             }
             client.deconnecter();
+            client.oublier(&cible.ssid);
             mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + MISE_A_L_ECART);
             return;
         }
@@ -817,7 +970,8 @@ fn un_tour(
             debut.elapsed().as_secs_f32()
         ));
         client.deconnecter();
-        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_apres_echec(&cible.ssid));
+        client.oublier(&cible.ssid);
+        mis_a_l_ecart.insert(cible.ssid.clone(), Instant::now() + ecart_echec(&cible.ssid, par_appel));
         return;
     };
 
@@ -876,12 +1030,19 @@ fn un_tour(
             break "aucune activité depuis 10 minutes";
         }
         if calme || peut_ceder {
-            if dernier_regard.elapsed() >= Duration::from_secs(6) {
+            let deja = |x: &str| x == cible.ssid || mis_a_l_ecart.contains_key(x);
+            // Un autre téléphone appelle par Bluetooth : rien à chercher.
+            let autre_appel = crate::appel_ble::appel_a_servir(mon_numero, &deja).is_some();
+            if autre_appel {
+                break if dernier.is_some() { "client servi, un autre client appelle" } else { "un autre client appelle" };
+            }
+            // Sans écoute Bluetooth seulement : une recherche Wi-Fi pendant
+            // la connexion ralentit le téléphone relié. On la fait rarement.
+            if !crate::appel_ble::ecoute_active() && dernier_regard.elapsed() >= Duration::from_secs(6) {
                 dernier_regard = Instant::now();
                 client.scanner();
                 if let Ok(reseaux) = client.reseaux() {
-                    let deja = |x: &str| x == cible.ssid || mis_a_l_ecart.contains_key(x);
-                    if choisir(&reseaux, reglages.seuil, &deja, &ignorer, &HashSet::new(), &mon_numero).is_some() {
+                    if choisir(&reseaux, reglages.seuil, &deja, ignorer, &HashSet::new(), mon_numero).is_some() {
                         break if dernier.is_some() { "client servi, un autre client attend" } else { "un autre client attend" };
                     }
                 }
@@ -898,6 +1059,7 @@ fn un_tour(
         cible.ssid
     ));
     client.deconnecter();
+    client.oublier(&cible.ssid);
     if let Ok(mut a) = ADRESSE.lock() {
         *a = None;
     }
@@ -1241,6 +1403,32 @@ mod wlan {
             // SAFETY : poignée et GUID valides.
             unsafe { WlanDisconnect(self.poignee, &self.interface, None) };
         }
+
+        /// Recherche du SEUL réseau nommé, et attend sa fin (3 s au plus).
+        pub fn scanner_cible(&self, ssid: &str) {
+            use std::sync::atomic::Ordering;
+            let octets = ssid.as_bytes();
+            let mut cible = DOT11_SSID { uSSIDLength: octets.len().min(32) as u32, ucSSID: [0; 32] };
+            cible.ucSSID[..octets.len().min(32)].copy_from_slice(&octets[..octets.len().min(32)]);
+            RECHERCHE_FINIE.store(false, Ordering::SeqCst);
+            // SAFETY : `cible` vit pendant l'appel ; les autres paramètres sont facultatifs.
+            let code = unsafe { WlanScan(self.poignee, &self.interface, Some(&cible as *const DOT11_SSID), None, None) };
+            let debut = std::time::Instant::now();
+            while code == 0
+                && !RECHERCHE_FINIE.load(Ordering::SeqCst)
+                && debut.elapsed() < std::time::Duration::from_secs(3)
+            {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+
+        /// Efface le profil créé pour ce téléphone : un nouveau nom à chaque
+        /// envoi, et Windows les garderait tous, des milliers en un an.
+        pub fn oublier(&self, ssid: &str) {
+            let nom = HSTRING::from(super::nom_profil(ssid));
+            // SAFETY : `nom` vit pendant l'appel.
+            unsafe { WlanDeleteProfile(self.poignee, &self.interface, &nom, None) };
+        }
     }
 
     impl Drop for Client {
@@ -1273,6 +1461,8 @@ mod wlan {
             None
         }
         pub fn deconnecter(&self) {}
+        pub fn scanner_cible(&self, _ssid: &str) {}
+        pub fn oublier(&self, _ssid: &str) {}
     }
 }
 
@@ -1384,6 +1574,7 @@ mod tests {
         assert!(xml.contains("<name>Awa &amp; &lt;Co&gt;</name>"));
         assert!(xml.contains("<hex>4177612026203C436F3E</hex>"));
         assert!(xml.contains("<connectionMode>manual</connectionMode>"));
+        assert!(xml.contains("</SSID><nonBroadcast>true</nonBroadcast></SSIDConfig>"));
         assert!(xml.contains("WPA2PSK"));
         assert!(profil_xml("x", "12345678", true).contains("WPA3SAE"));
     }

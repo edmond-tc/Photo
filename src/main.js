@@ -3455,6 +3455,39 @@ async function afficherDocumentsUsb() {
   majBoutonUsb();
 }
 
+/// Bouton 📡 : ce que fait le lien direct, rafraîchi toutes les 2 s tant
+/// que la fenêtre est ouverte.
+let minuterieLien = null;
+async function rafraichirLien() {
+  const modal = document.querySelector("#modal-lien");
+  if (modal.hidden) {
+    clearInterval(minuterieLien);
+    minuterieLien = null;
+    return;
+  }
+  let e;
+  try {
+    e = await invoke("reception_directe_etat");
+  } catch (err) {
+    document.querySelector("#lien-etat").textContent = String(err);
+    return;
+  }
+  document.querySelector("#lien-etat").textContent = e.etat || "…";
+  const liste = document.querySelector("#lien-journal");
+  liste.replaceChildren(
+    ...e.journal.map(([heure, texte]) => {
+      const li = document.createElement("li");
+      li.textContent = `${heure}  ${texte}`;
+      return li;
+    }),
+  );
+}
+function ouvrirLien() {
+  ouvrirModal("modal-lien");
+  rafraichirLien();
+  if (!minuterieLien) minuterieLien = setInterval(rafraichirLien, 2000);
+}
+
 /// Bouton 💾 : relit la clé tout de suite (liste fermée par erreur, clé
 /// branchée avant l'ouverture de l'application).
 async function relireClesUsb() {
@@ -3913,6 +3946,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   setInterval(verifierQrAJour, 5000);
   document.querySelector("#btn-telephone").addEventListener("click", afficherDocumentsTelephone);
   document.querySelector("#btn-cle-usb").addEventListener("click", relireClesUsb);
+  document.querySelector("#btn-lien-direct").addEventListener("click", ouvrirLien);
   document.querySelector("#btn-assistant-test").addEventListener("click", lancerAssistant);
   document.querySelector("#form-licence-blocage").addEventListener("submit", async (e) => {
     e.preventDefault();

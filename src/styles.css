@@ -1357,3 +1357,21 @@ fieldset {
   body.impression-qr .adresse-a-taper { font-size: 1.15rem; }
   body.impression-qr .adresse-a-taper strong { font-size: 2rem; }
 }
+
+/* Journal du lien direct (📡) : lisible sur une photo d'écran. */
+.lien-journal {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  font-family: Consolas, monospace;
+  font-size: 0.85rem;
+  background: #f4f6fa;
+  border-radius: 8px;
+}
+.lien-journal li {
+  padding: 0.2rem 0;
+  border-bottom: 1px solid #e3e7ef;
+  white-space: pre-wrap;
+}

@@ -24,6 +24,26 @@ object Reglages {
     val DONNEES_BLE = byteArrayOf('K'.code.toByte(), 'Q'.code.toByte())
 
     /**
+     * Appel du téléphone au PC (voir `appel_ble.rs`) : « KC », numéro du
+     * kiosque (3 octets, zéros si inconnu), puis les 4 lettres qui terminent
+     * le nom du réseau. Le PC en déduit le nom et le mot de passe, et rejoint
+     * sans chercher.
+     */
+    val APPEL_BLE = byteArrayOf('K'.code.toByte(), 'C'.code.toByte())
+
+    /** Données de l'appel pour le réseau [nom] (« DIRECT-KQ-3FA92C-AB2Z » ou « DIRECT-KQ-AB2Z »). */
+    fun donneesAppel(nom: String): ByteArray? {
+        val reste = nom.removePrefix(PREFIXE_RESEAU)
+        val (kiosque, suffixe) = if ('-' in reste) reste.substringBefore('-') to reste.substringAfter('-') else null to reste
+        if (suffixe.length != 4) return null
+        val numero = kiosque?.let { k ->
+            if (k.length != 6) return null
+            (0..2).map { (k.substring(it * 2, it * 2 + 2).toIntOrNull(16) ?: return null).toByte() }
+        } ?: listOf(0, 0, 0).map { it.toByte() }
+        return APPEL_BLE + numero.toByteArray() + suffixe.toByteArray(Charsets.US_ASCII)
+    }
+
+    /**
      * Force minimale de la balise (dBm) pour proposer l'envoi : le téléphone
      * doit être au guichet, pas dans la cage d'à côté. À régler pendant l'essai.
      */

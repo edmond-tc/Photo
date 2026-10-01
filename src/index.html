@@ -18,6 +18,7 @@
         <button id="btn-recevoir-qr" class="btn-icon" title="Recevoir un fichier par QR">📶</button>
         <button id="btn-cle-usb" class="btn-icon" title="Documents de la clé USB branchée" aria-label="Documents de la clé USB">💾</button>
         <button id="btn-telephone" class="btn-icon" title="Fichiers WhatsApp du téléphone branché par câble" aria-label="Fichiers WhatsApp du téléphone">📱</button>
+        <button id="btn-lien-direct" class="btn-icon" title="Lien direct avec les téléphones : ce qui se passe" aria-label="Lien direct">📡</button>
         <button id="btn-aide" class="btn-icon" title="Aide — à quoi sert cet écran" aria-label="Aide">?</button>
         <button id="btn-menu" class="btn-icon" title="Menu" aria-label="Ouvrir le menu">⋮</button>
       </div>
@@ -109,6 +110,21 @@
         </div>
         <ul id="usb-liste" class="usb-liste"></ul>
         <button id="btn-usb-importer" class="btn-principal">Ajouter les documents cochés</button>
+      </div>
+    </div>
+
+    <!-- Lien direct (le PC rejoint le réseau du téléphone qui l'appelle par
+         Bluetooth) : chaque étape, en direct. Une photo de cet écran dit ce
+         qui a marché et ce qui a échoué. -->
+    <div id="modal-lien" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2>📡 Lien direct avec les téléphones</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-lien" aria-label="Fermer">✕</button>
+        </div>
+        <p>Quand ce PC n'a pas de Wi-Fi de boutique, le téléphone du client (application Envoyeur) crée son propre réseau et appelle le PC par Bluetooth. Le PC le rejoint tout seul.</p>
+        <p><strong>Maintenant :</strong> <span id="lien-etat">…</span></p>
+        <ul id="lien-journal" class="lien-journal"></ul>
       </div>
     </div>
 

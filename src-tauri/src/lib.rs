@@ -1,4 +1,5 @@
 pub mod activite;
+pub mod appel_ble;
 pub mod arrivees;
 pub mod gardien_wifi;
 pub mod backup;
@@ -103,14 +104,11 @@ pub fn run() {
             backup::start(app.handle().clone());
             retention::start(app.handle().clone());
             bluetooth::demarrer(app.handle().clone());
-            // Réception directe (le PC rejoint le réseau du téléphone) :
-            // retirée. Une seule carte Wi-Fi ne peut pas à la fois tenir le
-            // Wi-Fi de la boutique, allumé en permanence, et partir
-            // rejoindre les téléphones. Ancien réglage éteint pour de bon
-            // (la balise Bluetooth, qui en dépend, se tait avec).
-            if let Ok(conn) = app.state::<DbState>().0.lock() {
-                let _ = db::set_setting(&conn, "reception_directe_active", "non");
-            }
+            // Réception directe (le PC rejoint le réseau du téléphone) : elle
+            // ne sert que si le Wi-Fi de la boutique ne tourne pas — PC qui
+            // ne sait pas en créer. Le téléphone l'appelle par Bluetooth.
+            appel_ble::demarrer();
+            reception_directe::demarrer(app.handle().clone());
             arrivees::demarrer(app.handle().clone());
             hotspot::rafraichir_script_demarrage();
             gardien_wifi::demarrer(app.handle().clone());

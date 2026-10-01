@@ -68,6 +68,7 @@ class MainActivity : Activity() {
         private const val DEMANDE_REGLAGE_BLUETOOTH = 17
         private const val DEMANDE_MAM = 18
         private const val DEMANDE_MAM_FICHIERS = 19
+        private const val DEMANDE_LIAISON = 20
 
         /** Adresse imaginaire, servie par l'application elle-même (voir [ClientWeb]). */
         private const val HOTE = "envoyeur.kiosque"
@@ -154,6 +155,9 @@ class MainActivity : Activity() {
     @Volatile private var liaison: Liaison? = null
     @Volatile private var adressePc: String? = null
     private val fermeture = Runnable { fermerLiaison() }
+
+    /** Autorisations du lien direct demandées une fois par ouverture (pas de harcèlement). */
+    private var autorisationsLiaisonDemandees = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -695,14 +699,22 @@ class MainActivity : Activity() {
             return
         }
         if (liaison != null) return // déjà en cours
-        // Plus d'autorisation ni de Localisation exigées ici : elles ne
-        // servaient qu'au réseau Wi-Fi Direct (réception directe, retirée).
-        // Rejoindre le Wi-Fi de la boutique n'en demande aucune.
         // Wi-Fi éteint : l'interface le dit au client et lui propose de
         // l'allumer ; la connexion repart d'elle-même une fois allumé.
         if (!wifiAllume()) {
             signaler(JSONObject().put("type", "connexion").put("etat", "wifi"))
             signalerRadios()
+            return
+        }
+        // Le lien direct (PC qui ne crée pas de Wi-Fi) a besoin de créer un
+        // réseau et d'appeler le PC par Bluetooth : une fenêtre d'Android,
+        // une seule fois. Refusée : on continue quand même (Wi-Fi de la
+        // boutique seulement).
+        val manquantes = autorisationsLiaison()
+        if (manquantes.isNotEmpty() && !autorisationsLiaisonDemandees) {
+            autorisationsLiaisonDemandees = true
+            signaler(JSONObject().put("type", "connexion").put("etat", "encours"))
+            requestPermissions(manquantes.toTypedArray(), DEMANDE_LIAISON)
             return
         }
         val l = Liaison(this, ::journal)
@@ -722,6 +734,7 @@ class MainActivity : Activity() {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     signaler(JSONObject().put("type", "connexion").put("etat", "echec")
                         .put("message", l.raison ?: "Guichet introuvable."))
+                    if (l.localisationRequise) ouvrirReglagesLocalisation()
                 }
             }
         }
@@ -796,6 +809,11 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_SCAN)
     }
 
+    private fun autorisationsLiaison(): List<String> = buildList {
+        addAll(autorisationsNecessaires())
+        if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_ADVERTISE)
+    }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+
     private fun autorisationsManquantes() =
         autorisationsNecessaires().filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
 
@@ -822,6 +840,7 @@ class MainActivity : Activity() {
                                 "Touchez « Autoriser » à nouveau, ou ouvrez les réglages de l'application.")
                 )
             }
+            DEMANDE_LIAISON -> ouvrirLiaison()
             DEMANDE_MAM -> {
                 val action = mamEnAttente
                 mamEnAttente = null

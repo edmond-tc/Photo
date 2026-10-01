@@ -1,7 +1,18 @@
 package bj.photocopie.envoyeur
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothManager
+import android.bluetooth.le.AdvertiseCallback
+import android.bluetooth.le.AdvertiseData
+import android.bluetooth.le.AdvertiseSettings
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -29,11 +40,12 @@ import java.util.concurrent.atomic.AtomicReference
  * le QR Wi-Fi du guichet avec l'appareil photo et accepte. Le téléphone est
  * alors sur le réseau du PC : on le trouve tout de suite (voir [pcSurLeWifi]).
  *
- * Seconde méthode (secours, PC qui ne sait pas créer de Wi-Fi) :
+ * Seconde méthode (PC qui ne sait pas créer de Wi-Fi), comme Quick Share :
  * 1. le téléphone crée son propre réseau (Wi-Fi Direct), avec le mot de
- *    passe de la boutique ;
- * 2. le PC du kiosque le repère et le rejoint tout seul ;
- * 3. le téléphone trouve l'adresse du PC.
+ *    passe du kiosque ;
+ * 2. il APPELLE le PC par Bluetooth : « je suis tel réseau, viens »
+ *    (voir `appel_ble.rs`) — le PC n'a plus à le chercher ;
+ * 3. le PC le rejoint aussitôt, et le téléphone trouve son adresse.
  * Pendant l'attente, la première méthode reste guettée : un client qui
  * scanne le QR Wi-Fi entre-temps est relié aussitôt.
  *
@@ -48,42 +60,211 @@ class Liaison(
     private val p2p = ctx.getSystemService(WifiP2pManager::class.java)
     private val canal = p2p?.initialize(ctx, ctx.mainLooper, null)
 
+    companion object {
+        /** Le temps de voir si le téléphone est déjà sur le Wi-Fi de la boutique. */
+        private const val ATTENTE_WIFI_BOUTIQUE_MS = 5_000L
+    }
+
+    private val bluetooth = try {
+        ctx.getSystemService(BluetoothManager::class.java)?.adapter
+    } catch (_: Exception) {
+        null
+    }
+
+    /** L'appel Bluetooth en cours (voir [appelerPc]). */
+    @Volatile private var rappelAppel: AdvertiseCallback? = null
+
     /** Le nom du réseau créé, pour le journal. */
     var nomReseau: String? = null
+        private set
+
+    /** Échec parce que la Localisation est éteinte (Android 10 à 12) : l'activité ouvre le réglage. */
+    var localisationRequise = false
         private set
 
     /** Crée le réseau et attend le PC. Rend son adresse, ou null (et la raison dans [raison]). */
     fun ouvrir(): InetAddress? {
         if (!attendreWifi()) {
-            raison = "Le Wi-Fi est resté éteint. Allumez-le, puis rejoignez le Wi-Fi de la boutique."
+            raison = "Le Wi-Fi est resté éteint. Allumez-le (sans choisir de réseau)."
             return null
         }
         val debut = System.currentTimeMillis()
-        // Le téléphone doit être sur le Wi-Fi de la boutique (créé par le PC,
-        // allumé en permanence). L'ancienne seconde méthode — le téléphone
-        // crée son réseau et le PC le rejoint — est retirée : une seule
-        // carte Wi-Fi ne peut pas faire les deux à la fois. On attend donc
-        // que le client rejoigne le Wi-Fi (QR du guichet ou liste Wi-Fi).
-        dire("📶 En attente du Wi-Fi de la boutique…")
-        val fin = debut + 90_000
-        while (System.currentTimeMillis() < fin) {
+
+        // Pendant qu'on regarde le Wi-Fi de la boutique : écouter la balise
+        // du PC, pour créer le réseau au numéro de CE kiosque.
+        val balise = Thread { if (Reglages.kiosqueRecent(ctx) == null) ecouterBalise(4000) }
+        balise.start()
+
+        // 1. Le téléphone est-il déjà sur le Wi-Fi de la boutique ?
+        dire("📶 Recherche du Wi-Fi de la boutique…")
+        val finWifi = debut + ATTENTE_WIFI_BOUTIQUE_MS
+        while (System.currentTimeMillis() < finWifi) {
             pcSurLeWifi()?.let { pc ->
                 val secondes = (System.currentTimeMillis() - debut) / 1000.0
                 dire("✅ Téléphone sur le Wi-Fi de la boutique : PC à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
                 return pc
             }
+            Thread.sleep(1000)
+        }
+        balise.join(5000)
+
+        // 2. Sinon, comme Quick Share : le téléphone crée son réseau et
+        //    appelle le PC par Bluetooth.
+        if (p2p == null || canal == null) return attendreWifiBoutique(debut, "Ce téléphone ne sait pas créer de réseau Wi-Fi Direct.")
+        if (!peutCreerReseau()) return attendreWifiBoutique(debut, "Autorisation « Appareils à proximité » refusée.")
+        if (localisationEteinte()) {
+            localisationRequise = true
+            raison = "Allumez la « Localisation » du téléphone (Android l'exige pour créer le lien avec le PC), puis revenez ici."
+            dire("❌ Localisation éteinte : réseau impossible.")
+            return null
+        }
+        val nom = creerReseau() ?: return attendreWifiBoutique(debut, "Le téléphone n'a pas pu créer son réseau.")
+        nomReseau = nom
+        dire("📶 Réseau « $nom » créé.")
+        appelerPc(nom)
+        try {
+            val pc = trouverPc(90_000)
+            if (pc == null) {
+                raison = "L'ordinateur de la boutique ne s'est pas relié. Approchez-vous du guichet, vérifiez que le logiciel est ouvert, puis réessayez."
+                dire("❌ Le PC ne s'est pas connecté en 90 s.")
+                supprimerReseau()
+                return null
+            }
+            // Relié par le Wi-Fi de la boutique entre-temps : le réseau du téléphone ne sert plus.
+            if (reseauWifi != null) supprimerReseau()
+            val secondes = (System.currentTimeMillis() - debut) / 1000.0
+            dire("✅ PC trouvé à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
+            return pc
+        } finally {
+            arreterAppel()
+        }
+    }
+
+    /** Pas de réseau possible depuis le téléphone : seul le Wi-Fi de la boutique reste. */
+    private fun attendreWifiBoutique(debut: Long, pourquoi: String): InetAddress? {
+        dire("⚠️ $pourquoi En attente du Wi-Fi de la boutique…")
+        val fin = debut + 90_000
+        while (System.currentTimeMillis() < fin) {
+            pcSurLeWifi()?.let { return it }
             Thread.sleep(2000)
         }
-        raison = "Rejoignez d'abord le Wi-Fi de la boutique : scannez le code du guichet, ou choisissez son nom dans vos réseaux Wi-Fi. Puis revenez ici."
-        dire("❌ Pas sur le Wi-Fi de la boutique après 90 s.")
+        raison = "$pourquoi Rejoignez le Wi-Fi de la boutique (code du guichet, ou liste des Wi-Fi), puis revenez ici."
         return null
     }
 
     var raison: String? = null
         private set
 
+    private fun permis(p: String) = ctx.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
+
+    private fun peutCreerReseau(): Boolean =
+        if (android.os.Build.VERSION.SDK_INT >= 33) permis(Manifest.permission.NEARBY_WIFI_DEVICES)
+        else permis(Manifest.permission.ACCESS_FINE_LOCATION)
+
+    private fun localisationEteinte(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT >= 33) return false
+        val lm = ctx.getSystemService(LocationManager::class.java) ?: return false
+        return !lm.isLocationEnabled
+    }
+
+    // ───────────────────────────── Bluetooth ─────────────────────────────
+
+    /** Écoute la balise du PC quelques secondes : son numéro de kiosque. */
+    @SuppressLint("MissingPermission")
+    private fun ecouterBalise(dureeMs: Long) {
+        val adaptateur = bluetooth?.takeIf { it.isEnabled } ?: return
+        if (android.os.Build.VERSION.SDK_INT >= 31 && !permis(Manifest.permission.BLUETOOTH_SCAN)) return
+        val ecoute = try { adaptateur.bluetoothLeScanner } catch (_: Exception) { null } ?: return
+        val meilleur = AtomicReference<Pair<Int, String>?>(null)
+        val rappel = object : ScanCallback() {
+            override fun onScanResult(type: Int, r: ScanResult) {
+                val d = r.scanRecord?.getManufacturerSpecificData(Reglages.FABRICANT_BLE) ?: return
+                if (d.size < 5 || d[0] != 'K'.code.toByte() || d[1] != 'Q'.code.toByte()) return
+                val numero = (2..4).joinToString("") { "%02X".format(d[it]) }
+                val m = meilleur.get()
+                if (m == null || r.rssi > m.first) meilleur.set(r.rssi to numero)
+            }
+        }
+        val filtre = ScanFilter.Builder().setManufacturerData(Reglages.FABRICANT_BLE, Reglages.DONNEES_BLE).build()
+        val reglages = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+        try {
+            ecoute.startScan(listOf(filtre), reglages, rappel)
+        } catch (_: Exception) {
+            return
+        }
+        Thread.sleep(dureeMs)
+        try { ecoute.stopScan(rappel) } catch (_: Exception) {}
+        val trouve = meilleur.get()
+        if (trouve != null) {
+            Reglages.noterKiosque(ctx, trouve.second, System.currentTimeMillis())
+            dire("🏷 Kiosque ${trouve.second} entendu (${trouve.first} dBm).")
+        } else {
+            dire("Balise du kiosque non entendue : réseau sans numéro.")
+        }
+    }
+
+    /**
+     * Appelle le PC par Bluetooth (sans connexion ni appairage) jusqu'à ce
+     * qu'il soit trouvé. Sans Bluetooth, le PC cherche quand même le réseau
+     * dans la liste des Wi-Fi, en plus lent.
+     */
+    @SuppressLint("MissingPermission")
+    private fun appelerPc(nom: String) {
+        val donnees = Reglages.donneesAppel(nom) ?: return
+        val adaptateur = bluetooth
+        val pourquoi = when {
+            adaptateur == null -> "pas de Bluetooth sur ce téléphone"
+            !adaptateur.isEnabled -> "Bluetooth éteint"
+            android.os.Build.VERSION.SDK_INT >= 31 && !permis(Manifest.permission.BLUETOOTH_ADVERTISE) -> "autorisation Bluetooth refusée"
+            else -> null
+        }
+        if (pourquoi != null) {
+            dire("⚠️ Pas d'appel Bluetooth ($pourquoi) : le PC cherchera le réseau tout seul (plus lent).")
+            return
+        }
+        val annonceur = try { adaptateur!!.bluetoothLeAdvertiser } catch (_: Exception) { null }
+        if (annonceur == null) {
+            dire("⚠️ Ce téléphone ne sait pas appeler en Bluetooth : le PC cherchera le réseau tout seul (plus lent).")
+            return
+        }
+        val reglages = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+            .setConnectable(false)
+            .setTimeout(0)
+            .build()
+        val contenu = AdvertiseData.Builder()
+            .setIncludeDeviceName(false)
+            .setIncludeTxPowerLevel(false)
+            .addManufacturerData(Reglages.FABRICANT_BLE, donnees)
+            .build()
+        val rappel = object : AdvertiseCallback() {
+            override fun onStartSuccess(effectifs: AdvertiseSettings?) {
+                dire("📣 Appel Bluetooth lancé : le PC sait quel réseau rejoindre.")
+            }
+
+            override fun onStartFailure(code: Int) {
+                dire("⚠️ Appel Bluetooth refusé par le téléphone (code $code) : le PC cherchera le réseau (plus lent).")
+            }
+        }
+        try {
+            annonceur.startAdvertising(reglages, contenu, rappel)
+            rappelAppel = rappel
+        } catch (e: Exception) {
+            dire("⚠️ Appel Bluetooth impossible (${e.message}) : le PC cherchera le réseau (plus lent).")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun arreterAppel() {
+        val rappel = rappelAppel ?: return
+        rappelAppel = null
+        try { bluetooth?.bluetoothLeAdvertiser?.stopAdvertising(rappel) } catch (_: Exception) {}
+    }
+
     /** Supprime le réseau : le PC est libéré pour le client suivant. */
     fun fermer() {
+        arreterAppel()
         if (reseauWifi != null) {
             reseauWifi = null
             try { ctx.getSystemService(ConnectivityManager::class.java)?.bindProcessToNetwork(null) } catch (_: Exception) {}
