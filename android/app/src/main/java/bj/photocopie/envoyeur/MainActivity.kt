@@ -70,6 +70,9 @@ class MainActivity : Activity() {
         private const val DEMANDE_MAM_FICHIERS = 19
         private const val DEMANDE_LIAISON = 20
 
+        /** Valeur de [adressePc] en mode Bluetooth (pas d'adresse : tout passe par le canal). */
+        private const val PC_PAR_BLUETOOTH = "bluetooth"
+
         /** Adresse imaginaire, servie par l'application elle-même (voir [ClientWeb]). */
         private const val HOTE = "envoyeur.kiosque"
 
@@ -86,6 +89,8 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private val principal = Handler(Looper.getMainLooper())
     private val executeur = Executors.newSingleThreadExecutor()
+    /** Requêtes de la page en mode Bluetooth : une à la fois, à part de la liaison. */
+    private val requetesBt = Executors.newSingleThreadExecutor()
 
     private var rappelFichiers: ValueCallback<Array<Uri>>? = null
     private var photo: Uri? = null
@@ -233,6 +238,7 @@ class MainActivity : Activity() {
         liaison?.let { l -> executeur.execute { l.fermer() } }
         liaison = null
         executeur.shutdown()
+        requetesBt.shutdown()
         web.destroy()
         super.onDestroy()
     }
@@ -332,6 +338,31 @@ class MainActivity : Activity() {
     // ───────────────────────────── Pont avec l'interface ─────────────────────────────
 
     private inner class Pont {
+        /**
+         * Mode Bluetooth (aucun Wi-Fi ne passe) : la page confie chaque
+         * requête au canal Bluetooth ; la réponse revient par l'événement
+         * « reponse-bt ». Une à la fois, dans l'ordre.
+         */
+        @JavascriptInterface
+        fun requete(id: Int, methode: String, chemin: String, type: String, corpsB64: String) {
+            val c = liaison?.canalBt
+            requetesBt.execute {
+                val (statut, texte) = try {
+                    if (c == null) {
+                        0 to "Pas de liaison Bluetooth."
+                    } else {
+                        val corps = if (corpsB64.isEmpty()) null else android.util.Base64.decode(corpsB64, android.util.Base64.DEFAULT)
+                        val entete = JSONObject().put("t", "http").put("id", id).put("m", methode).put("p", chemin).put("ct", type)
+                        val (r, reponse) = c.echangerAvecReprise(entete, corps)
+                        r.optInt("s", 0) to String(reponse, Charsets.UTF_8)
+                    }
+                } catch (e: Exception) {
+                    0 to (e.message ?: "Liaison Bluetooth coupée.")
+                }
+                signaler(JSONObject().put("type", "reponse-bt").put("id", id).put("s", statut).put("texte", texte))
+            }
+        }
+
         @JavascriptInterface
         // Plus d'écran d'autorisations au premier lancement : elles ne
         // servaient qu'à la réception directe (balise, réseau Wi-Fi Direct),
@@ -674,7 +705,9 @@ class MainActivity : Activity() {
             // autre client.) Sinon, nouvelle liaison tout de suite, au lieu
             // d'un envoi qui échouerait plus tard.
             executeur.execute {
-                val joignable = try {
+                val joignable = if (pc == PC_PAR_BLUETOOTH) {
+                    liaison?.canalBt?.ouvert == true
+                } else try {
                     java.net.Socket().use { it.connect(java.net.InetSocketAddress(pc, Reglages.PORT_PC), 1500) }
                     true
                 } catch (_: Exception) {
@@ -683,7 +716,7 @@ class MainActivity : Activity() {
                 principal.post {
                     if (adressePc != pc) return@post
                     if (joignable) {
-                        signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc))
+                        signaler(connexionOk(pc))
                         principal.removeCallbacks(fermeture)
                         programmerFermeture()
                     } else {
@@ -722,12 +755,13 @@ class MainActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         signaler(JSONObject().put("type", "connexion").put("etat", "encours"))
         executeur.execute {
-            val pc = try { l.ouvrir() } catch (e: Exception) { journal("❌ ${e.message}"); null }
+            val resultat = try { l.ouvrir() } catch (e: Exception) { journal("❌ ${e.message}"); null }
             principal.post {
                 if (liaison !== l) return@post
+                val pc = resultat?.pc?.hostAddress ?: if (resultat?.canal != null) PC_PAR_BLUETOOTH else null
                 if (pc != null) {
-                    adressePc = pc.hostAddress
-                    signaler(JSONObject().put("type", "connexion").put("etat", "ok").put("pc", pc.hostAddress))
+                    adressePc = pc
+                    signaler(connexionOk(pc))
                     programmerFermeture()
                 } else {
                     liaison = null
@@ -738,6 +772,12 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /** « Relié » pour la page : l'adresse du PC, ou le mode Bluetooth. */
+    private fun connexionOk(pc: String): JSONObject {
+        val e = JSONObject().put("type", "connexion").put("etat", "ok")
+        return if (pc == PC_PAR_BLUETOOTH) e.put("bt", true) else e.put("pc", pc)
     }
 
     private fun localisationEteinte(): Boolean {
@@ -811,7 +851,10 @@ class MainActivity : Activity() {
 
     private fun autorisationsLiaison(): List<String> = buildList {
         addAll(autorisationsNecessaires())
-        if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_ADVERTISE)
+        if (Build.VERSION.SDK_INT >= 31) {
+            add(Manifest.permission.BLUETOOTH_ADVERTISE)
+            add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
     }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
 
     private fun autorisationsManquantes() =

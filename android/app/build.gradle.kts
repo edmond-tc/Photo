@@ -14,8 +14,8 @@ android {
         // choisis, sans fenêtre de confirmation.
         minSdk = 29
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.3.11"
+        versionCode = 28
+        versionName = "0.3.12"
     }
 
     // L'écran de l'application est l'interface web du client, la même que

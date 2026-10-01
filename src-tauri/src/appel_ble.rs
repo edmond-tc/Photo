@@ -82,6 +82,12 @@ pub struct Appel {
     /// Force du signal, en dBm (−40 : dans la main ; −90 : très loin).
     pub signal: i16,
     pub entendu: Instant,
+    /// Mot de passe donné par le téléphone (canal Bluetooth, voir
+    /// `canal_bt.rs`) : n'importe quel réseau, même au nom choisi par Android.
+    pub mot_de_passe: Option<String>,
+    /// Demande faite par le canal Bluetooth relié à CE PC : forcément pour
+    /// lui, quel que soit le signal.
+    pub direct: bool,
 }
 
 static APPELS: Mutex<Vec<Appel>> = Mutex::new(Vec::new());
@@ -101,11 +107,28 @@ pub fn entendre(donnees: &[u8], signal: i16) {
     let Ok(mut appels) = APPELS.lock() else { return };
     let nouveau = !appels.iter().any(|a| a.ssid == ssid);
     appels.retain(|a| a.entendu.elapsed() < FRAICHEUR && a.ssid != ssid);
-    appels.push(Appel { ssid: ssid.clone(), kiosque, signal, entendu: Instant::now() });
+    if appels.iter().any(|a| a.ssid == ssid && a.direct) {
+        return;
+    }
+    appels.push(Appel { ssid: ssid.clone(), kiosque, signal, entendu: Instant::now(), mot_de_passe: None, direct: false });
     drop(appels);
     if nouveau {
         crate::reception_directe::noter(format!("📣 Appel Bluetooth du téléphone « {ssid} » (signal {signal} dBm)."));
     }
+}
+
+/// Demande arrivée par le canal Bluetooth : nom ET mot de passe du réseau.
+pub fn demande_directe(ssid: &str, mot_de_passe: &str) {
+    let Ok(mut appels) = APPELS.lock() else { return };
+    appels.retain(|a| a.entendu.elapsed() < FRAICHEUR && a.ssid != ssid);
+    appels.push(Appel {
+        ssid: ssid.to_string(),
+        kiosque: None,
+        signal: 0,
+        entendu: Instant::now(),
+        mot_de_passe: Some(mot_de_passe.to_string()),
+        direct: true,
+    });
 }
 
 /// L'appel à servir maintenant, s'il y en a un : pour CE kiosque (ou sans
@@ -118,12 +141,15 @@ pub fn choisir_appel(
     appels
         .iter()
         .filter(|a| a.entendu.elapsed() < FRAICHEUR)
-        .filter(|a| match &a.kiosque {
-            Some(n) => n == mon_numero,
-            None => a.signal >= SIGNAL_MINIMUM_SANS_NUMERO,
+        .filter(|a| {
+            a.direct
+                || match &a.kiosque {
+                    Some(n) => n == mon_numero,
+                    None => a.signal >= SIGNAL_MINIMUM_SANS_NUMERO,
+                }
         })
         .filter(|a| !a_l_ecart(&a.ssid))
-        .max_by_key(|a| (a.kiosque.is_some(), a.signal))
+        .max_by_key(|a| (a.direct, a.kiosque.is_some(), a.signal))
         .cloned()
 }
 
@@ -261,6 +287,8 @@ mod tests {
             kiosque: kiosque.map(String::from),
             signal,
             entendu: Instant::now(),
+            mot_de_passe: None,
+            direct: false,
         };
         let jamais = |_: &str| false;
         // Le kiosque voisin n'est jamais servi, même tout près.
@@ -279,6 +307,11 @@ mod tests {
         let mut vieux = a("m", Some("3FA92C"), -50);
         vieux.entendu = Instant::now() - Duration::from_secs(60);
         assert_eq!(choisir_appel(&[vieux], "3FA92C", &jamais), None);
+        // Demande par le canal Bluetooth : servie d'abord, même sans signal.
+        let mut direct = a("AndroidShare_1234", None, 0);
+        direct.direct = true;
+        let liste = [a("m", Some("3FA92C"), -40), direct];
+        assert_eq!(choisir_appel(&liste, "3FA92C", &jamais).unwrap().ssid, "AndroidShare_1234");
     }
 
     /// Doit rester identique à `Reglages.kt` de l'envoyeur Android : sinon le

@@ -5,6 +5,7 @@ pub mod gardien_wifi;
 pub mod backup;
 pub mod balise_ble;
 pub mod bluetooth;
+pub mod canal_bt;
 pub mod commands;
 pub mod controle_impressions;
 pub mod db;
@@ -108,6 +109,7 @@ pub fn run() {
             // ne sert que si le Wi-Fi de la boutique ne tourne pas — PC qui
             // ne sait pas en créer. Le téléphone l'appelle par Bluetooth.
             appel_ble::demarrer();
+            canal_bt::demarrer(app.handle().clone());
             reception_directe::demarrer(app.handle().clone());
             arrivees::demarrer(app.handle().clone());
             hotspot::rafraichir_script_demarrage();

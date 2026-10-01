@@ -19,6 +19,7 @@ import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pManager
+import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.Inet4Address
@@ -82,74 +83,308 @@ class Liaison(
     var localisationRequise = false
         private set
 
-    /** Crée le réseau et attend le PC. Rend son adresse, ou null (et la raison dans [raison]). */
-    fun ouvrir(): InetAddress? {
-        if (!attendreWifi()) {
-            raison = "Le Wi-Fi est resté éteint. Allumez-le (sans choisir de réseau)."
-            return null
-        }
+    /**
+     * Le résultat d'une liaison : l'adresse du PC sur un Wi-Fi, ou le canal
+     * Bluetooth (secours, plus lent) quand aucun Wi-Fi ne passe.
+     */
+    class Resultat(val pc: InetAddress?, val canal: CanalBt?)
+
+    /** Le canal Bluetooth gardé pour le mode Bluetooth (voir [Resultat]). */
+    @Volatile var canalBt: CanalBt? = null
+        private set
+
+    /** Relie le téléphone au PC, par le meilleur chemin qui marche. Null : échec (raison dans [raison]). */
+    fun ouvrir(): Resultat? {
         val debut = System.currentTimeMillis()
+        val wifi = attendreWifi()
 
         // Pendant qu'on regarde le Wi-Fi de la boutique : écouter la balise
-        // du PC, pour créer le réseau au numéro de CE kiosque.
-        val balise = Thread { if (Reglages.kiosqueRecent(ctx) == null) ecouterBalise(4000) }
+        // du PC (numéro du kiosque, adresse Bluetooth du PC).
+        val balise = Thread {
+            if (Reglages.kiosqueRecent(ctx) == null || Reglages.adressePcRecente(ctx) == null) ecouterBalise(4000)
+        }
         balise.start()
 
         // 1. Le téléphone est-il déjà sur le Wi-Fi de la boutique ?
-        dire("📶 Recherche du Wi-Fi de la boutique…")
-        val finWifi = debut + ATTENTE_WIFI_BOUTIQUE_MS
-        while (System.currentTimeMillis() < finWifi) {
-            pcSurLeWifi()?.let { pc ->
-                val secondes = (System.currentTimeMillis() - debut) / 1000.0
-                dire("✅ Téléphone sur le Wi-Fi de la boutique : PC à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
-                return pc
+        if (wifi) {
+            dire("📶 Recherche du Wi-Fi de la boutique…")
+            val finWifi = debut + ATTENTE_WIFI_BOUTIQUE_MS
+            while (System.currentTimeMillis() < finWifi) {
+                pcSurLeWifi()?.let { pc ->
+                    val secondes = (System.currentTimeMillis() - debut) / 1000.0
+                    dire("✅ Téléphone sur le Wi-Fi de la boutique : PC à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
+                    return Resultat(pc, null)
+                }
+                Thread.sleep(1000)
             }
-            Thread.sleep(1000)
         }
         balise.join(5000)
 
-        // 2. Sinon, comme Quick Share : le téléphone crée son réseau et
-        //    appelle le PC par Bluetooth.
-        if (p2p == null || canal == null) return attendreWifiBoutique(debut, "Ce téléphone ne sait pas créer de réseau Wi-Fi Direct.")
-        if (!peutCreerReseau()) return attendreWifiBoutique(debut, "Autorisation « Appareils à proximité » refusée.")
-        if (localisationEteinte()) {
-            localisationRequise = true
-            raison = "Allumez la « Localisation » du téléphone (Android l'exige pour créer le lien avec le PC), puis revenez ici."
-            dire("❌ Localisation éteinte : réseau impossible.")
+        // 2. Le canal Bluetooth avec le PC : on se dit où se retrouver.
+        val c = ouvrirCanal()
+
+        // 3. Le réseau du téléphone, que le PC rejoint.
+        if (wifi) {
+            val reseau = creerUnReseau()
+            if (reseau != null) {
+                val (nom, motDePasse) = reseau
+                if (c != null) {
+                    lienParLeCanal(c, nom, motDePasse)?.let { return it }
+                } else {
+                    // Sans canal : l'appel Bluetooth, et le PC cherche le réseau.
+                    appelerPc(nom)
+                    try {
+                        val pc = trouverPc(90_000)
+                        if (pc != null) {
+                            if (reseauWifi != null) supprimerReseau()
+                            val secondes = (System.currentTimeMillis() - debut) / 1000.0
+                            dire("✅ PC trouvé à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
+                            return Resultat(pc, null)
+                        }
+                        dire("❌ Le PC ne s'est pas connecté en 90 s.")
+                    } finally {
+                        arreterAppel()
+                    }
+                }
+                supprimerReseau()
+            }
+        }
+
+        // 4. Secours : tout par le canal Bluetooth.
+        if (c != null && c.ouvert) {
+            dire("🔵 Aucun Wi-Fi ne passe : envoi par Bluetooth (plus lent).")
+            canalBt = c
+            return Resultat(null, c)
+        }
+        c?.fermer()
+        if (raison == null) {
+            raison = when {
+                !wifi -> "Allumez le Wi-Fi ou le Bluetooth du téléphone, puis réessayez."
+                localisationRequise -> "Allumez la « Localisation » du téléphone (Android l'exige pour créer le lien avec le PC), puis revenez ici."
+                else -> "L'ordinateur de la boutique ne s'est pas relié. Approchez-vous du guichet, vérifiez que le logiciel est ouvert et que le Bluetooth du téléphone est allumé, puis réessayez."
+            }
+        }
+        return null
+    }
+
+    /** Le canal Bluetooth vers le PC entendu dans la balise, ou null. */
+    private fun ouvrirCanal(): CanalBt? {
+        val mac = Reglages.adressePcRecente(ctx)
+        if (mac == null) {
+            dire("Adresse Bluetooth du PC inconnue (balise non entendue) : pas de canal.")
             return null
         }
-        val nom = creerReseau() ?: return attendreWifiBoutique(debut, "Le téléphone n'a pas pu créer son réseau.")
-        nomReseau = nom
-        dire("📶 Réseau « $nom » créé.")
-        appelerPc(nom)
+        val pourquoi = when {
+            bluetooth == null -> "pas de Bluetooth sur ce téléphone"
+            !bluetooth.isEnabled -> "Bluetooth éteint"
+            android.os.Build.VERSION.SDK_INT >= 31 && !permis(Manifest.permission.BLUETOOTH_CONNECT) -> "autorisation Bluetooth refusée"
+            else -> null
+        }
+        if (pourquoi != null) {
+            dire("⚠️ Pas de canal Bluetooth ($pourquoi).")
+            return null
+        }
+        dire("🔵 Canal Bluetooth vers le PC ($mac)…")
+        val c = CanalBt(ctx, dire)
+        if (!c.ouvrir(mac)) {
+            dire("⚠️ Le PC ne répond pas sur le canal Bluetooth.")
+            return null
+        }
+        dire("🔵 Canal Bluetooth ouvert.")
+        return c
+    }
+
+    /** Wi-Fi Direct d'abord, point d'accès local d'Android ensuite. (nom, mot de passe) ou null. */
+    private fun creerUnReseau(): Pair<String, String>? {
+        if (!peutCreerReseau()) {
+            dire("⚠️ Autorisation « Appareils à proximité » refusée : pas de réseau.")
+            return null
+        }
+        if (localisationEteinte()) {
+            localisationRequise = true
+            dire("⚠️ Localisation éteinte : pas de réseau.")
+            return null
+        }
+        if (p2p != null && canal != null) {
+            creerReseau()?.let { nom ->
+                nomReseau = nom
+                dire("📶 Réseau « $nom » créé.")
+                val kiosque = Reglages.kiosqueRecent(ctx)
+                return nom to (kiosque?.let { Reglages.motDePasseKiosque(it) } ?: Reglages.motDePasse(ctx))
+            }
+        }
+        return creerPointAccesLocal()
+    }
+
+    /**
+     * Le canal Bluetooth est ouvert : on donne au PC le nom et le mot de passe,
+     * il répond quand il est relié. Null : à passer au secours Bluetooth.
+     */
+    private fun lienParLeCanal(c: CanalBt, nom: String, motDePasse: String): Resultat? {
+        appelerPc(nom) // le PC sait aussi par l'appel, au cas où le canal sauterait
         try {
-            val pc = trouverPc(90_000)
-            if (pc == null) {
-                raison = "L'ordinateur de la boutique ne s'est pas relié. Approchez-vous du guichet, vérifiez que le logiciel est ouvert, puis réessayez."
-                dire("❌ Le PC ne s'est pas connecté en 90 s.")
-                supprimerReseau()
+            dire("🔵 Le PC rejoint « $nom »…")
+            val (r, _) = try {
+                c.echangerAvecReprise(JSONObject().put("t", "wifi").put("ssid", nom).put("mdp", motDePasse), null)
+            } catch (e: Exception) {
+                dire("⚠️ Canal Bluetooth : ${e.message}")
                 return null
             }
-            // Relié par le Wi-Fi de la boutique entre-temps : le réseau du téléphone ne sert plus.
-            if (reseauWifi != null) supprimerReseau()
-            val secondes = (System.currentTimeMillis() - debut) / 1000.0
-            dire("✅ PC trouvé à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
-            return pc
+            when (r.optString("etat")) {
+                "ok" -> {
+                    val ip = r.optString("ip")
+                    val pc = try { InetAddress.getByName(ip) } catch (_: Exception) { null }
+                    if (pc != null && joignable(pc)) {
+                        dire("✅ PC relié au réseau du téléphone : $ip.")
+                        c.fermer()
+                        return Resultat(pc, null)
+                    }
+                    dire("⚠️ Le PC se dit relié ($ip) mais ne répond pas.")
+                }
+                "boutique" -> {
+                    supprimerReseau()
+                    val pc = rejoindreWifiBoutique(r.optString("ssid"), r.optString("mdp"))
+                    if (pc != null) {
+                        c.fermer()
+                        return Resultat(pc, null)
+                    }
+                }
+                else -> dire("⚠️ Le PC n'a pas pu rejoindre : ${r.optString("raison")}.")
+            }
+            return null
         } finally {
             arreterAppel()
         }
     }
 
-    /** Pas de réseau possible depuis le téléphone : seul le Wi-Fi de la boutique reste. */
-    private fun attendreWifiBoutique(debut: Long, pourquoi: String): InetAddress? {
-        dire("⚠️ $pourquoi En attente du Wi-Fi de la boutique…")
-        val fin = debut + 90_000
-        while (System.currentTimeMillis() < fin) {
-            pcSurLeWifi()?.let { return it }
-            Thread.sleep(2000)
+    private fun joignable(pc: InetAddress): Boolean {
+        repeat(5) {
+            if (portOuvert(pc)) return true
+            Thread.sleep(1000)
         }
-        raison = "$pourquoi Rejoignez le Wi-Fi de la boutique (code du guichet, ou liste des Wi-Fi), puis revenez ici."
+        return false
+    }
+
+    // ─────────────── Point d'accès local (secours du Wi-Fi Direct) ───────────────
+
+    @Volatile private var reservation: WifiManager.LocalOnlyHotspotReservation? = null
+
+    @SuppressLint("MissingPermission")
+    private fun creerPointAccesLocal(): Pair<String, String>? {
+        val wm = ctx.applicationContext.getSystemService(WifiManager::class.java) ?: return null
+        val obtenue = AtomicReference<WifiManager.LocalOnlyHotspotReservation?>(null)
+        val fini = CountDownLatch(1)
+        try {
+            wm.startLocalOnlyHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
+                override fun onStarted(r: WifiManager.LocalOnlyHotspotReservation) {
+                    obtenue.set(r)
+                    fini.countDown()
+                }
+
+                override fun onFailed(code: Int) {
+                    dire("⚠️ Point d'accès local refusé (code $code).")
+                    fini.countDown()
+                }
+            }, android.os.Handler(android.os.Looper.getMainLooper()))
+        } catch (e: Exception) {
+            dire("⚠️ Point d'accès local impossible : ${e.message}")
+            return null
+        }
+        fini.await(15, TimeUnit.SECONDS)
+        val r = obtenue.get() ?: return null
+        reservation = r
+        val (nom, mdp) = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val conf = r.softApConfiguration
+            val ssid = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                conf.wifiSsid?.toString()?.removeSurrounding("\"")
+            } else {
+                @Suppress("DEPRECATION")
+                conf.ssid
+            }
+            ssid to conf.passphrase
+        } else {
+            @Suppress("DEPRECATION")
+            val conf = r.wifiConfiguration
+            @Suppress("DEPRECATION")
+            conf?.SSID?.removeSurrounding("\"") to conf?.preSharedKey?.removeSurrounding("\"")
+        }
+        if (nom.isNullOrEmpty() || mdp.isNullOrEmpty()) {
+            fermerPointAccesLocal()
+            return null
+        }
+        nomReseau = nom
+        dire("📶 Point d'accès local « $nom » créé.")
+        return nom to mdp
+    }
+
+    private fun fermerPointAccesLocal() {
+        try { reservation?.close() } catch (_: Exception) {}
+        reservation = null
+    }
+
+    // ─────────────── Rejoindre le Wi-Fi de la boutique tout seul ───────────────
+
+    @Volatile private var demandeBoutique: ConnectivityManager.NetworkCallback? = null
+
+    /**
+     * Le PC a donné le nom et le mot de passe du Wi-Fi de la boutique :
+     * Android propose de s'y relier (une fenêtre, un geste), puis toute
+     * l'application passe par lui, données mobiles allumées ou non.
+     */
+    private fun rejoindreWifiBoutique(ssid: String, mdp: String): InetAddress? {
+        if (ssid.isEmpty()) return null
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return null
+        dire("📶 Le PC propose son Wi-Fi « $ssid » : connexion…")
+        val specif = android.net.wifi.WifiNetworkSpecifier.Builder().setSsid(ssid).apply {
+            if (mdp.length >= 8) setWpa2Passphrase(mdp)
+        }.build()
+        val demande = android.net.NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .setNetworkSpecifier(specif)
+            .build()
+        val trouve = AtomicReference<Network?>(null)
+        val fini = CountDownLatch(1)
+        val rappel = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(reseau: Network) {
+                trouve.set(reseau)
+                fini.countDown()
+            }
+
+            override fun onUnavailable() {
+                fini.countDown()
+            }
+        }
+        try {
+            cm.requestNetwork(demande, rappel, 60_000)
+        } catch (e: Exception) {
+            dire("⚠️ Wi-Fi de la boutique : ${e.message}")
+            return null
+        }
+        demandeBoutique = rappel
+        fini.await(65, TimeUnit.SECONDS)
+        val reseau = trouve.get()
+        if (reseau == null) {
+            dire("⚠️ Wi-Fi de la boutique non rejoint.")
+            oublierWifiBoutique()
+            return null
+        }
+        try { cm.bindProcessToNetwork(reseau) } catch (_: Exception) {}
+        repeat(10) {
+            pcSurLeWifi()?.let { pc ->
+                dire("✅ Sur le Wi-Fi de la boutique : PC à ${pc.hostAddress}.")
+                return pc
+            }
+            Thread.sleep(1000)
+        }
+        oublierWifiBoutique()
         return null
+    }
+
+    private fun oublierWifiBoutique() {
+        val r = demandeBoutique ?: return
+        demandeBoutique = null
+        try { ctx.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(r) } catch (_: Exception) {}
     }
 
     var raison: String? = null
@@ -176,13 +411,18 @@ class Liaison(
         if (android.os.Build.VERSION.SDK_INT >= 31 && !permis(Manifest.permission.BLUETOOTH_SCAN)) return
         val ecoute = try { adaptateur.bluetoothLeScanner } catch (_: Exception) { null } ?: return
         val meilleur = AtomicReference<Pair<Int, String>?>(null)
+        val mac = AtomicReference<String?>(null)
         val rappel = object : ScanCallback() {
             override fun onScanResult(type: Int, r: ScanResult) {
                 val d = r.scanRecord?.getManufacturerSpecificData(Reglages.FABRICANT_BLE) ?: return
                 if (d.size < 5 || d[0] != 'K'.code.toByte() || d[1] != 'Q'.code.toByte()) return
                 val numero = (2..4).joinToString("") { "%02X".format(d[it]) }
                 val m = meilleur.get()
-                if (m == null || r.rssi > m.first) meilleur.set(r.rssi to numero)
+                if (m == null || r.rssi > m.first) {
+                    meilleur.set(r.rssi to numero)
+                    // Adresse Bluetooth du PC, si sa balise la donne (11 octets).
+                    if (d.size >= 11) mac.set((5..10).joinToString(":") { "%02X".format(d[it]) })
+                }
             }
         }
         val filtre = ScanFilter.Builder().setManufacturerData(Reglages.FABRICANT_BLE, Reglages.DONNEES_BLE).build()
@@ -197,7 +437,8 @@ class Liaison(
         val trouve = meilleur.get()
         if (trouve != null) {
             Reglages.noterKiosque(ctx, trouve.second, System.currentTimeMillis())
-            dire("🏷 Kiosque ${trouve.second} entendu (${trouve.first} dBm).")
+            mac.get()?.let { Reglages.noterAdressePc(ctx, it, System.currentTimeMillis()) }
+            dire("🏷 Kiosque ${trouve.second} entendu (${trouve.first} dBm)" + (mac.get()?.let { ", PC $it." } ?: "."))
         } else {
             dire("Balise du kiosque non entendue : réseau sans numéro.")
         }
@@ -265,6 +506,9 @@ class Liaison(
     /** Supprime le réseau : le PC est libéré pour le client suivant. */
     fun fermer() {
         arreterAppel()
+        canalBt?.fermer()
+        canalBt = null
+        oublierWifiBoutique()
         if (reseauWifi != null) {
             reseauWifi = null
             try { ctx.getSystemService(ConnectivityManager::class.java)?.bindProcessToNetwork(null) } catch (_: Exception) {}
@@ -343,6 +587,7 @@ class Liaison(
     }
 
     private fun supprimerReseau() {
+        fermerPointAccesLocal()
         val fini = CountDownLatch(1)
         try {
             p2p?.removeGroup(canal, object : WifiP2pManager.ActionListener {

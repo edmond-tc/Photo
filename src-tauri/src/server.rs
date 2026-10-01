@@ -1041,7 +1041,7 @@ static ENVOIS_RECENTS: std::sync::Mutex<Vec<(std::net::IpAddr, std::time::Instan
     std::sync::Mutex::new(Vec::new());
 
 /// Compte cet envoi pour ce téléphone ; faux s'il en a déjà trop fait.
-fn envoi_permis(ip: std::net::IpAddr) -> bool {
+pub(crate) fn envoi_permis(ip: std::net::IpAddr) -> bool {
     let Ok(mut recents) = ENVOIS_RECENTS.lock() else { return true };
     let maintenant = std::time::Instant::now();
     recents.retain(|(_, quand)| maintenant.duration_since(*quand) < FENETRE_ENVOIS);
@@ -2354,8 +2354,9 @@ mod tests {
     #[test]
     fn l_interface_du_client_reste_legere_et_sans_ressource_exterieure() {
         // Ni le PC ni le téléphone n'ont internet ; et iOS refuse d'afficher
-        // un portail de plus de ~128 Ko.
-        assert!(INTERFACE_CLIENT.len() < 100 * 1024);
+        // un portail de plus de ~128 Ko. 110 Ko : le mode Bluetooth de
+        // l'application (3 Ko) a pris une part de la marge, il en reste 18.
+        assert!(INTERFACE_CLIENT.len() < 110 * 1024);
         // Seule adresse internet : l'espace « Découvrir », lu seulement quand
         // le client y entre et que son téléphone a internet.
         let hors_decouvrir = INTERFACE_CLIENT.replace("https://photocopie-admin.atinzed2.workers.dev/decouvrir.json", "");

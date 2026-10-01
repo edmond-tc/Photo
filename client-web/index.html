@@ -543,6 +543,31 @@ setTimeout(function () {
   let connexion = app ? { etat: "aucune" } : { etat: "ok", base: "" };
   const baseUrl = () => connexion.base ?? "";
 
+  // Mode Bluetooth : l'application relaie les requêtes (événement « reponse-bt »).
+  const attentesBt = new Map();
+  let numeroBt = 0;
+  function enBase64(tampon) {
+    const o = new Uint8Array(tampon);
+    let t = "";
+    for (let i = 0; i < o.length; i += 0x8000) t += String.fromCharCode.apply(null, o.subarray(i, i + 0x8000));
+    return btoa(t);
+  }
+  function requeteBt(methode, chemin, corps, type) {
+    return new Promise((ok, ko) => {
+      const id = ++numeroBt;
+      const minuterie = setTimeout(() => { if (attentesBt.delete(id)) ko(new Error("La liaison Bluetooth ne répond plus.")); }, 180000);
+      attentesBt.set(id, (r) => { clearTimeout(minuterie); ok(r); });
+      try { app.requete(id, methode, chemin, type || "", corps ? enBase64(corps) : ""); }
+      catch (e) { attentesBt.delete(id); clearTimeout(minuterie); ko(e); }
+    });
+  }
+  async function lirePc(chemin) {
+    if (!connexion.bt) return fetch(`${baseUrl()}${chemin}`, { cache: "no-store" });
+    const r = await requeteBt("GET", chemin, null, "");
+    if (!r.s) throw new Error(r.texte || "Liaison Bluetooth coupée.");
+    return { status: r.s, ok: r.s >= 200 && r.s < 300, json: async () => JSON.parse(r.texte), text: async () => r.texte };
+  }
+
   window.kiosque = {
     // Appelé par l'application Android.
     evenement(e) {
@@ -553,10 +578,13 @@ setTimeout(function () {
         else if (/^mam/.test(courant) && !mam.actif) aller("accueil");
       } else if (e.type === "connexion") {
         if (e.etat === "aucune" && courant === "recu") passerHorsLigne();
-        connexion = { etat: e.etat, base: e.pc ? `http://${e.pc}:${PORT}` : connexion.base, message: e.message };
+        connexion = { etat: e.etat, bt: e.etat === "ok" && !!e.bt, base: e.pc ? `http://${e.pc}:${PORT}` : connexion.base, message: e.message };
         majPuces();
         if (e.etat === "ok") chargerInfos();
         if (attenteConnexion && ["ok", "echec", "wifi"].includes(e.etat)) { const r = attenteConnexion; attenteConnexion = null; r(e.etat === "ok"); }
+      } else if (e.type === "reponse-bt") {
+        const f = attentesBt.get(e.id);
+        if (f) { attentesBt.delete(e.id); f({ s: e.s, texte: e.texte }); }
       } else if (e.type === "radios") {
         radios = { wifi: e.wifi !== false, bluetooth: e.bluetooth };
         majRadios();
@@ -607,12 +635,14 @@ setTimeout(function () {
     $$("[data-puce]").forEach((p) => {
       p.classList.toggle("ok", connexion.etat === "ok");
       p.classList.toggle("echec", connexion.etat === "echec" || connexion.etat === "wifi");
-      p.querySelector("[data-puce-texte]").textContent = textes[connexion.etat] || textes.encours;
+      p.querySelector("[data-puce-texte]").textContent = connexion.etat === "ok" && connexion.bt
+        ? "Relié au guichet par Bluetooth (plus lent)"
+        : textes[connexion.etat] || textes.encours;
     });
   }
   async function chargerInfos() {
     try {
-      const r = await fetch(`${baseUrl()}/infos`, { cache: "no-store" });
+      const r = await lirePc("/infos");
       const infos = await r.json();
       // Seulement des nombres : ce qui vient du réseau n'est jamais recopié
       // tel quel dans l'écran.
@@ -1209,7 +1239,19 @@ setTimeout(function () {
     return Array.from(octets, (o) => o.toString(16).padStart(2, "0")).join("");
   }
   const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function envoyerMorceauBt(id, debut, morceau, surProgres) {
+    const r = await requeteBt("POST", `/morceau/${id}?debut=${debut}`, await morceau.arrayBuffer(), "application/octet-stream");
+    surProgres(morceau.size);
+    let recu = null;
+    try { recu = JSON.parse(r.texte).recu; } catch (_) {}
+    if (r.s === 200 && typeof recu === "number") return recu;
+    if (r.s === 409 && typeof recu === "number") throw { recu };
+    if (r.s >= 400 && r.s < 500 && r.s !== 408 && r.s !== 409 || r.s === 503 || r.s === 507)
+      throw { fatal: new Error(r.texte && r.texte.length < 200 ? r.texte : "La boutique a refusé l'envoi.") };
+    throw {};
+  }
   function envoyerMorceau(id, debut, morceau, surProgres) {
+    if (connexion.bt) return envoyerMorceauBt(id, debut, morceau, surProgres);
     return new Promise((ok, ko) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${baseUrl()}/morceau/${id}?debut=${debut}`);
@@ -1230,7 +1272,7 @@ setTimeout(function () {
     });
   }
   async function positionAuPc(id) {
-    const r = await fetch(`${baseUrl()}/morceau/${id}`, { cache: "no-store" });
+    const r = await lirePc(`/morceau/${id}`);
     const j = await r.json();
     return typeof j.recu === "number" ? j.recu : 0;
   }
@@ -1266,7 +1308,19 @@ setTimeout(function () {
     }
   }
 
+  async function televerserBt(form) {
+    const requete = new Request("/envoyer", { method: "POST", body: form });
+    const type = requete.headers.get("content-type") || "";
+    const corps = await requete.arrayBuffer();
+    $("#chiffres").textContent = "Envoi de la commande par Bluetooth…";
+    let r;
+    try { r = await requeteBt("POST", "/envoyer", corps, type); }
+    catch (_) { throw new Error("La liaison Bluetooth avec la boutique a été coupée. Restez près du guichet et réessayez."); }
+    if (r.s >= 200 && r.s < 300) { try { return JSON.parse(r.texte); } catch (_) { return {}; } }
+    throw new Error(r.texte && r.texte.length < 200 ? r.texte : "La boutique a refusé l'envoi. Réessayez.");
+  }
   function televerser(form) {
+    if (connexion.bt) return televerserBt(form);
     return new Promise((ok, ko) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${baseUrl()}/envoyer`);
@@ -1628,7 +1682,7 @@ setTimeout(function () {
     if (connexion.etat !== "ok" || Date.now() - dernierSigne < 20000) return;
     dernierSigne = Date.now();
     try { app && app.garderLien(); } catch (_) {}
-    fetch(`${baseUrl()}/infos`, { cache: "no-store" }).catch(() => {});
+    lirePc("/infos").catch(() => {});
   }
   setInterval(() => { if (["accueil", "documents", "quand", "envoi"].includes(courant)) signeDeVie(); }, 5000);
 
@@ -1695,7 +1749,7 @@ setTimeout(function () {
     let echecs = 0;
     suivi = setInterval(async () => {
       try {
-        const s = await (await fetch(`${baseUrl()}/statut/${jeton}`, { cache: "no-store" })).json();
+        const s = await (await lirePc(`/statut/${jeton}`)).json();
         echecs = 0;
         majSuivi(s.paye ? "pret" : s.etape);
         if (s.message) { const m = $("#message-fidelite"); m.textContent = s.message; m.hidden = false; }

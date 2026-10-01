@@ -86,6 +86,17 @@ object Reglages {
         return p.getString("kiosque", null)?.takeIf { it.length == 6 }
     }
 
+    /** Adresse Bluetooth du PC (6 derniers octets de sa balise), pour le canal Bluetooth. */
+    fun noterAdressePc(ctx: Context, mac: String, quand: Long) {
+        prefs(ctx).edit().putString("adresse_pc", mac).putLong("adresse_pc_quand", quand).apply()
+    }
+
+    fun adressePcRecente(ctx: Context): String? {
+        val p = prefs(ctx)
+        if (System.currentTimeMillis() - p.getLong("adresse_pc_quand", 0L) > KIOSQUE_RECENT_MS) return null
+        return p.getString("adresse_pc", null)
+    }
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences("reglages", Context.MODE_PRIVATE)
 
     fun motDePasse(ctx: Context): String =

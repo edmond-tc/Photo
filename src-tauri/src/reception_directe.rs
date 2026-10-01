@@ -145,6 +145,15 @@ pub fn adresse_actuelle() -> Option<Ipv4Addr> {
     ADRESSE.lock().ok().and_then(|a| *a)
 }
 
+/// Le réseau rejoint en ce moment et l'adresse du PC dessus.
+static LIEN: Mutex<Option<(String, Ipv4Addr)>> = Mutex::new(None);
+
+/// L'adresse du PC sur le réseau `ssid`, s'il y est relié (lu par le canal
+/// Bluetooth pour répondre au téléphone).
+pub fn lien_avec(ssid: &str) -> Option<Ipv4Addr> {
+    LIEN.lock().ok()?.as_ref().filter(|(s, _)| s == ssid).map(|(_, a)| *a)
+}
+
 /// Appelé par le serveur à chaque envoi réussi : le client est servi.
 /// Le client est là et agit : un morceau de fichier vient d'arriver, ou
 /// son application a donné signe de vie. Constaté à l'essai : un fichier
@@ -684,7 +693,7 @@ pub fn demarrer(app: AppHandle) {
 
 /// Le gérant garde le Wi-Fi de la boutique allumé (ou il l'est déjà) :
 /// la réception directe ne touche pas à la carte Wi-Fi.
-fn wifi_boutique_prioritaire(app: &AppHandle) -> bool {
+pub(crate) fn wifi_boutique_prioritaire(app: &AppHandle) -> bool {
     // Routeur à part : le PC y est sans doute relié par sa carte Wi-Fi ;
     // partir rejoindre un téléphone couperait tous les autres clients.
     let routeur = {
@@ -791,7 +800,7 @@ fn un_tour(
         // Une recherche du SEUL réseau annoncé : rapide, et elle aide les
         // cartes qui refusent de rejoindre un réseau jamais vu.
         client.scanner_cible(&cible.ssid);
-        servir(app, &client, &cible, true, reglages, mis_a_l_ecart, &ignorer, &mon_numero);
+        servir(app, &client, &cible, true, appel.mot_de_passe.as_deref(), reglages, mis_a_l_ecart, &ignorer, &mon_numero);
         return;
     }
 
@@ -842,7 +851,7 @@ fn un_tour(
     let Some(cible) = choisir(&reseaux, reglages.seuil, &a_l_ecart, &ignorer, fond, &mon_numero).cloned() else {
         return;
     };
-    servir(app, &client, &cible, false, reglages, mis_a_l_ecart, &ignorer, &mon_numero);
+    servir(app, &client, &cible, false, None, reglages, mis_a_l_ecart, &ignorer, &mon_numero);
 }
 
 /// Rejoint le téléphone du client, attend ses envois, puis le libère.
@@ -854,6 +863,7 @@ fn servir(
     client: &wlan::Client,
     cible: &Reseau,
     par_appel: bool,
+    mot_de_passe_donne: Option<&str>,
     reglages: &Reglages,
     mis_a_l_ecart: &mut HashMap<String, Instant>,
     ignorer: &[String],
@@ -876,7 +886,9 @@ fn servir(
         *a = None;
     }
     let avant = adresses_ipv4();
-    let mot_de_passe = if kiosque_du_reseau(&cible.ssid).is_some() {
+    let mot_de_passe = if let Some(m) = mot_de_passe_donne {
+        m.to_string()
+    } else if kiosque_du_reseau(&cible.ssid).is_some() {
         mot_de_passe_kiosque(mon_numero)
     } else {
         reglages.mot_de_passe.clone()
@@ -979,6 +991,9 @@ fn servir(
     if let Ok(mut a) = ADRESSE.lock() {
         *a = Some(adresse);
     }
+    if let Ok(mut l) = LIEN.lock() {
+        *l = Some((cible.ssid.clone(), adresse));
+    }
     annoncer_presence(adresse);
     noter(format!(
         "✅ Connecté à « {} » en {secondes:.1} s. Page : http://kiosque.local:{p} ou http://{adresse}:{p}",
@@ -1062,6 +1077,9 @@ fn servir(
     client.oublier(&cible.ssid);
     if let Ok(mut a) = ADRESSE.lock() {
         *a = None;
+    }
+    if let Ok(mut l) = LIEN.lock() {
+        *l = None;
     }
     mis_a_l_ecart.insert(cible.ssid, Instant::now() + MISE_A_L_ECART);
 }
