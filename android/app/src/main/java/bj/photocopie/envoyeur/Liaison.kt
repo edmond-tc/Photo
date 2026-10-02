@@ -99,8 +99,33 @@ class Liaison(
      */
     @Volatile var surWifi: ((InetAddress) -> Unit)? = null
 
+    /**
+     * Annulée (le client passe à « Main à main », ou quitte) : chaque étape
+     * s'arrête au plus vite et rend tout ce qu'elle tenait (Wi-Fi Direct,
+     * Bluetooth, réseau). Sans ça, la recherche du guichet occupait le
+     * téléphone une à deux minutes, et « Main à main » ne trouvait rien.
+     */
+    @Volatile private var annulee = false
+
+    /** Le canal en cours d'ouverture : [annuler] le ferme, ce qui débloque l'attente. */
+    @Volatile private var canalEnCours: CanalBt? = null
+
+    fun annuler() {
+        annulee = true
+        canalEnCours?.fermer()
+    }
+
     /** Relie le téléphone au PC, par le meilleur chemin qui marche. Null : échec (raison dans [raison]). */
     fun ouvrir(): Resultat? {
+        val r = try { tenter() } catch (e: Exception) { if (!annulee) throw e else null }
+        if (annulee) {
+            liberer()
+            return null
+        }
+        return r
+    }
+
+    private fun tenter(): Resultat? {
         val debut = System.currentTimeMillis()
         val wifi = attendreWifi()
 
@@ -115,7 +140,7 @@ class Liaison(
         if (wifi) {
             dire("📶 Recherche du Wi-Fi de la boutique…")
             val finWifi = debut + ATTENTE_WIFI_BOUTIQUE_MS
-            while (System.currentTimeMillis() < finWifi) {
+            while (!annulee && System.currentTimeMillis() < finWifi) {
                 pcSurLeWifi()?.let { pc ->
                     val secondes = (System.currentTimeMillis() - debut) / 1000.0
                     dire("✅ Téléphone sur le Wi-Fi de la boutique : PC à ${pc.hostAddress} (${"%.1f".format(secondes)} s).")
@@ -125,9 +150,12 @@ class Liaison(
             }
         }
         balise.join(5000)
+        if (annulee) return null
 
         // 2. Le canal Bluetooth avec le PC : on se dit où se retrouver.
         val c = ouvrirCanal()
+        canalEnCours = c
+        if (annulee) return null
 
         // 2-bis. Le Wi-Fi du PC tourne : le client peut envoyer TOUT DE SUITE
         // par Bluetooth, et le Wi-Fi se branche pendant ce temps. Avant, il
@@ -145,9 +173,9 @@ class Liaison(
         }
 
         // 3. Le réseau du téléphone, que le PC rejoint.
-        if (wifi) {
+        if (wifi && !annulee) {
             val reseau = creerUnReseau()
-            if (reseau != null) {
+            if (reseau != null && !annulee) {
                 val (nom, motDePasse) = reseau
                 if (c != null) {
                     lienParLeCanal(c, nom, motDePasse)?.let { return it }
@@ -282,11 +310,12 @@ class Liaison(
     private fun brancherWifiBoutique(c: CanalBt, ssid: String, mdp: String) {
         Thread {
             val pc = (try { rejoindreWifiBoutique(ssid, mdp) } catch (_: Exception) { null }) ?: return@Thread
+            if (annulee) return@Thread
             dire("✅ Passage au Wi-Fi de la boutique : PC à ${pc.hostAddress}.")
             surWifi?.invoke(pc)
             // Les dernières requêtes en route par Bluetooth finissent d'abord.
             Thread.sleep(20_000)
-            if (canalBt === c) {
+            if (canalBt === c && !annulee) {
                 canalBt = null
                 c.fermer()
             }
@@ -398,9 +427,10 @@ class Liaison(
             return null
         }
         demandeBoutique = rappel
-        fini.await(65, TimeUnit.SECONDS)
+        val finAttente = System.currentTimeMillis() + 65_000
+        while (!annulee && !fini.await(500, TimeUnit.MILLISECONDS) && System.currentTimeMillis() < finAttente) {}
         val reseau = trouve.get()
-        if (reseau == null) {
+        if (reseau == null || annulee) {
             dire("⚠️ Wi-Fi de la boutique non rejoint.")
             oublierWifiBoutique()
             return null
@@ -414,6 +444,9 @@ class Liaison(
             Thread.sleep(1000)
         }
         oublierWifiBoutique()
+        // Le téléphone reste sinon forcé sur un Wi-Fi sans PC : plus rien ne
+        // passait, « Main à main » compris.
+        if (reseauWifi == null) try { cm.bindProcessToNetwork(null) } catch (_: Exception) {}
         return null
     }
 
@@ -541,16 +574,23 @@ class Liaison(
 
     /** Supprime le réseau : le PC est libéré pour le client suivant. */
     fun fermer() {
+        annuler()
+        liberer()
+        dire("Réseau supprimé.")
+    }
+
+    private fun liberer() {
         arreterAppel()
         canalBt?.fermer()
         canalBt = null
+        canalEnCours?.fermer()
+        canalEnCours = null
         oublierWifiBoutique()
-        if (reseauWifi != null) {
-            reseauWifi = null
-            try { ctx.getSystemService(ConnectivityManager::class.java)?.bindProcessToNetwork(null) } catch (_: Exception) {}
-        }
+        reseauWifi = null
+        // Toujours : un téléphone resté « forcé » sur un Wi-Fi ne joignait
+        // plus rien d'autre (le Wi-Fi Direct de « Main à main » compris).
+        try { ctx.getSystemService(ConnectivityManager::class.java)?.bindProcessToNetwork(null) } catch (_: Exception) {}
         supprimerReseau()
-        dire("Réseau supprimé.")
     }
 
     // ───────────────────────────── Wi-Fi ─────────────────────────────
@@ -654,7 +694,7 @@ class Liaison(
                     s.bind(InetSocketAddress(Reglages.PORT_BALISE))
                     s.soTimeout = 1000
                     val tampon = ByteArray(256)
-                    while (trouve.get() == null && System.currentTimeMillis() < fin) {
+                    while (!annulee && trouve.get() == null && System.currentTimeMillis() < fin) {
                         try {
                             val paquet = DatagramPacket(tampon, tampon.size)
                             s.receive(paquet)
@@ -675,7 +715,7 @@ class Liaison(
 
         val pool = Executors.newFixedThreadPool(48)
         try {
-            while (trouve.get() == null && System.currentTimeMillis() < fin) {
+            while (!annulee && trouve.get() == null && System.currentTimeMillis() < fin) {
                 // Le client a peut-être scanné le QR Wi-Fi du guichet entre-temps.
                 pcSurLeWifi()?.let { pc ->
                     dire("✅ Le téléphone a rejoint le Wi-Fi du guichet : PC à ${pc.hostAddress}.")

@@ -762,7 +762,10 @@ class MainActivity : Activity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         signaler(JSONObject().put("type", "connexion").put("etat", "encours"))
-        executeur.execute {
+        // Son propre fil, pas la file commune : la recherche du guichet dure
+        // jusqu'à deux minutes, et tout le reste attendait derrière elle — le
+        // choix des fichiers de « Main à main » ne revenait jamais.
+        Thread({
             val resultat = try { l.ouvrir() } catch (e: Exception) { journal("❌ ${e.message}"); null }
             principal.post {
                 if (liaison !== l) return@post
@@ -779,7 +782,7 @@ class MainActivity : Activity() {
                     if (l.localisationRequise) ouvrirReglagesLocalisation()
                 }
             }
-        }
+        }, "liaison-kiosque").start()
     }
 
     /** « Relié » pour la page : l'adresse du PC, ou le mode Bluetooth. */
@@ -842,6 +845,7 @@ class MainActivity : Activity() {
         adressePc = null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         signaler(JSONObject().put("type", "connexion").put("etat", "aucune"))
+        l.annuler() // tout de suite : la recherche en cours s'arrête
         executeur.execute { l.fermer() }
     }
 
@@ -1027,11 +1031,11 @@ class MainActivity : Activity() {
                     data.clipData?.let { clip -> for (i in 0 until clip.itemCount) add(clip.getItemAt(i).uri) }
                     if (isEmpty()) data.data?.let { add(it) }
                 }
-                executeur.execute {
+                Thread {
                     val decrits = uris.map { MainAMain.decrire(this, it) }
                     synchronized(mamFichiers) { mamFichiers.addAll(decrits) }
                     signalerChoixMam()
-                }
+                }.start()
             }
             DEMANDE_PHOTO -> {
                 val cible = photo
