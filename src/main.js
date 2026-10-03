@@ -1343,6 +1343,15 @@ function afficherCompteRenduWifi(titre, texte, ton) {
   if (ton === "attention") entete.style.color = "var(--rouge, #b00020)";
   zone.appendChild(entete);
 
+  // Le message exact de Windows reste là (il sert au support), rangé dans
+  // un volet : ouvert seulement quand quelque chose ne va pas.
+  const volet = document.createElement("details");
+  volet.open = ton === "attention";
+  const resume = document.createElement("summary");
+  resume.textContent = "Détails pour le support";
+  volet.appendChild(resume);
+  zone.appendChild(volet);
+
   const detail = document.createElement("textarea");
   detail.readOnly = true;
   // Assez haut pour montrer le compte rendu ENTIER sans défiler : sur le
@@ -1352,7 +1361,7 @@ function afficherCompteRenduWifi(titre, texte, ton) {
   detail.style.cssText =
     "width:100%; font-family:Consolas, monospace; font-size:0.75rem; line-height:1.4";
   detail.value = texte;
-  zone.appendChild(detail);
+  volet.appendChild(detail);
 
   zone.appendChild(
     bouton("Copier ce message", "btn-secondaire", async () => {
@@ -1382,7 +1391,7 @@ document.querySelector("#btn-activer-wifi-local").addEventListener("click", asyn
       // n'obtiennent jamais d'adresse ou n'ouvrent jamais la page tout
       // seuls — un souci invisible si on ne le montre pas explicitement ici.
       afficherCompteRenduWifi(
-        `⚠️ Wi-Fi local activé (${resultat.methode}), mais avec un problème :`,
+        `⚠️ Wi-Fi de la boutique allumé (${NOMS_METHODES[resultat.methode] || resultat.methode}), mais avec un problème :`,
         `${recap}\n\n` +
           resultat.avertissements.join("\n\n") +
           `\n\nSi les clients n'arrivent pas à se connecter ou si la page ne s'ouvre pas ` +
@@ -1393,7 +1402,7 @@ document.querySelector("#btn-activer-wifi-local").addEventListener("click", asyn
       // Affiché même quand tout va bien : c'est la seule façon de savoir ce
       // qui tourne vraiment, et une photo de cet écran situe une panne sans
       // avoir à tout réessayer à l'aveugle.
-      afficherCompteRenduWifi(`✓ Wi-Fi local activé (${resultat.methode})`, recap, "ok");
+      afficherCompteRenduWifi(`✓ Wi-Fi de la boutique allumé (${NOMS_METHODES[resultat.methode] || resultat.methode})`, recap, "ok");
       toast("✓ Wi-Fi local activé — rafraîchissement du QR…");
     }
     await afficherQr();
@@ -2417,6 +2426,32 @@ async function rendreReglages(corps) {
   );
   corps.appendChild(secAnnonce);
 
+  // Ouverture du logiciel
+  const secDemarrage = document.createElement("section");
+  secDemarrage.innerHTML = `
+    <h3>Ouverture du logiciel</h3>
+    <label style="display:flex; gap:0.6rem; align-items:flex-start">
+      <input type="checkbox" id="reg-ouvrir-windows" style="margin-top:0.25rem" />
+      <span>Ouvrir le logiciel tout seul quand j'allume l'ordinateur</span>
+    </label>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
+      Conseillé : tant que le logiciel n'est pas ouvert, les clients ne peuvent pas envoyer.
+      La croix de la fenêtre le réduit sans l'arrêter ; pour l'arrêter vraiment, menu ⋮ puis « Arrêter le logiciel ».
+    </p>
+  `;
+  const caseOuvrir = secDemarrage.querySelector("#reg-ouvrir-windows");
+  caseOuvrir.checked = await invoke("get_ouvrir_avec_windows");
+  caseOuvrir.addEventListener("change", async () => {
+    try {
+      await invoke("set_ouvrir_avec_windows", { actif: caseOuvrir.checked });
+      toast(caseOuvrir.checked ? "✓ Le logiciel s'ouvrira avec Windows" : "Le logiciel ne s'ouvrira plus tout seul", "ok");
+    } catch (err) {
+      caseOuvrir.checked = !caseOuvrir.checked;
+      toast(`Impossible de changer ce réglage (${err})`, "attention");
+    }
+  });
+  corps.appendChild(secDemarrage);
+
   // Infos boutique
   const params = await invoke("get_boutique_settings");
   const secBoutique = document.createElement("section");
@@ -2501,7 +2536,7 @@ async function rendreReglages(corps) {
         <option value="routeur_externe" ${params.wifi_type_reseau === "routeur_externe" ? "selected" : ""}>Le réseau vient d'ailleurs (box, routeur, ou partage de connexion d'un téléphone)</option>
       </select>
     </label>
-    <label>Nom du réseau (SSID) <input type="text" id="reg-wifi-ssid" value="${echapperHtml(params.wifi_ssid)}" /></label>
+    <label>Nom du Wi-Fi <input type="text" id="reg-wifi-ssid" value="${echapperHtml(params.wifi_ssid)}" /></label>
     <label>Mot de passe <input type="text" id="reg-wifi-mdp" minlength="8" value="${echapperHtml(params.wifi_mot_de_passe)}" /></label>
     <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin:0">
       Il est écrit sur l'autocollant : prenez <strong>8 chiffres</strong>, par exemple <strong>12345678</strong>.
@@ -3064,6 +3099,10 @@ async function verifierBlocageLicence() {
         ? "Votre clé de licence n'est plus valide"
         : "Votre période d'essai ou votre abonnement est terminé";
     document.querySelector("#machine-id-blocage").textContent = licence.machine_id;
+    afficherQrAssistance(
+      "#qr-licence",
+      `Bonjour, mon abonnement Gestion Photocopie est terminé, je veux le renouveler. Identifiant de mon ordinateur : ${licence.machine_id}`
+    );
     overlay.hidden = false;
   } catch {
     // Impossible de vérifier le statut : on ne bloque jamais sur un doute,
@@ -3249,7 +3288,152 @@ async function lancerAssistantPremierDemarrage() {
 /// #overlay-installation) : charger la file, proposer l'assistant, écouter
 /// les événements... Regroupé pour ne s'exécuter ni avant la validation du
 /// code d'installation, ni deux fois si un premier essai avait échoué.
+// ───────────────────────── État du poste ─────────────────────────
+// Une pastille en haut de l'écran, en mots simples. Voir etat_poste.rs.
+
+let dernierEtat = null;
+let dernierRapport = "";
+
+async function rafraichirEtatPoste() {
+  let etat;
+  try {
+    etat = await invoke("etat_du_poste");
+  } catch {
+    return;
+  }
+  dernierEtat = etat;
+  const pastille = document.querySelector("#etat-poste");
+  pastille.className = `etat-poste etat-${etat.niveau}`;
+  document.querySelector("#etat-poste-texte").textContent = etat.phrase;
+  if (!document.querySelector("#modal-etat").hidden) dessinerEtatPoste(etat);
+}
+
+function dessinerEtatPoste(etat) {
+  const liste = document.querySelector("#etat-liste");
+  liste.textContent = "";
+  for (const e of etat.elements) {
+    const ligne = document.createElement("li");
+    ligne.className = e.ok ? "ok" : e.grave ? "ko-grave" : "ko";
+    const icone = document.createElement("span");
+    icone.className = "etat-icone";
+    icone.textContent = e.ok ? "✓" : "!";
+    const texte = document.createElement("div");
+    const titre = document.createElement("strong");
+    titre.textContent = e.titre;
+    const detail = document.createElement("span");
+    detail.textContent = e.detail;
+    texte.append(titre, detail);
+    ligne.append(icone, texte);
+    liste.appendChild(ligne);
+  }
+}
+
+function ouvrirEtatPoste() {
+  document.querySelectorAll(".modal").forEach((m) => (m.hidden = true));
+  document.querySelector("#etat-message").hidden = true;
+  document.querySelector("#rapport-zone").hidden = true;
+  if (dernierEtat) dessinerEtatPoste(dernierEtat);
+  document.querySelector("#modal-etat").hidden = false;
+  rafraichirEtatPoste();
+}
+
+function direEtat(texte) {
+  const message = document.querySelector("#etat-message");
+  message.hidden = !texte;
+  message.textContent = texte || "";
+}
+
+async function repararPoste(bouton) {
+  bouton.disabled = true;
+  try {
+    direEtat("Réparation en cours…");
+    // Redémarre le logiciel tout seul s'il ne reçoit plus.
+    await invoke("reparer_poste");
+    await rafraichirEtatPoste();
+    const wifi = dernierEtat.elements.find((x) => x.cle === "wifi");
+    if (wifi && !wifi.ok && !wifi.en_cours) {
+      direEtat("Rallumage du Wi-Fi… Windows va demander une autorisation : touchez « Oui ».");
+      await invoke("activer_point_acces_local");
+      await rafraichirEtatPoste();
+    }
+    direEtat(
+      dernierEtat.niveau === "ok"
+        ? "✓ Tout est réparé."
+        : `C'est fait, mais un point reste à voir : ${dernierEtat.phrase} Si rien ne change, envoyez le rapport au support.`
+    );
+  } catch {
+    direEtat("La réparation n'a pas suffi. Envoyez le rapport au support : il saura quoi faire.");
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+async function envoyerRapport(bouton) {
+  bouton.disabled = true;
+  const texteInitial = bouton.textContent;
+  bouton.textContent = "Préparation du rapport…";
+  try {
+    const rapport = await invoke("rapport_assistance");
+    dernierRapport = rapport.texte;
+    const image = document.querySelector("#rapport-qr");
+    if (rapport.qr) {
+      image.src = rapport.qr;
+      image.hidden = false;
+      document.querySelector("#rapport-consigne").innerHTML =
+        "Avec <strong>votre téléphone</strong>, scannez ce code : WhatsApp s'ouvre avec le rapport déjà écrit. Appuyez sur Envoyer.";
+    } else {
+      image.hidden = true;
+      document.querySelector("#rapport-consigne").textContent =
+        "Copiez le rapport ci-dessous et envoyez-le par WhatsApp au support.";
+    }
+    document.querySelector("#rapport-zone").hidden = false;
+  } catch {
+    direEtat("Le rapport n'a pas pu être préparé. Appelez le support.");
+  } finally {
+    bouton.disabled = false;
+    bouton.textContent = texteInitial;
+  }
+}
+
+async function copierRapport() {
+  try {
+    await navigator.clipboard.writeText(dernierRapport);
+    toast("✓ Rapport copié — collez-le dans WhatsApp");
+  } catch {
+    toast("Copie impossible : photographiez l'écran et envoyez la photo.", "attention");
+  }
+}
+
+/// Un QR code qui ouvre WhatsApp vers le support, message déjà écrit :
+/// le gérant le scanne avec son téléphone (le PC n'a pas besoin d'internet).
+async function afficherQrAssistance(selecteur, texte) {
+  const image = document.querySelector(selecteur);
+  if (!image || !image.hidden) return;
+  try {
+    image.src = await invoke("qr_whatsapp_support", { texte });
+    image.hidden = false;
+  } catch {
+    // Le numéro reste écrit en clair à l'écran : rien d'autre à faire.
+  }
+}
+
+function brancherEtatPoste() {
+  document.querySelector("#etat-poste").addEventListener("click", ouvrirEtatPoste);
+  document.querySelector("#btn-reparer").addEventListener("click", (e) => repararPoste(e.currentTarget));
+  document.querySelector("#btn-rapport").addEventListener("click", (e) => envoyerRapport(e.currentTarget));
+  document.querySelector("#btn-copier-rapport").addEventListener("click", copierRapport);
+  document.querySelector("#btn-arreter-logiciel").addEventListener("click", async () => {
+    const ok = window.confirm(
+      "Arrêter le logiciel ?\n\nLes clients ne pourront plus envoyer de documents tant que vous ne l'aurez pas rouvert."
+    );
+    if (ok) await invoke("arreter_le_logiciel");
+  });
+  rafraichirEtatPoste();
+  setInterval(rafraichirEtatPoste, 15000);
+}
+
 async function demarrerApplication() {
+  brancherEtatPoste();
   const premierLancement = await lancerAssistantPremierDemarrage();
   await chargerFile();
   // Plus de liste d'imprimantes ici : le choix se fait dans la fenêtre
@@ -3531,9 +3715,9 @@ async function relireClesUsb() {
 // téléphone (il compte les téléphones qui parlent au PC et les pages
 // ouvertes) et, si rien n'arrive, passe tout seul à la méthode suivante.
 const NOMS_METHODES = {
-  "réseau hébergé": "Méthode 1 (réseau hébergé)",
-  "Wi-Fi Direct": "Méthode 2 (Wi-Fi Direct)",
-  "point d'accès mobile": "Méthode 3 (point d'accès mobile de Windows)",
+  "réseau hébergé": "Première façon (Wi-Fi créé par le PC)",
+  "Wi-Fi Direct": "Deuxième façon (Wi-Fi créé par le PC)",
+  "point d'accès mobile": "Troisième façon (partage de connexion de Windows)",
   "réseau externe": "Box ou routeur de la boutique",
 };
 let assistantEnCours = 0;
@@ -3603,7 +3787,7 @@ async function assistantEssai(jeton, methode) {
     if (pages > pagesAvant) {
       assistantAfficher(`<p style="font-size:1.2rem">✅ <strong>Ce PC est prêt.</strong></p>
         <p>Le téléphone a rejoint le Wi-Fi et la page d'envoi s'est ouverte.</p>
-        <p>Méthode retenue : <strong>${echapperHtml(NOMS_METHODES[methode] || methode)}</strong>. Elle sera rallumée toute seule.</p>`,
+        <p>Façon retenue : <strong>${echapperHtml(NOMS_METHODES[methode] || methode)}</strong>. Elle sera rallumée toute seule.</p>`,
         [["Terminé", "btn-principal", () => (document.querySelector("#modal-assistant").hidden = true)]]);
       return "reussi";
     }
@@ -3618,7 +3802,7 @@ async function assistantEssai(jeton, methode) {
         ? `<p>📶 <strong>Le téléphone est connecté au Wi-Fi.</strong></p>
            <p>Ouvrez maintenant la page : touchez la notification « Se connecter au réseau », ou ouvrez Chrome / Safari et tapez <strong style="font-size:1.3rem">${echapperHtml(info.url ? new URL(info.url).hostname : "4.3.2.1")}</strong></p>
            <p class="chargement"><span class="chargement-rond" aria-hidden="true"></span> J'attends la page… ${reste} s</p>`
-        : `<p>Méthode essayée : <strong>${echapperHtml(NOMS_METHODES[methode] || methode)}</strong></p>
+        : `<p>Façon essayée : <strong>${echapperHtml(NOMS_METHODES[methode] || methode)}</strong></p>
            <p>Sur votre téléphone, ouvrez le <strong>Wi-Fi</strong> et touchez :</p>
            <p style="font-size:1.5rem; font-weight:800; margin:0.2rem 0">${echapperHtml(info.reseau || "")}</p>
            ${info.mot_de_passe ? `<p>Mot de passe : <strong style="font-size:1.4rem; letter-spacing:0.1em">${echapperHtml(info.mot_de_passe)}</strong></p>` : ""}
@@ -3638,7 +3822,7 @@ async function assistantEssai(jeton, methode) {
   const pareFeux = await invoke("assistant_pare_feux").catch(() => []);
   assistantAfficher(`<p>⚠️ <strong>Le téléphone est bien connecté au Wi-Fi, mais n'arrive pas jusqu'à la page.</strong></p>
     ${pareFeux.length
-      ? `<p>Cause très probable : le pare-feu de <strong>${echapperHtml(pareFeux.join(", "))}</strong> bloque les téléphones.</p>
+      ? `<p>Cause très probable : la protection de <strong>${echapperHtml(pareFeux.join(", "))}</strong> (antivirus) bloque les téléphones.</p>
          <ol><li>Ouvrez cet antivirus, allez dans ses <strong>paramètres</strong>, puis <strong>Pare-feu</strong>.</li>
          <li>Ajoutez <strong>photocopie-benin</strong> aux applications autorisées (ou de confiance), et mettez le réseau de la boutique en « réseau de confiance ».</li>
          <li>S'il a une « protection contre les attaques réseau », ajoutez l'exclusion <strong>192.168.73.0/24</strong>.</li></ol>`
@@ -3658,11 +3842,11 @@ async function assistantEssai(jeton, methode) {
 }
 
 function assistantEchecFinal(detail) {
-  assistantAfficher(`<p>❌ <strong>Aucune méthode de ce PC ne laisse entrer les téléphones.</strong></p>
+  assistantAfficher(`<p>❌ <strong>Ce PC ne laisse entrer aucun téléphone.</strong></p>
     <p>Deux solutions :</p>
     <ol><li><strong>La box ou le MiFi de la boutique</strong> : branchez-y le PC (câble ou Wi-Fi), puis dans Réglages, partie Wi-Fi, choisissez « Le réseau vient d'ailleurs (box, routeur…) ». Les clients rejoignent alors ce Wi-Fi-là.</li>
-    <li><strong>Une petite clé Wi-Fi USB</strong> (adaptateur « compatible point d'accès »), puis relancez ce test.</li></ol>
-    <details><summary>Détail technique</summary><pre style="white-space:pre-wrap; font-size:0.8rem">${echapperHtml(detail)}</pre></details>`,
+    <li><strong>Une petite clé Wi-Fi USB</strong> (demandez « une clé qui sait créer un Wi-Fi »), puis relancez ce test.</li></ol>
+    <details><summary>Détails pour le support</summary><pre style="white-space:pre-wrap; font-size:0.8rem">${echapperHtml(detail)}</pre></details>`,
     [["Fermer", "btn-secondaire", () => (document.querySelector("#modal-assistant").hidden = true)]]);
 }
 
@@ -3976,6 +4160,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.querySelector("#overlay-nouveautes").hidden = true;
   });
 
+  // Un code qu'on colle est validé tout de suite : un geste de moins, et
+  // pas de bouton à chercher.
+  document.querySelector("#code-installation").addEventListener("paste", () => {
+    setTimeout(() => document.querySelector("#form-code-installation").requestSubmit(), 60);
+  });
+  const champCleLicence = document.querySelector("#cle-licence-blocage");
+  if (champCleLicence) {
+    champCleLicence.addEventListener("paste", () => {
+      setTimeout(() => document.querySelector("#form-licence-blocage").requestSubmit(), 60);
+    });
+  }
+
   // Tout premier lancement : rien d'autre ne démarre tant que ce code n'est
   // pas validé (voir license.rs) — c'est ce qui garantit que le porteur du
   // projet est au courant de CETTE installation avant qu'elle serve.
@@ -4009,6 +4205,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   } else {
     const licence = await invoke("get_license_status");
     document.querySelector("#machine-id-installation").textContent = licence.machine_id;
+    afficherQrAssistance(
+      "#qr-installation",
+      `Bonjour, je veux valider l'installation de Gestion Photocopie. Identifiant de mon ordinateur : ${licence.machine_id}`
+    );
     document.querySelector("#overlay-installation").hidden = false;
   }
 });

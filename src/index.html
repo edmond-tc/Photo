@@ -24,6 +24,15 @@
       </div>
     </header>
 
+    <!-- L'état du poste en une phrase : vert (tout va bien), orange (un point
+         à voir) ou rouge (les clients ne peuvent pas envoyer). Un toucher
+         ouvre le détail, le bouton « Réparer » et l'envoi du rapport. -->
+    <button id="etat-poste" class="etat-poste etat-attente" type="button" title="Voir l'état de votre poste">
+      <span class="etat-point" aria-hidden="true"></span>
+      <span id="etat-poste-texte">Vérification en cours…</span>
+      <span class="etat-lien" aria-hidden="true">Détails ›</span>
+    </button>
+
     <!-- Avertissement des 3 derniers jours. Impossible à fermer : le but est
          qu'aucun gérant ne découvre le blocage le jour même, devant un client.
          Il ne recouvre rien — il pousse simplement la file vers le bas, pour
@@ -67,6 +76,7 @@
         <div id="etape-bienvenue-3" hidden>
           <h2>Étape 2 sur 2 — Essai gratuit</h2>
           <p>Vous démarrez avec <strong>30 jours d'essai gratuit</strong>, toutes les fonctionnalités incluses.</p>
+          <p>Le logiciel s'ouvrira tout seul quand vous allumerez l'ordinateur, et restera ouvert en bas de l'écran pour recevoir les documents des clients.</p>
           <p style="font-size:0.85rem; color:var(--gris-texte-discret)">
             Identifiant de cette machine (à communiquer plus tard pour l'abonnement) :<br />
             <span id="bv-machine-id" style="word-break:break-all"></span>
@@ -346,6 +356,29 @@
       </div>
     </div>
 
+    <div id="modal-etat" class="modal" hidden>
+      <div class="modal-carte">
+        <div class="modal-entete">
+          <h2>État de votre poste</h2>
+          <button class="btn-icon btn-fermer-modal" data-cible="modal-etat" aria-label="Fermer">✕</button>
+        </div>
+        <ul id="etat-liste" class="etat-liste"></ul>
+        <p id="etat-message" class="etat-message" hidden></p>
+        <div class="etat-actions">
+          <button id="btn-reparer" class="btn-primaire" type="button">Réparer</button>
+          <button id="btn-rapport" class="btn-secondaire" type="button">Envoyer le rapport au support</button>
+        </div>
+        <div id="rapport-zone" class="rapport-zone" hidden>
+          <p id="rapport-consigne">
+            Avec <strong>votre téléphone</strong>, scannez ce code : WhatsApp s'ouvre avec le
+            rapport déjà écrit. Appuyez sur Envoyer.
+          </p>
+          <img id="rapport-qr" alt="Code à scanner avec le téléphone" width="260" height="260" hidden />
+          <button id="btn-copier-rapport" class="btn-secondaire" type="button">Copier le rapport complet</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Panneau latéral (⋮) -->
     <aside id="panneau-menu" class="panneau-menu" hidden>
       <div class="panneau-entete">
@@ -360,6 +393,7 @@
         <button class="item-nav" data-section="activite">Activité des machines (en direct)</button>
         <button class="item-nav" data-section="rapports">Rapports</button>
         <button class="item-nav" data-section="reglages">Réglages</button>
+        <button class="item-arret" id="btn-arreter-logiciel" type="button">Arrêter le logiciel</button>
       </nav>
 
       <div id="panneau-contenu" class="panneau-contenu" hidden>
@@ -400,6 +434,13 @@
           Donnez-lui cet identifiant, il vous communiquera un code
           d'installation à saisir ici : <span id="machine-id-installation"></span>
         </p>
+        <div class="qr-blocage">
+          <img id="qr-installation" alt="Code à scanner avec le téléphone" width="190" height="190" hidden />
+          <p class="aide-qr">
+            Plus simple : avec votre téléphone, scannez ce code. WhatsApp s'ouvre avec le
+            message déjà écrit : appuyez sur Envoyer, puis collez ici le code reçu.
+          </p>
+        </div>
         <form id="form-code-installation">
           <input type="text" id="code-installation" placeholder="Coller ici le code d'installation reçu" />
           <button type="submit">Valider</button>
@@ -428,6 +469,13 @@
         <p class="identifiant-blocage">
           Donnez aussi cet identifiant : <span id="machine-id-blocage"></span>
         </p>
+        <div class="qr-blocage">
+          <img id="qr-licence" alt="Code à scanner avec le téléphone" width="190" height="190" hidden />
+          <p class="aide-qr">
+            Plus simple : avec votre téléphone, scannez ce code. WhatsApp s'ouvre avec le
+            message déjà écrit : appuyez sur Envoyer.
+          </p>
+        </div>
         <hr />
         <p class="sous-titre-blocage">Vous avez déjà reçu une nouvelle clé ?</p>
         <p class="astuce-cle-usb">

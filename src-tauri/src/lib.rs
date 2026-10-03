@@ -11,6 +11,7 @@ pub mod controle_impressions;
 pub mod db;
 pub mod dhcp;
 pub mod dns;
+pub mod etat_poste;
 pub mod files;
 pub mod gestion;
 pub mod hotspot;
@@ -20,6 +21,7 @@ pub mod mdns;
 pub mod models;
 pub mod obex;
 pub mod pare_feu;
+pub mod permanence;
 pub mod point_acces_mobile;
 pub mod qr;
 pub mod reception_directe;
@@ -46,6 +48,11 @@ pub fn run() {
         hotspot::executer_demarrage_wifi();
         return;
     }
+    // Relance de sécurité après un arrêt volontaire : on ne démarre pas.
+    let lancement = permanence::lancement(&std::env::args().collect::<Vec<_>>());
+    if permanence::doit_sortir(lancement) {
+        return;
+    }
     tauri::Builder::default()
         // Trouvé sur le terrain : rien n'empêchait de lancer l'application
         // deux fois (double-clic sur l'icône par habitude, ou parce que le
@@ -56,7 +63,12 @@ pub fn run() {
         // être enregistré EN PREMIER (exigence de Tauri) : un second
         // lancement ne crée plus de second processus, il ramène au premier
         // au lieu de lui faire concurrence sur le même port.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // Windows (ouverture de session) ou la veille de sécurité qui
+            // rappellent le logiciel déjà ouvert : rien à montrer.
+            if permanence::lancement(&args) != permanence::Lancement::Normal {
+                return;
+            }
             if let Some(fenetre) = app.get_webview_window("main") {
                 let _ = fenetre.unminimize();
                 let _ = fenetre.show();
@@ -74,6 +86,14 @@ pub fn run() {
         // attend. Lâcher les fichiers sur l'application fait la même chose
         // en un geste, sans rien à configurer.
         .on_window_event(|fenetre, evenement| {
+            // La croix réduit la fenêtre : le logiciel doit continuer de
+            // recevoir. Voir permanence.rs.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = evenement {
+                api.prevent_close();
+                let _ = fenetre.minimize();
+                permanence::croix_cliquee(fenetre.app_handle());
+                return;
+            }
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) =
                 evenement
             {
@@ -87,7 +107,7 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
             let data_dir = app
                 .path()
                 .app_data_dir()
@@ -100,6 +120,7 @@ pub fn run() {
             app.manage(DbState(db::VerrouSain::new(conn)));
             app.manage(server::EtatServeur::default());
             app.manage(hotspot::EtatPointAcces::default());
+            permanence::demarrer(app.handle(), lancement);
 
             if let Some(folder) = watched_folder {
                 watcher::watch_folder(app.handle().clone(), PathBuf::from(folder));
@@ -155,6 +176,13 @@ pub fn run() {
             commands::activer_point_acces_local,
             commands::desactiver_point_acces_local,
             commands::diagnostiquer_poste,
+            etat_poste::etat_du_poste,
+            etat_poste::reparer_poste,
+            etat_poste::rapport_assistance,
+            etat_poste::qr_whatsapp_support,
+            permanence::get_ouvrir_avec_windows,
+            permanence::set_ouvrir_avec_windows,
+            permanence::arreter_le_logiciel,
             usb::documents_cle_usb,
             usb::relire_cles_usb,
             usb::importer_documents_usb,

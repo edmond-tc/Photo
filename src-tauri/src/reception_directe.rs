@@ -125,6 +125,14 @@ static ETAT: Mutex<String> = Mutex::new(String::new());
 static ADRESSE: Mutex<Option<Ipv4Addr>> = Mutex::new(None);
 static DERNIER_ENVOI: Mutex<Option<Instant>> = Mutex::new(None);
 
+/// Les derniers messages du journal (le plus récent d'abord), avec leur heure.
+pub(crate) fn derniers_messages(n: usize) -> Vec<String> {
+    JOURNAL
+        .lock()
+        .map(|j| j.iter().take(n).map(|(heure, texte)| format!("{heure} {texte}")).collect())
+        .unwrap_or_default()
+}
+
 pub(crate) fn noter(texte: impl Into<String>) {
     let heure = chrono::Local::now().format("%H:%M:%S").to_string();
     if let Ok(mut j) = JOURNAL.lock() {

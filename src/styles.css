@@ -1375,3 +1375,80 @@ fieldset {
   border-bottom: 1px solid #e3e7ef;
   white-space: pre-wrap;
 }
+
+
+/* ───────── État du poste (pastille sous la barre du haut) ───────── */
+.etat-poste {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 1.25rem;
+  border: none;
+  border-bottom: 1px solid var(--gris-bordure);
+  font: inherit;
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+}
+.etat-point {
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+.etat-poste > span:nth-child(2) {
+  flex: 1;
+  font-weight: 600;
+}
+.etat-lien {
+  flex: none;
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+.etat-ok { background: var(--vert-succes-fond); color: var(--vert-succes); }
+.etat-attention { background: var(--jaune-alerte-fond); color: var(--jaune-alerte); }
+.etat-grave { background: #fde7e9; color: var(--rouge-alerte); }
+.etat-attente { background: var(--gris-clair); color: var(--gris-texte-discret); }
+
+.etat-liste {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.etat-liste li {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  background: var(--gris-clair);
+}
+.etat-liste li strong { display: block; }
+.etat-liste li span { color: var(--gris-texte-discret); font-size: 0.9rem; }
+.etat-liste li.ko-grave .etat-icone { color: var(--rouge-alerte); }
+.etat-liste li.ko .etat-icone { color: var(--jaune-alerte); }
+.etat-liste li.ok .etat-icone { color: var(--vert-succes); }
+.etat-icone { font-weight: 700; }
+.etat-message { margin: 0 0 0.75rem; padding: 0.6rem; border-radius: 6px; background: var(--jaune-alerte-fond); }
+.etat-actions { display: grid; gap: 0.5rem; }
+.rapport-zone { display: grid; justify-items: center; gap: 0.6rem; margin-top: 1rem; text-align: center; }
+.rapport-zone img, .qr-blocage img { background: #fff; border: 1px solid var(--gris-bordure); border-radius: 6px; padding: 4px; }
+.qr-blocage { display: grid; justify-items: center; gap: 0.4rem; margin: 0.75rem 0; text-align: center; }
+.aide-qr { font-size: 0.9rem; color: var(--gris-texte-discret); }
+
+.item-arret {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--gris-bordure);
+  margin-top: 0.5rem;
+  padding: 0.85rem 0.75rem;
+  font-size: 0.95rem;
+  color: var(--rouge-alerte);
+  cursor: pointer;
+}
+.item-arret:hover { background: var(--gris-clair); }

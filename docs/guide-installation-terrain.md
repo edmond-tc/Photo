@@ -8,11 +8,15 @@ fabriqué que par le porteur du projet, depuis son tableau de bord
 d'avoir lieu (pas seulement celles qui deviennent payantes).
 
 1. Brancher la clé USB, lancer l'installeur, jusqu'au premier démarrage.
-2. Un écran de blocage affiche un identifiant machine : le lire (ou le
-   photographier) et l'envoyer par WhatsApp au porteur du projet.
+2. Un écran de blocage affiche un identifiant machine et un **QR code** :
+   le gérant le scanne avec son téléphone, WhatsApp s'ouvre vers le porteur
+   du projet avec le message et l'identifiant déjà écrits (le PC n'a pas
+   besoin d'internet). À défaut : lire ou photographier l'identifiant et
+   l'envoyer par WhatsApp.
 3. Il génère le code correspondant depuis `/installations` et vous le
    renvoie.
-4. Le coller dans l'écran de blocage → le logiciel démarre normalement,
+4. Le coller dans l'écran de blocage (il est validé dès qu'il est collé) →
+   le logiciel démarre normalement,
    l'assistant de bienvenue s'ouvre, et plus rien ne sera jamais redemandé
    sur cette machine.
 
@@ -62,3 +66,14 @@ code), ça peut arriver. Ajouter une exception dans l'antivirus si besoin.
   partage de connexion ne s'active pas, le dossier surveillé et la clé USB
   restent utilisables normalement — ce n'est que la réception par QR qui
   serait affectée.
+
+## Le logiciel reste ouvert (depuis la 0.5.35)
+- Il s'ouvre tout seul avec Windows (case dans Réglages), et la croix de la
+  fenêtre le **réduit** en bas de l'écran au lieu de le fermer. Pour l'arrêter
+  vraiment : menu ⋮ puis « Arrêter le logiciel ».
+- Une petite tâche Windows « Photocopie Benin - Veille du logiciel » vérifie
+  toutes les 5 minutes qu'il tourne, et le rouvre s'il a planté. Elle ne le
+  rouvre pas après un arrêt volontaire.
+- En haut de l'écran, une pastille dit « Tout va bien » ou ce qui ne va pas.
+  Un toucher ouvre le détail, le bouton « Réparer » et « Envoyer le rapport
+  au support » (QR code vers WhatsApp).

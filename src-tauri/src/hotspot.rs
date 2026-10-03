@@ -1525,7 +1525,7 @@ fn echec_wifi_direct_sans_adresse(wdi_supporte: Option<bool>) -> String {
             "{constat} La cause est connue pour ce PC : son pilote Wi-Fi n'expose pas \
              l'interface WDI, dont cette méthode dépend (Windows l'écrit lui-même dans le \
              diagnostic : « interface WDI non prise en charge »). Sur ce poste, seule la \
-             méthode 1 (réseau hébergé) peut fonctionner — c'est son message d'erreur, \
+             première façon (Wi-Fi créé par le PC) peut fonctionner — c'est son message d'erreur, \
              ci-dessus, qu'il faut traiter."
         );
     }
@@ -1718,12 +1718,12 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
     // impossible — en cas de doute (`None`), on essaie quand même.
     if SAUTER_RESEAU_HEBERGE.load(std::sync::atomic::Ordering::SeqCst) || methode_exclue("réseau hébergé") {
         echecs.push(
-            "Méthode 1 (réseau hébergé) : sautée, une autre méthode a déjà marché sur ce PC."
+            "Première façon (Wi-Fi créé par le PC) : sautée, une autre a déjà marché sur ce PC."
                 .to_string(),
         );
     } else if diagnostic.reseau_heberge_supporte == Some(false) {
         echecs.push(
-            "Méthode 1 (réseau hébergé) : la carte Wi-Fi de ce PC déclare ne pas la supporter."
+            "Première façon (Wi-Fi créé par le PC) : la carte Wi-Fi de ce PC déclare ne pas la supporter."
                 .to_string(),
         );
     } else {
@@ -1739,17 +1739,17 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
                 });
             }
             Err(e) => echecs.push(format!(
-                "Méthode 1 (réseau hébergé) : {}",
+                "Première façon (Wi-Fi créé par le PC) : {}",
                 expliquer_echec_reseau_heberge(&e)
             )),
         }
     }
 
     if methode_exclue("Wi-Fi Direct") {
-        echecs.push("Méthode 2 (Wi-Fi Direct) : écartée, le téléphone d'essai n'y arrivait pas.".to_string());
+        echecs.push("Deuxième façon (Wi-Fi créé par le PC) : écartée, le téléphone d'essai n'y arrivait pas.".to_string());
     } else if diagnostic.wifi_direct_go_supporte == Some(false) {
         echecs.push(
-            "Méthode 2 (Wi-Fi Direct) : la carte Wi-Fi de ce PC déclare ne pas savoir créer de \
+            "Deuxième façon (Wi-Fi créé par le PC) : la carte Wi-Fi de ce PC déclare ne pas savoir créer de \
              groupe Wi-Fi Direct."
                 .to_string(),
         );
@@ -1775,7 +1775,7 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
                     let _ = crate::wifi_direct::desactiver();
                     let cartes = adresses_par_carte();
                     echecs.push(format!(
-                        "Méthode 2 (Wi-Fi Direct) : {}\n\nAdresses présentes sur ce PC au \
+                        "Deuxième façon (Wi-Fi créé par le PC) : {}\n\nAdresses présentes sur ce PC au \
                          moment de l'échec :\n{}",
                         echec_wifi_direct_sans_adresse(diagnostic.wdi_supporte),
                         if cartes.trim().is_empty() {
@@ -1786,7 +1786,7 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
                     ));
                 }
             },
-            Err(e) => echecs.push(format!("Méthode 2 (Wi-Fi Direct) : {e}")),
+            Err(e) => echecs.push(format!("Deuxième façon (Wi-Fi créé par le PC) : {e}")),
         }
     }
 
@@ -1794,7 +1794,7 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
     // les cartes récentes (Intel, Realtek…) acceptent encore. Voir
     // `point_acces_mobile.rs` pour le pourquoi.
     if methode_exclue(METHODE_POINT_ACCES_MOBILE) {
-        echecs.push("Méthode 3 (point d'accès mobile) : écartée, le téléphone d'essai n'y arrivait pas.".to_string());
+        echecs.push("Troisième façon (partage de connexion de Windows) : écartée, le téléphone d'essai n'y arrivait pas.".to_string());
     } else { match activer_point_acces_mobile(ssid, mot_de_passe) {
         Ok(adresse) => {
             if let Ok(mut garde) = ADRESSE_ACTIVE.lock() {
@@ -1806,7 +1806,7 @@ fn tenter_toutes_les_methodes(ssid: &str, mot_de_passe: &str) -> Result<Activati
                 avertissements: echecs,
             });
         }
-        Err(e) => echecs.push(format!("Méthode 3 (point d'accès mobile) : {e}")),
+        Err(e) => echecs.push(format!("Troisième façon (partage de connexion de Windows) : {e}")),
     } }
 
     Err(format!(
@@ -2640,7 +2640,7 @@ mod tests {
         let sans_wdi = echec_wifi_direct_sans_adresse(Some(false));
         assert!(sans_wdi.contains("n'existe donc pas réellement"));
         assert!(sans_wdi.contains("WDI"));
-        assert!(sans_wdi.contains("méthode 1"));
+        assert!(sans_wdi.contains("première façon"));
 
         // Sans information sur le WDI, on constate sans inventer de cause.
         let inconnu = echec_wifi_direct_sans_adresse(None);

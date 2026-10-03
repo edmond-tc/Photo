@@ -988,7 +988,7 @@ struct FichierRecu {
 /// Marge sous laquelle on refuse d'écrire un nouveau fichier reçu.
 const ESPACE_DISQUE_MINIMUM: u64 = 500 * 1024 * 1024; // 500 Mo
 
-fn espace_disque_insuffisant(data_dir: &std::path::Path) -> bool {
+pub(crate) fn espace_disque_insuffisant(data_dir: &std::path::Path) -> bool {
     espace_disque_libre(data_dir).is_some_and(|libre| libre < ESPACE_DISQUE_MINIMUM)
 }
 
