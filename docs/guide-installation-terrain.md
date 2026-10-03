@@ -68,9 +68,12 @@ code), ça peut arriver. Ajouter une exception dans l'antivirus si besoin.
   serait affectée.
 
 ## Le logiciel reste ouvert (depuis la 0.5.35)
-- Il s'ouvre tout seul avec Windows (case dans Réglages), et la croix de la
-  fenêtre le **réduit** en bas de l'écran au lieu de le fermer. Pour l'arrêter
-  vraiment : menu ⋮ puis « Arrêter le logiciel ».
+- Il démarre tout seul avec Windows, **en arrière-plan** (case dans
+  Réglages) : sa fenêtre ne s'ouvre jamais d'elle-même. Le gérant l'ouvre
+  quand il veut (icône du bureau, ou icône près de l'horloge). La croix de la
+  fenêtre la **cache** sans arrêter le logiciel. Quand un document arrive
+  fenêtre cachée, Windows joue un petit son. Pour l'arrêter vraiment : menu ⋮
+  puis « Arrêter le logiciel ».
 - Une petite tâche Windows « Photocopie Benin - Veille du logiciel » vérifie
   toutes les 5 minutes qu'il tourne, et le rouvre s'il a planté. Elle ne le
   rouvre pas après un arrêt volontaire.

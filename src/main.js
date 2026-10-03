@@ -2432,11 +2432,13 @@ async function rendreReglages(corps) {
     <h3>Ouverture du logiciel</h3>
     <label style="display:flex; gap:0.6rem; align-items:flex-start">
       <input type="checkbox" id="reg-ouvrir-windows" style="margin-top:0.25rem" />
-      <span>Ouvrir le logiciel tout seul quand j'allume l'ordinateur</span>
+      <span>Faire tourner le logiciel en arrière-plan quand j'allume l'ordinateur</span>
     </label>
     <p style="font-size:0.8rem; color:var(--gris-texte-discret)">
-      Conseillé : tant que le logiciel n'est pas ouvert, les clients ne peuvent pas envoyer.
-      La croix de la fenêtre le réduit sans l'arrêter ; pour l'arrêter vraiment, menu ⋮ puis « Arrêter le logiciel ».
+      Conseillé : tant que le logiciel ne tourne pas, les clients ne peuvent pas envoyer.
+      <strong>Sa fenêtre ne s'ouvre jamais toute seule</strong> : ouvrez-la avec l'icône du bureau
+      ou celle près de l'horloge. La croix de la fenêtre la cache sans arrêter le logiciel ;
+      pour l'arrêter vraiment, menu ⋮ puis « Arrêter le logiciel ».
     </p>
   `;
   const caseOuvrir = secDemarrage.querySelector("#reg-ouvrir-windows");
@@ -2444,7 +2446,7 @@ async function rendreReglages(corps) {
   caseOuvrir.addEventListener("change", async () => {
     try {
       await invoke("set_ouvrir_avec_windows", { actif: caseOuvrir.checked });
-      toast(caseOuvrir.checked ? "✓ Le logiciel s'ouvrira avec Windows" : "Le logiciel ne s'ouvrira plus tout seul", "ok");
+      toast(caseOuvrir.checked ? "✓ Le logiciel démarrera en arrière-plan avec Windows" : "Le logiciel ne démarrera plus tout seul", "ok");
     } catch (err) {
       caseOuvrir.checked = !caseOuvrir.checked;
       toast(`Impossible de changer ce réglage (${err})`, "attention");

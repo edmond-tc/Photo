@@ -86,11 +86,11 @@ pub fn run() {
         // attend. Lâcher les fichiers sur l'application fait la même chose
         // en un geste, sans rien à configurer.
         .on_window_event(|fenetre, evenement| {
-            // La croix réduit la fenêtre : le logiciel doit continuer de
+            // La croix cache la fenêtre : le logiciel doit continuer de
             // recevoir. Voir permanence.rs.
             if let tauri::WindowEvent::CloseRequested { api, .. } = evenement {
                 api.prevent_close();
-                let _ = fenetre.minimize();
+                let _ = fenetre.hide();
                 permanence::croix_cliquee(fenetre.app_handle());
                 return;
             }

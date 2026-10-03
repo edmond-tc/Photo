@@ -382,6 +382,8 @@ pub fn enqueue_file_avec_options(
     };
 
     let _ = app.emit("nouveau-fichier", item);
+    // Fenêtre cachée (le logiciel tourne en arrière-plan) : un son prévient.
+    crate::permanence::prevenir_si_fenetre_cachee(app);
     Some((id, jeton))
 }
 

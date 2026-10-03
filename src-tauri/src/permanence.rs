@@ -5,13 +5,16 @@
 //! celui-ci : s'il est fermé, les clients envoient dans le vide, sans que
 //! personne ne le voie. Trois protections :
 //!
-//! 1. **Il s'ouvre avec Windows** (clé `Run` de l'utilisateur, sans droits
-//!    administrateur), réglable par une case dans Réglages.
-//! 2. **La croix de la fenêtre le réduit** au lieu de le fermer. On l'arrête
-//!    vraiment par « Arrêter le logiciel », seul geste volontaire.
-//! 3. **Une tâche de veille**, toutes les 5 minutes, le rouvre s'il a
-//!    disparu (plantage). Elle respecte l'arrêt volontaire : tant que le
-//!    gérant n'a pas rouvert le logiciel lui-même, elle ne le relance pas.
+//! 1. **Il démarre avec Windows, en arrière-plan** (clé `Run` de
+//!    l'utilisateur, sans droits administrateur), réglable par une case dans
+//!    Réglages. **Sa fenêtre ne s'ouvre jamais d'elle-même** : elle s'ouvre
+//!    quand le gérant la demande (icône du bureau, ou icône près de l'horloge).
+//! 2. **La croix de la fenêtre la cache** au lieu d'arrêter le logiciel. On
+//!    l'arrête vraiment par « Arrêter le logiciel », seul geste volontaire.
+//! 3. **Une tâche de veille**, toutes les 5 minutes, le rouvre (en arrière-
+//!    plan) s'il a disparu (plantage). Elle respecte l'arrêt volontaire :
+//!    tant que le gérant n'a pas rouvert le logiciel lui-même, elle ne le
+//!    relance pas.
 
 use crate::db::{self, DbState};
 use std::path::{Path, PathBuf};
@@ -79,15 +82,14 @@ pub fn est_active(conn: &rusqlite::Connection) -> bool {
     db::get_setting(conn, REGLAGE_OUVERTURE).as_deref() != Some("0")
 }
 
-/// Au démarrage : applique le réglage, et met la fenêtre de côté quand c'est
-/// la veille qui vient de rouvrir le logiciel (elle ne doit pas surgir
-/// devant un client).
+/// Au démarrage : applique le réglage. Quand c'est Windows ou la veille qui
+/// lancent le logiciel, la fenêtre reste cachée : elle ne doit jamais surgir
+/// devant le gérant ou un client sans qu'on l'ait demandée.
 pub fn demarrer(app: &AppHandle, l: Lancement) {
-    if l == Lancement::Veille {
-        if let Some(fenetre) = app.get_webview_window("main") {
-            let _ = fenetre.minimize();
-        }
+    if l != Lancement::Normal {
+        cacher_la_fenetre(app);
     }
+    creer_icone(app);
     let actif = {
         let state = app.state::<DbState>();
         let conn = state.0.lock();
@@ -235,8 +237,83 @@ fn supprimer_tache_veille() {
         .status();
 }
 
-/// La croix de la fenêtre : le logiciel est réduit, pas fermé. Le tout
-/// premier jour, une phrase explique pourquoi la fenêtre n'a pas disparu.
+pub fn cacher_la_fenetre(app: &AppHandle) {
+    if let Some(fenetre) = app.get_webview_window("main") {
+        let _ = fenetre.hide();
+    }
+}
+
+/// Ouvre la fenêtre : appelé quand le gérant la demande.
+pub fn montrer_la_fenetre(app: &AppHandle) {
+    if let Some(fenetre) = app.get_webview_window("main") {
+        let _ = fenetre.unminimize();
+        let _ = fenetre.show();
+        let _ = fenetre.set_focus();
+    }
+}
+
+/// Un document arrive pendant que la fenêtre est cachée : un petit son de
+/// Windows prévient, la fenêtre, elle, ne s'ouvre pas.
+pub fn prevenir_si_fenetre_cachee(app: &AppHandle) {
+    let cachee = app
+        .get_webview_window("main")
+        .map(|f| !f.is_visible().unwrap_or(true) || f.is_minimized().unwrap_or(false))
+        .unwrap_or(false);
+    if !cachee {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Diagnostics::Debug::MessageBeep;
+        use windows::Win32::UI::WindowsAndMessaging::MB_ICONASTERISK;
+        // SAFETY : appel sans pointeur ; ne fait que jouer un son système.
+        unsafe {
+            let _ = MessageBeep(MB_ICONASTERISK);
+        }
+    }
+}
+
+/// L'icône près de l'horloge : le logiciel y est toujours, fenêtre ouverte
+/// ou non. Clic gauche : ouvrir. Clic droit : ouvrir ou arrêter.
+fn creer_icone(app: &AppHandle) {
+    #[cfg(windows)]
+    {
+        use tauri::menu::{Menu, MenuItem};
+        use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+        let Ok(ouvrir) = MenuItem::with_id(app, "ouvrir", "Ouvrir Gestion Photocopie", true, None::<&str>) else { return };
+        let Ok(arreter) = MenuItem::with_id(app, "arreter", "Arrêter le logiciel", true, None::<&str>) else { return };
+        let Ok(menu) = Menu::with_items(app, &[&ouvrir, &arreter]) else { return };
+        let mut icone = TrayIconBuilder::new()
+            .tooltip("Gestion Photocopie : reçoit les documents des clients")
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .on_menu_event(|app, evenement| match evenement.id.as_ref() {
+                "ouvrir" => montrer_la_fenetre(app),
+                "arreter" => arreter_vraiment(app),
+                _ => {}
+            })
+            .on_tray_icon_event(|zone, evenement| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = evenement
+                {
+                    montrer_la_fenetre(zone.app_handle());
+                }
+            });
+        if let Some(image) = app.default_window_icon() {
+            icone = icone.icon(image.clone());
+        }
+        let _ = icone.build(app);
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+}
+
+/// La croix de la fenêtre : elle se cache, le logiciel continue. Le tout
+/// premier jour, une phrase explique où le retrouver.
 pub fn croix_cliquee(app: &AppHandle) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
@@ -253,7 +330,8 @@ pub fn croix_cliquee(app: &AppHandle) {
     if premiere_fois {
         app.dialog()
             .message(
-                "Le logiciel reste ouvert en bas de l'écran pour continuer à recevoir les documents des clients.\n\n\
+                "La fenêtre est cachée, mais le logiciel continue de recevoir les documents des clients.\n\n\
+                 Pour la rouvrir : double-clic sur l'icône du bureau, ou clic sur l'icône près de l'horloge.\n\n\
                  Pour l'arrêter vraiment : menu ⋮ puis « Arrêter le logiciel ».",
             )
             .title("Gestion Photocopie")
@@ -279,11 +357,15 @@ pub fn set_ouvrir_avec_windows(state: State<DbState>, actif: bool) -> Result<(),
 
 /// Le seul vrai arrêt. La veille ne rouvre rien tant que le gérant n'a pas
 /// relancé le logiciel lui-même.
-#[tauri::command]
-pub fn arreter_le_logiciel(app: AppHandle) {
+pub fn arreter_vraiment(app: &AppHandle) {
     let _ = std::fs::create_dir_all(dossier());
     let _ = std::fs::write(marqueur_arret(), b"1");
     app.exit(0);
+}
+
+#[tauri::command]
+pub fn arreter_le_logiciel(app: AppHandle) {
+    arreter_vraiment(&app);
 }
 
 #[cfg(test)]
