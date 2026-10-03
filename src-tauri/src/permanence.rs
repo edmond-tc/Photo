@@ -99,7 +99,16 @@ pub fn demarrer(app: &AppHandle, l: Lancement) {
 }
 
 /// Écrit ou retire l'ouverture automatique et la tâche de veille.
+///
+/// Rien n'est écrit si `PHOTOCOPIE_SANS_PERMANENCE` est définie : le test de
+/// démarrage de la construction automatique lance le programme sur une
+/// machine qui sert ensuite à fabriquer les installateurs. Sans cela, la
+/// tâche de veille relançait le programme pendant l'emballage et verrouillait
+/// le fichier (« being used by another process »).
 pub fn appliquer(actif: bool) {
+    if std::env::var_os("PHOTOCOPIE_SANS_PERMANENCE").is_some() {
+        return;
+    }
     #[cfg(windows)]
     std::thread::spawn(move || {
         let Ok(exe) = std::env::current_exe() else { return };

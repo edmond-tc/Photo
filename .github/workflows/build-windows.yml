@@ -55,6 +55,11 @@ jobs:
 
       - name: Test de démarrage sur un vrai Windows (garde-fou automatique)
         shell: pwsh
+        env:
+          # Le logiciel s'inscrit sinon dans le démarrage de Windows et crée sa
+          # tâche de veille : sur cette machine, elle le relancerait pendant
+          # l'emballage suivant et verrouillerait le fichier.
+          PHOTOCOPIE_SANS_PERMANENCE: "1"
         run: |
           $exe = Get-ChildItem -Path "src-tauri/target/release" -Filter "photocopie-benin.exe" -File | Select-Object -First 1
           if (-not $exe) {
@@ -69,6 +74,12 @@ jobs:
           }
           Write-Host "OK : l'application tourne toujours après 8 secondes sur ce Windows réel."
           Stop-Process -Id $proc.Id -Force
+
+          # Aucune trace sur la machine de construction (ceinture et bretelles).
+          schtasks /Delete /TN "Photocopie Benin - Veille du logiciel" /F 2>$null
+          Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "GestionPhotocopie" -ErrorAction SilentlyContinue
+          Get-Process photocopie-benin -ErrorAction SilentlyContinue | Stop-Process -Force
+          exit 0
 
       # Faute de certificat de signature (payant), l'empreinte SHA-256 est le
       # moyen gratuit de prouver qu'un installateur n'a pas été remplacé en
