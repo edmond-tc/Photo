@@ -267,6 +267,10 @@ p { margin: 0; }
         <p><strong>Bluetooth éteint</strong> : pas prévenu en arrivant au guichet.</p>
         <button type="button" class="btn" data-allumer="bluetooth">Allumer</button>
       </div>
+      <div class="bandeau bloquant" data-conseil-donnees hidden>
+        <p><strong>📵 Coupez vos données mobiles.</strong> Votre téléphone essaie de passer par Internet au lieu du Wi-Fi de la boutique.</p>
+        <p>Tirez le haut de l'écran vers le bas et touchez <strong>« Données mobiles »</strong> pour les éteindre. La page se reconnecte toute seule. Vous les rallumerez après l'envoi.</p>
+      </div>
       <div class="action">
         <label class="btn grand" for="fichiers">📄 Choisir mes documents<small>PDF, Word, photos… plusieurs à la fois</small></label>
         <label class="btn second" for="photo">📷 Prendre un document en photo</label>
@@ -315,15 +319,22 @@ p { margin: 0; }
   </section>
 
   <!-- Petite fenêtre « Se connecter au réseau » d'Android : elle ne sait
-       ouvrir aucun fichier. La page part aussitôt vers le navigateur ; il ne
-       reste au client qu'à confirmer l'écran d'Android. -->
+       ouvrir aucun fichier, il faut passer au navigateur. Mais elle est la
+       SEULE à passer par le Wi-Fi de la boutique quand les données mobiles
+       sont allumées : Android garde alors ses données pour tout le reste,
+       et le navigateur ne trouve pas le PC (la page tourne sans fin, l'envoi
+       est refusé). D'où l'étape 1, avant de quitter cette fenêtre. -->
   <section class="ecran" data-ecran="navigateur" hidden>
     <div class="entete"><h1 data-boutique>Photocopie</h1></div>
-    <div class="contenu" style="justify-content:center; text-align:center; gap:18px">
-      <p style="font-size:1.25rem"><strong>Ouverture dans votre navigateur…</strong></p>
-      <p>Votre téléphone va vous demander de confirmer.<br>Touchez :</p>
-      <p style="font-size:1.1rem; font-weight:800; color:var(--accent)">« CONTINUER QUAND MÊME DANS LE NAVIGATEUR »</p>
-      <a class="btn grand" id="lien-navigateur-direct" href="/">Ouvrir dans le navigateur</a>
+    <div class="contenu" style="justify-content:center; text-align:center; gap:14px">
+      <p style="font-size:1.25rem"><strong>Deux gestes, et c'est prêt</strong></p>
+      <div class="bandeau bloquant" style="text-align:left">
+        <p><strong>1. 📵 Coupez vos données mobiles</strong> (si elles sont allumées) : tirez le haut de l'écran vers le bas, touchez <strong>« Données mobiles »</strong>.</p>
+        <p>Sinon votre téléphone part sur Internet et ne trouve pas la boutique. Vous les rallumerez après l'envoi.</p>
+      </div>
+      <p style="font-size:1.1rem"><strong>2. Touchez le bouton :</strong></p>
+      <a class="btn grand" id="lien-navigateur-direct" href="/">Ouvrir la page d'envoi</a>
+      <p>Si le téléphone demande de confirmer, touchez<br><strong style="color:var(--accent)">« CONTINUER DANS LE NAVIGATEUR »</strong>.</p>
       <p style="margin-top:8px">Rien ne s'ouvre ? Fermez cette fenêtre, ouvrez <strong>Chrome</strong> et tapez :</p>
       <p style="font-size:1.5rem; font-weight:800; letter-spacing:0.03em" id="adresse-a-taper"></p>
     </div>
@@ -453,6 +464,10 @@ p { margin: 0; }
         <li data-etape="3"><span class="rond">4</span><div><strong>Reçu par la boutique</strong><small>L'ordinateur a tous vos fichiers.</small></div></li>
       </ol>
       <div class="alerte" id="erreur-envoi" hidden></div>
+      <div class="bandeau bloquant" data-conseil-donnees hidden>
+        <p><strong>📵 Coupez vos données mobiles.</strong> Votre téléphone essaie de passer par Internet au lieu du Wi-Fi de la boutique.</p>
+        <p>Tirez le haut de l'écran vers le bas et touchez <strong>« Données mobiles »</strong> pour les éteindre. L'envoi reprend tout seul. Vous les rallumerez après.</p>
+      </div>
       <p class="aide" id="garder-ouvert">Gardez cet écran ouvert jusqu'à la fin.</p>
     </div>
     <div class="bas" id="bas-erreur" hidden>
@@ -473,6 +488,7 @@ p { margin: 0; }
       </div>
       <div class="pret" id="pret" hidden></div>
       <p class="bandeau doux" id="hors-ligne" hidden></p>
+      <p class="aide" data-mode-web hidden>📵 Gardez vos données mobiles coupées pour suivre votre commande ici. Rallumez-les en quittant la boutique.</p>
       <p class="aide" id="recap-final"></p>
       <div class="suite" id="suite-premiere" hidden>
         <h2>🎉 Bravo, votre premier envoi est fait !</h2>
@@ -648,9 +664,33 @@ setTimeout(function () {
         : textes[connexion.etat] || textes.encours;
     });
   }
+  // Le défaut qui tue le plus d'envois : sur un Wi-Fi sans internet, Android
+  // garde ses données mobiles pour tout ce que fait le navigateur. La page
+  // ne joint plus le PC, tourne, puis refuse l'envoi — sans rien dire de
+  // compréhensible. Ici, le client lit le seul geste qui débloque. Pas dans
+  // l'application : elle se branche d'elle-même sur le Wi-Fi de la boutique.
+  function conseilDonnees(visible) {
+    const montrer = visible && !app && !connexion.bt;
+    $$("[data-conseil-donnees]").forEach((b) => (b.hidden = !montrer));
+  }
+  // `/infos` avec un délai : sans réponse en 6 s, le PC est injoignable, et
+  // on réessaie jusqu'à ce qu'il réponde (données coupées entre-temps).
+  let relanceInfos = null;
   async function chargerInfos() {
+    clearTimeout(relanceInfos);
+    let joint = false;
     try {
-      const r = await lirePc("/infos");
+      let r;
+      if (!connexion.bt && typeof AbortController === "function") {
+        const arret = new AbortController();
+        const minuterie = setTimeout(() => arret.abort(), 6000);
+        try { r = await fetch(`${baseUrl()}/infos`, { cache: "no-store", signal: arret.signal }); }
+        finally { clearTimeout(minuterie); }
+      } else {
+        r = await lirePc("/infos");
+      }
+      joint = true;
+      conseilDonnees(false);
       const infos = await r.json();
       // Seulement des nombres : ce qui vient du réseau n'est jamais recopié
       // tel quel dans l'écran.
@@ -672,7 +712,14 @@ setTimeout(function () {
         $("#consigne-bluetooth").textContent = "l'ordinateur nommé :";
       }
       if (courant === "documents") rendreDocs();
-    } catch (_) {}
+    } catch (_) {
+      // Une réponse illisible n'est pas une coupure : seul l'échec de la
+      // requête elle-même (aucune réponse) montre la consigne.
+      if (!joint && !app && !connexion.bt) {
+        conseilDonnees(true);
+        relanceInfos = setTimeout(chargerInfos, 5000);
+      }
+    }
   }
   function afficherBoutique() { $$("[data-boutique]").forEach((b) => (b.textContent = lire("kiosque.boutique", "") || "Photocopie")); }
 
@@ -1215,6 +1262,7 @@ setTimeout(function () {
       const reponse = await televerser(form);
       docs.forEach((d) => { delete d._reprise; });
       $("#barre").style.width = "100%";
+      conseilDonnees(false);
       etape(2, "fait");
       etape(3, "fait");
       setTimeout(() => montrerRecu(reponse), 700);
@@ -1277,7 +1325,16 @@ setTimeout(function () {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${baseUrl()}/morceau/${id}?debut=${debut}`);
       xhr.timeout = 45000;
-      xhr.upload.onprogress = (e) => surProgres(e.loaded);
+      // Rien n'est parti en 12 s : le PC est injoignable (téléphone passé sur
+      // ses données mobiles, le plus souvent). On n'attend plus 45 s devant
+      // une barre figée : la reprise et la consigne viennent tout de suite.
+      // Sur le Wi-Fi de la boutique, le premier progrès arrive en moins
+      // d'une seconde ; seul un envoi qui n'a jamais démarré est coupé.
+      let demarre = false;
+      const guet = setTimeout(() => { if (!demarre) xhr.abort(); }, 12000);
+      xhr.upload.onprogress = (e) => { if (e.loaded > 0) demarre = true; surProgres(e.loaded); };
+      xhr.onloadend = () => clearTimeout(guet);
+      xhr.onabort = () => ko({});
       xhr.onload = () => {
         let recu = null;
         try { recu = JSON.parse(xhr.responseText).recu; } catch (_) {}
@@ -1308,7 +1365,7 @@ setTimeout(function () {
       const depart = recu;
       try {
         recu = await envoyerMorceau(id, depart, fichier.slice(depart, fin), (l) => avancer(depart + l));
-        if (echecs) { $("#erreur-envoi").hidden = true; }
+        if (echecs) { $("#erreur-envoi").hidden = true; conseilDonnees(false); }
         echecs = 0;
         debutCoupure.t = 0;
         avancer(recu);
@@ -1321,8 +1378,9 @@ setTimeout(function () {
         if (Date.now() - debutCoupure.t > 10 * 60 * 1000) {
           throw new Error("La liaison avec la boutique est coupée depuis trop longtemps. Vérifiez que vous êtes sur le Wi-Fi de la boutique, puis touchez « Réessayer » : l'envoi reprendra là où il s'est arrêté.");
         }
-        $("#erreur-envoi").textContent = "Liaison perdue… reprise automatique. Restez sur le Wi-Fi de la boutique, écran allumé (coupez les données mobiles si besoin).";
+        $("#erreur-envoi").textContent = "Liaison perdue… reprise automatique. Restez sur le Wi-Fi de la boutique, écran allumé.";
         $("#erreur-envoi").hidden = false;
+        conseilDonnees(true);
         await attendre(Math.min(2000 * echecs, 8000));
         try { recu = await positionAuPc(id); } catch (_) {}
       }
@@ -1811,18 +1869,11 @@ setTimeout(function () {
     premier = "navigateur";
     // La page simple ne marcherait pas mieux dans cette petite fenêtre.
     $$("[data-mode-web]").forEach((e) => (e.hidden = true));
-    // Essai automatique dans un cadre caché, et non plus en quittant la
-    // page : sur les téléphones dont la petite fenêtre refuse ce lien, elle
-    // devenait toute BLANCHE (constaté sur le terrain). Ici, au pire, rien
-    // ne se passe et le bouton et l'adresse restent affichés.
-    setTimeout(() => {
-      try {
-        const cadre = document.createElement("iframe");
-        cadre.style.display = "none";
-        cadre.src = versNavigateur;
-        document.body.appendChild(cadre);
-      } catch (_) {}
-    }, 1200);
+    // Plus de départ automatique vers le navigateur. Il partait en 1,2 s,
+    // avant que le client ait pu lire quoi que ce soit : avec les données
+    // mobiles allumées, il arrivait sur une page qui tourne sans fin, ou
+    // dont l'envoi est refusé — le défaut rapporté du terrain. Le client
+    // coupe d'abord ses données, puis touche le bouton.
   }
   aller(premier);
   if (premier === "accueil") chargerPartages();

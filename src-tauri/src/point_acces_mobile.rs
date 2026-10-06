@@ -253,7 +253,7 @@ mod implementation {
     use windows::Networking::Connectivity::{ConnectionProfile, NetworkInformation};
     use windows::Networking::NetworkOperators::{
         NetworkOperatorTetheringManager, NetworkOperatorTetheringOperationResult, TetheringCapability,
-        TetheringOperationStatus, TetheringOperationalState,
+        TetheringOperationStatus, TetheringOperationalState, TetheringWiFiBand,
     };
 
     /// Vrai quand c'est l'application qui a allumé le point d'accès. Le
@@ -402,6 +402,16 @@ mod implementation {
         configuration
             .SetPassphrase(&HSTRING::from(mot_de_passe))
             .map_err(|e| format!("mot de passe refusé ({e})"))?;
+        // Bande 2,4 GHz imposée : laissée à « automatique », Windows choisit
+        // souvent le 5 GHz sur les cartes récentes, et beaucoup de téléphones
+        // d'entrée de gamme ne voient alors tout simplement pas le Wi-Fi. Sur
+        // un Windows trop ancien pour connaître ce réglage, on continue sans.
+        if configuration
+            .IsBandSupported(TetheringWiFiBand::TwoPointFourGigahertz)
+            .unwrap_or(false)
+        {
+            let _ = configuration.SetBand(TetheringWiFiBand::TwoPointFourGigahertz);
+        }
         let action = gestionnaire
             .ConfigureAccessPointAsync(&configuration)
             .map_err(|e| format!("réglages refusés ({e})"))?;

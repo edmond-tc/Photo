@@ -1177,6 +1177,13 @@ async function afficherQr() {
         ajouterQr(info.qr_page_data_uri, "Scannez ce code : la page d'envoi s'ouvre");
       }
     }
+    // Le geste qui débloque le plus de clients, sur l'affiche elle-même :
+    // sur un Wi-Fi sans internet, un téléphone aux données mobiles allumées
+    // garde ses données pour la page, qui ne trouve alors pas le PC.
+    const donnees = document.createElement("p");
+    donnees.className = "adresse-a-taper";
+    donnees.innerHTML = "📵 <strong>Coupez vos données mobiles</strong> le temps d'envoyer : sinon le téléphone part sur Internet et ne trouve pas la boutique.";
+    conteneur.appendChild(donnees);
     // Chaque installation appelle une consigne différente : dire au gérant
     // une phrase qui ne correspond pas à son poste le laisserait sans réponse
     // devant un client bloqué.
@@ -1205,7 +1212,8 @@ async function afficherQr() {
       urlEl.innerHTML =
         `<strong>Un seul scan, rien à taper.</strong> Le client scanne et touche « Rejoindre » : ` +
         `la page d'envoi s'ouvre (la même que dans l'application Envoyeur). Si elle ne s'ouvre pas ` +
-        `toute seule, le téléphone affiche « Se connecter au réseau » : il la touche.` +
+        `toute seule, le téléphone affiche « Se connecter au réseau » : il la touche. ` +
+        `Si la page tourne sans fin ou refuse l'envoi : le client coupe ses données mobiles.` +
         `<br><br>Avec l'application Envoyeur, rien d'autre à faire : une fois sur ce Wi-Fi, ` +
         `elle trouve le PC toute seule.`;
     } else if (info.mode === "point_acces_inactif") {
