@@ -148,6 +148,13 @@ class Liaison(
                 }
                 Thread.sleep(1000)
             }
+            // Wi-Fi d'un routeur (ou d'une box) : la passerelle est le
+            // routeur, pas le PC, et la recherche ci-dessus ne le trouvait
+            // jamais. Un seul tour des adresses du réseau, en 2 s environ.
+            if (!annulee) pcParTourDuReseau()?.let { pc ->
+                dire("✅ PC trouvé sur le Wi-Fi (routeur) : ${pc.hostAddress}.")
+                return Resultat(pc, null)
+            }
         }
         balise.join(5000)
         if (annulee) return null
@@ -776,6 +783,55 @@ class Liaison(
                     try { cm.bindProcessToNetwork(reseau) } catch (_: Exception) {}
                     return ip
                 }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Le PC sur un Wi-Fi dont il n'est pas la passerelle (routeur, box) : on
+     * essaie chaque adresse du réseau du téléphone (/24) sur le port de la
+     * page, par ce Wi-Fi précisément (données mobiles allumées ou non).
+     */
+    private fun pcParTourDuReseau(): InetAddress? {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return null
+        @Suppress("DEPRECATION")
+        val wifis = try {
+            cm.allNetworks.filter { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        for (reseau in wifis) {
+            val moi = cm.getLinkProperties(reseau)?.linkAddresses
+                ?.map { it.address }?.filterIsInstance<Inet4Address>()?.firstOrNull() ?: continue
+            val base = moi.address
+            val candidats = (1..254).map { i ->
+                InetAddress.getByAddress(byteArrayOf(base[0], base[1], base[2], i.toByte()))
+            }.filter { it != moi }
+            val trouve = AtomicReference<InetAddress?>(null)
+            val pool = Executors.newFixedThreadPool(48)
+            try {
+                candidats.map { ip ->
+                    pool.submit {
+                        if (annulee || trouve.get() != null) return@submit
+                        val ouvert = try {
+                            reseau.socketFactory.createSocket().use {
+                                it.connect(InetSocketAddress(ip, Reglages.PORT_PC), 300)
+                            }
+                            true
+                        } catch (_: Exception) {
+                            false
+                        }
+                        if (ouvert && reponduParLePc(reseau, ip)) trouve.compareAndSet(null, ip)
+                    }
+                }.forEach { runCatching { it.get() } }
+            } finally {
+                pool.shutdownNow()
+            }
+            trouve.get()?.let { pc ->
+                reseauWifi = reseau
+                try { cm.bindProcessToNetwork(reseau) } catch (_: Exception) {}
+                return pc
             }
         }
         return null

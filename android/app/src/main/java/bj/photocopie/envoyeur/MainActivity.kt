@@ -181,7 +181,35 @@ class MainActivity : Activity() {
         web.webViewClient = ClientWeb()
         web.webChromeClient = ChromeWeb()
         web.addJavascriptInterface(Pont(), "KiosqueApp")
-        setContentView(web)
+        // Android 15 (cible 35) étend l'application sous la barre d'état et
+        // sous les boutons du bas, et ne pousse plus la page au-dessus du
+        // clavier : le bouton « Envoyer » finissait sous les boutons
+        // d'Android, et le champ du numéro sous le clavier. La page compte
+        // sur les marges du navigateur (safe-area), que les versions
+        // installées sur beaucoup de téléphones ne donnent pas. On les pose
+        // donc ici, autour de la page. Avant Android 15, rien ne change :
+        // Android garde déjà la page hors des barres, les marges
+        // reçues valent zéro.
+        val cadre = android.widget.FrameLayout(this)
+        cadre.addView(web)
+        cadre.setOnApplyWindowInsetsListener { vue, marges ->
+            if (Build.VERSION.SDK_INT >= 30) {
+                val m = marges.getInsets(
+                    android.view.WindowInsets.Type.systemBars() or
+                        android.view.WindowInsets.Type.displayCutout() or
+                        android.view.WindowInsets.Type.ime(),
+                )
+                vue.setPadding(m.left, m.top, m.right, m.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                vue.setPadding(
+                    marges.systemWindowInsetLeft, marges.systemWindowInsetTop,
+                    marges.systemWindowInsetRight, marges.systemWindowInsetBottom,
+                )
+            }
+            marges
+        }
+        setContentView(cadre)
         voix = TextToSpeech(this) { statut ->
             if (statut == TextToSpeech.SUCCESS) {
                 val r = voix?.setLanguage(java.util.Locale.FRENCH)
