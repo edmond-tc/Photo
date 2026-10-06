@@ -63,8 +63,63 @@ const REGLE_TLS: &str = "Photocopie Benin - refus rapide du port securise";
 /// le téléphone trouve la page sans connaître l'adresse du PC.
 const REGLE_MDNS: &str = "Photocopie Benin - nom kiosque.local";
 
-const TOUTES_LES_REGLES: [&str; 6] =
-    [REGLE_PAGE, REGLE_DHCP, REGLE_DNS, REGLE_PORTAIL, REGLE_TLS, REGLE_MDNS];
+/// Le logiciel lui-même, quel que soit le port.
+///
+/// Le piège qui rendait les règles par port inutiles : au premier démarrage,
+/// Windows demande « Autoriser l'accès ? » avec, par défaut, les réseaux
+/// privés cochés et les réseaux PUBLICS décochés. Un simple « Autoriser »
+/// (ou « Annuler ») crée alors des règles de BLOCAGE pour le logiciel sur
+/// les réseaux publics — et le Wi-Fi de la boutique en est un. Une règle de
+/// blocage l'emporte toujours sur une autorisation : les téléphones
+/// rejoignaient le Wi-Fi et n'atteignaient jamais la page, alors que nos
+/// règles étaient bien là. On retire donc ces blocages, et on autorise le
+/// logiciel sur tous les profils, ce qui empêche aussi la question de
+/// revenir.
+const REGLE_LOGICIEL: &str = "Photocopie Benin - logiciel";
+
+const TOUTES_LES_REGLES: [&str; 7] = [
+    REGLE_PAGE,
+    REGLE_DHCP,
+    REGLE_DNS,
+    REGLE_PORTAIL,
+    REGLE_TLS,
+    REGLE_MDNS,
+    REGLE_LOGICIEL,
+];
+
+/// Retire les blocages que Windows a créés pour notre programme (quel que
+/// soit son dossier d'installation), puis l'autorise sur tous les profils.
+/// Par les commandes PowerShell, pas par `netsh` : un chemin avec espaces
+/// passé à `netsh` depuis PowerShell 5.1 perd ses guillemets.
+fn commandes_logiciel() -> String {
+    let exe = std::env::current_exe()
+        .map(|chemin| chemin.display().to_string())
+        .unwrap_or_default()
+        .replace('\'', "''");
+    let nom_fichier = std::env::current_exe()
+        .ok()
+        .and_then(|chemin| chemin.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "photocopie-benin.exe".to_string())
+        .replace('\'', "''");
+    format!(
+        r#"try {{
+    $blocages = @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue |
+        Where-Object {{ $_.Program -like '*\{nom_fichier}' }} |
+        Get-NetFirewallRule -ErrorAction SilentlyContinue |
+        Where-Object {{ $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' }})
+    foreach ($regle in $blocages) {{
+        Remove-NetFirewallRule -Name $regle.Name -ErrorAction SilentlyContinue
+        $sortie += "Blocage retire : $($regle.DisplayName)"
+    }}
+    if ('{exe}' -ne '') {{
+        Remove-NetFirewallRule -DisplayName "{REGLE_LOGICIEL}" -ErrorAction SilentlyContinue
+        New-NetFirewallRule -DisplayName "{REGLE_LOGICIEL}" -Direction Inbound -Action Allow -Program '{exe}' -Profile Any -ErrorAction SilentlyContinue | Out-Null
+    }}
+}} catch {{
+    $sortie += "Pare-feu (logiciel) : $_"
+}}"#
+    )
+}
 
 /// Les commandes à insérer dans un script déjà élevé.
 ///
@@ -89,7 +144,7 @@ pub fn commandes_powershell() -> String {
         (REGLE_MDNS, "UDP", 5353),
     ];
 
-    regles
+    let mut commandes = regles
         .iter()
         .map(|(nom, protocole, port)| {
             format!(
@@ -98,8 +153,9 @@ pub fn commandes_powershell() -> String {
                  protocol={protocole} localport={port} profile=any 2>&1 | Out-String)"
             )
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect::<Vec<_>>();
+    commandes.push(commandes_logiciel());
+    commandes.join("\n")
 }
 
 /// Script autonome, pour les installations où l'application ne crée pas le
@@ -261,7 +317,8 @@ mod tests {
     fn remplace_les_regles_au_lieu_de_les_empiler() {
         let commandes = commandes_powershell();
         assert_eq!(commandes.matches("delete rule").count(), 6);
-        for regle in TOUTES_LES_REGLES {
+        // Celle du logiciel passe par PowerShell (voir `commandes_logiciel`).
+        for regle in TOUTES_LES_REGLES.iter().filter(|r| **r != REGLE_LOGICIEL) {
             let suppression = commandes
                 .find(&format!("delete rule name=\"{regle}\""))
                 .expect("suppression attendue");
@@ -270,6 +327,30 @@ mod tests {
                 .expect("création attendue");
             assert!(suppression < creation, "supprimer AVANT de recréer");
         }
+        let suppression = commandes
+            .find(&format!("Remove-NetFirewallRule -DisplayName \"{REGLE_LOGICIEL}\""))
+            .expect("suppression de la règle du logiciel");
+        let creation = commandes
+            .find(&format!("New-NetFirewallRule -DisplayName \"{REGLE_LOGICIEL}\""))
+            .expect("création de la règle du logiciel");
+        assert!(suppression < creation);
+    }
+
+    /// Le blocage que Windows crée tout seul quand on répond « Autoriser »
+    /// sans cocher les réseaux publics doit être retiré : il l'emporterait
+    /// sur toutes nos autorisations. Seulement les blocages ENTRANTS de
+    /// NOTRE programme, rien d'autre.
+    #[test]
+    fn retire_les_blocages_du_logiciel_et_l_autorise_partout() {
+        let commandes = commandes_logiciel();
+        assert!(commandes.contains("Get-NetFirewallApplicationFilter"));
+        assert!(commandes.contains("$_.Direction -eq 'Inbound' -and $_.Action -eq 'Block'"));
+        assert!(commandes.contains("-Action Allow"));
+        assert!(commandes.contains("-Profile Any"));
+        assert!(commandes.contains("-Direction Inbound"));
+        // Les blocages sont retirés AVANT l'autorisation.
+        assert!(commandes.find("Remove-NetFirewallRule -Name").unwrap() < commandes.find("New-NetFirewallRule").unwrap());
+        assert!(commandes_powershell().contains(&commandes));
     }
 
     /// Toutes les règles portent le même préfixe : c'est ce qui permet de

@@ -75,6 +75,16 @@ pub fn poser_adresse_portail(adresse_pc: Ipv4Addr) -> Result<(), String> {
         return Ok(());
     }
     let resultat = std::env::temp_dir().join("photocopie-benin-hotspot-resultat.txt");
+    // Dans la même autorisation : la tâche de démarrage. Sur les PC des
+    // deuxième et troisième façons, elle n'était jamais créée (seul le
+    // script de la première la créait). Or la carte de ces réseaux est
+    // recréée à chaque rallumage — chaque matin, à chaque relance du
+    // gardien — et l'adresse de façade disparaissait avec elle, sans que
+    // rien d'autorisé ne puisse la remettre. Avec la tâche, le gardien la
+    // repose sans fenêtre « Oui ».
+    let tache = std::env::current_exe()
+        .map(|exe| commandes_tache_demarrage(&exe))
+        .unwrap_or_default();
     let script = format!(
         r#"$sortie = @()
 $ip = Get-NetIPAddress -IPAddress '{adresse_pc}' -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -85,6 +95,7 @@ if ($ip) {{
 }} else {{
     $sortie += "CARTE_INTROUVABLE"
 }}
+{tache}
 $sortie | Out-File -FilePath "{res}" -Encoding utf8
 "#,
         portail = ADRESSE_PORTAIL,
@@ -173,6 +184,9 @@ pub const NOM_TACHE_DEMARRAGE: &str = "Photocopie Benin - Wi-Fi boutique";
 /// reste là, et lui dira ce qui ne va pas.
 const SCRIPT_DEMARRAGE: &str = r#"
 $ErrorActionPreference = 'SilentlyContinue'
+# Vrai seulement quand ce PC crée son Wi-Fi par le réseau hébergé (première
+# façon). Écrit par l'application, qui sait laquelle a marché ici.
+$heberge = __HEBERGE__
 # Windows ne doit plus éteindre la carte Wi-Fi « pour économiser l'énergie » :
 # le Wi-Fi de la boutique disparaissait sans prévenir, en pleine journée.
 Get-NetAdapter -Physical | Where-Object { $_.PhysicalMediaType -like '*802.11*' } | ForEach-Object {
@@ -181,6 +195,20 @@ Get-NetAdapter -Physical | Where-Object { $_.PhysicalMediaType -like '*802.11*' 
         Disable-NetAdapterPowerManagement -Name $_.Name -NoRestart
     }
 }
+# Deuxième et troisième façons : c'est l'application qui rallume le Wi-Fi,
+# sans droits. Il lui manque seulement l'adresse de façade, que seul un
+# script autorisé peut poser — sur la carte Wi-Fi Direct qui porte le
+# réseau en ce moment. Sans elle, les Android récents n'ouvrent pas la
+# page en rejoignant le Wi-Fi.
+Get-NetAdapter -IncludeHidden | Where-Object { $_.InterfaceDescription -like '*Wi-Fi Direct Virtual Adapter*' -and $_.Status -eq 'Up' } | ForEach-Object {
+    $ips = @(Get-NetIPAddress -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4 | ForEach-Object { $_.IPAddress })
+    $utiles = @($ips | Where-Object { $_ -notlike '169.254.*' -and $_ -ne '4.3.2.1' })
+    if ($utiles.Count -gt 0 -and $ips -notcontains '4.3.2.1') {
+        New-NetIPAddress -InterfaceIndex $_.InterfaceIndex -IPAddress '4.3.2.1' -PrefixLength 32 -SkipAsSource $true | Out-Null
+        Set-NetIPInterface -InterfaceIndex $_.InterfaceIndex -WeakHostReceive Enabled
+    }
+}
+if (-not $heberge) { exit 0 }
 # À l'ouverture de session, le service Wi-Fi et la carte ne sont souvent
 # pas encore prêts : un seul essai échouait en silence, et le gérant
 # trouvait le Wi-Fi éteint (trouvé à l'audit). On insiste 2 minutes.
@@ -227,6 +255,31 @@ pub fn rafraichir_script_demarrage() {
     }
 }
 
+/// La façon qui a créé le Wi-Fi sur ce PC, telle que la retient la base
+/// (`wifi_methode`). Le script de démarrage en dépend : sur un PC récent
+/// (deuxième ou troisième façon), il insistait 2 minutes sur le réseau
+/// hébergé, impossible ici, et ne posait jamais l'adresse de façade.
+static METHODE_CONNUE: Mutex<Option<String>> = Mutex::new(None);
+
+/// Retient la façon qui marche ici, et récrit le script en conséquence.
+pub fn retenir_methode(methode: Option<&str>) {
+    if let Ok(mut garde) = METHODE_CONNUE.lock() {
+        *garde = methode.map(str::to_string);
+    }
+    rafraichir_script_demarrage();
+}
+
+/// Le script de démarrage, complété pour ce PC.
+fn script_demarrage() -> String {
+    let methode = METHODE_CONNUE.lock().ok().and_then(|garde| garde.clone());
+    // Inconnue (PC jamais activé, ancienne version) : on garde l'ancien
+    // comportement, qui essaie le réseau hébergé.
+    let heberge = methode.is_none_or(|m| m.is_empty() || m == "réseau hébergé");
+    SCRIPT_DEMARRAGE
+        .replace("__ADRESSE__", &ADRESSE_POINT_ACCES.to_string())
+        .replace("__HEBERGE__", if heberge { "$true" } else { "$false" })
+}
+
 /// L'argument avec lequel la tâche Windows lance l'application : elle
 /// rallume alors le Wi-Fi de la boutique, sans fenêtre, et s'arrête.
 pub const ARGUMENT_DEMARRAGE_WIFI: &str = "--demarrage-wifi";
@@ -266,7 +319,16 @@ pub fn executer_demarrage_wifi() {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let Ok(fichier) = ecrire_script_demarrage() else { return };
+        // Ce processus-ci ne connaît pas la façon retenue sur ce PC (il ne
+        // lit pas la base) : récrire le script lui ferait perdre ce que
+        // l'application y a mis. Il ne l'écrit que s'il manque.
+        let fichier = match chemin_script_demarrage() {
+            Some(chemin) if chemin.exists() => chemin,
+            _ => match ecrire_script_demarrage() {
+                Ok(chemin) => chemin,
+                Err(_) => return,
+            },
+        };
         let _ = std::process::Command::new("powershell.exe")
             .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
             .arg(&fichier)
@@ -321,16 +383,25 @@ pub fn tache_lance_powershell(xml: &str) -> bool {
 /// contenu de `%TEMP%`, et une tâche qui pointe vers un fichier disparu
 /// échoue en silence tous les matins.
 #[cfg(windows)]
-fn ecrire_script_demarrage() -> Result<std::path::PathBuf, String> {
-    let dossier = std::env::var_os("LOCALAPPDATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("photocopie-benin");
-    std::fs::create_dir_all(&dossier)
-        .map_err(|e| format!("Impossible de préparer le démarrage automatique ({e})."))?;
+fn chemin_script_demarrage() -> Option<std::path::PathBuf> {
+    Some(
+        std::env::var_os("LOCALAPPDATA")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("photocopie-benin")
+            .join("demarrage-wifi.ps1"),
+    )
+}
 
-    let fichier = dossier.join("demarrage-wifi.ps1");
-    let contenu = SCRIPT_DEMARRAGE.replace("__ADRESSE__", &ADRESSE_POINT_ACCES.to_string());
+#[cfg(windows)]
+fn ecrire_script_demarrage() -> Result<std::path::PathBuf, String> {
+    let fichier = chemin_script_demarrage()
+        .ok_or_else(|| "Impossible de préparer le démarrage automatique.".to_string())?;
+    if let Some(dossier) = fichier.parent() {
+        std::fs::create_dir_all(dossier)
+            .map_err(|e| format!("Impossible de préparer le démarrage automatique ({e})."))?;
+    }
+    let contenu = script_demarrage();
     // Même marque UTF-8 que le script d'activation, pour la même raison.
     std::fs::write(&fichier, format!("\u{FEFF}{contenu}"))
         .map_err(|e| format!("Impossible d'écrire le démarrage automatique ({e})."))?;
@@ -2876,6 +2947,27 @@ mod tests {
         // deuxième activation ne mettrait jamais le chemin à jour.
         assert!(script.contains("/F"));
     }
+    /// Sur un PC des deuxième et troisième façons, le script de démarrage
+    /// doit reposer l'adresse de façade sur la carte Wi-Fi Direct, et ne
+    /// plus perdre 2 minutes sur le réseau hébergé, impossible ici.
+    #[test]
+    fn le_script_de_demarrage_suit_la_facon_retenue() {
+        retenir_methode(Some(METHODE_POINT_ACCES_MOBILE));
+        let recent = script_demarrage();
+        assert!(recent.contains("$heberge = $false"));
+        assert!(recent.contains("Wi-Fi Direct Virtual Adapter"));
+        let position = |s: &str, aiguille: &str| s.find(aiguille).expect(aiguille);
+        // La façade est posée AVANT la sortie anticipée.
+        assert!(position(&recent, "'4.3.2.1' -PrefixLength 32") < position(&recent, "if (-not $heberge) { exit 0 }"));
+
+        retenir_methode(Some("réseau hébergé"));
+        assert!(script_demarrage().contains("$heberge = $true"));
+        // PC jamais activé : l'ancien comportement, qui essaie tout.
+        retenir_methode(None);
+        assert!(script_demarrage().contains("$heberge = $true"));
+        assert!(!script_demarrage().contains("__"));
+    }
+
     /// Les deux langues qu'on rencontre sur le terrain, et une sortie qui
     /// ne dit rien — auquel cas il vaut mieux ne rien afficher que
     /// d'inventer un chiffre.

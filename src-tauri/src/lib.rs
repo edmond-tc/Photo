@@ -116,6 +116,7 @@ pub fn run() {
             let conn = db::open(&data_dir).expect("échec d'ouverture de la base SQLite");
             license::assurer_debut_essai(&conn);
             let watched_folder = db::get_setting(&conn, "dossier_surveille");
+            let methode_wifi = db::get_setting(&conn, "wifi_methode");
 
             app.manage(DbState(db::VerrouSain::new(conn)));
             app.manage(server::EtatServeur::default());
@@ -139,7 +140,7 @@ pub fn run() {
             canal_bt::demarrer(app.handle().clone());
             reception_directe::demarrer(app.handle().clone());
             arrivees::demarrer(app.handle().clone());
-            hotspot::rafraichir_script_demarrage();
+            hotspot::retenir_methode(methode_wifi.as_deref());
             hotspot::remplacer_ancienne_tache_demarrage();
             gardien_wifi::demarrer(app.handle().clone());
             std::thread::spawn(controle_impressions::fenetre_impression_windows_dans_les_navigateurs);

@@ -78,6 +78,7 @@ pub fn retenir_allume(app: &tauri::AppHandle, methode: Option<&str>) {
     let _ = crate::db::set_setting(&conn, "wifi_coupe_par_gerant", if methode.is_some() { "non" } else { "oui" });
     if let Some(m) = methode {
         let _ = crate::db::set_setting(&conn, "wifi_methode", m);
+        crate::hotspot::retenir_methode(Some(m));
     }
 }
 
@@ -179,10 +180,12 @@ pub fn demarrer(app: tauri::AppHandle) {
                         }
                     }
                 }
-                // Réseau hébergé sans l'adresse de façade (PC mis à jour sans
-                // réactiver le Wi-Fi) : la tâche de démarrage, qui a déjà les
-                // droits, la pose — sans fenêtre « Oui ».
-                if methode == "réseau hébergé"
+                // Wi-Fi sans l'adresse de façade : la tâche de démarrage, qui a
+                // déjà les droits, la pose — sans fenêtre « Oui ». Réseau
+                // hébergé (PC mis à jour sans réactiver le Wi-Fi), mais
+                // surtout deuxième et troisième façons, dont la carte est
+                // recréée à chaque rallumage et perd alors cette adresse.
+                if !methode.is_empty()
                     && !crate::hotspot::adresse_portail_en_place()
                     && derniere_facade.is_none_or(|t: Instant| t.elapsed() > Duration::from_secs(600))
                 {

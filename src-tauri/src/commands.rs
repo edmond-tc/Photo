@@ -1017,7 +1017,7 @@ pub async fn activer_point_acces_local(
         }
     }
     recapitulatif.push(if crate::pare_feu::regles_presentes() {
-        "✅ Pare-feu Windows ouvert (6 ports)".to_string()
+        "✅ Pare-feu Windows ouvert".to_string()
     } else {
         "❌ Pare-feu Windows — règles absentes".to_string()
     });
