@@ -1325,15 +1325,19 @@ setTimeout(function () {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${baseUrl()}/morceau/${id}?debut=${debut}`);
       xhr.timeout = 45000;
-      // Rien n'est parti en 12 s : le PC est injoignable (téléphone passé sur
-      // ses données mobiles, le plus souvent). On n'attend plus 45 s devant
-      // une barre figée : la reprise et la consigne viennent tout de suite.
-      // Sur le Wi-Fi de la boutique, le premier progrès arrive en moins
-      // d'une seconde ; seul un envoi qui n'a jamais démarré est coupé.
-      let demarre = false;
-      const guet = setTimeout(() => { if (!demarre) xhr.abort(); }, 12000);
-      xhr.upload.onprogress = (e) => { if (e.loaded > 0) demarre = true; surProgres(e.loaded); };
-      xhr.onloadend = () => clearTimeout(guet);
+      // Plus rien ne bouge depuis 12 s : le PC est injoignable (téléphone
+      // passé sur ses données mobiles, le plus souvent, ou Wi-Fi perdu). On
+      // n'attend plus 45 s devant une barre figée : la reprise et la
+      // consigne viennent tout de suite. « Bouger », c'est un progrès de
+      // l'envoi, ou la fin de l'envoi du morceau — après quoi le PC répond
+      // aussitôt. Un Wi-Fi lent mais vivant progresse sans cesse et n'est
+      // jamais coupé ; trouvé au banc d'essai : l'ancienne garde ne
+      // surveillait que le démarrage, et un envoi calé en route attendait 45 s.
+      let derniere = Date.now();
+      const guet = setInterval(() => { if (Date.now() - derniere > 12000) xhr.abort(); }, 1000);
+      xhr.upload.onprogress = (e) => { derniere = Date.now(); surProgres(e.loaded); };
+      xhr.upload.onload = () => { derniere = Date.now(); };
+      xhr.onloadend = () => clearInterval(guet);
       xhr.onabort = () => ko({});
       xhr.onload = () => {
         let recu = null;
@@ -1424,16 +1428,28 @@ setTimeout(function () {
         $("#chiffres").textContent = `${pct} % · ${mo(e.loaded)} sur ${mo(e.total)}${vitesse(e.loaded, e.total)} — gardez l'écran allumé`;
         try { app && app.garderLien(); } catch (_) {}
       };
-      xhr.upload.onload = () => { fini(); $("#chiffres").textContent = "Enregistrement par la boutique…"; };
+      // La commande est partie : le PC répond en quelques secondes (un peu
+      // plus pour de très gros documents). Sans réponse en 90 s, la liaison
+      // a sauté — trouvé au banc d'essai : sans cette limite, l'écran
+      // restait sur « Enregistrement… » pour toujours. Renvoyer ne crée pas
+      // de double : les morceaux déjà repris par le PC n'y sont plus.
+      let sansReponse = null;
+      xhr.upload.onload = () => {
+        fini();
+        $("#chiffres").textContent = "Enregistrement par la boutique…";
+        sansReponse = setTimeout(() => { bloque = true; xhr.abort(); }, 90000);
+      };
+      xhr.onloadend = () => clearTimeout(sansReponse);
       xhr.onload = () => {
         fini();
         if (xhr.status >= 200 && xhr.status < 300) { try { ok(JSON.parse(xhr.responseText)); } catch (_) { ok({}); } }
         else ko(new Error(xhr.responseText && xhr.responseText.length < 200 ? xhr.responseText : "La boutique a refusé l'envoi. Réessayez."));
       };
-      xhr.onerror = () => { fini(); ko(new Error("La liaison avec la boutique a été coupée. Restez près du guichet et réessayez.")); };
+      xhr.onerror = () => { fini(); conseilDonnees(true); ko(new Error("La liaison avec la boutique a été coupée. Restez près du guichet et réessayez.")); };
       xhr.ontimeout = () => { fini(); ko(new Error("L'envoi a pris trop de temps. Réessayez.")); };
       xhr.onabort = () => {
         fini();
+        if (bloque) conseilDonnees(true);
         ko(new Error(bloque
           ? "L'envoi s'est arrêté : le Wi-Fi de la boutique a été coupé, ou l'écran s'est verrouillé. Vérifiez que vous êtes toujours sur le Wi-Fi de la boutique, puis touchez de nouveau « Envoyer », écran allumé."
           : "Envoi annulé."));

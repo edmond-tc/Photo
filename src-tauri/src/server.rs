@@ -790,6 +790,19 @@ const MACHINES_DE_CONTROLE: &[&str] = &[
     "connectivitycheck.gstatic.com", // Android
     "connectivitycheck.android.com", // Android
     "clients3.google.com",           // Android, ancienne adresse
+    "play.googleapis.com",           // Android récent, adresse de secours
+    // Les marques qui vérifient chez elles plutôt que chez Google (leurs
+    // téléphones vendus hors de Chine passent souvent par Google, mais pas
+    // toujours selon la version du système) : toutes au chemin
+    // `/generate_204`, déjà reconnu, mais certaines versions appellent la
+    // racine.
+    "connect.rom.miui.com",                    // Xiaomi, Redmi, POCO
+    "connectivitycheck.platform.hicloud.com",  // Huawei, Honor
+    "connectivitycheck.cbg-app.huawei.com",    // Huawei, Honor (récents)
+    "conn1.oppomobile.com",                    // Oppo, Realme, OnePlus
+    "conn2.oppomobile.com",                    // Oppo, Realme, OnePlus
+    "wifi.vivo.com.cn",                        // Vivo
+    "www.qualcomm.cn",                         // Téléphones à puce Qualcomm (Chine)
     "www.msftconnecttest.com",       // Windows 10 et 11
     "www.msftncsi.com",              // Windows, ancienne adresse
     "detectportal.firefox.com",      // Firefox
@@ -2532,12 +2545,23 @@ mod tests {
             "connectivitycheck.gstatic.com",
             "www.msftconnecttest.com",
             "detectportal.firefox.com",
+            // Chaque grande marque d'Android qui vérifie chez elle.
+            "connect.rom.miui.com",
+            "connectivitycheck.platform.hicloud.com",
+            "connectivitycheck.cbg-app.huawei.com",
+            "conn1.oppomobile.com",
+            "conn2.oppomobile.com",
+            "wifi.vivo.com.cn",
+            "play.googleapis.com",
         ] {
             assert!(
                 est_sonde_de_reseau("/", hote),
                 "machine de contrôle non reconnue à la racine : {hote}"
             );
         }
+        // Et à leur chemin habituel, qu'elles partagent toutes.
+        assert!(est_sonde_de_reseau("/generate_204", "connect.rom.miui.com"));
+        assert!(est_sonde_de_reseau("/generate_204", "wifi.vivo.com.cn"));
         // Le port fait partie de l'en-tête « Host » et n'appartient pas au nom.
         assert!(est_sonde_de_reseau("/", "NETCTS.CDN-APPLE.COM:80"));
     }
