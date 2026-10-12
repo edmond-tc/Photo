@@ -4,6 +4,12 @@ name = "photocopie-benin"
 main = "site/index.js"
 compatibility_date = "2026-09-01"
 
+# L'image d'aperçu des partages (WhatsApp, Facebook), servie telle quelle.
+[[rules]]
+type = "Data"
+globs = ["**/*.png"]
+fallthrough = true
+
 [[d1_databases]]
 binding = "DB"
 database_name = "photocopie-admin"

@@ -3,7 +3,8 @@
 // propre, et rien de ce qui est réservé au porteur du projet.
 
 import { relais, nettoyer, nettoyerSiBesoin } from "./relais.js";
-import { pageAccueil, pageComment, pageConfidentialite, pageTelechargerSite, robots, sitemap } from "./pages.js";
+import { pageAccueil, pageAccueilEn, pageAffiche, pageComment, pageConfidentialite, pageFaq, pageKit, pageTelechargerSite, robots, sitemap } from "./pages.js";
+import APERCU from "./apercu.png";
 
 /** Clé IndexNow (Bing, Yandex…) : publique par nature, elle prouve seulement
  * que ce site demande lui-même à être exploré. */
@@ -43,6 +44,11 @@ export default {
         case "/comment-ca-marche": return html(pageComment());
         case "/telecharger": return html(pageTelechargerSite());
         case "/confidentialite": return html(pageConfidentialite());
+        case "/faq": return html(pageFaq());
+        case "/en": return html(pageAccueilEn());
+        case "/kit": return html(pageKit());
+        case "/affiche": return html(pageAffiche());
+        case "/apercu.png": return new Response(APERCU, { headers: { "content-type": "image/png", "cache-control": "public, max-age=86400" } });
         case "/robots.txt": return new Response(robots(), { headers: { "content-type": "text/plain; charset=utf-8" } });
         case `/${CLE_INDEXNOW}.txt`: return new Response(CLE_INDEXNOW, { headers: { "content-type": "text/plain; charset=utf-8" } });
         case "/sitemap.xml": return new Response(sitemap(), { headers: { "content-type": "application/xml; charset=utf-8" } });

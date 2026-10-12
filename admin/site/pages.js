@@ -34,21 +34,35 @@ footer{margin:48px 0 24px;padding-top:18px;border-top:1px solid var(--trait);col
 .petit{font-size:.9rem;color:var(--doux)}
 `;
 
-function gabarit({ titre, description, chemin, corps, jsonld = "" }) {
-  const url = `https://photocopie-benin.atinzed2.workers.dev${chemin}`;
+const RACINE = "https://photocopie-benin.atinzed2.workers.dev";
+
+function gabarit({ titre, description, chemin, corps, jsonld = "", lang = "fr", alternes = null, indexer = true }) {
+  const url = `${RACINE}${chemin}`;
+  const liens = alternes
+    ? Object.entries(alternes).map(([l, c]) => `<link rel="alternate" hreflang="${l}" href="${RACINE}${c}">`).join("\n") +
+      `\n<link rel="alternate" hreflang="x-default" href="${RACINE}${alternes.fr || chemin}">`
+    : "";
+  const en = lang === "en";
   return `<!doctype html>
-<html lang="fr">
+<html lang="${lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${titre}</title>
 <meta name="description" content="${description}">
 <link rel="canonical" href="${url}">
+${liens}
+${indexer ? "" : '<meta name="robots" content="noindex">'}
+<meta property="og:image" content="${RACINE}/apercu.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${RACINE}/apercu.png">
 <meta property="og:type" content="website">
 <meta property="og:title" content="${titre}">
 <meta property="og:description" content="${description}">
 <meta property="og:url" content="${url}">
-<meta property="og:locale" content="fr_FR">
+<meta property="og:locale" content="${en ? "en_US" : "fr_FR"}">
 <meta name="theme-color" content="#0b5cad">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b5cad'/%3E%3Cpath d='M18 24h28v22H18z' fill='%23fff'/%3E%3Cpath d='M22 14h20v12H22z' fill='%23cfe2fb'/%3E%3C/svg%3E">
 ${jsonld}
@@ -58,12 +72,14 @@ ${jsonld}
 <div class="page">
 <header class="haut">
   <a class="marque" href="/">🖨️ Gestion Photocopie</a>
-  <nav><a href="/comment-ca-marche">Comment ça marche</a><a href="/telecharger">Télécharger</a></nav>
+  ${en
+    ? `<nav><a href="/telecharger">Download</a><a href="/" hreflang="fr">Français</a></nav>`
+    : `<nav><a href="/comment-ca-marche">Comment ça marche</a><a href="/faq">Questions</a><a href="/telecharger">Télécharger</a><a href="/en" hreflang="en">English</a></nav>`}
 </header>
 ${corps}
 <footer>
   <p><strong>Gestion Photocopie</strong> — le logiciel des boutiques de photocopie et cybercafés du Bénin.</p>
-  <p><a href="/comment-ca-marche">Comment ça marche</a> · <a href="/telecharger">Télécharger</a> · <a href="/confidentialite">Confidentialité</a> · <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a></p>
+  <p><a href="/comment-ca-marche">Comment ça marche</a> · <a href="/faq">Questions fréquentes</a> · <a href="/telecharger">Télécharger</a> · <a href="/confidentialite">Confidentialité</a> · <a href="/en">English</a> · <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a></p>
 </footer>
 </div>
 </body>
@@ -88,6 +104,7 @@ export function pageAccueil() {
     description:
       "Le client scanne un QR code et envoie ses documents depuis son téléphone : le gérant les reçoit sur son ordinateur, sans câble, sans clé USB, avec ou sans Internet. Logiciel pour photocopie et cybercafé au Bénin.",
     chemin: "/",
+    alternes: { fr: "/", en: "/en" },
     jsonld,
     corps: `
 <section class="heros">
@@ -237,8 +254,124 @@ export function robots() {
 }
 
 export function sitemap() {
-  const pages = ["/", "/comment-ca-marche", "/telecharger", "/confidentialite"];
+  const pages = ["/", "/en", "/comment-ca-marche", "/faq", "/telecharger", "/confidentialite"];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
     .map((p) => `  <url><loc>https://photocopie-benin.atinzed2.workers.dev${p}</loc><lastmod>2026-10-12</lastmod></url>`)
     .join("\n")}\n</urlset>\n`;
+}
+
+/** QR code du site (pour l'affiche), fabriqué une fois : il ne change pas. */
+const QR_SITE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 35 35" shape-rendering="crispEdges"><path fill="#ffffff" d="M0 0h35v35H0z"/><path stroke="#16213a" d="M1 1.5h7m3 0h1m2 0h2m1 0h6m1 0h1m2 0h7M1 2.5h1m5 0h1m2 0h2m1 0h4m1 0h1m2 0h1m1 0h1m3 0h1m5 0h1M1 3.5h1m1 0h3m1 0h1m1 0h1m1 0h2m1 0h1m2 0h3m1 0h2m1 0h1m2 0h1m1 0h3m1 0h1M1 4.5h1m1 0h3m1 0h1m1 0h4m2 0h1m1 0h1m3 0h1m2 0h1m2 0h1m1 0h3m1 0h1M1 5.5h1m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m1 0h1m1 0h2m2 0h1m1 0h1m2 0h1m1 0h3m1 0h1M1 6.5h1m5 0h1m1 0h2m2 0h2m1 0h3m2 0h1m5 0h1m5 0h1M1 7.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M9 8.5h2m1 0h1m3 0h1m2 0h1m2 0h2M1 9.5h1m1 0h5m2 0h1m2 0h4m1 0h1m4 0h1m1 0h1m1 0h5M2 10.5h2m2 0h1m1 0h1m4 0h1m3 0h1m1 0h3m2 0h1m2 0h2m1 0h2m1 0h1M2 11.5h2m2 0h4m1 0h1m1 0h1m2 0h2m1 0h1m3 0h1m1 0h2m2 0h1m1 0h1M3 12.5h2m4 0h5m1 0h2m3 0h1m1 0h2m2 0h1m2 0h3m1 0h1M3 13.5h1m3 0h1m2 0h1m1 0h2m5 0h1m2 0h1m2 0h2m1 0h3M4 14.5h1m1 0h1m3 0h1m1 0h7m2 0h1m2 0h1m1 0h2m2 0h1m1 0h2M1 15.5h2m1 0h1m1 0h3m3 0h1m1 0h1m4 0h2m2 0h1m1 0h3m1 0h1m2 0h1M1 16.5h2m2 0h2m2 0h2m2 0h3m1 0h1m2 0h4m2 0h6M1 17.5h1m1 0h1m2 0h7m1 0h2m2 0h1m1 0h1m2 0h1m2 0h1m1 0h3m2 0h1M2 18.5h1m1 0h1m1 0h1m2 0h1m1 0h1m2 0h1m2 0h5m1 0h2m1 0h3m1 0h4M1 19.5h2m2 0h3m1 0h2m1 0h3m1 0h1m1 0h1m2 0h1m1 0h1m4 0h2m1 0h1M2 20.5h1m1 0h1m1 0h1m1 0h2m3 0h1m2 0h4m1 0h1m2 0h1m2 0h5M3 21.5h1m3 0h1m1 0h5m1 0h3m2 0h7m1 0h3m1 0h1M1 22.5h2m3 0h1m1 0h1m2 0h1m2 0h3m1 0h2m2 0h1m1 0h1m1 0h2m2 0h2m1 0h1M1 23.5h1m2 0h7m1 0h1m1 0h1m1 0h3m2 0h2m2 0h1m2 0h3m1 0h1M1 24.5h1m1 0h1m2 0h1m1 0h3m2 0h1m2 0h1m2 0h1m2 0h1m1 0h1m3 0h1m1 0h2m1 0h1M1 25.5h1m3 0h1m1 0h2m1 0h1m1 0h1m1 0h6m3 0h7m2 0h2M9 26.5h1m1 0h2m2 0h1m1 0h1m1 0h2m1 0h1m2 0h1m3 0h1m1 0h1m1 0h1M1 27.5h7m3 0h1m1 0h1m1 0h3m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m1 0h2M1 28.5h1m5 0h1m1 0h2m1 0h3m1 0h1m4 0h5m3 0h4M1 29.5h1m1 0h3m1 0h1m1 0h2m1 0h1m1 0h1m1 0h1m2 0h1m2 0h1m2 0h6m1 0h1M1 30.5h1m1 0h3m1 0h1m1 0h4m1 0h5m2 0h1m1 0h1m1 0h2m2 0h2m2 0h1M1 31.5h1m1 0h3m1 0h1m1 0h4m2 0h1m2 0h1m1 0h1m1 0h1m4 0h2m1 0h1M1 32.5h1m5 0h1m3 0h3m1 0h1m1 0h1m1 0h5m5 0h3M1 33.5h7m1 0h1m2 0h1m1 0h2m2 0h1m1 0h1m2 0h1m1 0h4m1 0h1m1 0h1"/></svg>`;
+
+const FAQ = [
+  ["Le client doit-il installer une application ?", "Non. Il scanne le QR code du guichet et la page d'envoi s'ouvre dans son navigateur, sur Android comme sur iPhone. L'application Envoyeur (Android) est facultative."],
+  ["Faut-il Internet dans la boutique ?", "Non. L'ordinateur crée le Wi-Fi de la boutique et reçoit les documents sans Internet. Si l'ordinateur a une connexion, les clients peuvent aussi envoyer par Internet, avec leurs données mobiles, d'où qu'ils soient."],
+  ["Mon ordinateur ne crée pas de Wi-Fi : que faire ?", "Un petit routeur Wi-Fi branché à l'ordinateur par un câble fait la même chose. Le Bluetooth, le câble USB et la clé USB restent possibles en secours."],
+  ["Quels documents peut-on envoyer ?", "PDF, Word, Excel, photos, et la plupart des fichiers. Le client choisit le nombre de copies, la couleur, le recto-verso et le format, et peut laisser un message vocal."],
+  ["Le client sait-il quand c'est prêt ?", "Oui. Il reçoit un numéro, et sa page affiche « imprimé », puis « prêt », au fur et à mesure que le gérant avance."],
+  ["Combien ça coûte ?", "Un mois d'essai gratuit. Ensuite, un petit abonnement mensuel : le prix est donné par l'équipe sur WhatsApp, selon la boutique."],
+  ["Mes documents sont-ils gardés ?", "Non. Par le Wi-Fi de la boutique, ils vont directement à l'ordinateur. Par Internet, ils passent par le relais le temps de la récupération et y sont effacés, au plus tard 24 heures après l'envoi."],
+  ["Sur quels ordinateurs le logiciel fonctionne-t-il ?", "Sur les ordinateurs Windows 10 et 11. Il démarre avec l'ordinateur et travaille en arrière-plan ; sa fenêtre ne s'ouvre que quand le gérant la demande."],
+];
+
+export function pageFaq() {
+  const jsonld = `<script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQ.map(([q, r]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: r } })),
+  })}</script>`;
+  return gabarit({
+    titre: "Questions fréquentes — Gestion Photocopie",
+    description: "Faut-il Internet ? Le client doit-il installer une application ? Combien ça coûte ? Les réponses sur le logiciel Gestion Photocopie pour boutiques de photocopie au Bénin.",
+    chemin: "/faq",
+    jsonld,
+    corps: `<h1>Questions fréquentes</h1>${FAQ.map(([q, r]) => `<div class="carte" style="margin:12px 0"><h3>${q}</h3><p>${r}</p></div>`).join("")}
+<p class="petit">Une autre question ? <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a>.</p>`,
+  });
+}
+
+export function pageAccueilEn() {
+  return gabarit({
+    lang: "en",
+    titre: "Gestion Photocopie — customers send their documents with a QR code | Print shop software",
+    description: "Customers scan a QR code and send their documents from their phone; the shop receives them on its computer, ready to print — with or without Internet. Software for print shops and cyber cafés.",
+    chemin: "/en",
+    alternes: { fr: "/", en: "/en" },
+    corps: `
+<section class="heros">
+  <h1>Your customers send their documents from their phone. You print.</h1>
+  <p class="chapeau">No more USB sticks, cables or "send it to me on WhatsApp". The customer scans the QR code at the counter, picks the documents, and they arrive on the shop's computer, ready to print.</p>
+  <div class="boutons"><a class="btn" href="/telecharger">Download<small>Windows · one month free trial</small></a></div>
+</section>
+<h2>With or without Internet</h2>
+<div class="grille">
+  <div class="carte"><h3>📶 Offline</h3><p>The computer (or a small router) creates the shop's Wi-Fi. Customers join it and send. Nothing leaves the shop.</p></div>
+  <div class="carte"><h3>🌍 Online</h3><p>Customers send with their own mobile data, from anywhere. The computer collects the order as soon as it has a connection.</p></div>
+  <div class="carte"><h3>🔵 Bluetooth &amp; USB</h3><p>Always available as a fallback: everything lands in the same queue.</p></div>
+</div>
+<h2>What the shop gets</h2>
+<div class="grille">
+  <div class="carte"><p><span class="coche">✓</span> Orders arrive with copies, colour and duplex settings.</p></div>
+  <div class="carte"><p><span class="coche">✓</span> Each customer gets a number and sees "printed", then "ready" on their phone.</p></div>
+  <div class="carte"><p><span class="coche">✓</span> Prices, cash and daily reports kept automatically.</p></div>
+</div>
+<p class="petit">The software is in French, made for print shops in Benin and French-speaking Africa. Questions: <a href="https://wa.me/${WHATSAPP}">WhatsApp +229 ${TELEPHONE_LISIBLE}</a>.</p>`,
+  });
+}
+
+const TEXTES_KIT = [
+  ["Statut WhatsApp", `🖨️ Fini la clé USB et le câble au guichet !
+Avec Gestion Photocopie, vos clients scannent un QR code et envoient leurs documents depuis leur téléphone. Vous les recevez sur l'ordinateur, prêts à imprimer.
+✅ Avec ou sans Internet
+✅ Un numéro pour chaque client
+✅ Un mois d'essai gratuit
+👉 ${RACINE}`],
+  ["Publication Facebook", `Gérants de photocopie et de cyber : vos clients font la queue avec leur clé USB ou vous envoient tout sur WhatsApp ?
+Gestion Photocopie change ça : le client scanne le QR code du guichet, choisit ses documents (PDF, Word, photos) et les envoie. Ils arrivent sur votre ordinateur avec le nombre de copies, la couleur et le recto-verso. Le client reçoit un numéro et voit sur son téléphone quand c'est prêt.
+Ça marche même sans Internet, par le Wi-Fi de la boutique. Et si vous avez Internet, vos clients peuvent envoyer de chez eux.
+Un mois d'essai gratuit : ${RACINE}
+Questions : WhatsApp ${TELEPHONE_LISIBLE}`],
+  ["Message direct à un gérant", `Bonjour, je vous présente Gestion Photocopie, un logiciel fait au Bénin pour les boutiques de photocopie : vos clients vous envoient leurs documents en scannant un QR code, sans clé USB ni WhatsApp, et vous les recevez directement sur l'ordinateur. Un mois d'essai gratuit. Je peux passer vous le montrer en 5 minutes ? Tout est ici : ${RACINE}`],
+  ["SMS court", `Photocopie : vos clients envoient leurs docs par QR code, vous imprimez. Sans Internet. 1 mois gratuit. ${RACINE}`],
+  ["WhatsApp status (English)", `🖨️ Print shops: customers scan a QR code and send their documents from their phone — they arrive on your computer, ready to print. Works offline. One month free: ${RACINE}/en`],
+];
+
+export function pageKit() {
+  const echap = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return gabarit({
+    titre: "Kit de promotion — Gestion Photocopie",
+    description: "Textes prêts à publier, image et affiche pour faire connaître Gestion Photocopie.",
+    chemin: "/kit",
+    indexer: false,
+    corps: `<h1>Kit de promotion</h1>
+<p class="chapeau">Des textes prêts à copier, l'image à partager et l'affiche à imprimer. Touchez « Copier », puis collez dans WhatsApp, Facebook ou un SMS.</p>
+<div class="boutons"><a class="btn" href="/affiche">Affiche à imprimer</a><a class="btn second" href="/apercu.png" download>Image à partager</a></div>
+${TEXTES_KIT.map(([titre, texte], i) => `<div class="carte" style="margin:14px 0"><h3>${titre}</h3><p id="t${i}" style="white-space:pre-line">${echap(texte)}</p><button class="btn second" style="border:0;cursor:pointer" onclick="navigator.clipboard.writeText(document.getElementById('t${i}').innerText).then(()=>{this.textContent='Copié ✓'})">Copier</button></div>`).join("")}`,
+  });
+}
+
+export function pageAffiche() {
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>Affiche — Gestion Photocopie</title>
+<style>
+@page{size:A4;margin:12mm}
+body{font-family:system-ui,"Segoe UI",Roboto,sans-serif;color:#16213a;margin:0;background:#fff}
+.a4{max-width:186mm;margin:0 auto;padding:10mm 0;text-align:center}
+h1{font-size:34pt;line-height:1.1;margin:0 0 6mm;color:#0b5cad}
+.s{font-size:15pt;margin:0 0 8mm}
+.qr{width:70mm;height:70mm;margin:0 auto 6mm}.qr svg{width:100%;height:100%}
+.e{display:flex;gap:6mm;justify-content:center;margin:6mm 0;text-align:left}
+.e div{flex:1;border:2px solid #0b5cad;border-radius:5mm;padding:4mm;font-size:13pt}
+.e b{display:block;font-size:20pt;color:#0b5cad}
+.p{font-size:13pt;margin-top:8mm}
+.imp{margin:6mm;padding:10px 16px;font-size:14pt}
+@media print{.imp{display:none}}
+</style></head><body><div class="a4">
+<button class="imp" onclick="print()">🖨️ Imprimer cette affiche</button>
+<h1>Gérants de photocopie :<br>fini la clé USB au guichet</h1>
+<p class="s">Vos clients envoient leurs documents depuis leur téléphone,<br>vous les recevez sur l'ordinateur, prêts à imprimer.</p>
+<div class="qr">${QR_SITE}</div>
+<div class="e"><div><b>1</b>Le client scanne le QR code du guichet</div><div><b>2</b>Il choisit ses documents</div><div><b>3</b>Vous imprimez, il reçoit son numéro</div></div>
+<p class="p"><strong>Avec ou sans Internet · Un mois d'essai gratuit</strong><br>${RACINE.replace("https://", "")}<br>WhatsApp ${TELEPHONE_LISIBLE}</p>
+</div></body></html>`;
 }
