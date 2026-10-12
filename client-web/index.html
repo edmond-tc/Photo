@@ -284,7 +284,7 @@ p { margin: 0; }
       </div>
       <!-- Dans le navigateur seulement : les deux autres façons d'envoyer,
            comme sur la page simple. -->
-      <div class="autres" id="autres-facons" data-mode-web hidden>
+      <div class="autres" id="autres-facons" data-mode-web data-local hidden>
         <span class="autres-titre">Autres façons d'envoyer :</span>
         <details id="autre-whatsapp" hidden>
           <summary>📱 WhatsApp</summary>
@@ -482,13 +482,13 @@ p { margin: 0; }
     <div class="contenu">
       <div class="ticket"><small>Votre numéro</small><div class="num" id="numero-commande">—</div><small>Donnez ce numéro au guichet.</small></div>
       <div class="suivi" id="suivi">
-        <div class="fait">✓ Reçu par la boutique</div>
+        <div class="fait" id="suivi-recu">✓ Reçu par la boutique</div>
         <div class="attente" data-suivi="impression">En impression</div>
         <div class="attente" data-suivi="pret">Prêt à retirer</div>
       </div>
       <div class="pret" id="pret" hidden></div>
       <p class="bandeau doux" id="hors-ligne" hidden></p>
-      <p class="aide" data-mode-web hidden>📵 Gardez vos données mobiles coupées pour suivre votre commande ici. Rallumez-les en quittant la boutique.</p>
+      <p class="aide" data-mode-web data-local hidden>📵 Gardez vos données mobiles coupées pour suivre votre commande ici. Rallumez-les en quittant la boutique.</p>
       <p class="aide" id="recap-final"></p>
       <div class="suite" id="suite-premiere" hidden>
         <h2>🎉 Bravo, votre premier envoi est fait !</h2>
@@ -557,7 +557,10 @@ setTimeout(function () {
   // ─── Connexion au PC ───
   // Page servie par le PC : on y est déjà. Application : le téléphone crée
   // son réseau et le PC le rejoint (événements `connexion` du pont).
-  let connexion = app ? { etat: "aucune" } : { etat: "ok", base: "" };
+  // Ouverte depuis le relais Internet (/b/CODE) : tout passe par lui.
+  const PREFIXE = (location.pathname.match(/^\/b\/[0-9A-Za-z]{6,10}/) || [""])[0];
+  const enLigne = !!PREFIXE && !app;
+  let connexion = app ? { etat: "aucune" } : { etat: "ok", base: PREFIXE };
   const baseUrl = () => connexion.base ?? "";
 
   // Mode Bluetooth : l'application relaie les requêtes (événement « reponse-bt »).
@@ -670,7 +673,7 @@ setTimeout(function () {
   // compréhensible. Ici, le client lit le seul geste qui débloque. Pas dans
   // l'application : elle se branche d'elle-même sur le Wi-Fi de la boutique.
   function conseilDonnees(visible) {
-    const montrer = visible && !app && !connexion.bt;
+    const montrer = visible && !app && !connexion.bt && !enLigne;
     $$("[data-conseil-donnees]").forEach((b) => (b.hidden = !montrer));
   }
   // `/infos` avec un délai : sans réponse en 6 s, le PC est injoignable, et
@@ -784,6 +787,7 @@ setTimeout(function () {
   document.addEventListener("click", (ev) => { if (ev.target.closest("[data-retour]")) aller(avantDonnees); });
   $$("[data-mode-app]").forEach((e) => (e.hidden = !app));
   $$("[data-mode-web]").forEach((e) => (e.hidden = !!app));
+  if (enLigne) $$("[data-local]").forEach((e) => (e.hidden = true));
 
   // ─── Autorisations et profil ───
   const profil = () => lire("kiosque.profil", { prenom: "", numero: "" });
@@ -1846,6 +1850,9 @@ setTimeout(function () {
       try {
         const s = await (await lirePc(`/statut/${jeton}`)).json();
         echecs = 0;
+        // Par Internet : le numéro du guichet arrive quand le PC a récupéré.
+        if (s.numero) $("#numero-commande").textContent = s.numero;
+        $("#suivi-recu").textContent = s.etape === "en_ligne" ? "⏳ Envoyé — la boutique le reçoit dès que son ordinateur est connecté" : "✓ Reçu par la boutique";
         majSuivi(s.paye ? "pret" : s.etape);
         if (s.message) { const m = $("#message-fidelite"); m.textContent = s.message; m.hidden = false; }
         if (s.paye) clearInterval(suivi);

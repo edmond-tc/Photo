@@ -25,6 +25,7 @@ pub mod permanence;
 pub mod point_acces_mobile;
 pub mod qr;
 pub mod reception_directe;
+pub mod relais;
 pub mod retention;
 pub mod routeur_externe;
 pub mod server;
@@ -143,6 +144,8 @@ pub fn run() {
             hotspot::retenir_methode(methode_wifi.as_deref());
             hotspot::remplacer_ancienne_tache_demarrage();
             gardien_wifi::demarrer(app.handle().clone());
+            // Réception par Internet, quand le PC a une connexion.
+            relais::demarrer(app.handle().clone());
             std::thread::spawn(controle_impressions::fenetre_impression_windows_dans_les_navigateurs);
             mdns::demarrer();
             balise_ble::demarrer(app.handle().clone());
@@ -173,6 +176,7 @@ pub fn run() {
             commands::set_boutique_setting,
             commands::choisir_logo_boutique,
             commands::get_server_info,
+            relais::relais_info,
             commands::ouvrir_parametres_partage_connexion,
             commands::activer_point_acces_local,
             commands::desactiver_point_acces_local,

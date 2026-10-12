@@ -61,7 +61,7 @@ export function demarrerFauxPc(port) {
         if (etat.mode === "trou" || etat.mode === "trou-commande") { etat.suspendues.push(res); return; }
         etat.commandes += 1;
         etat.recus.push(n);
-        json(200, { numero: 100 + etat.commandes, jetons: ["jeton" + etat.commandes] });
+        json(200, { numero: "A-" + etat.commandes, jetons: ["jeton" + etat.commandes] });
       });
       return;
     }

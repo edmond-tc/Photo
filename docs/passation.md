@@ -23,6 +23,30 @@ contient AUCUN mot de passe ni clé : seulement leurs noms et où ils vivent.
 - Secours : <https://github.com/edmond-tc/Photo/releases/latest>
 - Assistance affichée dans le logiciel : WhatsApp 0151226741
 
+## 2bis. Site public et réception par Internet
+
+- Site public (présentation, téléchargement, mode d'emploi, confidentialité) :
+  <https://photocopie-benin.atinzed2.workers.dev/>
+- Page « Par Internet » d'une boutique : `https://photocopie-benin.atinzed2.workers.dev/b/CODE`
+  (le CODE est créé par le logiciel du PC et affiché en QR dans la fenêtre du QR).
+- Code : `admin/site/` (relais.js, pages.js, index.js), configuration `admin/wrangler.site.toml`,
+  table `admin/migrations/0004_relais.sql`. Déployé par le workflow **Deploy Admin**.
+- Côté PC : `src-tauri/src/relais.rs`. Le PC interroge le relais (toutes les 15 s, 5 s
+  après une commande) et remet chaque commande à son propre serveur local.
+- Les fichiers ne restent sur le relais que le temps de la récupération, 24 h au plus
+  (nettoyage chaque heure, minute 17).
+- **Changer d'hébergeur** : le relais n'utilise que des interfaces web standard, une
+  base SQL et un stockage de fichiers. Le seul élément propre à Cloudflare est
+  `FixedLengthStream` (envoi d'un fichier au PC). L'adresse du relais est dans
+  `src-tauri/src/relais.rs` (`ADRESSE_RELAIS`) : la changer demande une mise à jour du
+  logiciel et une réimpression des QR « Par Internet ».
+- **Quota gratuit** : 100 000 demandes par jour pour l'ensemble des boutiques. Un PC
+  allumé 12 h en consomme environ 3 000 : au-delà d'une trentaine de boutiques
+  allumées en même temps, passer à l'offre payante de Cloudflare (environ 5 dollars
+  par mois) ou espacer les visites dans `relais.rs`.
+- **Bancs d'essai** : `node banc-telephones/banc.mjs` (Wi-Fi de la boutique) et
+  `RELAIS=… node banc-telephones/banc-internet.mjs` (par Internet).
+
 ## 3. Les comptes à ne jamais perdre
 
 Sans eux, le projet est figé : il tourne, mais plus personne ne peut le mettre à jour.

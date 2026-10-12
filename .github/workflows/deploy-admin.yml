@@ -3,7 +3,8 @@ name: Deploy Admin
 on:
   push:
     branches: [main]
-    paths: ["admin/**", ".github/workflows/deploy-admin.yml"]
+    # La page du client est servie aussi par le relais Internet.
+    paths: ["admin/**", "client-web/**", ".github/workflows/deploy-admin.yml"]
   workflow_dispatch: {}
 
 jobs:
@@ -35,6 +36,7 @@ jobs:
           npx wrangler d1 execute photocopie-admin --remote --file=./migrations/0001_init.sql
           npx wrangler d1 execute photocopie-admin --remote --file=./migrations/0002_codes_installation.sql
           npx wrangler d1 execute photocopie-admin --remote --file=./migrations/0003_decouvrir.sql
+          npx wrangler d1 execute photocopie-admin --remote --file=./migrations/0004_relais.sql
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -55,3 +57,14 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: admin
+
+      # Le site public et le relais Internet (admin/site/), sous leur propre
+      # adresse : photocopie-benin.atinzed2.workers.dev. Même base, même
+      # stockage ; rien du tableau de bord n'y est exposé.
+      - name: Déployer le site public et le relais Internet
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: admin
+          command: deploy -c wrangler.site.toml

@@ -1,0 +1,18 @@
+# Site public et relais Internet (admin/site/). Même base et même stockage
+# que le tableau de bord (wrangler.toml), sous un autre nom public.
+name = "photocopie-benin"
+main = "site/index.js"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "photocopie-admin"
+database_id = "db50c0ee-2e8e-4dfd-a98b-31c100c499e2"
+
+[[r2_buckets]]
+binding = "TELECHARGEMENTS"
+bucket_name = "photocopie-telechargements"
+
+# Nettoyage du relais : rien n'y reste plus de 24 heures.
+[triggers]
+crons = ["17 * * * *"]

@@ -1182,8 +1182,26 @@ async function afficherQr() {
     // garde ses données pour la page, qui ne trouve alors pas le PC.
     const donnees = document.createElement("p");
     donnees.className = "adresse-a-taper";
-    donnees.innerHTML = "📵 <strong>Coupez vos données mobiles</strong> le temps d'envoyer : sinon le téléphone part sur Internet et ne trouve pas la boutique.";
+    donnees.innerHTML = "📵 Par le Wi-Fi de la boutique : <strong>coupez vos données mobiles</strong> le temps d'envoyer, sinon le téléphone part sur Internet et ne trouve pas la boutique.";
     conteneur.appendChild(donnees);
+    // Troisième chemin, quand ce PC a une connexion : le client envoie avec
+    // ses propres données mobiles, sans rejoindre aucun Wi-Fi. N'apparaît
+    // qu'une fois la boutique connue du relais (sinon le code mènerait à
+    // « Boutique introuvable »).
+    try {
+      const enLigne = await invoke("relais_info");
+      if (enLigne && enLigne.actif && enLigne.qr_data_uri) {
+        const bloc = document.createElement("section");
+        bloc.className = "methode";
+        bloc.innerHTML = `<h3 class="methode-titre">🌍 Par Internet</h3>`;
+        ajouterQr(enLigne.qr_data_uri, "", bloc);
+        bloc.appendChild(etapes([
+          "Données mobiles <strong>allumées</strong>, scannez ce code : la page de la boutique s'ouvre, où que vous soyez.",
+          "Choisissez vos documents et envoyez : vous recevez votre numéro dès que l'ordinateur de la boutique les a reçus.",
+        ]));
+        conteneur.appendChild(bloc);
+      }
+    } catch (_) {}
     // Chaque installation appelle une consigne différente : dire au gérant
     // une phrase qui ne correspond pas à son poste le laisserait sans réponse
     // devant un client bloqué.
