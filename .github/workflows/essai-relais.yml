@@ -1,0 +1,48 @@
+name: Essai du relais en ligne
+
+# Après chaque déploiement du site et du relais : le banc d'essai « Par
+# Internet » (dix téléphones imités, dont une coupure de réseau en plein
+# envoi) contre le VRAI relais en ligne, et une visite des pages du site.
+on:
+  workflow_run:
+    workflows: ["Deploy Admin"]
+    types: [completed]
+  workflow_dispatch: {}
+
+jobs:
+  essai:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Installer le moteur Chrome
+        run: |
+          npm install -g playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Pages du site
+        run: |
+          set -e
+          B=https://photocopie-benin.atinzed2.workers.dev
+          for p in / /comment-ca-marche /telecharger /confidentialite /robots.txt /sitemap.xml; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$B$p")
+            echo "$p -> $code"
+            test "$code" = "200"
+          done
+          curl -s "$B/" | grep -q "Gestion Photocopie"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$B/b/ZZZZZZ/")
+          echo "/b/inconnue -> $code"; test "$code" = "404"
+
+      - name: Banc d'essai par Internet (relais en ligne)
+        env:
+          RELAIS: https://photocopie-benin.atinzed2.workers.dev
+        run: |
+          node banc-telephones/banc-internet.mjs | tee resultat.txt
+          grep -q "BILAN INTERNET : 20/20" resultat.txt

@@ -61,10 +61,16 @@ jobs:
       # Le site public et le relais Internet (admin/site/), sous leur propre
       # adresse : photocopie-benin.atinzed2.workers.dev. Même base, même
       # stockage ; rien du tableau de bord n'y est exposé.
+      # Lancé directement (et non par wrangler-action) pour que la raison
+      # d'un échec remonte en clair dans les annotations de l'exécution.
       - name: Déployer le site public et le relais Internet
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: admin
-          command: deploy -c wrangler.site.toml
+        working-directory: admin
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          if ! npx wrangler deploy -c wrangler.site.toml 2>&1 | tee deploiement.log; then
+            sed 's/\x1b\[[0-9;]*m//g' deploiement.log | grep -v '^[[:space:]]*$' | tail -20 | while IFS= read -r ligne; do echo "::error::$ligne"; done
+            exit 1
+          fi
