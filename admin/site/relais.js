@@ -333,6 +333,10 @@ export async function nettoyer(env) {
     }
     curseur = r.truncated ? r.cursor : undefined;
   } while (curseur);
+  // Les boutiques fictives de l'essai automatique (essai-relais.yml).
+  await env.DB.prepare(
+    "DELETE FROM relais_boutiques WHERE nom = 'Boutique d''essai Internet' AND code LIKE 'E%' AND cree < ?"
+  ).bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()).run();
   // Les commandes traitées depuis plus de 7 jours : plus rien à suivre.
   await env.DB.prepare("DELETE FROM relais_commandes WHERE cree < ?")
     .bind(new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()).run();

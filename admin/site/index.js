@@ -5,6 +5,10 @@
 import { relais, nettoyer, nettoyerSiBesoin } from "./relais.js";
 import { pageAccueil, pageComment, pageConfidentialite, pageTelechargerSite, robots, sitemap } from "./pages.js";
 
+/** Clé IndexNow (Bing, Yandex…) : publique par nature, elle prouve seulement
+ * que ce site demande lui-même à être exploré. */
+const CLE_INDEXNOW = "5e07389a63a1f5493cc79c62f31e023c";
+
 const html = (corps) =>
   new Response(corps, {
     headers: {
@@ -40,6 +44,7 @@ export default {
         case "/telecharger": return html(pageTelechargerSite());
         case "/confidentialite": return html(pageConfidentialite());
         case "/robots.txt": return new Response(robots(), { headers: { "content-type": "text/plain; charset=utf-8" } });
+        case `/${CLE_INDEXNOW}.txt`: return new Response(CLE_INDEXNOW, { headers: { "content-type": "text/plain; charset=utf-8" } });
         case "/sitemap.xml": return new Response(sitemap(), { headers: { "content-type": "application/xml; charset=utf-8" } });
         default: return new Response("Page introuvable", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
       }

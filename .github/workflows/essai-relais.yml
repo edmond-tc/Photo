@@ -40,6 +40,15 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" "$B/b/ZZZZZZ/")
           echo "/b/inconnue -> $code"; test "$code" = "404"
 
+      # Bing, Yandex et les moteurs IndexNow : prévenus que le site existe.
+      # (Google : par la Search Console, avec le compte du porteur du projet.)
+      - name: Signaler le site aux moteurs de recherche
+        continue-on-error: true
+        run: |
+          curl -s -o /dev/null -w "IndexNow : %{http_code}\n" -X POST https://api.indexnow.org/indexnow \
+            -H 'content-type: application/json; charset=utf-8' \
+            -d '{"host":"photocopie-benin.atinzed2.workers.dev","key":"5e07389a63a1f5493cc79c62f31e023c","keyLocation":"https://photocopie-benin.atinzed2.workers.dev/5e07389a63a1f5493cc79c62f31e023c.txt","urlList":["https://photocopie-benin.atinzed2.workers.dev/","https://photocopie-benin.atinzed2.workers.dev/comment-ca-marche","https://photocopie-benin.atinzed2.workers.dev/telecharger","https://photocopie-benin.atinzed2.workers.dev/confidentialite"]}'
+
       - name: Banc d'essai par Internet (relais en ligne)
         env:
           RELAIS: https://photocopie-benin.atinzed2.workers.dev
