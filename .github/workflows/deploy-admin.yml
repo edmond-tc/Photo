@@ -71,6 +71,6 @@ jobs:
         run: |
           set -o pipefail
           if ! npx wrangler deploy -c wrangler.site.toml 2>&1 | tee deploiement.log; then
-            sed 's/\x1b\[[0-9;]*m//g' deploiement.log | grep -v '^[[:space:]]*$' | tail -20 | while IFS= read -r ligne; do echo "::error::$ligne"; done
+            sed 's/\x1b\[[0-9;]*m//g' deploiement.log | grep -iE 'error|erreur|✘|fail|code: [0-9]|warn' | head -9 | while IFS= read -r ligne; do echo "::error::$ligne"; done
             exit 1
           fi
