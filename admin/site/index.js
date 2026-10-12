@@ -2,7 +2,7 @@
 // Séparé du tableau de bord (photocopie-admin) : une adresse publique
 // propre, et rien de ce qui est réservé au porteur du projet.
 
-import { relais, nettoyer } from "./relais.js";
+import { relais, nettoyer, nettoyerSiBesoin } from "./relais.js";
 import { pageAccueil, pageComment, pageConfidentialite, pageTelechargerSite, robots, sitemap } from "./pages.js";
 
 const html = (corps) =>
@@ -16,8 +16,20 @@ const html = (corps) =>
   });
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    // La visite d'un PC déclenche, au plus une fois par heure, le nettoyage
+    // du relais — après la réponse, sans la retarder.
+    if (/^\/api\/relais\/[0-9A-Z]{6,10}\/attente$/.test(url.pathname)) {
+      ctx.waitUntil(nettoyerSiBesoin(env).catch(() => {}));
+    }
+    // Filet de sécurité appelé chaque heure par GitHub (nettoyage-relais.yml),
+    // pour les heures où aucune boutique n'est allumée. Sans danger : au plus
+    // un nettoyage par heure, quoi qu'il arrive.
+    if (url.pathname === "/api/relais/nettoyer" && request.method === "POST") {
+      ctx.waitUntil(nettoyerSiBesoin(env).catch(() => {}));
+      return new Response("ok", { headers: { "cache-control": "no-store" } });
+    }
     try {
       const r = await relais(request, env);
       if (r) return r;

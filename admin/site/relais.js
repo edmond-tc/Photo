@@ -291,7 +291,25 @@ async function majEtat(request, env, b, id) {
 
 // ───────────────────────────── Nettoyage ─────────────────────────────
 
-/** Toutes les heures : rien ne reste plus de 24 heures. */
+/**
+ * Au plus une fois par heure, déclenché par la visite d'un PC (pas de tâche
+ * planifiée : le compte a atteint la limite gratuite de 5). Les PC passent
+ * toutes les 15 s : l'heure est tenue à quelques secondes près dès qu'une
+ * boutique est allumée.
+ */
+export async function nettoyerSiBesoin(env) {
+  const maintenant = Date.now();
+  const ligne = await env.DB.prepare("SELECT valeur FROM parametres WHERE cle = 'relais_dernier_nettoyage'").first();
+  if (ligne && maintenant - Number(ligne.valeur) < 3600 * 1000) return;
+  // Noté AVANT de nettoyer : deux PC qui arrivent ensemble ne lancent pas
+  // deux nettoyages.
+  await env.DB.prepare(
+    "INSERT INTO parametres (cle, valeur) VALUES ('relais_dernier_nettoyage', ?) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur"
+  ).bind(String(maintenant)).run();
+  await nettoyer(env);
+}
+
+/** Rien ne reste plus de 24 heures. */
 export async function nettoyer(env) {
   const limite = new Date(Date.now() - DUREE_DE_VIE_MS).toISOString();
   const vieilles = await env.DB.prepare(

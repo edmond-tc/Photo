@@ -13,6 +13,9 @@ database_id = "db50c0ee-2e8e-4dfd-a98b-31c100c499e2"
 binding = "TELECHARGEMENTS"
 bucket_name = "photocopie-telechargements"
 
-# Nettoyage du relais : rien n'y reste plus de 24 heures.
+# Pas de tâche planifiée : le compte a atteint la limite gratuite de 5.
+# Le nettoyage du relais est déclenché par la visite des PC (voir
+# `nettoyerSiBesoin` dans site/relais.js). Le gestionnaire `scheduled`
+# reste en place pour le jour où une tâche planifiée sera possible.
 [triggers]
-crons = ["17 * * * *"]
+crons = []

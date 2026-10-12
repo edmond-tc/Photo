@@ -1,0 +1,15 @@
+name: Nettoyage du relais
+
+# Rien ne doit rester sur le relais plus de 24 heures, même aux heures où
+# aucune boutique n'est allumée pour déclencher le nettoyage elle-même.
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  nettoyer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: curl -fsS -X POST https://photocopie-benin.atinzed2.workers.dev/api/relais/nettoyer

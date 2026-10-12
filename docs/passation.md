@@ -33,8 +33,10 @@ contient AUCUN mot de passe ni clé : seulement leurs noms et où ils vivent.
   table `admin/migrations/0004_relais.sql`. Déployé par le workflow **Deploy Admin**.
 - Côté PC : `src-tauri/src/relais.rs`. Le PC interroge le relais (toutes les 15 s, 5 s
   après une commande) et remet chaque commande à son propre serveur local.
-- Les fichiers ne restent sur le relais que le temps de la récupération, 24 h au plus
-  (nettoyage chaque heure, minute 17).
+- Les fichiers ne restent sur le relais que le temps de la récupération, 24 h au plus.
+  Le nettoyage (au plus une fois par heure) est déclenché par la visite des PC, et
+  chaque heure par GitHub (`.github/workflows/nettoyage-relais.yml`) : le compte
+  Cloudflare a atteint la limite gratuite de 5 tâches planifiées.
 - **Changer d'hébergeur** : le relais n'utilise que des interfaces web standard, une
   base SQL et un stockage de fichiers. Le seul élément propre à Cloudflare est
   `FixedLengthStream` (envoi d'un fichier au PC). L'adresse du relais est dans
