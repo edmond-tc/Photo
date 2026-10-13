@@ -17,12 +17,12 @@ const TELEPHONES = [
   { nom: "Tecno Spark 10", android: "13", modele: "TECNO KI5q", w: 360, h: 804 },
   { nom: "Infinix Hot 30", android: "13", modele: "Infinix X6831", w: 393, h: 873 },
   { nom: "itel A70", android: "13", modele: "itel A665L", w: 360, h: 760 },
-  { nom: "Samsung Galaxy A05", android: "14", modele: "SM-A055F", w: 360, h: 800 },
+  { nom: "Samsung Galaxy A05 (anglais)", android: "14", modele: "SM-A055F", w: 360, h: 800, langue: "en-GB" },
   { nom: "Samsung Galaxy A10", android: "11", modele: "SM-A105F", w: 360, h: 760 },
   { nom: "Redmi Note 12", android: "13", modele: "23021RAA2Y", w: 393, h: 873 },
   { nom: "Redmi 9A", android: "10", modele: "M2006C3LG", w: 360, h: 720 },
   { nom: "Huawei Y7", android: "9", modele: "DUB-LX1", w: 360, h: 720 },
-  { nom: "Oppo A17", android: "12", modele: "CPH2477", w: 360, h: 800 },
+  { nom: "Oppo A17 (anglais)", android: "12", modele: "CPH2477", w: 360, h: 800, langue: "en-US" },
   { nom: "Petit écran Android Go", android: "10", modele: "Go", w: 320, h: 640 },
 ];
 const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -91,7 +91,7 @@ async function essai(navigateur, t, coupure) {
     viewport: { width: t.w, height: t.h },
     isMobile: true,
     hasTouch: true,
-    locale: "fr-FR",
+    locale: t.langue || "fr-FR",
   });
   const page = await ctx.newPage();
   const erreurs = [];
@@ -146,10 +146,12 @@ async function essai(navigateur, t, coupure) {
     await autre.goto(lien);
     await autre.locator('[data-ecran="recu"]').waitFor({ state: "visible", timeout: 10000 });
     const rouvert = /c=[0-9a-f]{32}$/.test(lien) && (await autre.textContent("#numero-commande")).trim() === affiche;
-    const ok = recus.get(nom) === taille && /^I-\d+$/.test(affiche) && consigneDonnees === 0 && erreurs.length === 0 && dansMes && ficheOk && rouvert;
+    // Téléphone en anglais : la page l'est aussi, boutons compris.
+    const langueOk = !t.langue || ((await page.getAttribute("html", "lang")) === "en" && (await page.textContent("#btn-envoyer")).trim() === "Send to the shop");
+    const ok = langueOk && recus.get(nom) === taille && /^I-\d+$/.test(affiche) && consigneDonnees === 0 && erreurs.length === 0 && dansMes && ficheOk && rouvert;
     return {
       ok,
-      detail: `boutique « ${boutique} », ${(taille / 1048576).toFixed(0)} Mo reçus par le PC : ${recus.get(nom) === taille ? "entier" : "INCOMPLET"}, numéro affiché « ${affiche} » en ${((Date.now() - debut) / 1000).toFixed(1)} s, consigne « données » ${consigneDonnees ? "AFFICHÉE À TORT" : "absente"}, Mes commandes ${dansMes ? "ok" : "ABSENTE"}, fiche ${ficheOk ? "ok" : "ABSENTE"}, lien de suivi ${rouvert ? "ok" : "CASSÉ"}${erreurs.length ? ", erreurs : " + erreurs.join(" | ") : ""}`,
+      detail: `boutique « ${boutique} », ${(taille / 1048576).toFixed(0)} Mo reçus par le PC : ${recus.get(nom) === taille ? "entier" : "INCOMPLET"}, numéro affiché « ${affiche} » en ${((Date.now() - debut) / 1000).toFixed(1)} s, consigne « données » ${consigneDonnees ? "AFFICHÉE À TORT" : "absente"}, Mes commandes ${dansMes ? "ok" : "ABSENTE"}, fiche ${ficheOk ? "ok" : "ABSENTE"}, lien de suivi ${rouvert ? "ok" : "CASSÉ"}${t.langue ? `, anglais ${langueOk ? "ok" : "ABSENT"}` : ""}${erreurs.length ? ", erreurs : " + erreurs.join(" | ") : ""}`,
     };
   } catch (e) {
     return { ok: false, detail: `bloqué : ${e.message.split("\n")[0]}` };

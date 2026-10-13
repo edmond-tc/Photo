@@ -299,6 +299,9 @@ class MainActivity : Activity() {
                 when {
                     chemin == "/" || chemin == "/index.html" ->
                         WebResourceResponse("text/html", "utf-8", assets.open("index.html"))
+                    // Dictionnaire anglais, lu seulement si le téléphone est en anglais.
+                    chemin == "/langue-en.json" ->
+                        WebResourceResponse("application/json", "utf-8", assets.open("langue-en.json"))
                     chemin.startsWith("/vocal/") -> {
                         val fichier = chemin.removePrefix("/vocal/").toIntOrNull()?.let { vocaux.getOrNull(it) }
                             ?: return WebResourceResponse("text/plain", "utf-8", 404, "Introuvable", null, null)

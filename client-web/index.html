@@ -325,6 +325,7 @@ p { margin: 0; }
         <div class="liens-bas">
           <button type="button" class="lien" data-aller="decouvrir">✨ Découvrir</button>
           <button type="button" class="lien" data-aller="donnees">Vos données</button>
+          <button type="button" class="lien" id="btn-langue">English</button>
         </div>
       </div>
     </div>
@@ -580,6 +581,41 @@ setTimeout(function () {
   const PREFIXE = (location.pathname.match(/^\/b\/[0-9A-Za-z]{6,10}/) || [""])[0];
   const enLigne = !!PREFIXE && !app;
   const R = () => enLigne ? "votre connexion Internet" : "le Wi-Fi de la boutique";
+
+  // ─── Langue : anglais si le téléphone est en anglais (ou si le client l'a
+  // choisi, bouton en bas de l'accueil) ───
+  // Le dictionnaire (langue-en.json) n'est chargé que pour l'anglais : la
+  // page reste légère pour tous les autres. Tout texte affiché, même ajouté
+  // plus tard, passe par T(). Ce qui part à la boutique reste en français.
+  const EN = lire("kiosque.langue", /^en/i.test(navigator.language || "") ? "en" : "fr") === "en";
+  let DICO = null, MOTIFS = [];
+  function T(t) {
+    if (!DICO || !t) return t;
+    const c = t.trim();
+    if (!c) return t;
+    let r = DICO[c];
+    if (r === undefined) for (const [re, en] of MOTIFS) { const m = c.match(re); if (m) { r = en.replace(/\{(\d+)\}/g, (_, i) => T(m[i] || "")); break; } }
+    return r === undefined ? t : t.replace(c, r);
+  }
+  function traduire(n) {
+    if (n.nodeType === 3) { const v = T(n.nodeValue); if (v !== n.nodeValue) n.nodeValue = v; return; }
+    if (n.nodeType !== 1 || n.tagName === "SCRIPT" || n.tagName === "STYLE") return;
+    for (const a of ["placeholder", "aria-label", "title"]) { const v = n.getAttribute(a); const w = v && T(v); if (w !== v) n.setAttribute(a, w); }
+    n.childNodes.forEach(traduire);
+  }
+  if (EN) {
+    const montrer = () => (document.documentElement.style.visibility = "");
+    document.documentElement.style.visibility = "hidden";
+    setTimeout(montrer, 1500);
+    fetch(`${PREFIXE}/langue-en.json`).then((r) => r.json()).then((d) => {
+      DICO = d.textes;
+      MOTIFS = d.motifs.map(([fr, en]) => [new RegExp("^" + fr.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{\d+\}/g, "([\\s\\S]*?)") + "$"), en]);
+      document.documentElement.lang = "en";
+      document.title = T(document.title);
+      traduire(document.body);
+      new MutationObserver((l) => l.forEach((m) => (m.type === "characterData" ? traduire(m.target) : m.addedNodes.forEach(traduire)))).observe(document.body, { childList: true, subtree: true, characterData: true });
+    }).catch(() => {}).finally(montrer);
+  }
   let connexion = app ? { etat: "aucune" } : { etat: "ok", base: PREFIXE };
   const baseUrl = () => connexion.base ?? "";
 
@@ -1133,11 +1169,13 @@ setTimeout(function () {
     }
     return liste;
   }
-  function nomDuJour(decalage) {
-    if (decalage === 0) return "aujourd'hui";
-    if (decalage === 1) return "demain";
+  // `fr` : le texte envoyé à la boutique, toujours en français.
+  function nomDuJour(decalage, fr) {
+    const en = EN && !fr;
+    if (decalage === 0) return en ? "today" : "aujourd'hui";
+    if (decalage === 1) return en ? "tomorrow" : "demain";
     const d = new Date(); d.setDate(d.getDate() + decalage);
-    return `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]}`;
+    return en ? d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }) : `${JOURS[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]}`;
   }
   function remplirHeures() {
     const jour = $("#q-jour");
@@ -1159,10 +1197,10 @@ setTimeout(function () {
   }
   $("#q-jour").addEventListener("change", () => { remplirCreneaux(); $("#q-repasse").checked = true; rendreRecap(); });
   $("#q-heure").addEventListener("change", () => { $("#q-repasse").checked = true; });
-  function quandTexte() {
+  function quandTexte(fr) {
     const r = document.querySelector("input[name=quand]:checked");
     return r.id === "q-repasse"
-      ? `Je repasse ${nomDuJour(Number($("#q-jour").value))} à ${$("#q-heure").value}`
+      ? `Je repasse ${nomDuJour(Number($("#q-jour").value), fr)} à ${$("#q-heure").value}`
       : r.value;
   }
   function rendreRecap() {
@@ -1280,7 +1318,7 @@ setTimeout(function () {
       const form = new FormData();
       form.append("nom", p.prenom || "");
       form.append("telephone", p.numero || "");
-      form.append("quand", quandTexte());
+      form.append("quand", quandTexte(true));
       form.append("urgent", $("#urgent").checked ? "1" : "0");
       form.append("origine", app ? "app" : "web");
       form.append("nombre_fichiers", String(docs.length));
@@ -1536,11 +1574,12 @@ setTimeout(function () {
     pret: [[523, 0, 0.14], [659, 0.13, 0.14], [784, 0.26, 0.35]],
   };
   function parlerClient(texte) {
+    texte = T(texte);
     if (app) { try { app.parler(texte); } catch (_) {} return; }
     try {
       const phrase = new SpeechSynthesisUtterance(texte);
-      phrase.lang = "fr-FR";
-      const voix = speechSynthesis.getVoices().find((v) => /^fr/i.test(v.lang));
+      phrase.lang = EN ? "en-GB" : "fr-FR";
+      const voix = speechSynthesis.getVoices().find((v) => (EN ? /^en/i : /^fr/i).test(v.lang));
       if (voix) phrase.voice = voix;
       speechSynthesis.speak(phrase);
     } catch (_) {}
@@ -1994,6 +2033,9 @@ setTimeout(function () {
     ecrire("kiosque.profil", { prenom, numero });
     return true;
   }
+
+  $("#btn-langue").textContent = EN ? "Français" : "English";
+  $("#btn-langue").addEventListener("click", () => { ecrire("kiosque.langue", EN ? "fr" : "en"); location.reload(); });
 
   // ─── Démarrage ───
   afficherBoutique();

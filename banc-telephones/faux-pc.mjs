@@ -25,6 +25,11 @@ export function demarrerFauxPc(port) {
       res.writeHead(code, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
       res.end(JSON.stringify(objet));
     };
+    if (req.method === "GET" && chemin === "/langue-en.json") {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(fs.readFileSync(new URL("../client-web/langue-en.json", import.meta.url)));
+      return;
+    }
     if (req.method === "GET" && (chemin === "/" || chemin === "/index.html")) {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       // Allégée comme par le vrai PC (build.rs) et le relais.

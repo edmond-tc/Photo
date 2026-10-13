@@ -266,6 +266,7 @@ fn construire_router(app: AppHandle) -> Router {
         .route("/statut/:jeton", get(statut_fichier).options(preflight))
         .route("/infos", get(infos_boutique).options(preflight))
         .route("/classique", get(page_classique))
+        .route("/langue-en.json", get(langue_en))
         .route(CHEMIN_API_PORTAIL, get(api_portail))
         // Toute autre adresse, `/` comprise : la page d'envoi, en 200.
         .fallback(page_accueil)
@@ -917,6 +918,15 @@ async fn page_accueil(
 const INTERFACE_CLIENT: &str = include_str!(concat!(env!("OUT_DIR"), "/client.html"));
 
 /// L'ancienne page d'envoi, gardée en secours (lien en bas de l'interface).
+/// Dictionnaire anglais de la page du client, chargé seulement par les
+/// téléphones réglés en anglais (la page elle-même reste légère).
+async fn langue_en() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8"), (axum::http::header::CACHE_CONTROL, "max-age=3600")],
+        include_str!("../../client-web/langue-en.json"),
+    )
+}
+
 async fn page_classique(State(app): State<AppHandle>) -> Html<String> {
     let (nom, whatsapp, bluetooth_nom) = {
         let state = app.state::<crate::db::DbState>();

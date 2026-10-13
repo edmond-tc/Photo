@@ -13,6 +13,9 @@ import SOURCE_PAGE_CLIENT from "../../client-web/index.html";
 import { alleger } from "./alleger.js";
 
 const PAGE_CLIENT = alleger(SOURCE_PAGE_CLIENT);
+// Dictionnaire anglais de la page, chargé seulement par les téléphones en anglais.
+import LANGUE_EN from "../../client-web/langue-en.json";
+const LANGUE_EN_TEXTE = JSON.stringify(LANGUE_EN);
 
 /** Un morceau : 1 Mo pour la page, un peu de marge. */
 const MORCEAU_MAX = 2 * 1024 * 1024;
@@ -499,6 +502,9 @@ export async function relais(request, env) {
     const reste = r[2] || "/";
     if (r[1] !== b.code) return Response.redirect(`${url.origin}/b/${b.code}${reste}`, 301);
     if (m === "GET" && (reste === "/" || reste === "")) return pageClient(b);
+    if (m === "GET" && reste === "/langue-en.json") {
+      return new Response(LANGUE_EN_TEXTE, { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=3600" } });
+    }
     if (m === "GET" && reste === "/infos") {
       let tarifs = {};
       try { tarifs = JSON.parse(b.tarifs || "{}"); } catch {}
