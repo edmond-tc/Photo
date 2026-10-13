@@ -66,23 +66,60 @@ const contenu = (d) => (d && typeof d === "object" && d.data && typeof d.data ==
 
 const operateursEnCache = new Map();
 
+/** Première liste trouvée dans la réponse (« data », « data.data »,
+ * « operators », « items »… selon la forme choisie par SebPay). */
+function premiereListe(d, profondeur = 0) {
+  if (Array.isArray(d)) return d;
+  if (!d || typeof d !== "object" || profondeur > 3) return [];
+  for (const cle of ["data", "operators", "items", "results"]) {
+    const l = premiereListe(d[cle], profondeur + 1);
+    if (l.length) return l;
+  }
+  return [];
+}
+
+/** Code pays d'un opérateur, quelle que soit sa forme (« BJ », { code: "BJ" }…). */
+function codePays(o) {
+  const c = o.country_code || o.country_iso || o.iso || (o.country && typeof o.country === "object" ? o.country.code || o.country.iso || o.country.iso2 : o.country);
+  return typeof c === "string" && /^[A-Za-z]{2}$/.test(c.trim()) ? c.trim().toUpperCase() : "";
+}
+
+const vrai = (v) => v === true || v === 1 || v === "1" || v === "true";
+
 /** Opérateurs Mobile Money du pays, lus chez SebPay (gardés 10 minutes). */
 export async function operateurs(env, pays) {
   const enCache = operateursEnCache.get(pays);
   if (enCache && Date.now() - enCache.quand < 10 * 60 * 1000) return enCache.liste;
-  const d = contenu(await appel(env, "GET", `/operators?country=${encodeURIComponent(pays)}`));
-  const brut = Array.isArray(d) ? d : Array.isArray(d.operators) ? d.operators : [];
-  const liste = brut
+  const liste = premiereListe(await appel(env, "GET", `/operators?country=${encodeURIComponent(pays)}`))
+    .filter((o) => o && typeof o === "object")
     .map((o) => ({
-      slug: String(o.slug || o.code || "").trim(),
+      slug: String(o.slug || o.code || o.operator || "").trim(),
       nom: String(o.name || o.nom || o.label || o.slug || "").trim(),
-      pays: String(o.country || o.country_code || pays).toUpperCase(),
-      otp: o.otp_required === true || o.otp_required === 1 || o.otp_required === "1",
+      pays: codePays(o),
+      otp: vrai(o.otp_required),
       ussd: String(o.ussd_code || "").trim(),
+      actif: !(o.is_active === false || o.active === false || o.status === "inactive"),
     }))
-    .filter((o) => o.slug && o.pays === pays);
-  operateursEnCache.set(pays, { quand: Date.now(), liste });
+    // On a demandé ce pays : un opérateur sans pays lisible est gardé.
+    .filter((o) => o.slug && o.actif && (!o.pays || o.pays === pays));
+  if (liste.length) operateursEnCache.set(pays, { quand: Date.now(), liste });
   return liste;
+}
+
+/** Pour la page Paramètres : ce que SebPay répond vraiment (sans les clés). */
+export async function testerSebpay(env, pays = "BJ") {
+  try {
+    const r = await fetch(`${base(env)}/operators?country=${pays}`, {
+      headers: { "X-Public-Key": env.SEBPAY_CLE_PUBLIQUE, "X-Secret-Key": env.SEBPAY_CLE_SECRETE, accept: "application/json" },
+    });
+    const texte = await r.text();
+    operateursEnCache.delete(pays);
+    let ops = [];
+    try { ops = r.ok ? await operateurs(env, pays) : []; } catch {}
+    return { statut: r.status, extrait: texte.slice(0, 600), operateurs: ops };
+  } catch (e) {
+    return { statut: 0, extrait: String(e.message || e).slice(0, 300), operateurs: [] };
+  }
 }
 
 /** Numéro au format international sans « + » (ex. 2290197000000). */

@@ -1,7 +1,7 @@
 import { paiementActif, creerPaiement, lireTransaction, transactionPayee, signatureValide, DUREES } from "./paiement.js";
 import {
   sebpayActif, PAYS_SEBPAY, operateurs, numeroInternational, creerCollecte, lireCollecte,
-  collectePayee, collecteRefusee, signatureSebpayValide, ErreurSebpay,
+  collectePayee, collecteRefusee, signatureSebpayValide, ErreurSebpay, testerSebpay,
 } from "./sebpay.js";
 
 /** Paiement en ligne ouvert : SebPay en priorité, sinon FedaPay. */
@@ -1053,7 +1053,18 @@ async function pageNouveautes(env) {
   );
 }
 
-async function pageParametres(env) {
+async function pageParametres(env, { enregistre = false } = {}) {
+  let blocTest = "";
+  if (sebpayActif(env)) {
+    const t = await testerSebpay(env, "BJ");
+    blocTest = t.operateurs.length
+      ? `<p style="font-size:0.85rem; color:#0e5c1f">✅ Connexion à SebPay réussie. Mobile Money proposés au Bénin : ${t.operateurs.map((o) => echapper(o.nom)).join(", ")}.</p>`
+      : `<div style="font-size:0.85rem; color:#a4262c; border:1px solid #a4262c; border-radius:6px; padding:0.5rem 0.75rem">
+          ❌ SebPay ne répond pas comme prévu : le paiement en ligne reste caché aux gérants.
+          Faites une capture de ce cadre et envoyez-la.<br>
+          Réponse de SebPay (code ${t.statut}) :<br><code style="word-break:break-all">${echapper(t.extrait || "(vide)")}</code>
+        </div>`;
+  }
   const prix = [];
   for (const j of DUREES) prix.push([j, await obtenirParametre(env, `prix_${j}`, "")]);
   const prixActivation = await obtenirParametre(env, "prix_activation", "");
@@ -1065,6 +1076,7 @@ async function pageParametres(env) {
     `<div class="carte">
       <p><a href="/">&larr; Retour</a></p>
       <h1>Paramètres de la page de renouvellement</h1>
+      ${enregistre ? `<p style="color:#0e5c1f; font-weight:bold">✅ Enregistré.</p>` : ""}
       <p style="font-size:0.85rem; color:#605e5c">
         Ce que voient les gérants sur la page publique <code>/renouveler</code> quand ils veulent payer.
       </p>
@@ -1078,6 +1090,7 @@ async function pageParametres(env) {
           : paiementActif(env)
             ? `FedaPay branché (mode ${env.FEDAPAY_MODE === "live" ? "<strong>réel</strong>" : "essai, sans argent"}). Mettez un prix pour chaque durée proposée ; vide = durée non proposée en ligne.`
             : "Éteint : les clés SebPay ne sont pas encore posées sur le Worker (voir docs/paiements.md). Les prix ci-dessous serviront dès qu'elles le seront."}</p>
+        ${blocTest}
         <label>Frais d'activation, une fois (FCFA) <input type="number" min="0" name="prix_activation" value="${echapper(prixActivation)}" /></label>
         ${prix.map(([j, v]) => `<label>Prix ${j} jours (FCFA) <input type="number" min="0" name="prix_${j}" value="${echapper(v)}" /></label>`).join("")}
         <button type="submit">Enregistrer</button>
@@ -2275,7 +2288,7 @@ async function router(request, env) {
       }
 
       if (pathname === "/parametres" && method === "GET") {
-        return new Response(await pageParametres(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+        return new Response(await pageParametres(env, { enregistre: url.searchParams.has("ok") }), { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       if (pathname === "/parametres" && method === "POST") {
         const donnees = await request.formData();
@@ -2288,7 +2301,7 @@ async function router(request, env) {
         }
         const activation = parseInt(donnees.get("prix_activation"), 10);
         await definirParametre(env, "prix_activation", activation > 0 ? String(activation) : "");
-        return new Response(null, { status: 302, headers: { Location: "/parametres" } });
+        return new Response(null, { status: 302, headers: { Location: "/parametres?ok=1" } });
       }
 
       const matchConfirmer = pathname.match(/^\/demandes\/(\d+)\/confirmer$/);
