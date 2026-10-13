@@ -45,8 +45,8 @@ class MamService : Service() {
             val nm = ctx.getSystemService(NotificationManager::class.java)
             if (nm?.getNotificationChannel(CANAL) == null) {
                 nm?.createNotificationChannel(
-                    NotificationChannel(CANAL, "Main à main", NotificationManager.IMPORTANCE_LOW)
-                        .apply { description = "Avancée des envois et réceptions entre téléphones" }
+                    NotificationChannel(CANAL, tr("Main à main", "Hand to hand"), NotificationManager.IMPORTANCE_LOW)
+                        .apply { description = tr("Avancée des envois et réceptions entre téléphones", "Progress of transfers between phones") }
                 )
             }
             val ouvrir = PendingIntent.getActivity(
@@ -69,7 +69,7 @@ class MamService : Service() {
     private var wifi: WifiManager.WifiLock? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val texte = intent?.getStringExtra("texte") ?: "Main à main"
+        val texte = intent?.getStringExtra("texte") ?: tr("Main à main", "Hand to hand")
         val n = notification(this, texte, null)
         if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         else startForeground(ID, n)

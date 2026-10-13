@@ -713,7 +713,7 @@ class MainActivity : Activity() {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         envoi.clipData = ClipData.newRawUri(FournisseurApk.NOM, FournisseurApk.ADRESSE)
         try {
-            startActivity(Intent.createChooser(envoi, "Donner l'application").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            startActivity(Intent.createChooser(envoi, tr("Donner l'application", "Give the app")).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
         } catch (_: ActivityNotFoundException) {
         }
     }

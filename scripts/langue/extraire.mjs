@@ -23,7 +23,7 @@ const VAR = "\u0000";
 function estTexte(t) {
   const c = t.trim();
   if (c.length < 2 || !/[A-Za-zÀ-ÿ]/.test(c)) return false;
-  if (/^(https?:|\/|#|\.|\[|data:|wa\.me|tel:|mailto:)/.test(c)) return false;
+  if (/^(https?:|\/\w|#|\.[a-z]|\[|data:|wa\.me|tel:|mailto:)/.test(c)) return false;
   if (/^[a-z0-9_\-.:/]+$/.test(c)) return false; // clé, classe, identifiant
   if (/^[a-z-]+(\s*[:;{]|\()/.test(c) && !/[àâçéèêëîïôûùü]/i.test(c)) return false; // CSS
   if (/^[\w$.]+\(/.test(c)) return false;

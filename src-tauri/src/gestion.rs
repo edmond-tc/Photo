@@ -410,19 +410,22 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
         db::get_setting(&conn, "boutique_nom").unwrap_or_else(|| "Photocopie".to_string());
     let logo_chemin = db::get_setting(&conn, "boutique_logo_chemin");
     let devise = crate::pays::pays(db::get_setting(&conn, "pays").as_deref()).devise;
+    // Reçu dans la langue choisie par la boutique (Réglages → Langue).
+    let en = db::get_setting(&conn, "langue").as_deref() == Some("en");
     drop(conn);
+    let tr = |fr: &'static str, anglais: &'static str| if en { anglais } else { fr };
 
     let moyen_libelle = match moyen_paiement.as_str() {
-        "especes" => "Espèces",
+        "especes" => tr("Espèces", "Cash"),
         "mobile_money" => "Mobile Money",
-        "credit" => "À crédit",
+        "credit" => tr("À crédit", "On credit"),
         autre => autre,
     };
     let date_lisible = chrono::DateTime::parse_from_rfc3339(&created_at)
         .map(|d| d.format("%d/%m/%Y %H:%M").to_string())
         .unwrap_or(created_at);
     let employe_ligne = employe
-        .map(|e| format!("Servi par : {e}"))
+        .map(|e| format!("{} {e}", tr("Servi par :", "Served by:")))
         .unwrap_or_default();
 
     // Le nom du fichier (description) vient du client via le formulaire QR,
@@ -467,10 +470,16 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
         None => String::new(),
     };
 
+    let (l_recu, l_montant, l_paiement, l_merci) = (
+        tr("Reçu n°", "Receipt no."),
+        tr("Montant", "Amount"),
+        tr("Paiement", "Payment"),
+        tr("Merci de votre visite !", "Thank you for your visit!"),
+    );
     let chemin = dossier_recus.join(format!("recu_{transaction_id}.html"));
     let html = format!(
         r#"<!doctype html><html lang="fr"><head><meta charset="utf-8">
-<title>Reçu n°{transaction_id}</title>
+<title>{l_recu}{transaction_id}</title>
 <style>
   /* Centré sur la feuille, dans les deux sens. Sans cela, le reçu sort
      dans le coin haut-gauche d'un A4, ce qui donne un papier à moitié vide
@@ -504,15 +513,15 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
 <div class="recu">
 {bloc_logo}
 <h1>{boutique_nom_html}</h1>
-<div class="ligne"><span>Reçu n°</span><span>{transaction_id}</span></div>
+<div class="ligne"><span>{l_recu}</span><span>{transaction_id}</span></div>
 <div class="ligne"><span>Date</span><span>{date_lisible}</span></div>
 <hr>
 <div class="ligne"><span>{description_html}</span></div>
-<div class="ligne"><strong>Montant</strong><strong>{montant} {devise}</strong></div>
-<div class="ligne"><span>Paiement</span><span>{moyen_libelle_html}</span></div>
+<div class="ligne"><strong>{l_montant}</strong><strong>{montant} {devise}</strong></div>
+<div class="ligne"><span>{l_paiement}</span><span>{moyen_libelle_html}</span></div>
 <div class="ligne"><span>{employe_ligne_html}</span></div>
 <hr>
-<p class="merci">Merci de votre visite !</p>
+<p class="merci">{l_merci}</p>
 </div>
 </body></html>"#
     );

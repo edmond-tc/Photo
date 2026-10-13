@@ -448,7 +448,7 @@ object MainAMain {
         private var dernierConseil = 0L
 
         override fun deroulement() {
-            MamService.demarrer(ctx, "Main à main : recherche du téléphone qui reçoit…")
+            MamService.demarrer(ctx, tr("Main à main : recherche du téléphone qui reçoit…", "Hand to hand: looking for the receiving phone…"))
             signaler("recherche") { put("groupe", groupe) }
             ecouter('R')
 
@@ -488,7 +488,7 @@ object MainAMain {
             if (!annoncerEtat()) {
                 throw Refus("Ce téléphone ne sait pas émettre de signal Bluetooth : envoyez depuis l'autre téléphone, ou passez par le kiosque.")
             }
-            MamService.maj(ctx, "Main à main : en attente du téléphone qui reçoit", null)
+            MamService.maj(ctx, tr("Main à main : en attente du téléphone qui reçoit", "Hand to hand: waiting for the receiving phone"), null)
             signaler("attente") { put("ouvert", ouvert); put("groupe", groupe) }
 
             // 3. Suivre qui est à côté, jusqu'à la fin.
@@ -617,7 +617,7 @@ object MainAMain {
                         put("symbole", canal.symbole()); put("total", total); put("nombre", fichiers.size)
                         put("cinqGhz", cinqGhz)
                     }
-                    MamService.maj(ctx, "Main à main : envoi à ${prenomReceveur.ifBlank { "l'autre téléphone" }}", 0)
+                    MamService.maj(ctx, tr("Main à main : envoi à ${prenomReceveur.ifBlank { "l'autre téléphone" }}", "Hand to hand: sending to ${prenomReceveur.ifBlank { "the other phone" }}"), 0)
 
                     val demande = canal.recevoirJson()
                     if (demande.optString("type") == "refus") {
@@ -684,7 +684,7 @@ object MainAMain {
                                 put("role", "envoi"); put("id", id); put("prenom", prenomReceveur)
                                 put("fait", fait); put("total", total); put("vitesse", vitesse); put("fichier", f.nom)
                             }
-                            if (total > 0) MamService.maj(ctx, "Main à main : envoi de ${f.nom}", (fait * 100 / total).toInt())
+                            if (total > 0) MamService.maj(ctx, tr("Main à main : envoi de ${f.nom}", "Hand to hand: sending ${f.nom}"), (fait * 100 / total).toInt())
                         }
                     }
                 }
@@ -700,7 +700,7 @@ object MainAMain {
         val monIdHex = hex(monId)
 
         override fun deroulement() {
-            MamService.demarrer(ctx, "Main à main : prêt à recevoir")
+            MamService.demarrer(ctx, tr("Main à main : prêt à recevoir", "Hand to hand: ready to receive"))
             val moi5 = ctx.applicationContext.getSystemService(WifiManager::class.java)?.is5GHzBandSupported == true
             val balise = byteArrayOf('K'.code.toByte(), 'R'.code.toByte(), monId[0], monId[1], monId[2], if (moi5) 1 else 0)
             val annonce = annoncer(balise)
@@ -720,7 +720,7 @@ object MainAMain {
             val drapeaux = choisi.vu.donnees[5].toInt()
             val ssid = PREFIXE_RESEAU + choisi.id
             signaler("connexion")
-            MamService.maj(ctx, "Main à main : liaison avec l'autre téléphone…", null)
+            MamService.maj(ctx, tr("Main à main : liaison avec l'autre téléphone…", "Hand to hand: connecting to the other phone…"), null)
 
             // 2. Rejoindre son réseau.
             var adresse = rejoindre(ssid, drapeaux and DRAPEAU_5GHZ != 0)
@@ -817,7 +817,7 @@ object MainAMain {
                 val depuis = JSONArray()
                 parties.forEach { depuis.put(it.deja) }
                 canal.envoyerJson(JSONObject().put("type", "demande").put("depuis", depuis))
-                MamService.maj(ctx, "Main à main : réception de ${prenomEnvoyeur.ifBlank { "l'autre téléphone" }}", 0)
+                MamService.maj(ctx, tr("Main à main : réception de ${prenomEnvoyeur.ifBlank { "l'autre téléphone" }}", "Hand to hand: receiving from ${prenomEnvoyeur.ifBlank { "the other phone" }}"), 0)
 
                 val compteur = Compteur(total)
                 compteur.fait = parties.sumOf { it.deja }
@@ -863,7 +863,7 @@ object MainAMain {
                                     put("role", "reception"); put("fait", fait); put("total", t)
                                     put("vitesse", vitesse); put("fichier", p.nom)
                                 }
-                                if (t > 0) MamService.maj(ctx, "Main à main : réception de ${p.nom}", (fait * 100 / t).toInt())
+                                if (t > 0) MamService.maj(ctx, tr("Main à main : réception de ${p.nom}", "Hand to hand: receiving ${p.nom}"), (fait * 100 / t).toInt())
                             }
                         } else {
                             val message = JSONObject(String(contenu, Charsets.UTF_8))

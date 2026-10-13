@@ -1,0 +1,1309 @@
+{
+"_note": "Logiciel du gérant en anglais : texte français exact → anglais ; motifs avec parties variables {1}, {2}… Vérifier : node scripts/langue/verifier.mjs src/index.html src/main.js src/langue-en.json",
+"_ignores": [
+"badge-abonnement badge-",
+"meta-fichier ecarts-impression",
+"meta-fichier statut-impression",
+"pastilles etiquettes-commande",
+"etat-poste etat-{1}",
+"pastille pastille-{1}",
+"Français",
+"Langue / Language",
+"New order C 27, Koffi, two documents.",
+"English"
+],
+"textes": {
+"(PDF, Word, Excel, PowerPoint, photos).": "(PDF, Word, Excel, PowerPoint, photos).",
+"(antivirus) bloque les téléphones.": "(antivirus) is blocking the phones.",
+"(demandez « une clé qui sait créer un Wi-Fi »), puis relancez ce test.": "(ask for \"a dongle that can create a Wi-Fi network\"), then run this test again.",
+"(et « Autoriser » si demandé). La liste s'affichera ici toute seule.": "(and \"Allow\" if asked). The list will appear here by itself.",
+"(montant, date) reste, elle ne contient jamais le document lui-même.": "(amount, date) stays; it never contains the document itself.",
+"(nettoyage, pièces d'usure). Rien d'urgent, mais pensez à la faire vérifier bientôt.": "(cleaning, worn parts). Nothing urgent, but plan to have it checked soon.",
+"(tant qu'il montre une flèche ⬇, il n'est pas sur le téléphone). Puis réappuyez sur 📱.": "(as long as it shows a ⬇ arrow, it is not on the phone). Then press 📱 again.",
+", la page s'ouvre.": ", the page opens.",
+", le téléphone n'a pas pu rejoindre le Wi-Fi.": ", the phone could not join the Wi-Fi.",
+", par exemple": ", for example",
+", puis": ", then",
+", puis ouvrir": ", then open",
+", puis réessayez.": ", then try again.",
+", scannez ce code : WhatsApp s'ouvre avec le rapport déjà écrit. Appuyez sur Envoyer.": ", scan this code: WhatsApp opens with the report already written. Press Send.",
+", scannez ce code : la page de la boutique s'ouvre, où que vous soyez.": ", scan this code: the shop's page opens, wherever you are.",
+", toutes les fonctionnalités incluses.": ", all features included.",
+"1 document ajouté à la file.": "1 document added to the queue.",
+"1 document trouvé sur la clé. Cochez-le pour l'ajouter.": "1 document found on the USB stick. Tick it to add it.",
+"1. Branchez le câble (un câble qui transfère, pas seulement de charge).": "1. Plug in the cable (a data cable, not just a charging cable).",
+"1. Ce PC crée le réseau.": "1. This PC creates the network.",
+"1. Enfoncez bien la clé, ou essayez un autre port USB du PC.": "1. Push the USB stick in firmly, or try another USB port on the PC.",
+"1. Le document arrive": "1. The document arrives",
+"1. Le document arrive tout seul": "1. The document arrives by itself",
+"150 caractères au plus.": "150 characters at most.",
+"2. Attendez 5 secondes, puis réappuyez sur 💾.": "2. Wait 5 seconds, then press 💾 again.",
+"2. DÉVERROUILLEZ le téléphone.": "2. UNLOCK the phone.",
+"2. Le réseau vient d'ailleurs.": "2. The network comes from elsewhere.",
+"2. Vous imprimez": "2. You print",
+"3. Tirez le haut de l'écran du téléphone, touchez la notification « USB » (ou « Recharge via USB »)": "3. Pull down from the top of the phone's screen, tap the \"USB\" notification (or \"Charging via USB\")",
+"3. Vous encaissez": "3. You take payment",
+"30 jours d'essai gratuit": "30-day free trial",
+"4. Le soir": "4. In the evening",
+"4. Réappuyez sur 📱. (Un iPhone ne montre que ses photos au PC, pas les documents WhatsApp.)": "4. Press 📱 again. (An iPhone only shows its photos to the PC, not WhatsApp documents.)",
+"8 chiffres": "8 characters",
+": branchez-y le PC (câble ou Wi-Fi), puis dans Réglages, partie Wi-Fi, choisissez « Le réseau vient d'ailleurs (box, routeur…) ». Les clients rejoignent alors ce Wi-Fi-là.": ": connect the PC to it (cable or Wi-Fi), then in Settings, Wi-Fi section, choose \"The network comes from elsewhere (box, router…)\". Customers then join that Wi-Fi.",
+": celui du gérant, laissé allumé et en charge sous le comptoir. Ça marche sur n'importe quel PC ayant une carte Wi-Fi, même très ancienne, parce que REJOINDRE un réseau est à la portée de toutes les cartes — c'est en CRÉER un qui ne l'est pas. Aucune donnée mobile n'est nécessaire : le partage crée le réseau même sans internet.": ": the manager's, left on and charging under the counter. It works on any PC with a Wi-Fi card, even a very old one, because JOINING a network is within every card's reach — it is CREATING one that is not. No mobile data is needed: hotspot creates the network even without internet.",
+": ouvrez-la avec l'icône du bureau ou celle près de l'horloge. La croix de la fenêtre la cache sans arrêter le logiciel ; pour l'arrêter vraiment, menu ⋮ puis « Arrêter le logiciel ».": ": open it with the desktop icon or the one near the clock. The window's cross hides it without stopping the software; to really stop it, menu ⋮ then \"Stop the software\".",
+": tirez le haut de l'écran vers le bas et appuyez longuement sur l'icône Wi-Fi.": ": pull down from the top of the screen and long-press the Wi-Fi icon.",
+": tirez le haut de l'écran vers le bas, ou tapez « Scanner » dans la recherche du téléphone.": ": pull down from the top of the screen, or type \"Scanner\" in the phone's search.",
+"= 1 feuille au total": "= 1 sheet in total",
+"Abonnement actif": "Subscription active",
+"Abonnement expiré": "Subscription expired",
+"Abonnement expiré — contactez le porteur du projet": "Subscription expired — contact the project owner",
+"Abonnement terminé : renouvelez la licence pour continuer (appelez le +229 01 51 22 67 41).": "Subscription ended: renew the licence to continue (call +229 01 51 22 67 41).",
+"Actif": "Active",
+"Activation en cours… (une fenêtre Windows va demander une autorisation)": "Activating… (a Windows window will ask for permission)",
+"Activer": "Activate",
+"Activer (une fois)": "Activate (once)",
+"Activer le contrôle (une fois)": "Turn on monitoring (once)",
+"Activité des machines (en direct)": "Machine activity (live)",
+"Adresse (quartier, repère)": "Address (area, landmark)",
+"Affiche le QR code que le client scanne pour envoyer son document depuis son téléphone.": "Shows the QR code the customer scans to send a document from their phone.",
+"Agrafage": "Stapling",
+"Aide": "Help",
+"Aide — à quoi sert cet écran": "Help — what this screen is for",
+"Ajouter": "Add",
+"Ajouter des exemples de démonstration": "Add demo examples",
+"Ajouter les documents cochés": "Add the ticked documents",
+"Ajouter une dépense": "Add an expense",
+"Ajoutez": "Add",
+"Allumage du Wi-Fi de la boutique…": "Turning on the shop's Wi-Fi…",
+"Allumé.": "On.",
+"Annonce des commandes": "Order announcements",
+"Aperçu": "Preview",
+"Aperçu non disponible pour ce format": "Preview not available for this format",
+"Appelez le": "Call",
+"Appelez le +229 01 51 22 67 41 en donnant l'identifiant affiché à l'écran.": "Call +229 01 51 22 67 41 and give the identifier shown on the screen.",
+"Appuyez d'abord sur « 📶 Activer le Wi-Fi local de la boutique », sinon le client se connectera à un réseau qui n'existe pas.": "First press \"📶 Turn on the shop's local Wi-Fi\", otherwise the customer will connect to a network that does not exist.",
+"Arrêter": "Stop",
+"Arrêter le logiciel": "Stop the software",
+"Arrêter le logiciel ? Les clients ne pourront plus envoyer de documents tant que vous ne l'aurez pas rouvert.": "Stop the software? Customers will not be able to send documents until you open it again.",
+"Arrêtée": "Stopped",
+"Assez de place.": "Enough space.",
+"Aucun dossier configuré": "No folder set",
+"Aucun fichier en attente. Les fichiers déposés dans le dossier surveillé, reçus par clé USB ou envoyés par QR apparaîtront ici automatiquement.": "No files waiting. Files dropped in the watched folder, received by USB stick or sent by QR code will appear here automatically.",
+"Aucun historique pour l'instant.": "No history yet.",
+"Aucun logo — les reçus seront en texte simple.": "No logo — receipts will be plain text.",
+"Aucun écart constaté entre facturation et impression réelle sur cette période.": "No difference found between billing and actual printing for this period.",
+"Aucune commande en cours.": "No orders in progress.",
+"Aucune connexion internet ni forfait n'est nécessaire.": "No internet connection or data plan is needed.",
+"Aucune impression confirmée sur cette période.": "No confirmed printing for this period.",
+"Aucune sauvegarde disponible pour l'instant.": "No backup available yet.",
+"Aucune voix française n'est installée sur ce PC : seul le son sera joué. Pour l'ajouter : Paramètres Windows → Heure et langue → Voix → Ajouter des voix → Français.": "No English voice is installed on this PC: only the sound will play. To add one: Windows Settings → Time & language → Speech → Add voices → English.",
+"Aujourd'hui": "Today",
+"Auto": "Auto",
+"Automatique, rien à faire": "Automatic, nothing to do",
+"Autre": "Other",
+"Autre (préciser ci-dessous)": "Other (specify below)",
+"Avant de commencer": "Before you start",
+"Avant, « Imprimer » envoyait l'ordre sans jamais savoir si le papier était vraiment sorti. Maintenant l'application vous le dit — et vous prévient si l'imprimante bourre, n'a plus de papier ou n'est pas allumée.": "Before, \"Print\" sent the job without ever knowing whether the paper really came out. Now the app tells you — and warns you if the printer jams, runs out of paper or is not switched on.",
+"Avec": "With",
+"Avec l'application Envoyeur, rien d'autre à faire : une fois sur ce Wi-Fi,": "With the Sender app, nothing else to do: once on this Wi-Fi,",
+"Avec le Scanner": "With the Scanner",
+"Belle journée de travail !": "Have a great working day!",
+"Bienvenue": "Welcome",
+"Bienvenue dans Gestion Photocopie": "Welcome to Gestion Photocopie",
+"Bluetooth": "Bluetooth",
+"Bluetooth (pour les clients sans Wi-Fi)": "Bluetooth (for customers without Wi-Fi)",
+"Bluetooth pour les clients sans Wi-Fi": "Bluetooth for customers without Wi-Fi",
+"Boutique": "Shop",
+"Bouton ? en haut de l'écran": "? button at the top of the screen",
+"Bouton Détails d'une commande": "An order's Details button",
+"Box ou routeur de la boutique": "The shop's box or router",
+"Branchez le câble, DÉVERROUILLEZ le téléphone, puis dans la notification « USB »": "Plug in the cable, UNLOCK the phone, then in the \"USB\" notification",
+"Bravo pour le travail accompli aujourd'hui !": "Well done for today's work!",
+"Bénéfice net": "Net profit",
+"Bénéfice net :": "Net profit:",
+"C'est compris, continuer": "Got it, continue",
+"C'est l'écran de travail de la journée : les documents des clients arrivent ici tout seuls, du haut vers le bas.": "This is the day's work screen: customers' documents arrive here by themselves, from top to bottom.",
+"C'est le parcours le plus simple : un seul scan, rien à taper.": "It's the simplest way: a single scan, nothing to type.",
+"C'est parti": "Let's go",
+"Cause très probable : la protection de": "Most likely cause: the protection of",
+"Ce PC crée le réseau": "This PC creates the network",
+"Ce PC est prêt.": "This PC is ready.",
+"Ce PC ne fournit aucune sortie audio à l'application.": "This PC gives the app no audio output.",
+"Ce PC ne laisse entrer aucun téléphone.": "This PC lets no phone in.",
+"Ce PC ne semble pas relié au routeur (câble réseau débranché, ou routeur éteint).": "This PC does not seem connected to the router (network cable unplugged, or router switched off).",
+"Ce code n'est pas reconnu. Vérifiez qu'il est copié en entier, sans espace avant ni après.": "This code is not recognised. Check that it was copied in full, with no space before or after.",
+"Ce fichier n'est pas une mise à jour officielle de Gestion Photocopie.": "This file is not an official Gestion Photocopie update.",
+"Ce fichier n'est pas une sauvegarde de l'application.": "This file is not a backup of the app.",
+"Ce mois-ci": "This month",
+"Ce numéro n'est pas utilisable pour WhatsApp.": "This number cannot be used for WhatsApp.",
+"Ce programme n'est pas une mise à jour officielle de Gestion Photocopie : il ne sera pas lancé.": "This program is not an official Gestion Photocopie update: it will not be run.",
+"Ce qu'on facture : nombre de pages, couleur, recto-verso, format, finitions.": "What is billed: number of pages, colour, double-sided, size, finishing.",
+"Ce que font les imprimantes et photocopieurs, à chaque instant : chaque impression partie du PC, et les photocopies faites sur la vitre des machines branchées en réseau. Mis à jour tout seul.": "What the printers and copiers are doing, at every moment: each print sent from the PC, and copies made on the glass of networked machines. Updated by itself.",
+"Ce qui a été facturé ne correspond pas à ce que l'imprimante a reçu (couleur, recto-verso, format...). À vérifier, jamais bloquant.": "What was billed does not match what the printer received (colour, double-sided, size...). To check, never blocking.",
+"Ces numéros ne peuvent plus commander par Internet": "These numbers can no longer order online",
+"Cette clé n'est pas reconnue. Vérifiez qu'elle est copiée en entier, sans espace avant ni après.": "This key is not recognised. Check that it was copied in full, with no space before or after.",
+"Cette commande n'a pas encore été traitée — on ne peut supprimer que le document d'une commande déjà servie.": "This order has not been handled yet — only the document of an order already served can be deleted.",
+"Cette dette a déjà été réglée.": "This debt has already been settled.",
+"Cette installation doit d'abord être validée par le porteur du projet, pour qu'il en garde la trace.": "This installation must first be approved by the project owner, so that it is recorded.",
+"Cette sauvegarde est endommagée, choisissez-en une autre.": "This backup is damaged, choose another one.",
+"Cette sauvegarde est illisible ou endommagée.": "This backup is unreadable or damaged.",
+"Cette sauvegarde est introuvable.": "This backup cannot be found.",
+"Cette semaine": "This week",
+"Chaque fichier reçu (dossier surveillé, USB, QR) est compté automatiquement dès son arrivée — aucun ne peut disparaître sans une raison enregistrée.": "Every file received (watched folder, USB, QR) is counted automatically as soon as it arrives — none can disappear without a recorded reason.",
+"Chaque mise à jour officielle porte une signature que le logiciel vérifie. Envoyée par WhatsApp, Bluetooth ou clé USB, elle affiche « Installer la mise à jour ». Un programme sans cette signature n'est jamais lancé, même depuis une clé USB.": "Every official update carries a signature that the software checks. Sent by WhatsApp, Bluetooth or USB stick, it shows \"Install the update\". A program without this signature is never run, even from a USB stick.",
+"Chargement de l'aperçu…": "Loading preview…",
+"Chargement…": "Loading…",
+"Choisir le dossier surveillé…": "Choose the watched folder…",
+"Choisir son imprimante sans quitter l'application": "Choose your printer without leaving the app",
+"Choisir un dossier…": "Choose a folder…",
+"Choisir un logo (pour les reçus)…": "Choose a logo (for receipts)…",
+"Choisissez après combien de jours les documents de vos clients s'effacent tout seuls du disque.": "Choose after how many days your customers' documents are deleted from the disk by themselves.",
+"Choisissez les documents à imprimer. Rien n'est ajouté sans votre choix.": "Choose the documents to print. Nothing is added without your choice.",
+"Choisissez vos documents et envoyez : vous recevez votre numéro dès que l'ordinateur de la boutique les a reçus.": "Choose your documents and send: you get your number as soon as the shop's computer has received them.",
+"Choisissez vous-même après combien de visites une réduction s'applique, et de combien — plus une valeur imposée.": "Choose yourself after how many visits a discount applies, and how much — no more fixed value.",
+"Client absent / n'est jamais venu": "Customer absent / never came",
+"Client sans nom": "Customer without a name",
+"Clé USB branchée, mais aucun document imprimable dessus (PDF, Word, photos…).": "USB stick plugged in, but no printable document on it (PDF, Word, photos…).",
+"Clé USB retirée.": "USB stick removed.",
+"Clé de licence invalide": "Invalid licence key",
+"Clôture de caisse (espèces)": "Cash closing (cash)",
+"Clôturer": "Close",
+"Cochez d'abord au moins un document.": "First tick at least one document.",
+"Cochez un document": "Tick a document",
+"Code de la page d'envoi": "Sending page code",
+"Code à scanner": "Code to scan",
+"Code à scanner avec le téléphone": "Code to scan with the phone",
+"Coller ici le code d'installation reçu": "Paste the installation code you received here",
+"Coller la clé de licence reçue": "Paste the licence key you received",
+"Commandes en cours": "Orders in progress",
+"Commandes réglées": "Settled orders",
+"Commencer": "Start",
+"Compte le cash réellement dans le tiroir et compare au total encaissé en espèces aujourd'hui d'après l'application.": "Count the cash actually in the drawer and compare it with the cash total recorded by the app today.",
+"Compté par Windows lui-même, sans internet. Ne compte pas les photocopies faites directement sur la machine. Selon l'imprimante, un document tiré en plusieurs exemplaires peut n'être compté qu'une fois.": "Counted by Windows itself, without internet. Does not count copies made directly on the machine. Depending on the printer, a document printed in several copies may be counted only once.",
+"Confirmer": "Confirm",
+"Conseillé : tant que le logiciel ne tourne pas, les clients ne peuvent pas envoyer.": "Recommended: while the software is not running, customers cannot send.",
+"Conservation automatique des documents": "Automatic document retention",
+"Conservation des documents clients": "Keeping customer documents",
+"Consolas, monospace": "Consolas, monospace",
+"Continuez comme ça !": "Keep it up!",
+"Contrôle des impressions": "Print monitoring",
+"Contrôle des impressions — aujourd'hui": "Print monitoring — today",
+"Copie de sécurité de toute la comptabilité, automatique toutes les 15 minutes.": "Backup of all the accounts, automatic every 15 minutes.",
+"Copie impossible : photographiez l'écran et envoyez la photo.": "Cannot copy: take a photo of the screen and send the photo.",
+"Copier": "Copy",
+"Copier ce message": "Copy this message",
+"Copier le rapport complet": "Copy the full report",
+"Copier les détails": "Copy the details",
+"Copiez le rapport ci-dessous et envoyez-le par WhatsApp au support.": "Copy the report below and send it to support by WhatsApp.",
+"Couleur": "Colour",
+"Couleur (sinon Noir & Blanc)": "Colour (otherwise Black & White)",
+"Dans Google Maps, sur votre téléphone : touchez votre boutique, puis « Partager » et « Copier le lien ».": "In Google Maps, on your phone: tap your shop, then \"Share\" and \"Copy link\".",
+"Dans WhatsApp, TOUCHEZ d'abord le document du client pour le télécharger": "In WhatsApp, first TAP the customer's document to download it",
+"Date inconnue": "Unknown date",
+"Demandez le mot de passe au client : sans lui, personne ne peut imprimer le fichier.": "Ask the customer for the password: without it, nobody can print the file.",
+"Depuis VOTRE téléphone, appelez ou écrivez sur WhatsApp :": "From YOUR phone, call or message on WhatsApp:",
+"Description": "Description",
+"Deux façons, au choix :": "Two ways, your choice:",
+"Deux installations possibles.": "Two possible setups.",
+"Deux petites étapes avant de commencer à recevoir des fichiers clients.": "Two small steps before you start receiving customer files.",
+"Deux solutions :": "Two solutions:",
+"Deuxième façon (Wi-Fi créé par le PC)": "Second way (Wi-Fi created by the PC)",
+"Disponible uniquement sur Windows": "Only available on Windows",
+"Document": "Document",
+"Document ouvert. Imprimez comme d'habitude (Ctrl+P) : l'application note toute seule quand c'est imprimé.": "Document opened. Print as usual (Ctrl+P): the app records by itself when it is printed.",
+"Document sans client": "Document without a customer",
+"Documents de la clé USB": "Documents on the USB stick",
+"Documents de la clé USB branchée": "Documents on the plugged-in USB stick",
+"Documents reçus / Recherche client": "Received documents / Customer search",
+"Documents sur la clé USB": "Documents on the USB stick",
+"Donnez aussi cet identifiant :": "Also give this identifier:",
+"Donnez-lui cet identifiant, il vous communiquera un code d'installation à saisir ici :": "Give them this identifier; they will give you an installation code to enter here:",
+"Données mobiles": "Mobile data",
+"Dossier de réception": "Receiving folder",
+"Dossier de sauvegarde": "Backup folder",
+"Dossier surveillé": "Watched folder",
+"Dossier surveillé :": "Watched folder:",
+"Doublon": "Duplicate",
+"Découpe / massicotage": "Cutting / trimming",
+"Déjà ajouté": "Already added",
+"Démonstration": "Demo",
+"Dépenses": "Expenses",
+"Détail des impressions": "Print details",
+"Détails": "Details",
+"Détails pour la facturation": "Billing details",
+"Détails pour le support": "Details for support",
+"Détails techniques (à envoyer en cas de problème)": "Technical details (to send if there is a problem)",
+"Détails ›": "Details ›",
+"Efface le fichier du client à sa demande. La ligne de comptabilité reste, le document disparaît.": "Deletes the customer's file at their request. The accounting line stays, the document disappears.",
+"Effacer les documents après (jours)": "Delete documents after (days)",
+"Elle ne s'ouvre pas toute seule sur certains téléphones : les clients doivent scanner le deuxième code de l'affiche.": "It doesn't open by itself on some phones: customers must scan the second code on the poster.",
+"Employé": "Employee",
+"Employés": "Employees",
+"En attente d'un téléphone (écoute Bluetooth)…": "Waiting for a phone (listening on Bluetooth)…",
+"En attente d'un téléphone…": "Waiting for a phone…",
+"En cas de souci sur l'ordinateur, retrouvez vos données à un moment précis, sans aide extérieure.": "If something goes wrong on the computer, get your data back as it was at a given moment, without outside help.",
+"En direct": "Live",
+"En haut de l'écran principal": "At the top of the main screen",
+"En impression": "Printing",
+"En pause : le Wi-Fi de la boutique est allumé et a la priorité.": "Paused: the shop's Wi-Fi is on and has priority.",
+"En trois minutes, voici comment se passe une journée normale. Vous pouvez arrêter à tout moment — et revoir cette visite plus tard avec le bouton « ? » en haut de l'écran.": "In three minutes, here is how a normal day goes. You can stop at any time — and see this tour again later with the \"?\" button at the top of the screen.",
+"Encaisser": "Take payment",
+"Encre / toner": "Ink / toner",
+"Enregistre le paiement du client et retire la commande de la liste.": "Records the customer's payment and removes the order from the list.",
+"Enregistrer": "Save",
+"Enregistrer le pays": "Save the country",
+"Entretien effectué — réinitialiser le compteur": "Maintenance done — reset the counter",
+"Entretien imprimante": "Printer maintenance",
+"Envoyer le rapport au support": "Send the report to support",
+"Envoyez vos documents à imprimer": "Send your documents to print",
+"Erreur d'impression signalée par Windows.": "Print error reported by Windows.",
+"Espèces": "Cash",
+"Essai d'une autre méthode…": "Trying another method…",
+"Essai d'une autre méthode… (Windows peut demander « Oui »)": "Trying another method… (Windows may ask \"Yes\")",
+"Essayer une autre méthode": "Try another method",
+"Essayez une sauvegarde plus ancienne dans la liste. Si aucune ne fonctionne,": "Try an older backup in the list. If none works,",
+"Ex: PC-Photocopie-Rapide": "E.g.: PC-Photocopie-Rapide",
+"Exporter les transactions (CSV)": "Export transactions (CSV)",
+"Faire tourner le logiciel en arrière-plan quand j'allume l'ordinateur": "Run the software in the background when I turn on the computer",
+"Façon essayée :": "Method tried:",
+"Façon retenue :": "Method chosen:",
+"Fermer": "Close",
+"Fichier vide ou illisible": "Empty or unreadable file",
+"Fichiers WhatsApp du téléphone": "WhatsApp files on the phone",
+"Fichiers WhatsApp du téléphone branché par câble": "WhatsApp files on the phone connected by cable",
+"Fidélité client": "Customer loyalty",
+"Fidélité client réglable": "Adjustable customer loyalty",
+"Finitions": "Finishing",
+"Forcer une sauvegarde maintenant": "Force a backup now",
+"Format non reconnu": "Unrecognised format",
+"Format non supporté": "Unsupported format",
+"Format non supporté — redemander un format standard au client": "Unsupported format — ask the customer for a standard format",
+"Format papier": "Paper size",
+"Gestion Photocopie": "Gestion Photocopie",
+"Gestion Photocopie : reçoit les documents des clients": "Gestion Photocopie: receives customers' documents",
+"Guide du gérant — Gestion Photocopie": "Manager's guide — Gestion Photocopie",
+"Générer le rapport": "Generate the report",
+"Heure": "Time",
+"Historique": "History",
+"Historique des changements de tarifs": "Price change history",
+"Horaires": "Opening hours",
+"Identifiant de cette machine (à communiquer plus tard pour l'abonnement) :": "Identifier of this machine (to give later for the subscription):",
+"Ignorer": "Ignore",
+"Il est écrit sur l'autocollant : prenez": "It is written on the sticker: take",
+"Il faut que son téléphone soit sur le même réseau que ce PC — c'est le cas s'il est connecté au Wi-Fi de la box ou du routeur de la boutique.": "Their phone must be on the same network as this PC — it is if it's connected to the Wi-Fi of the shop's box or router.",
+"Il nous faut au moins le nom de votre boutique — c'est ce qui apparaîtra sur vos reçus.": "We need at least your shop's name — it will appear on your receipts.",
+"Impayés": "Unpaid",
+"Impayés à relancer": "Unpaid to follow up",
+"Impossible de préparer le démarrage automatique.": "Cannot prepare the automatic start-up.",
+"Impression annulée.": "Print cancelled.",
+"Impression bloquée (vérifier l'imprimante).": "Print stuck (check the printer).",
+"Imprimante à court de papier.": "Printer out of paper.",
+"Imprimer": "Print",
+"Imprimer ce QR (à coller à l'entrée)": "Print this QR code (to stick at the entrance)",
+"Imprimer le guide du gérant": "Print the manager's guide",
+"Imprimer un reçu après chaque encaissement": "Print a receipt after each payment",
+"Imprimé": "Printed",
+"Imprimée": "Printed",
+"Inactif": "Inactive",
+"Indique en une phrase ce qu'il faut faire sur ce poste pour recevoir les fichiers des clients. À lancer dès l'installation, avant le premier client.": "Says in one sentence what to do on this computer to receive customers' files. Run it right after installing, before the first customer.",
+"Installer la mise à jour": "Install the update",
+"Introuvable ? Glissez l'écran du haut vers le bas (raccourcis) ou tapez « Scanner » dans la recherche d'applications de votre téléphone.": "Can't find it? Swipe down from the top of the screen (shortcuts) or type \"Scanner\" in your phone's app search.",
+"L'abonnement est terminé : les clients ne peuvent plus envoyer. Appelez le support.": "The subscription has ended: customers can no longer send. Call support.",
+"L'application émet trois sons : un carillon à l'arrivée d'un document, un petit « tic » à l'envoi d'une impression, et deux notes à l'encaissement. Appuyez pour les entendre.": "The app plays three sounds: a chime when a document arrives, a little \"tick\" when a print is sent, and two notes when payment is taken. Press to hear them.",
+"L'argent du jour, les impayés à relancer, le stock, et le rapport imprimable à garder ou à montrer au propriétaire.": "The day's money, unpaid orders to follow up, stock, and the printable report to keep or show the owner.",
+"L'imprimante a confirmé elle-même que le papier est sorti. Sans cette mention, on ne sait pas.": "The printer itself confirmed that the paper came out. Without this mention, we don't know.",
+"L'imprimante confirme elle-même": "The printer confirms by itself",
+"L'installateur va s'ouvrir. Si Gestion Photocopie ne se ferme pas": "The installer will open. If Gestion Photocopie does not close",
+"L'écran demande une clé d'abonnement": "The screen asks for a subscription key",
+"L'écran principal": "The main screen",
+"L'état de la journée, et le rapport à imprimer pour le propriétaire.": "The day's status, and the report to print for the owner.",
+"La box ou le MiFi de la boutique": "The shop's box or MiFi",
+"La commande quittera la liste des impayés à relancer.": "The order will leave the list of unpaid orders to follow up.",
+"La durée doit être entre 0 et 3650 jours.": "The period must be between 0 and 3650 days.",
+"La durée doit être un nombre de jours.": "The period must be a number of days.",
+"La même liste que l'écran principal, en version courte — pratique pour compter ce qui reste à faire.": "The same list as the main screen, in short form — handy to count what is left to do.",
+"La page d'envoi s'ouvre toute seule.": "The sending page opens by itself.",
+"La première fois qu'un type de document est ouvert (PDF, Word, photo…), Windows demande avec quel programme l'ouvrir. Choisissez votre lecteur et touchez « Toujours » : il sera utilisé à chaque fois ensuite.": "The first time a type of document is opened (PDF, Word, photo…), Windows asks which program to use. Choose your reader and tap \"Always\": it will be used every time after that.",
+"La réduction doit être entre 0 et 100 %.": "The discount must be between 0 and 100 %.",
+"La réduction doit être un chiffre.": "The discount must be a number.",
+"La réparation n'a pas suffi. Envoyez le rapport au support : il saura quoi faire.": "The repair was not enough. Send the report to support: they will know what to do.",
+"Langue inconnue.": "Unknown language.",
+"Le Wi-Fi de la boutique est éteint. Touchez « Réparer ».": "The shop's Wi-Fi is off. Tap \"Repair\".",
+"Le Wi-Fi se rallume, patientez un instant.": "The Wi-Fi is turning back on, wait a moment.",
+"Le bouton « ? » en haut de l'application explique les boutons de chaque écran.": "The \"?\" button at the top of the app explains the buttons on each screen.",
+"Le bouton « ? » en haut à droite explique les boutons de l'écran sur lequel vous êtes, à tout moment. Vous ne pouvez rien casser en cliquant dessus. Bonne journée de travail.": "The \"?\" button at the top right explains the buttons on the screen you are on, at any time. You can't break anything by clicking it. Have a good working day.",
+"Le client est sur le Wi-Fi mais la page ne s'est pas ouverte ?": "The customer is on the Wi-Fi but the page did not open?",
+"Le client qui commande de chez lui voit ces informations en haut de la page d'envoi. Laissez vide ce que vous ne voulez pas montrer.": "A customer ordering from home sees this information at the top of the sending page. Leave blank what you don't want to show.",
+"Le client scanne et touche « Rejoindre » :": "The customer scans and taps \"Join\":",
+"Le client scanne le QR code (bouton 📶) et envoie depuis son téléphone, ou vous branchez sa clé USB, ou vous déposez le fichier dans le dossier surveillé. Il apparaît tout seul dans la liste.": "The customer scans the QR code (📶 button) and sends from their phone, or you plug in their USB stick, or you drop the file in the watched folder. It appears in the list by itself.",
+"Le client voit un mot de remerciement et son compteur de fidélité sur son propre téléphone, dès l'encaissement — sans imprimer de reçu.": "The customer sees a thank-you note and their loyalty counter on their own phone, as soon as payment is taken — without printing a receipt.",
+"Le disque est presque plein : libérez de la place, sinon les clients ne pourront plus envoyer.": "The disk is almost full: free up space, otherwise customers will no longer be able to send.",
+"Le document du client n'apparaît pas": "The customer's document does not appear",
+"Le document sera effacé de cet ordinateur. La ligne de comptabilité": "The document will be deleted from this computer. The accounting line",
+"Le dossier de réception n'existe plus. Choisissez-en un autre dans le menu ⋮.": "The receiving folder no longer exists. Choose another one in the ⋮ menu.",
+"Le fichier licence.txt de cette clé USB ne correspond pas à cet ordinateur.": "The licence.txt file on this USB stick does not match this computer.",
+"Le grand code fait rejoindre le Wi-Fi, le petit ouvre la page d'envoi : les deux fonctionnent déjà,": "The big code joins the Wi-Fi, the small one opens the sending page: both already work,",
+"Le lien du plan doit commencer par https:// (copiez-le depuis Google Maps : Partager → Copier le lien).": "The map link must start with https:// (copy it from Google Maps: Share → Copy link).",
+"Le logiciel démarrera tout seul, en arrière-plan, quand vous allumerez l'ordinateur, pour recevoir les documents des clients. Sa fenêtre ne s'ouvre que quand vous la demandez : icône du bureau, ou icône près de l'horloge.": "The software will start by itself, in the background, when you turn on the computer, to receive customers' documents. Its window only opens when you ask for it: desktop icon, or icon near the clock.",
+"Le logiciel ne démarrera plus tout seul": "The software will no longer start by itself",
+"Le logiciel ne reçoit plus les documents. Touchez « Réparer ».": "The software no longer receives documents. Tap \"Repair\".",
+"Le menu : historique, recherche, rapports et réglages.": "The menu: history, search, reports and settings.",
+"Le montant diffère du prix calculé — précisez la raison pour continuer.": "The amount differs from the calculated price — give the reason to continue.",
+"Le montant ne peut pas être négatif.": "The amount cannot be negative.",
+"Le mot de passe du Wi-Fi doit avoir au moins 8 caractères (règle du Wi-Fi). Par exemple : 12345678.": "The Wi-Fi password must be at least 8 characters (Wi-Fi rule). For example: 12345678.",
+"Le nom de la boutique, le dossier surveillé, les tarifs, les employés et la sauvegarde. À régler une fois, rarement retouché ensuite.": "The shop name, watched folder, prices, employees and backup. Set once, rarely changed after.",
+"Le nom que Windows affiche pour cet ordinateur quand on le cherche en Bluetooth — trouvez-le (ou changez-le) dans Windows : Paramètres > Bluetooth et appareils > Renommer cet appareil. Recopiez-le ici pour que le client sache exactement quel appareil chercher.": "The name Windows shows for this computer when searched over Bluetooth — find it (or change it) in Windows: Settings > Bluetooth & devices > Rename this device. Copy it here so the customer knows exactly which device to look for.",
+"Le nombre de commandes doit être entre 1 et 1000.": "The number of orders must be between 1 and 1000.",
+"Le nombre de commandes doit être un chiffre.": "The number of orders must be a number.",
+"Le plus récent est coché. Vérifiez que c'est celui du client, puis « Ajouter ».": "The most recent one is ticked. Check it is the customer's, then \"Add\".",
+"Le plus simple : insérez la clé USB contenant le fichier": "The simplest: insert the USB stick containing the file",
+"Le plus simple quand ça marche : appuyez sur « 📶 Activer le Wi-Fi local de la boutique » dans la fenêtre du QR. Mais toutes les cartes Wi-Fi n'en sont pas capables — « Vérifier ce PC », plus bas, le dit en une phrase.": "The simplest when it works: press \"📶 Turn on the shop's local Wi-Fi\" in the QR window. But not every Wi-Fi card can do it — \"Check this PC\", below, tells you in one sentence.",
+"Le prix de la page noir & blanc, de la couleur, des finitions. Sert à calculer le prix proposé.": "The price of a black & white page, colour, finishing. Used to calculate the suggested price.",
+"Le rapport n'a pas pu être préparé. Appelez le support.": "The report could not be prepared. Call support.",
+"Le réseau ne se connecte pas ? Appuyez sur son nom dans la liste affichée.": "The network won't connect? Press its name in the list shown.",
+"Le réseau vient d'ailleurs (box, routeur, ou partage de connexion d'un téléphone)": "The network comes from elsewhere (box, router, or a phone's hotspot)",
+"Le son est encore endormi — réappuyez une fois.": "The sound is still asleep — press once more.",
+"Le téléphone a rejoint le Wi-Fi et la page d'envoi s'est ouverte.": "The phone joined the Wi-Fi and the sending page opened.",
+"Le téléphone est bien connecté au Wi-Fi, mais n'arrive pas jusqu'à la page.": "The phone is connected to the Wi-Fi, but cannot reach the page.",
+"Le téléphone est connecté au Wi-Fi.": "The phone is connected to the Wi-Fi.",
+"Le téléphone n'y arrive pas": "The phone can't do it",
+"Le téléphone rejoint le Wi-Fi du routeur et la page d'envoi s'ouvre": "The phone joins the router's Wi-Fi and the sending page opens",
+"Lecture de la clé USB…": "Reading the USB stick…",
+"Lecture du téléphone, quelques secondes…": "Reading the phone, a few seconds…",
+"Lecture du téléphone…": "Reading the phone…",
+"Les chiffres, et le détail de chaque impression réussie avec son heure et le temps d'attente du client. Sur papier, ou en PDF à garder.": "The figures, and the detail of each successful print with its time and the customer's waiting time. On paper, or as a PDF to keep.",
+"Les clients peuvent envoyer leurs documents.": "Customers can send their documents.",
+"Les commandes déjà servies et encaissées. C'est ici qu'on retrouve une commande d'hier, et qu'on supprime le document d'un client qui le demande.": "Orders already served and paid. This is where you find yesterday's order, and delete a customer's document when they ask.",
+"Les commandes déjà servies, de la plus récente à la plus ancienne.": "Orders already served, from most recent to oldest.",
+"Les commandes prises à crédit. « Marquer réglé » quand le client a payé.": "Orders taken on credit. \"Mark as settled\" when the customer has paid.",
+"Les documents envoyés par vos clients (CV, relevés, pièces...) sont effacés automatiquement de ce PC passé ce délai, une fois la commande terminée. Votre comptabilité, elle, n'est jamais effacée : seuls les documents partent. Mettez 0 pour tout garder — mais le disque finira par se remplir, et garder longtemps les papiers personnels de vos clients vous engage.": "Documents sent by your customers (CVs, statements, ID papers...) are deleted automatically from this PC after this period, once the order is finished. Your accounts are never deleted: only the documents go. Put 0 to keep everything — but the disk will eventually fill up, and keeping your customers' personal papers for a long time makes you responsible for them.",
+"Les documents reçus qui attendent encore d'être servis. Même liste que l'écran principal, en plus court.": "Received documents still waiting to be served. Same list as the main screen, shorter.",
+"Les vraies mises à jour se reconnaissent toutes seules": "Real updates are recognised by themselves",
+"Licence": "Licence",
+"Licence invalide": "Invalid licence",
+"Lien direct": "Direct link",
+"Lien direct avec les téléphones : ce qui se passe": "Direct link with phones: what is happening",
+"Lien du plan (facultatif)": "Map link (optional)",
+"Liste trop longue.": "List too long.",
+"Machines": "Machines",
+"Maintenant :": "Now:",
+"Marquer réglé": "Mark as settled",
+"Menu": "Menu",
+"Menu ⋮ → Rapports : ce que vous avez encaissé, les impayés à relancer, et le rapport imprimable à garder. Rien ne se perd : chaque fichier reçu est compté dès son arrivée.": "Menu ⋮ → Reports: what you have taken, unpaid orders to follow up, and the printable report to keep. Nothing gets lost: every file received is counted as soon as it arrives.",
+"Menu ⋮ → Rapports : vérifier les impayés à relancer, et le stock de papier et d'encre.": "Menu ⋮ → Reports: check unpaid orders to follow up, and paper and ink stock.",
+"Merci de préciser une raison avant de continuer.": "Please give a reason before continuing.",
+"Message de fidélité en direct": "Live loyalty message",
+"Mise à jour du logiciel": "Software update",
+"Mobile Money": "Mobile Money",
+"Montant (\u0000)": "Amount ( )",
+"Montant réellement compté (\u0000)": "Amount actually counted ( )",
+"Montant à encaisser (": "Amount to collect (",
+"Mot de passe": "Password",
+"Mot de passe :": "Password:",
+"Mot de passe incorrect.": "Wrong password.",
+"Mot de passe technique :": "Technical password:",
+"Moyen de paiement": "Payment method",
+"Noir & Blanc": "Black & White",
+"Noir & blanc": "Black & white",
+"Nom Bluetooth de cet ordinateur": "Bluetooth name of this computer",
+"Nom de l'employé": "Employee name",
+"Nom de la boutique": "Shop name",
+"Nom du Wi-Fi": "Wi-Fi name",
+"Nom, téléphone ou nom de fichier…": "Name, phone or file name…",
+"Nombre de copies": "Number of copies",
+"Nombre de documents": "Number of documents",
+"Nombre de visites payées avant réduction": "Number of paid visits before discount",
+"Nouveau": "New",
+"Nouvelle commande C 27, Koffi, deux documents.": "New order C 27, Koffi, two documents.",
+"Numéro WhatsApp": "WhatsApp number",
+"Numéro WhatsApp (optionnel)": "WhatsApp number (optional)",
+"Numéro affiché sur le téléphone du client": "Number shown on the customer's phone",
+"Numéro trop long.": "Number too long.",
+"Numéros bloqués (un par ligne)": "Blocked numbers (one per line)",
+"Obligatoire — aucun fichier reçu ne peut disparaître de la file sans explication.": "Required — no received file can disappear from the queue without an explanation.",
+"Ordinaire": "Plain",
+"Ou collez ici la clé de licence reçue": "Or paste the licence key you received here",
+"Ou il tire le haut de son écran et touche « Se connecter au réseau ».": "Or they pull down from the top of the screen and tap \"Sign in to network\".",
+"Ouverture des documents": "Opening documents",
+"Ouverture du logiciel": "Opening the software",
+"Ouvre le document dans son programme habituel (lecteur PDF, Photos, Word…). Faites Ctrl+P : vous choisissez l'imprimante, ses propriétés, les pages, tout.": "Opens the document in its usual program (PDF reader, Photos, Word…). Press Ctrl+P: you choose the printer, its properties, the pages, everything.",
+"Ouvrez cet antivirus, allez dans ses": "Open this antivirus, go to its",
+"Ouvrez le": "Open the",
+"Ouvrez maintenant la page : touchez la notification « Se connecter au réseau », ou ouvrez Chrome / Safari et tapez": "Now open the page: tap the \"Sign in to network\" notification, or open Chrome / Safari and type",
+"Ouvrir": "Open",
+"Ouvrir le dossier de données": "Open the data folder",
+"Ouvrir le menu": "Open the menu",
+"Ouvrir/Éditer": "Open/Edit",
+"Page d'envoi sur les téléphones": "Sending page on phones",
+"Pages du document": "Document pages",
+"Pages imprimées par ce PC :": "Pages printed by this PC:",
+"Pages parties du PC :": "Pages sent from the PC:",
+"Papier": "Paper",
+"Papier et encre restants. Chiffres à corriger à la main quand vous rachetez.": "Paper and ink left. Numbers to correct by hand when you buy more.",
+"Par défaut, aucun reçu n'est imprimé après un encaissement. Si vous en délivrez, cochez la case : le reçu sortira alors tout seul à chaque encaissement. Dans les deux cas, vous pouvez toujours en imprimer un à la demande depuis l'historique.": "By default, no receipt is printed after a payment. If you give receipts, tick the box: the receipt will then print by itself at each payment. Either way, you can always print one on request from the history.",
+"Par le Wi-Fi": "Over Wi-Fi",
+"Pare-feu": "Firewall",
+"Pas de téléphone enregistré": "No phone number recorded",
+"Pas de voix française sur ce PC.": "No English voice on this PC.",
+"Passer": "Skip",
+"Patientez…": "Please wait…",
+"Pays de la boutique": "Shop's country",
+"Pays inconnu.": "Unknown country.",
+"Perforation": "Hole punching",
+"Place sur le disque": "Disk space",
+"Plastification": "Laminating",
+"Pliage": "Folding",
+"Plus ancien": "Oldest",
+"Plus simple : avec votre téléphone, scannez ce code. WhatsApp s'ouvre avec le message déjà écrit : appuyez sur Envoyer, puis collez ici le code reçu.": "Simpler: with your phone, scan this code. WhatsApp opens with the message already written: press Send, then paste the code you receive here.",
+"Plus simple : avec votre téléphone, scannez ce code. WhatsApp s'ouvre avec le message déjà écrit : appuyez sur Envoyer.": "Simpler: with your phone, scan this code. WhatsApp opens with the message already written: press Send.",
+"Poste → Imprimante": "Computer → Printer",
+"Pour comparer les pages": "To compare the pages",
+"Pour continuer à utiliser Gestion Photocopie, contactez le porteur du projet pour renouveler votre abonnement.": "To keep using Gestion Photocopie, contact the project owner to renew your subscription.",
+"Pour continuer, appelez ou écrivez sur WhatsApp au": "To continue, call or message on WhatsApp",
+"Pour les boutiques qui changent d'imprimante en cours de journée : une liste déroulante au-dessus des commandes, plutôt qu'un passage par les réglages de Windows.": "For shops that change printer during the day: a drop-down list above the orders, instead of going through Windows settings.",
+"Pour montrer le logiciel sans client réel présent.": "To show the software without a real customer present.",
+"Pour savoir ce qui est imprimé (et faire le rapport), l'application doit allumer le suivi": "To know what is printed (and make the report), the app must turn on tracking",
+"Pour voir les impressions parties du PC, Windows doit noter chaque impression. Il faut l'activer une seule fois.": "To see prints sent from the PC, Windows must record each print. It has to be turned on once.",
+"Pourcentage de réduction": "Discount percentage",
+"Pourquoi ignorer ce fichier ?": "Why ignore this file?",
+"Première façon (Wi-Fi créé par le PC)": "First way (Wi-Fi created by the PC)",
+"Prix calculé :": "Calculated price:",
+"Précision (si \"Autre\")": "Details (if \"Other\")",
+"Préparation du QR, veuillez patienter…": "Preparing the QR code, please wait…",
+"Préparation du rapport…": "Preparing the report…",
+"Prêt à imprimer": "Ready to print",
+"Prêt à retirer": "Ready to collect",
+"Prêt ✓": "Ready ✓",
+"Prête": "Ready",
+"Puis scannez le code du bas : la page d'envoi s'ouvre.": "Then scan the bottom code: the sending page opens.",
+"QR client": "Customer QR",
+"Quand ce PC n'a pas de Wi-Fi de boutique, le téléphone du client (application Envoyeur) crée son propre réseau et appelle le PC par Bluetooth. Le PC le rejoint tout seul.": "When this PC has no shop Wi-Fi, the customer's phone (Sender app) creates its own network and calls the PC over Bluetooth. The PC joins it by itself.",
+"Quand une commande arrive": "When an order arrives",
+"Quand ça ne va pas": "When things go wrong",
+"Qui a encaissé quoi. Utile dès qu'une deuxième personne tient la caisse.": "Who took what payment. Useful as soon as a second person runs the till.",
+"Raison": "Reason",
+"Raison de l'écart avec le prix calculé (obligatoire)": "Reason for the difference with the calculated price (required)",
+"Rallumage du Wi-Fi… Windows va demander une autorisation : touchez « Oui ».": "Turning the Wi-Fi back on… Windows will ask for permission: tap \"Yes\".",
+"Rapport imprimable": "Printable report",
+"Rapport imprimable du jour, de la semaine ou du mois": "Printable report for the day, week or month",
+"Rapport pour le porteur du projet": "Report for the project owner",
+"Rapports": "Reports",
+"Recevoir un fichier client": "Receive a customer file",
+"Recevoir un fichier par QR": "Receive a file by QR code",
+"Recherche": "Search",
+"Recherche des machines… (quelques secondes)": "Looking for machines… (a few seconds)",
+"Rechercher un nom…": "Search a name…",
+"Recto": "Single-sided",
+"Recto simple": "Single-sided",
+"Recto-verso": "Double-sided",
+"Recto-verso (sinon recto simple)": "Double-sided (otherwise single-sided)",
+"Recto-verso à facturer": "Double-sided to bill",
+"Redemander le programme": "Ask for the program again",
+"Regardez l'imprimante : papier, bourrage, câble, allumée ou non. Le message dit lequel de ces problèmes Windows a signalé.": "Look at the printer: paper, jam, cable, switched on or not. The message says which of these problems Windows reported.",
+"Reliure dos carré collé": "Perfect binding",
+"Reliure spirale": "Spiral binding",
+"Remise en marche du Wi-Fi du PC… (cliquez « Oui » si Windows le demande)": "Restarting the PC's Wi-Fi… (click \"Yes\" if Windows asks)",
+"Remplace les données actuelles par celles de la sauvegarde choisie. L'état actuel est d'abord mis de côté, donc rien n'est perdu définitivement même en cas d'erreur.": "Replaces the current data with the chosen backup. The current state is set aside first, so nothing is lost for good even in case of a mistake.",
+"Restaurer": "Restore",
+"Restaurer une sauvegarde": "Restore a backup",
+"Restaurer une sauvegarde…": "Restore a backup…",
+"Retirer les exemples de démonstration": "Remove the demo examples",
+"Retrouver un document par nom de client, numéro de téléphone ou nom de fichier — même vieux de plusieurs semaines.": "Find a document by customer name, phone number or file name — even several weeks old.",
+"Revoir la visite guidée": "See the guided tour again",
+"Reçu": "Received",
+"Reçus": "Received",
+"Reçus :": "Received:",
+"Rien": "Nothing",
+"Rien ne s'ouvre ? Dans Chrome ou Safari, tapez :": "Nothing opens? In Chrome or Safari, type:",
+"Rien pour l'instant aujourd'hui.": "Nothing yet today.",
+"Réception des documents": "Receiving documents",
+"Réconciliation": "Reconciliation",
+"Réconciliation — tous les fichiers reçus aujourd'hui": "Reconciliation — all files received today",
+"Réessayer": "Try again",
+"Réglages": "Settings",
+"Réglages → Bluetooth": "Settings → Bluetooth",
+"Réglages → Conservation des documents clients": "Settings → Keeping customer documents",
+"Réglages → Fidélité client": "Settings → Customer loyalty",
+"Réglages → outils techniques": "Settings → technical tools",
+"Réparation en cours…": "Repairing…",
+"Réparer": "Repair",
+"Résumé des impressions": "Print summary",
+"Résumés du matin et du soir": "Morning and evening summaries",
+"S'il a une « protection contre les attaques réseau », ajoutez l'exclusion": "If it has \"network attack protection\", add the exclusion",
+"Sa fenêtre ne s'ouvre jamais toute seule": "Its window never opens by itself",
+"Sa page d'envoi ne s'est pas ouverte.": "Their sending page did not open.",
+"Sans numéro (arrivé hors de l'application)": "No number (arrived outside the app)",
+"Sans scanner :": "Without scanning:",
+"Sauvegarde": "Backup",
+"Sauvegarde restaurée. L'application va se recharger.": "Backup restored. The app will reload.",
+"Scanner": "Scanner",
+"Scannez ce code : la page d'envoi s'ouvre": "Scan this code: the sending page opens",
+"Scannez ce code avec l'appli Scanner de votre téléphone": "Scan this code with your phone's Scanner app",
+"Scannez ce code avec le Scanner de votre téléphone": "Scan this code with your phone's Scanner",
+"Scannez le code du bas : la page d'envoi s'ouvre.": "Scan the bottom code: the sending page opens.",
+"Scannez pour envoyer vos documents": "Scan to send your documents",
+"Sert uniquement à calculer le prix — l'impression se fait directement avec le bouton Imprimer, qui ouvre la boîte de dialogue de Windows.": "Only used to calculate the price — printing is done directly with the Print button, which opens the Windows dialog.",
+"Si l'ordinateur doit être reformaté, votre abonnement continue de fonctionner sans qu'on ait à vous refabriquer une clé.": "If the computer has to be reformatted, your subscription keeps working without a new key having to be made for you.",
+"Si la clé n'apparaît pas non plus dans l'Explorateur de Windows (Ce PC),": "If the USB stick does not appear in Windows Explorer (This PC) either,",
+"Si la page tourne sans fin ou refuse l'envoi : le client coupe ses données mobiles.": "If the page keeps loading or refuses to send: the customer turns off their mobile data.",
+"Si le téléphone demande « Autoriser l'accès aux données ? », touchez « Autoriser ».": "If the phone asks \"Allow access to data?\", tap \"Allow\".",
+"Si les clients n'arrivent pas à se connecter ou si la page ne s'ouvre pas": "If customers can't connect or the page does not open",
+"Si une commande est facturée en noir & blanc mais sortie en couleur, l'écart s'affiche en clair. Rien n'est bloqué : c'est là pour être vu et éclairci.": "If an order is billed in black & white but printed in colour, the difference is shown clearly. Nothing is blocked: it's there to be seen and cleared up.",
+"Si vous imprimez l'affiche : réimprimez-la si un jour la page cesse de s'ouvrir, car l'adresse du PC sur ce réseau peut changer. Rouvrez la fenêtre du QR pour voir l'affiche à jour.": "If you print the poster: print it again if one day the page stops opening, because the PC's address on this network can change. Reopen the QR window to see the up-to-date poster.",
+"Solution de secours : ouvrir le partage de connexion Windows": "Fallback: open Windows mobile hotspot",
+"Son seulement": "Sound only",
+"Sons": "Sounds",
+"Stock": "Stock",
+"Suivant": "Next",
+"Supprimer le document": "Delete the document",
+"Supprimer un document sur demande": "Delete a document on request",
+"Sur la machine": "On the machine",
+"Sur papier, ou en PDF avec « Microsoft Print to PDF » dans la fenêtre d'impression.": "On paper, or as a PDF with \"Microsoft Print to PDF\" in the print window.",
+"Sur papier, ou en PDF via \"Microsoft Print to PDF\" dans la fenêtre d'impression de Windows.": "On paper, or as a PDF via \"Microsoft Print to PDF\" in the Windows print window.",
+"Sur votre téléphone, ouvrez le": "On your phone, open the",
+"Sélectionnez et copiez le texte à la main.": "Select and copy the text by hand.",
+"Sélectionné — copiez avec Ctrl+C, le copier automatique n'a pas fonctionné ici.": "Selected — copy with Ctrl+C, automatic copy didn't work here.",
+"Tapez au moins 2 lettres : nom du client, numéro de téléphone ou nom de fichier.": "Type at least 2 letters: customer name, phone number or file name.",
+"Tarifs": "Prices",
+"Terminer": "Finish",
+"Terminé": "Done",
+"Total encaissé": "Total taken",
+"Tournez l'écran vers lui :": "Turn the screen towards them:",
+"Tournez l'écran vers lui : il scanne ce code": "Turn the screen towards them: they scan this code",
+"Tout cocher": "Tick all",
+"Tout décocher": "Untick all",
+"Tout fichier déposé dans ce dossier entre automatiquement dans la file d'attente.": "Any file dropped in this folder goes into the queue automatically.",
+"Tout va bien : les clients peuvent envoyer.": "All good: customers can send.",
+"Toutes les pages": "All pages",
+"Trois façons : le client scanne le QR code (bouton 📶) et envoie depuis son téléphone ; vous branchez sa clé USB ; ou vous déposez le fichier dans le dossier surveillé. Dans les trois cas, il apparaît dans la liste sans rien faire de plus.": "Three ways: the customer scans the QR code (📶 button) and sends from their phone; you plug in their USB stick; or you drop the file in the watched folder. In all three cases, it appears in the list with nothing more to do.",
+"Troisième façon (partage de connexion de Windows)": "Third way (Windows mobile hotspot)",
+"Type de réseau": "Network type",
+"Téléchargement": "Download",
+"Téléphone de la boutique": "Shop phone",
+"Téléphone débranché. Rien n'a été copié.": "Phone unplugged. Nothing was copied.",
+"URL de vérification des mises à jour": "Update check URL",
+"Un bouton « ? » en haut explique à quoi sert chaque bouton de l'écran où vous êtes. Avec une visite guidée à revoir quand vous voulez, et un guide d'une page à imprimer et poser près du PC.": "A \"?\" button at the top explains what each button on your current screen is for. With a guided tour to replay whenever you like, and a one-page guide to print and keep near the PC.",
+"Un client vous demande d'effacer son document ? Un seul bouton suffit, sans mot de passe technique.": "A customer asks you to delete their document? One button is enough, no technical password.",
+"Un fichier ne doit pas être servi": "A file must not be served",
+"Un petit mot d'accueil avec les chiffres d'hier, et un résumé encourageant en fin de journée bien remplie.": "A short welcome note with yesterday's figures, and an encouraging summary at the end of a busy day.",
+"Un programme ne s'imprime pas.": "A program cannot be printed.",
+"Un seul scan, rien à taper.": "A single scan, nothing to type.",
+"Un seul scan.": "A single scan.",
+"Un son différent pour chaque action (nouvelle commande, impression, encaissement), et des confirmations qui ne bloquent plus l'écran.": "A different sound for each action (new order, print, payment), and confirmations that no longer block the screen.",
+"Une aide sur chaque écran": "Help on every screen",
+"Une bonne journée pour la boutique.": "A good day for the shop.",
+"Une box, un routeur — ou, sans rien acheter,": "A box, a router — or, without buying anything,",
+"Une case en plus dans les détails de facturation : le recto-verso était géré par Windows à l'impression, mais n'était jamais suivi côté prix.": "One more box in the billing details: double-sided was handled by Windows when printing, but never tracked in the price.",
+"Une dernière chose": "One last thing",
+"Une journée normale, en 3 gestes": "A normal day, in 3 steps",
+"Une petite clé Wi-Fi USB": "A small USB Wi-Fi dongle",
+"Une raison est obligatoire pour ignorer un fichier": "A reason is required to ignore a file",
+"Une réduction automatique s'applique quand un client (identifié par son numéro de téléphone) a déjà réglé plusieurs commandes. Mettez le pourcentage à 0 pour désactiver complètement la réduction.": "An automatic discount applies when a customer (identified by phone number) has already paid for several orders. Set the percentage to 0 to turn the discount off completely.",
+"Valider": "Confirm",
+"Valider l'encaissement": "Confirm the payment",
+"Visez ce code, touchez": "Point at this code, tap",
+"Visite guidée": "Guided tour",
+"Voici ce que vous venez de gagner": "Here is what you just earned",
+"Voir l'état de votre poste": "See your computer's status",
+"Voix et son": "Voice and sound",
+"Vos clients peuvent maintenant envoyer leurs fichiers même sans réseau, directement en Bluetooth.": "Your customers can now send their files even without a network, directly over Bluetooth.",
+"Votre abonnement": "Your subscription",
+"Votre clé de licence n'est plus valide": "Your licence key is no longer valid",
+"Votre essai gratuit": "Your free trial",
+"Votre licence survit à une réinstallation de Windows": "Your licence survives a Windows reinstall",
+"Votre période d'essai est terminée": "Your trial period has ended",
+"Votre période d'essai ou votre abonnement est terminé": "Your trial period or subscription has ended",
+"Vous avez déjà reçu une nouvelle clé ?": "Already received a new key?",
+"Vous démarrez avec": "You start with",
+"Vous pourrez réinitialiser ce compteur dans Rapports une fois l'entretien fait.": "You can reset this counter in Reports once the maintenance is done.",
+"Vous pouvez aussi GLISSER des fichiers directement sur cette fenêtre — pratique quand un client vient avec un câble :": "You can also DRAG files directly onto this window — handy when a customer comes with a cable:",
+"Vérification en cours…": "Checking…",
+"Vérifie qu'aucun fichier reçu n'a disparu sans explication : reçus = payés + ignorés + en attente.": "Checks that no received file has disappeared without explanation: received = paid + ignored + waiting.",
+"Vérifier ce PC": "Check this PC",
+"Vérifiez que le téléphone n'a pas d'autre page ouverte, coupez ses": "Check that the phone has no other page open, turn off its",
+"Vérifiez que son téléphone est bien connecté au Wi-Fi de la boutique, puis faites-lui rescanner le QR code.": "Check that their phone is connected to the shop's Wi-Fi, then have them scan the QR code again.",
+"Wi-Fi": "Wi-Fi",
+"Wi-Fi de la boutique": "Shop Wi-Fi",
+"Wi-Fi local (pour le QR)": "Local Wi-Fi (for the QR code)",
+"allumées": "turned on",
+"aujourd'hui": "today",
+"automatiquement, fermez-la vous-même (croix en haut), puis suivez": "automatically, close it yourself (cross at the top), then follow",
+"aux applications autorisées (ou de confiance), et mettez le réseau de la boutique en « réseau de confiance ».": "to allowed (or trusted) apps, and set the shop's network as a \"trusted network\".",
+"c'est la clé ou le port qui ne marche pas, pas l'application.": "it's the USB stick or the port that doesn't work, not the app.",
+"carte Wi-Fi occupée": "Wi-Fi card busy",
+"ce client": "this customer",
+"clé USB": "USB stick",
+"coupez vos données mobiles": "turn off your mobile data",
+"demande incomplète": "incomplete request",
+"depuis votre téléphone, et donnez l'identifiant affiché à l'écran.": "from your phone, and give the identifier shown on the screen.",
+"des impressions de Windows. Une seule fois : Windows va demander « Oui ». Allumer maintenant ?": "of Windows printing. Just once: Windows will ask \"Yes\". Turn it on now?",
+"donnée par le porteur du projet — l'activation se fait toute seule.": "given by the project owner — activation happens by itself.",
+"données mobiles": "mobile data",
+"dossier surveillé": "watched folder",
+"du téléphone choisissez « Transfert de fichiers ». Réappuyez ensuite sur 📱.": "on the phone choose \"File transfer\". Then press 📱 again.",
+"découpe": "cutting",
+"elle trouve le PC toute seule.": "it finds the PC by itself.",
+"encaissé": "taken",
+"et choisissez « Transfert de fichiers ».": "and choose \"File transfer\".",
+"et touchez :": "and tap:",
+"ex. Carrefour Vèdoko, à côté de la pharmacie": "e.g. Vèdoko junction, next to the pharmacy",
+"ex. Lundi à samedi, 8 h - 20 h": "e.g. Monday to Saturday, 8 am - 8 pm",
+"ex: remise négociée, erreur corrigée…": "e.g. negotiated discount, corrected mistake…",
+"fois sur « 📶 Activer le Wi-Fi local de la boutique » pour que le grand code suffise à lui seul.": "once on \"📶 Turn on the shop's local Wi-Fi\" so that the big code is enough on its own.",
+"format papier": "paper size",
+"glissé sur la fenêtre": "dropped on the window",
+"hors de l'application": "outside the app",
+"il scanne ce code, la page d'envoi s'ouvre.": "they scan this code, the sending page opens.",
+"imprimées": "printed",
+"la page d'envoi s'ouvre (la même que dans l'application Envoyeur). Si elle ne s'ouvre pas": "the sending page opens (the same as in the Sender app). If it doesn't open",
+"le PC n'a pas pu rejoindre le réseau du téléphone": "the PC could not join the phone's network",
+"le client n'a rien à taper. Mais l'ouverture AUTOMATIQUE de la page n'est pas activée : appuyez une": "the customer has nothing to type. But AUTOMATIC opening of the page is not turned on: press",
+"le partage de connexion d'un téléphone": "a phone's hotspot",
+"le temps d'envoyer, sinon le téléphone part sur Internet et ne trouve pas la boutique.": "while sending, otherwise the phone goes onto the Internet and can't find the shop.",
+"les instructions à l'écran jusqu'au bout.": "the on-screen instructions to the end.",
+"nom ou mot de passe invalide": "invalid name or password",
+"nombre de feuilles": "number of sheets",
+"non choisi": "not chosen",
+"ouvrez son téléphone dans l'Explorateur, sélectionnez, et lâchez ici.": "open their phone in Explorer, select, and drop here.",
+"par ce PC à l'argent": "by this PC with the money",
+"paramètres": "settings",
+"reliure dos carré": "perfect binding",
+"reliure spirale": "spiral binding",
+"réglage inconnu": "unknown setting",
+"réseau": "network",
+"se termine aujourd'hui": "ends today",
+"se termine demain": "ends tomorrow",
+"toute seule, c'est probablement la cause.": "by itself, that's probably the cause.",
+"toute seule, le téléphone affiche « Se connecter au réseau » : il la touche.": "by itself, the phone shows \"Sign in to network\": they tap it.",
+"toute seule. Le petit code en dessous ne sert que si elle ne s'ouvre pas : rien à taper, jamais.": "by itself. The small code below is only for when it doesn't open: nothing to type, ever.",
+"téléphone (WhatsApp)": "phone (WhatsApp)",
+"téléphone branché et déverrouillé, puis réessayez pour ceux qui manquent.": "phone plugged in and unlocked, then try again for the missing ones.",
+"téléphone. Identifiant à donner :": "phone. Identifier to give:",
+"votre téléphone": "your phone",
+"zéro": "zero",
+"« Détails » pour dire ce qu'on facture (pages, couleur, recto-verso), puis « Encaisser ». Le prix est calculé tout seul à partir de vos tarifs ; vous pouvez toujours le modifier, en disant pourquoi.": "\"Details\" to say what is billed (pages, colour, double-sided), then \"Take payment\". The price is calculated by itself from your prices; you can always change it, saying why.",
+"« Détails » pour dire ce qu'on facture, puis « Encaisser ». Le prix est calculé tout seul ; il reste modifiable en disant pourquoi.": "\"Details\" to say what is billed, then \"Take payment\". The price is calculated by itself; it can still be changed, saying why.",
+"« Ignorer », puis choisissez la raison. Rien ne disparaît sans explication.": "\"Ignore\", then choose the reason. Nothing disappears without an explanation.",
+"« Impression non confirmée »": "\"Print not confirmed\"",
+"« Ouvrir » : le document s'ouvre comme un fichier normal. Ctrl+P, puis choisissez l'imprimante et ses propriétés.": "\"Open\": the document opens like a normal file. Ctrl+P, then choose the printer and its properties.",
+"« Ouvrir » : le document s'ouvre comme un fichier normal. Faites Ctrl+P, choisissez l'imprimante et ses propriétés. Le journal des impressions compte les pages réellement sorties.": "\"Open\": the document opens like a normal file. Press Ctrl+P, choose the printer and its properties. The print log counts the pages actually printed.",
+"« PDF protégé par mot de passe »": "\"Password-protected PDF\"",
+"« Rejoindre »": "\"Join\"",
+"« Transfert de fichiers » (et « Autoriser » si le téléphone le demande). La liste s'ouvrira toute seule.": "\"File transfer\" (and \"Allow\" if the phone asks). The list will open by itself.",
+"· Pages encaissées :": "· Pages paid:",
+"· Pages faites sur les machines :": "· Pages made on the machines:",
+"À crédit": "On credit",
+"À crédit (impayé)": "On credit (unpaid)",
+"À donner au porteur du projet lors d'une visite (clé USB, ou envoyé par vous-même si vous avez du réseau) — il l'utilise pour suivre l'état de votre licence et de votre sauvegarde, sans que ce PC soit connecté à internet.": "To give to the project owner during a visit (USB stick, or sent by you if you have signal) — they use it to follow the state of your licence and backup, without this PC being connected to the internet.",
+"À faire une fois par semaine": "To do once a week",
+"À faire une seule fois : allumez le partage de connexion du téléphone et donnez-lui un nom et un mot de passe simples ; connectez ce PC à ce réseau (en cochant « se connecter automatiquement ») ; recopiez ce nom et ce mot de passe ci-dessous. Le client scanne alors le QR 1 pour rejoindre le réseau, puis le QR 2 pour ouvrir la page — sans jamais rien taper, et un seul scan dès sa deuxième visite.": "To do only once: turn on the phone's hotspot and give it a simple name and password; connect this PC to that network (ticking \"connect automatically\"); copy that name and password below. The customer then scans QR 1 to join the network, then QR 2 to open the page — never typing anything, and a single scan from their second visit.",
+"À garder près de l'ordinateur": "To keep near the computer",
+"À l'instant": "Just now",
+"À ouvrir/éditer": "To open/edit",
+"À quoi sert ce numéro : il est mis dans le QR de l'affiche du guichet. Un client iPhone qui le scanne voit « Envoyer par WhatsApp », qui ouvre directement la discussion avec ce numéro. Sans numéro ici, les clients iPhone ne peuvent pas envoyer par ce moyen. Réimprimez l'affiche après l'avoir changé.": "What this number is for: it is put in the QR code on the counter poster. An iPhone customer who scans it sees \"Send by WhatsApp\", which opens the chat with this number directly. Without a number here, iPhone customers cannot send this way. Print the poster again after changing it.",
+"À régler une fois à l'installation, rarement retouché ensuite.": "Set once at installation, rarely changed after.",
+"Écart constaté": "Difference found",
+"Écart entre ce qui est facturé et ce qui est imprimé": "Difference between what is billed and what is printed",
+"Écouter un exemple": "Listen to an example",
+"Électricité": "Electricity",
+"Étape 1 sur 2 — Votre boutique": "Step 1 of 2 — Your shop",
+"Étape 2 sur 2 — Essai gratuit": "Step 2 of 2 — Free trial",
+"État de votre poste": "Your computer's status",
+"à saisir à la main": "to enter by hand",
+"— y compris ce qui est imprimé directement depuis Word, sans passer par l'application — il faut l'activer une seule fois.": "— including what is printed directly from Word, without going through the app — it has to be turned on once.",
+"… mais le Wi-Fi local n'est pas allumé.": "… but the local Wi-Fi is not turned on.",
+"ℹ️ USB : impressions du PC visibles, photocopies sur la vitre invisibles": "ℹ️ USB: PC prints visible, copies on the glass invisible",
+"ℹ️ impressions du PC visibles": "ℹ️ PC prints visible",
+"← Retour": "← Back",
+"⋮ en haut": "⋮ at the top",
+"⚠ stock bas": "⚠ low stock",
+"⚠️ Ce QR fait rejoindre le Wi-Fi": "⚠️ This QR code joins the Wi-Fi",
+"⚠️ Journal illisible": "⚠️ Unreadable log",
+"⚠️ La restauration n'a pas eu lieu — vos données actuelles sont intactes.": "⚠️ The restore did not happen — your current data is intact.",
+"⚠️ Le Wi-Fi de la boutique s'est éteint et ne se rallume pas. Ouvrez la fenêtre du QR et touchez « Activer le Wi-Fi local ».": "⚠️ The shop's Wi-Fi turned off and won't turn back on. Open the QR window and tap \"Turn on the local Wi-Fi\".",
+"⚠️ Le Wi-Fi local n'a pas pu être activé.": "⚠️ The local Wi-Fi could not be turned on.",
+"⚠️ Le document n'a pas pu être supprimé — il est peut-être ouvert dans un autre": "⚠️ The document could not be deleted — it may be open in another",
+"⚠️ Programme sans signature officielle — ne pas l'ouvrir. Une vraie mise à jour de Gestion Photocopie est reconnue toute seule.": "⚠️ Program without an official signature — do not open it. A real Gestion Photocopie update is recognised by itself.",
+"⚠️ en réseau, mais la machine ne donne pas son compteur : photocopies invisibles": "⚠️ on the network, but the machine doesn't give its counter: copies invisible",
+"⚠️ Écart": "⚠️ Difference",
+"⚡ URGENT": "⚡ URGENT",
+"⛔ Accès suspendu": "⛔ Access suspended",
+"✅ Toutes les pages imprimées ont été encaissées.": "✅ All printed pages have been paid for.",
+"✓ Activé. Les impressions apparaîtront ici dans les secondes qui suivent.": "✓ Turned on. Prints will appear here within seconds.",
+"✓ Compteur d'entretien réinitialisé": "✓ Maintenance counter reset",
+"✓ Contrôle activé. Les impressions sont comptées à partir de maintenant.": "✓ Monitoring turned on. Prints are counted from now on.",
+"✓ Document supprimé": "✓ Document deleted",
+"✓ Durée de conservation enregistrée": "✓ Retention period saved",
+"✓ Dépense enregistrée": "✓ Expense saved",
+"✓ Détails copiés": "✓ Details copied",
+"✓ Détails enregistrés": "✓ Details saved",
+"✓ Enregistré": "✓ Saved",
+"✓ Enregistré. La page Internet est mise à jour dans la minute.": "✓ Saved. The online page is updated within a minute.",
+"✓ Exemples ajoutés à la file d'attente": "✓ Examples added to the queue",
+"✓ Exemples retirés": "✓ Examples removed",
+"✓ Impayé marqué comme réglé": "✓ Unpaid order marked as settled",
+"✓ Impression confirmée": "✓ Print confirmed",
+"✓ Installation validée — merci !": "✓ Installation approved — thank you!",
+"✓ Le logiciel démarrera en arrière-plan avec Windows": "✓ The software will start in the background with Windows",
+"✓ Licence activée depuis la clé USB — merci !": "✓ Licence activated from the USB stick — thank you!",
+"✓ Licence activée — merci !": "✓ Licence activated — thank you!",
+"✓ Message copié": "✓ Message copied",
+"✓ Nom Bluetooth enregistré — visible par vos clients dès maintenant": "✓ Bluetooth name saved — visible to your customers right away",
+"✓ Pays enregistré : les prix s'affichent dans sa monnaie.": "✓ Country saved: prices show in its currency.",
+"✓ Rapport copié — colle-le dans un message au porteur du projet": "✓ Report copied — paste it in a message to the project owner",
+"✓ Rapport copié — collez-le dans WhatsApp": "✓ Report copied — paste it in WhatsApp",
+"✓ Réglage des reçus enregistré": "✓ Receipt setting saved",
+"✓ Réglages de fidélité enregistrés": "✓ Loyalty settings saved",
+"✓ Réglages enregistrés": "✓ Settings saved",
+"✓ Sauvegarde effectuée": "✓ Backup done",
+"✓ Suivi des impressions allumé.": "✓ Print tracking turned on.",
+"✓ Tout est réparé.": "✓ Everything is repaired.",
+"✓ Wi-Fi de la boutique rallumé automatiquement.": "✓ Shop Wi-Fi turned back on automatically.",
+"✓ Wi-Fi enregistré — le QR l'utilisera dès maintenant": "✓ Wi-Fi saved — the QR code will use it from now on",
+"✓ Wi-Fi local activé — rafraîchissement du QR…": "✓ Local Wi-Fi turned on — refreshing the QR code…",
+"✓ Windows redemandera le programme à la prochaine ouverture": "✓ Windows will ask for the program again next time it opens",
+"❌ Avec la": "❌ With the",
+"🌍 Ma boutique sur Internet": "🌍 My shop online",
+"🌍 Par Internet": "🌍 Online",
+"🎁 Remise fidélité appliquée (client régulier)": "🎁 Loyalty discount applied (regular customer)",
+"🎉 Mise à jour installée !": "🎉 Update installed!",
+"👋 Bonjour ! Prêt pour une nouvelle journée.": "👋 Hello! Ready for a new day.",
+"💬 Prévenir": "💬 Notify",
+"💾 Aucune clé USB n'est visible.": "💾 No USB stick is visible.",
+"💾 La clé est bien lue, mais elle ne contient aucun document imprimable": "💾 The USB stick is read, but it contains no printable document",
+"📂 Ouvrir": "📂 Open",
+"📋 Ce que les téléphones ont demandé": "📋 What the phones asked for",
+"📋 Ce que les téléphones ont demandé à ce PC": "📋 What the phones asked this PC",
+"📡 Lien direct avec les téléphones": "📡 Direct link with phones",
+"📱 Aucun fichier reçu sur WhatsApp n'est enregistré sur ce téléphone.": "📱 No file received on WhatsApp is saved on this phone.",
+"📱 Aucun téléphone branché n'est visible.": "📱 No plugged-in phone is visible.",
+"📱 DÉVERROUILLEZ le téléphone, touchez la notification « USB » et choisissez « Transfert de fichiers »": "📱 UNLOCK the phone, tap the \"USB\" notification and choose \"File transfer\"",
+"📱 Le téléphone est vu, mais ses fichiers ne sont pas accessibles.": "📱 The phone is seen, but its files are not accessible.",
+"📱 Le téléphone n'a pas montré ses fichiers. Déverrouillez-le, choisissez « Transfert de fichiers », puis appuyez sur 📱.": "📱 The phone did not show its files. Unlock it, choose \"File transfer\", then press 📱.",
+"📱 Téléphone branché. DÉVERROUILLEZ-le, touchez la notification « USB » et choisissez": "📱 Phone plugged in. UNLOCK it, tap the \"USB\" notification and choose",
+"📱 Un client est sur le Wi-Fi": "📱 A customer is on the Wi-Fi",
+"📵 Par le Wi-Fi de la boutique :": "📵 Over the shop's Wi-Fi:",
+"📶 Activer le Wi-Fi local de la boutique": "📶 Turn on the shop's local Wi-Fi",
+"📶 en haut": "📶 at the top",
+"🔊 Vocal": "🔊 Voice",
+"🔒 Installation à valider": "🔒 Installation to be approved",
+"🔒 PDF probablement protégé par mot de passe — le demander au client": "🔒 PDF probably password-protected — ask the customer for it",
+"🔔 Tester les sons": "🔔 Test the sounds",
+"🔔 Trois sons joués — si vous n'entendez rien, vérifiez le volume de Windows": "🔔 Three sounds played — if you hear nothing, check the Windows volume",
+"🔧 Outils techniques": "🔧 Technical tools",
+"🔧 Petit rappel : l'imprimante approche du seuil d'entretien préventif": "🔧 Quick reminder: the printer is nearing its preventive maintenance threshold",
+"🔧 Réparation : le logiciel redémarre.": "🔧 Repair: the software is restarting.",
+"🖨️ Imprimer sur": "🖨️ Print on",
+"🖨️ Rapport imprimable": "🖨️ Printable report",
+"🗑️ Document supprimé": "🗑️ Document deleted",
+"🚫 Bloquer": "🚫 Block",
+"🧪 Tester avec mon téléphone": "🧪 Test with my phone",
+". Elle sera rallumée toute seule.": ". It will be turned back on by itself.",
+". Sans lettre, pas de piège de majuscule, et tout le monde le tape du premier coup. 8 caractères au minimum : c'est la règle du Wi-Fi.": ". No letters, no capital-letter trap, and everyone types it right the first time. 8 characters minimum: that's the Wi-Fi rule."
+},
+"motifs": [
+[
+", attente {1} min",
+", waiting {1} min"
+],
+[
+", mot de passe « {1} »",
+", password \"{1}\""
+],
+[
+"= {1} feuille{2} au total",
+"= {1} sheet{2} in total"
+],
+[
+"Abonnement actif (jusqu'au {1})",
+"Subscription active (until {1})"
+],
+[
+"Activation impossible : {1}",
+"Cannot activate: {1}"
+],
+[
+"Afficher {1} fichier(s) plus ancien(s)",
+"Show {1} older file(s)"
+],
+[
+"Aide — {1}",
+"Help — {1}"
+],
+[
+"Ajouter {1} document{2} à la file",
+"Add {1} document{2} to the queue"
+],
+[
+"Attendu {1}, compté {2} — écart de {3}.",
+"Expected {1}, counted {2} — difference of {3}."
+],
+[
+"Aujourd'hui ({1})",
+"Today ({1})"
+],
+[
+"Bloquer {1} ? Ce numéro ne pourra plus vous envoyer de commandes par Internet. Vous pourrez le débloquer dans Réglages → Ma boutique sur Internet.",
+"Block {1}? This number will no longer be able to send you orders online. You can unblock it in Settings → My shop online."
+],
+[
+"Bonjour, je veux valider l'installation de Gestion Photocopie. Identifiant de mon ordinateur : {1}",
+"Hello, I want to approve the installation of Gestion Photocopie. My computer's identifier: {1}"
+],
+[
+"Bonjour, mon abonnement Gestion Photocopie est terminé, je veux le renouveler. Identifiant de mon ordinateur : {1}",
+"Hello, my Gestion Photocopie subscription has ended, I want to renew it. My computer's identifier: {1}"
+],
+[
+"Bonjour{1}, au sujet de votre commande{2}{3} :",
+"Hello{1}, about your order{2}{3}:"
+],
+[
+"Bonjour{1}, votre commande{2} est prête{3}. Vous pouvez passer la retirer.",
+"Hello{1}, your order{2} is ready{3}. You can come and collect it."
+],
+[
+"C'est fait, mais un point reste à voir : {1} Si rien ne change, envoyez le rapport au support.",
+"Done, but one point remains: {1} If nothing changes, send the report to support."
+],
+[
+"Ce QR ouvre directement la page d'envoi ({1}) dans le navigateur du client.",
+"This QR code opens the sending page ({1}) directly in the customer's browser."
+],
+[
+"Ce stock n'a pas été enregistré : {1}",
+"This stock was not saved: {1}"
+],
+[
+"Ce tarif n'a pas été enregistré : {1}",
+"This price was not saved: {1}"
+],
+[
+"Cet impayé n'a pas pu être mis à jour : {1}",
+"This unpaid order could not be updated: {1}"
+],
+[
+"Cette dépense n'a pas été enregistrée : {1}",
+"This expense was not saved: {1}"
+],
+[
+"Client : {1}",
+"Customer: {1}"
+],
+[
+"Commande urgente {1}{2}, {3}.",
+"Urgent order {1}{2}, {3}."
+],
+[
+"Commande {1}{2}, {3}, à préparer pour {4}.",
+"Order {1}{2}, {3}, to prepare for {4}."
+],
+[
+"Confirmer que {1} a bien payé {2} ?",
+"Confirm that {1} has paid {2}?"
+],
+[
+"Copie de {1} document{2} depuis le téléphone…",
+"Copying {1} document{2} from the phone…"
+],
+[
+"Couleur : {1} · Noir & Blanc : {2}",
+"Colour: {1} · Black & White: {2}"
+],
+[
+"Dépenses : {1}",
+"Expenses: {1}"
+],
+[
+"Essai gratuit — {1} jour(s) restant(s)",
+"Free trial — {1} day(s) left"
+],
+[
+"Essai — {1}j",
+"Trial — {1}d"
+],
+[
+"Format détecté : {1} (pas A4) — vérifier l'ajustement à l'impression",
+"Size detected: {1} (not A4) — check the fit when printing"
+],
+[
+"Grille tarifaire ({1})",
+"Price list ({1})"
+],
+[
+"Généré le {1}",
+"Generated on {1}"
+],
+[
+"Identifiant machine (à communiquer au porteur du projet) : {1}",
+"Machine identifier (to give to the project owner): {1}"
+],
+[
+"Impayés : {1}",
+"Unpaid: {1}"
+],
+[
+"Impossible de changer ce réglage ({1})",
+"Cannot change this setting ({1})"
+],
+[
+"J'attends la page… {1} s",
+"Waiting for the page… {1} s"
+],
+[
+"J'attends le téléphone… {1} s",
+"Waiting for the phone… {1} s"
+],
+[
+"La clé n'a pas pu être enregistrée ({1}). Réessayez, puis appelez le +229 01 51 22 67 41 si cela persiste.",
+"The key could not be saved ({1}). Try again, then call +229 01 51 22 67 41 if it continues."
+],
+[
+"La clé n'a pas pu être enregistrée : {1}",
+"The key could not be saved: {1}"
+],
+[
+"La clôture n'a pas pu être enregistrée : {1}",
+"The closing could not be saved: {1}"
+],
+[
+"Le code n'a pas pu être vérifié ({1}). Réessayez, puis appelez le +229 01 51 22 67 41 si cela persiste.",
+"The code could not be checked ({1}). Try again, then call +229 01 51 22 67 41 if it continues."
+],
+[
+"Le prix n'a pas pu être calculé automatiquement ({1}) — saisissez le montant vous-même.",
+"The price could not be calculated automatically ({1}) — enter the amount yourself."
+],
+[
+"Les exemples n'ont pas pu être ajoutés : {1}",
+"The examples could not be added: {1}"
+],
+[
+"Les exemples n'ont pas pu être retirés : {1}",
+"The examples could not be removed: {1}"
+],
+[
+"Logo actuel : {1}",
+"Current logo: {1}"
+],
+[
+"Message vocal illisible : {1}",
+"Unreadable voice message: {1}"
+],
+[
+"Mise à jour disponible ({1})",
+"Update available ({1})"
+],
+[
+"Mise à jour officielle vérifiée : version {1} (vous avez la {2}).",
+"Official update verified: version {1} (you have {2})."
+],
+[
+"Nouveau document{1} reçu{2}{3}.",
+"New document{1} received{2}{3}."
+],
+[
+"Nouvelle commande {1}{2}, {3}.",
+"New order {1}{2}, {3}."
+],
+[
+"Ouvrez votre Wi-Fi et touchez {1} : la page d'envoi s'ouvre.",
+"Open your Wi-Fi and tap {1}: the sending page opens."
+],
+[
+"Pages {1}",
+"Pages {1}"
+],
+[
+"Papier {1}",
+"Paper {1}"
+],
+[
+"Par imprimante : {1}",
+"By printer: {1}"
+],
+[
+"Recto-verso : {1} · Recto simple : {2}",
+"Double-sided: {1} · Single-sided: {2}"
+],
+[
+"Remplacer les données actuelles par la sauvegarde du {1} ?",
+"Replace the current data with the backup from {1}?"
+],
+[
+"Suivi des impressions non allumé : {1}",
+"Print tracking not turned on: {1}"
+],
+[
+"Supprimer définitivement \"{1}\" ?",
+"Permanently delete \"{1}\"?"
+],
+[
+"Touchez {1}",
+"Tap {1}"
+],
+[
+"Tout correspond : {1}.",
+"Everything matches: {1}."
+],
+[
+"Tél. {1} — à relancer",
+"Tel. {1} — to follow up"
+],
+[
+"Version {1}",
+"Version {1}"
+],
+[
+"Voix utilisée : {1}.",
+"Voice used: {1}."
+],
+[
+"WhatsApp ne s'est pas ouvert : {1}",
+"WhatsApp did not open: {1}"
+],
+[
+"Wi-Fi « {1} »",
+"Wi-Fi \"{1}\""
+],
+[
+"appelez le +229 01 51 22 67 41 avant de toucher à autre chose. Détail : {1}",
+"call +229 01 51 22 67 41 before touching anything else. Detail: {1}"
+],
+[
+"imprimée {1}",
+"printed {1}"
+],
+[
+"programme. Fermez-le, puis réessayez. Détail : {1}",
+"program. Close it, then try again. Detail: {1}"
+],
+[
+"prête {1}",
+"ready {1}"
+],
+[
+"reçu par {1}{2}",
+"received by {1}{2}"
+],
+[
+"reçu à {1}",
+"received at {1}"
+],
+[
+"reçue {1}",
+"received {1}"
+],
+[
+"se termine dans {1} jours",
+"ends in {1} days"
+],
+[
+"{1} (par {2}) :",
+"{1} (by {2}):"
+],
+[
+"{1} : facturé {2}, imprimé {3}",
+"{1}: billed {2}, printed {3}"
+],
+[
+"{1} : le client voit « Prêt à retirer ».",
+"{1}: the customer sees \"Ready to collect\"."
+],
+[
+"{1} Ko",
+"{1} KB"
+],
+[
+"{1} Mo",
+"{1} MB"
+],
+[
+"{1} Si rien ci-dessus ne débloque la situation, copiez ce message et",
+"{1} If nothing above solves it, copy this message and"
+],
+[
+"{1} ajouté(s), {2} non copié(s). Gardez le",
+"{1} added, {2} not copied. Keep the"
+],
+[
+"{1} documents ajoutés à la file.",
+"{1} documents added to the queue."
+],
+[
+"{1} documents trouvés sur la clé. Cochez ceux à imprimer.",
+"{1} documents found on the USB stick. Tick the ones to print."
+],
+[
+"{1} est bloqué pour les commandes par Internet.",
+"{1} is blocked for online orders."
+],
+[
+"{1} feuille{2} à facturer",
+"{1} sheet{2} to bill"
+],
+[
+"{1} il y a {2} min — remise au client ? Touchez « Encaisser ».",
+"{1} {2} min ago — handed to the customer? Tap \"Take payment\"."
+],
+[
+"{1} pages par feuille",
+"{1} pages per sheet"
+],
+[
+"{1} — du {2} au {3}",
+"{1} — from {2} to {3}"
+],
+[
+"{1} — {2} : {3} page(s) · {4}",
+"{1} — {2}: {3} page(s) · {4}"
+],
+[
+"{1} — {2} Ko",
+"{1} — {2} KB"
+],
+[
+"· Payés : {1} · Ignorés : {2} · En attente : {3}",
+"· Paid: {1} · Ignored: {2} · Waiting: {3}"
+],
+[
+"Étape {1} sur {2}",
+"Step {1} of {2}"
+],
+[
+"×{1} exemplaire{2}",
+"×{1} cop{2}"
+],
+[
+"⏳ {1} en attente depuis plus de 30 min",
+"⏳ {1} waiting for more than 30 min"
+],
+[
+"⚠️ Ce fichier n'a pas pu s'ouvrir — il est peut-être corrompu ou dans un format non pris en charge. Détail : {1}",
+"⚠️ This file could not open — it may be corrupted or in an unsupported format. Detail: {1}"
+],
+[
+"⚠️ Ce fichier n'a pas pu être mis à jour. Réessayez dans un instant. Détail : {1}",
+"⚠️ This file could not be updated. Try again in a moment. Detail: {1}"
+],
+[
+"⚠️ Ces détails n'ont pas pu être enregistrés. Réessayez dans un instant. Détail : {1}",
+"⚠️ These details could not be saved. Try again in a moment. Detail: {1}"
+],
+[
+"⚠️ Impossible d'ouvrir les paramètres Windows automatiquement. Ouvrez-les vous-même : Paramètres → Réseau et Internet → Partage de connexion. Détail : {1}",
+"⚠️ Could not open Windows settings automatically. Open them yourself: Settings → Network & Internet → Mobile hotspot. Detail: {1}"
+],
+[
+"⚠️ Impression non confirmée : {1}",
+"⚠️ Print not confirmed: {1}"
+],
+[
+"⚠️ L'encaissement n'a pas pu être enregistré. Réessayez dans un instant — rien n'a été perdu. Détail : {1}",
+"⚠️ The payment could not be saved. Try again in a moment — nothing was lost. Detail: {1}"
+],
+[
+"⚠️ Le document n'a pas pu s'ouvrir. Il est peut-être abîmé, ou aucun programme de ce PC ne sait l'ouvrir (installez un lecteur PDF). Détail : {1}",
+"⚠️ The document could not open. It may be damaged, or no program on this PC can open it (install a PDF reader). Detail: {1}"
+],
+[
+"⚠️ Le reçu n'a pas pu s'imprimer. Vérifiez l'imprimante et réessayez depuis l'historique. Détail : {1}",
+"⚠️ The receipt could not print. Check the printer and try again from the history. Detail: {1}"
+],
+[
+"⚠️ Wi-Fi de la boutique allumé ({1}), mais avec un problème :",
+"⚠️ Shop Wi-Fi turned on ({1}), but with a problem:"
+],
+[
+"⚠️ {1} {2} — ensuite, l'application ne pourra plus être utilisée.",
+"⚠️ {1} {2} — after that, the app can no longer be used."
+],
+[
+"⚠️ Écart avec la facturation — {1}",
+"⚠️ Billing difference — {1}"
+],
+[
+"⚠️ Écart — {1}",
+"⚠️ Difference — {1}"
+],
+[
+"✅ tout est visible, photocopies comprises (compteur : {1})",
+"✅ everything is visible, copies included (counter: {1})"
+],
+[
+"✓ Impression confirmée ({1} page{2})",
+"✓ Print confirmed ({1} page{2})"
+],
+[
+"✓ Wi-Fi de la boutique allumé ({1})",
+"✓ Shop Wi-Fi turned on ({1})"
+],
+[
+"🌙 Résumé du jour : {1} commande(s), {2} encaissés. Bénéfice net : {3}.",
+"🌙 Day's summary: {1} order(s), {2} taken. Net profit: {3}."
+],
+[
+"👋 Bonjour ! Hier : {1} commande(s), {2} encaissés.",
+"👋 Hello! Yesterday: {1} order(s), {2} taken."
+],
+[
+"🖨️ Depuis le PC : {1}",
+"🖨️ From the PC: {1}"
+],
+[
+"Bloquée : {1}",
+"Blocked: {1}"
+],
+[
+"Fichier trop volumineux pour l'aperçu intégré ({1} Mo) — imprimez directement.",
+"File too large for the built-in preview ({1} MB) — print directly."
+],
+[
+"Impossible d'ouvrir le dossier : {1}",
+"Cannot open the folder: {1}"
+],
+[
+"Impossible d'ouvrir le fichier (code {1})",
+"Cannot open the file (code {1})"
+],
+[
+"Impossible d'écrire le démarrage automatique ({1}).",
+"Cannot write the automatic start-up ({1})."
+],
+[
+"Impossible de préparer la commande ({1}).",
+"Cannot prepare the order ({1})."
+],
+[
+"Impossible de préparer la lecture du téléphone ({1}).",
+"Cannot prepare reading the phone ({1})."
+],
+[
+"Impossible de préparer le démarrage automatique ({1}).",
+"Cannot prepare the automatic start-up ({1})."
+],
+[
+"Impossible de supprimer le fichier : {1}",
+"Cannot delete the file: {1}"
+],
+[
+"Windows n'a pas pu lire le téléphone ({1}).",
+"Windows could not read the phone ({1})."
+],
+[
+"{1} feuille(s) facturée(s)",
+"{1} sheet(s) billed"
+],
+[
+"{1} feuille(s) réellement imprimée(s)",
+"{1} sheet(s) actually printed"
+],
+[
+"⚠️ Wi-Fi du PC : {1}",
+"⚠️ PC Wi-Fi: {1}"
+],
+[
+"🎉 Merci pour votre fidélité ! Une réduction de {1}% a été appliquée.",
+"🎉 Thank you for your loyalty! A {1}% discount has been applied."
+]
+]
+}

@@ -88,7 +88,7 @@ class BalayageRecepteur : BroadcastReceiver() {
     private fun proposerEnvoi(ctx: Context, rssi: Int) {
         val gestionnaire = ctx.getSystemService(NotificationManager::class.java) ?: return
         gestionnaire.createNotificationChannel(
-            NotificationChannel("kiosque", "Kiosque à côté", NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel("kiosque", tr("Kiosque à côté", "Kiosk nearby"), NotificationManager.IMPORTANCE_HIGH)
         )
         val ouvrir = PendingIntent.getActivity(
             ctx,
@@ -101,8 +101,8 @@ class BalayageRecepteur : BroadcastReceiver() {
         val notification = Notification.Builder(ctx, "kiosque")
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(0xFF1F4FD1.toInt())
-            .setContentTitle("Kiosque photocopie à côté")
-            .setContentText("Touchez pour envoyer un document au kiosque.")
+            .setContentTitle(tr("Kiosque photocopie à côté", "Print kiosk nearby"))
+            .setContentText(tr("Touchez pour envoyer un document au kiosque.", "Tap to send a document to the kiosk."))
             .setSubText("signal $rssi dBm")
             .setContentIntent(ouvrir)
             .setAutoCancel(true)

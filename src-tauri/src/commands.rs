@@ -407,7 +407,7 @@ pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value,
         "fiche_plan": db::get_setting(&conn, "fiche_plan"),
         "numeros_bloques": db::get_setting(&conn, "numeros_bloques"),
         "pays": crate::pays::pays(db::get_setting(&conn, "pays").as_deref()).code,
-        "langue": db::get_setting(&conn, "langue").unwrap_or_else(|| "fr".into()),
+        "langue": db::get_setting(&conn, "langue"),
     }))
 }
 

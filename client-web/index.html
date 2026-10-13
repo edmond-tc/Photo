@@ -593,14 +593,15 @@ setTimeout(function () {
     if (!DICO || !t) return t;
     const c = t.trim();
     if (!c) return t;
-    let r = DICO[c];
-    if (r === undefined) for (const [re, en] of MOTIFS) { const m = c.match(re); if (m) { r = en.replace(/\{(\d+)\}/g, (_, i) => T(m[i] || "")); break; } }
+    const k = c.replace(/\s+/g, " ");
+    let r = DICO[k];
+    if (r === undefined) for (const [re, en] of MOTIFS) { const m = k.match(re); if (m) { r = en.replace(/\{(\d+)\}/g, (_, i) => T(m[i] || "")); break; } }
     return r === undefined ? t : t.replace(c, r);
   }
   function traduire(n) {
     if (n.nodeType === 3) { const v = T(n.nodeValue); if (v !== n.nodeValue) n.nodeValue = v; return; }
     if (n.nodeType !== 1 || n.tagName === "SCRIPT" || n.tagName === "STYLE") return;
-    for (const a of ["placeholder", "aria-label", "title"]) { const v = n.getAttribute(a); const w = v && T(v); if (w !== v) n.setAttribute(a, w); }
+    for (const a of ["placeholder", "aria-label", "title", "alt"]) { const v = n.getAttribute(a); const w = v && T(v); if (w !== v) n.setAttribute(a, w); }
     n.childNodes.forEach(traduire);
   }
   if (EN) {

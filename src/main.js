@@ -1,6 +1,76 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// ── Langue : français ou anglais ──────────────────────────────────────
+// Réglages → Boutique → Langue ; par défaut, celle de Windows. Le
+// dictionnaire (langue-en.json) traduit tout texte affiché, même ajouté plus
+// tard (MutationObserver) ; ce qui est enregistré (commandes, comptes)
+// reste tel quel. Vérifié par scripts/langue/verifier.mjs.
+let LANGUE = "fr";
+const LOCALE = () => (LANGUE === "en" ? "en-GB" : "fr-FR");
+let DICO = null;
+let MOTIFS = [];
+function T(t) {
+  if (!DICO || !t) return t;
+  const c = String(t).trim();
+  if (!c) return t;
+  const k = c.replace(/\s+/g, " ");
+  let r = DICO[k];
+  if (r === undefined) {
+    for (const [re, en] of MOTIFS) {
+      const m = k.match(re);
+      if (m) {
+        r = en.replace(/\{(\d+)\}/g, (_, i) => T(m[i] || ""));
+        break;
+      }
+    }
+  }
+  return r === undefined ? t : String(t).replace(c, r);
+}
+function traduire(n) {
+  if (n.nodeType === 3) {
+    const v = T(n.nodeValue);
+    if (v !== n.nodeValue) n.nodeValue = v;
+    return;
+  }
+  if (n.nodeType !== 1 || n.tagName === "SCRIPT" || n.tagName === "STYLE") return;
+  for (const a of ["placeholder", "aria-label", "title", "alt"]) {
+    const v = n.getAttribute(a);
+    const w = v && T(v);
+    if (w !== v) n.setAttribute(a, w);
+  }
+  if ((n.tagName === "INPUT" && /^(button|submit)$/i.test(n.type)) && n.value) n.value = T(n.value);
+  n.childNodes.forEach(traduire);
+}
+async function chargerLangue() {
+  try {
+    const p = await invoke("get_boutique_settings");
+    LANGUE = p.langue || (/^en/i.test(navigator.language || "") ? "en" : "fr");
+  } catch {}
+  if (LANGUE !== "en") return;
+  try {
+    const d = await (await fetch("langue-en.json")).json();
+    DICO = d.textes;
+    MOTIFS = d.motifs.map(([fr, en]) => [
+      new RegExp("^" + fr.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{\d+\}/g, "([\\s\\S]*?)") + "$"),
+      en,
+    ]);
+  } catch {
+    return;
+  }
+  document.documentElement.lang = "en";
+  document.title = T(document.title);
+  traduire(document.body);
+  new MutationObserver((l) =>
+    l.forEach((m) => (m.type === "characterData" ? traduire(m.target) : m.addedNodes.forEach(traduire)))
+  ).observe(document.body, { childList: true, subtree: true, characterData: true });
+  // Fenêtres de confirmation de Windows : traduites elles aussi.
+  const confirmer = window.confirm.bind(window);
+  const alerter = window.alert.bind(window);
+  window.confirm = (m) => confirmer(T(String(m)));
+  window.alert = (m) => alerter(T(String(m)));
+}
+
 const listeEl = document.querySelector("#liste-fichiers");
 const etatVideEl = document.querySelector("#etat-vide");
 const tplLigne = document.querySelector("#tpl-ligne-fichier");
@@ -42,7 +112,7 @@ function echapperHtml(valeur) {
 
 function formatHeure(isoString) {
   try {
-    return new Date(isoString).toLocaleTimeString("fr-FR", {
+    return new Date(isoString).toLocaleTimeString(LOCALE(), {
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -59,7 +129,7 @@ async function chargerDevise() {
 }
 
 function formatFcfa(montant) {
-  return `${Number(montant ?? 0).toLocaleString("fr-FR")} ${DEVISE}`;
+  return `${Number(montant ?? 0).toLocaleString(LOCALE())} ${DEVISE}`;
 }
 
 // ── Sons ──────────────────────────────────────────────────────────────
@@ -154,9 +224,11 @@ function modeAnnonce() {
     return "voix";
   }
 }
+// Voix de la langue choisie (française, ou anglaise).
 function voixFrancaise() {
   try {
-    return window.speechSynthesis?.getVoices().find((v) => /^fr([-_]|$)/i.test(v.lang)) ?? null;
+    const langue = LANGUE === "en" ? /^en([-_]|$)/i : /^fr([-_]|$)/i;
+    return window.speechSynthesis?.getVoices().find((v) => langue.test(v.lang)) ?? null;
   } catch {
     return null;
   }
@@ -169,7 +241,7 @@ function parler(texte) {
   const voix = voixFrancaise();
   if (!voix) return false;
   try {
-    const phrase = new SpeechSynthesisUtterance(texte);
+    const phrase = new SpeechSynthesisUtterance(T(texte));
     phrase.voice = voix;
     phrase.lang = voix.lang;
     phrase.rate = 0.95;
@@ -179,9 +251,10 @@ function parler(texte) {
     return false;
   }
 }
-const NOMBRES_DITS = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix"];
+const NOMBRES_FR = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix"];
+const NOMBRES_EN = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 function phraseAnnonce(item, n, demande) {
-  const docs = `${NOMBRES_DITS[n] ?? n} document${n > 1 ? "s" : ""}`;
+  const docs = `${(LANGUE === "en" ? NOMBRES_EN : NOMBRES_FR)[n] ?? n} document${n > 1 ? "s" : ""}`;
   const qui = item.client_name ? `, ${item.client_name}` : "";
   if (!item.commande_numero) return `Nouveau document${n > 1 ? "s" : ""} reçu${n > 1 ? "s" : ""}${qui}.`;
   // « C-27 » se dit « C 27 », pas « C tiret 27 ».
@@ -2055,7 +2128,7 @@ async function imprimerRapport(periode) {
     ${ecartsHtml}
     <h3>Détail des impressions</h3>
     ${detailImpressionsHtml}
-    <p class="pied-rapport-imprimable">Généré le ${new Date().toLocaleString("fr-FR")}</p>
+    <p class="pied-rapport-imprimable">Généré le ${new Date().toLocaleString(LOCALE())}</p>
   `;
   // Le contenu n'est visible qu'en impression (voir styles.css, règle
   // @media print) — pas besoin d'une fenêtre à part.
@@ -2488,7 +2561,7 @@ async function rendreReglages(corps) {
       jouerNotification();
       if (modeAnnonce() === "voix") {
         setTimeout(() => {
-          if (!parler("Nouvelle commande C 27, Koffi, deux documents.")) toast("Pas de voix française sur ce PC.", "attention");
+          if (!parler(LANGUE === "en" ? "New order C 27, Koffi, two documents." : "Nouvelle commande C 27, Koffi, deux documents.")) toast("Pas de voix française sur ce PC.", "attention");
         }, 900);
       }
     })
@@ -2558,12 +2631,21 @@ async function rendreReglages(corps) {
   const formPays = document.createElement("form");
   formPays.innerHTML = `
     <label>Pays de la boutique
-      <select id="reg-pays">${infoPays.liste.map((p) => `<option value="${p.code}" ${p.code === infoPays.code ? "selected" : ""}>${echapperHtml(p.nom)} (${echapperHtml(p.devise)})</option>`).join("")}</select>
+      <select id="reg-pays">${infoPays.liste.map((p) => `<option value="${p.code}" ${p.code === infoPays.code ? "selected" : ""}>${echapperHtml(LANGUE === "en" ? p.name : p.nom)} (${echapperHtml(p.devise)})</option>`).join("")}</select>
+    </label>
+    <label>Langue / Language
+      <select id="reg-langue">
+        <option value="fr" ${LANGUE === "fr" ? "selected" : ""}>Français</option>
+        <option value="en" ${LANGUE === "en" ? "selected" : ""}>English</option>
+      </select>
     </label>
     <button type="submit" class="btn-secondaire">Enregistrer le pays</button>`;
   formPays.addEventListener("submit", async (e) => {
     e.preventDefault();
     await invoke("set_boutique_setting", { cle: "pays", valeur: document.querySelector("#reg-pays").value });
+    const langue = document.querySelector("#reg-langue").value;
+    await invoke("set_boutique_setting", { cle: "langue", valeur: langue });
+    if (langue !== LANGUE) return location.reload();
     await chargerDevise();
     toast("✓ Pays enregistré : les prix s'affichent dans sa monnaie.");
   });
@@ -2968,7 +3050,7 @@ async function rendreReglages(corps) {
       secHistoriqueTarifs.appendChild(
         ligneListe(
           `${h.libelle} : ${h.ancien_prix} → ${h.nouveau_prix} ${DEVISE}`,
-          formatHeure(h.changed_at) + " · " + new Date(h.changed_at).toLocaleDateString("fr-FR")
+          formatHeure(h.changed_at) + " · " + new Date(h.changed_at).toLocaleDateString(LOCALE())
         )
       );
     }
@@ -4153,6 +4235,7 @@ function casesUsb() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  await chargerLangue();
   await chargerDevise();
   document.querySelector("#btn-usb-tout").addEventListener("click", () => {
     casesUsb().forEach((c) => {
