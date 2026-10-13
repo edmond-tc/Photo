@@ -1,3 +1,5 @@
+import { paiementActif, creerPaiement, lireTransaction, transactionPayee, signatureValide, DUREES } from "./paiement.js";
+
 // Tableau de bord administrateur pour le porteur du projet "Gestion
 // Photocopie" — suivi des boutiques déployées et génération des clés de
 // licence. Ne reçoit jamais de données des PC des boutiques (ceux-ci ne
@@ -344,7 +346,9 @@ async function pageAccueil(env) {
     .join("");
 
   const { results: demandes } = await env.DB.prepare(
-    `SELECT * FROM demandes WHERE statut = 'en_attente' ORDER BY created_at ASC`
+    `SELECT * FROM demandes WHERE statut = 'en_attente'
+        OR (statut = 'paiement_en_cours' AND created_at < datetime('now', '-15 minutes') AND created_at > datetime('now', '-7 days'))
+     ORDER BY created_at ASC`
   ).all();
 
   const lignesDemandes = demandes
@@ -355,6 +359,10 @@ async function pageAccueil(env) {
         <br><span style="font-size:0.75rem; color:#605e5c">Machine : <code>${echapper(d.machine_id)}</code></span>
         ${d.commentaire ? `<br><span style="font-size:0.8rem; color:#605e5c">${echapper(d.commentaire)}</span>` : ""}
         <br>
+        ${d.statut === "paiement_en_cours" ? `<br><span style="font-size:0.8rem; color:#a4262c">💳 Paiement en ligne commencé, pas encore confirmé par FedaPay.</span>
+        <form method="POST" action="/demandes/${d.id}/verifier" style="display:inline">
+          <button type="submit" class="secondaire" style="font-size:0.8rem; padding:0.3rem 0.6rem">🔎 Vérifier auprès de FedaPay</button>
+        </form>` : ""}
         <form method="POST" action="/demandes/${d.id}/confirmer" style="display:inline">
           <button type="submit" style="font-size:0.8rem; padding:0.3rem 0.6rem">✅ Confirmer et générer la clé</button>
         </form>
@@ -642,6 +650,77 @@ async function pageBoutique(env, id, { cleGeneree } = {}) {
   );
 }
 
+/// Délivre la clé d'une demande (confirmée par le porteur du projet, ou payée
+/// en ligne) : fiche boutique créée au besoin, clé signée, demande close. Le
+/// logiciel de la boutique vient ensuite la chercher tout seul (/api/licence).
+async function delivrerCle(env, demande) {
+  // Une seule délivrance par demande, même si deux avis arrivent ensemble.
+  const prise = await env.DB.prepare(
+    `UPDATE demandes SET statut = 'confirmee' WHERE id = ? AND statut IN ('en_attente', 'paiement_en_cours')`
+  ).bind(demande.id).run();
+  if (!prise.meta || prise.meta.changes !== 1) return null;
+  let boutique = await env.DB.prepare(`SELECT * FROM boutiques WHERE machine_id = ?`).bind(demande.machine_id).first();
+  if (!boutique) {
+    const resultat = await env.DB.prepare(`INSERT INTO boutiques (nom, telephone, machine_id) VALUES (?, ?, ?)`)
+      .bind(demande.nom_boutique, demande.telephone, demande.machine_id)
+      .run();
+    boutique = { id: resultat.meta.last_row_id };
+  }
+  // La nouvelle période commence à la fin de l'actuelle si elle court encore :
+  // payer en avance ne fait rien perdre.
+  const derniere = await env.DB.prepare(
+    `SELECT date_expiration FROM licences WHERE boutique_id = ? ORDER BY date_expiration DESC LIMIT 1`
+  ).bind(boutique.id).first();
+  const reste = derniere ? Math.max(0, Math.ceil((dateDeCle(derniere.date_expiration) - Date.now()) / 86400000)) : 0;
+  const jours = Number(demande.jours_demandes) + reste;
+  const { cle, dateExpiration } = await genererCle(env, demande.machine_id, jours);
+  await env.DB.prepare(`INSERT INTO licences (boutique_id, cle, jours, date_expiration) VALUES (?, ?, ?, ?)`)
+    .bind(boutique.id, cle, jours, dateExpiration)
+    .run();
+  return { boutique, cle, dateExpiration };
+}
+
+/// L'identifiant tel que le logiciel l'affiche (« A1B2-C3D4-… », en
+/// majuscules) : saisi en minuscules ou avec des espaces, il donnerait une clé
+/// qui ne marche pas sur la machine.
+function identifiantMachine(saisi) {
+  const t = borner(saisi, 120).replace(/\s+/g, "");
+  return /^[0-9a-f]{4}(-[0-9a-f]{4}){4}$/i.test(t) ? t.toUpperCase() : t;
+}
+
+/// « 20261107 » (format des clés) → instant ; 0 si illisible.
+function dateDeCle(texte) {
+  const m = String(texte || "").match(/^(\d{4})(\d{2})(\d{2})$/);
+  const t = m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : Date.parse(texte);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/// Prix de l'abonnement par durée, en francs CFA (Paramètres). Vide : pas de
+/// paiement en ligne pour cette durée.
+async function prixAbonnement(env) {
+  const prix = {};
+  for (const j of DUREES) {
+    const v = parseInt(await obtenirParametre(env, `prix_${j}`, ""), 10);
+    if (v > 0) prix[j] = v;
+  }
+  return prix;
+}
+
+/// La demande payée en ligne : vérifiée auprès de FedaPay lui-même, puis clé
+/// délivrée. Rend vrai si la demande est (désormais) close.
+async function verifierPaiement(env, demande) {
+  if (demande.statut === "confirmee") return true;
+  const m = String(demande.commentaire || "").match(/^fedapay:(\d+)$/);
+  if (!m) return false;
+  const prix = await prixAbonnement(env);
+  const montant = prix[demande.jours_demandes];
+  if (!montant) return false;
+  const t = await lireTransaction(env, m[1]);
+  if (!transactionPayee(t, { montant, demandeId: demande.id })) return false;
+  await delivrerCle(env, demande);
+  return true;
+}
+
 async function pageRenouveler(env, { envoye, erreur } = {}) {
   const numeros = await obtenirParametre(env, "numeros_paiement", "");
   const contact = await obtenirParametre(env, "contact_whatsapp", "");
@@ -664,11 +743,31 @@ async function pageRenouveler(env, { envoye, erreur } = {}) {
       </div>`
     : "";
 
+  const prix = paiementActif(env) ? await prixAbonnement(env) : {};
+  const blocEnLigne = Object.keys(prix).length && !envoye
+    ? `<div class="carte" style="border-left:4px solid #0b5cad">
+        <h2>💳 Payer en ligne maintenant</h2>
+        <p>Mobile Money (MTN, Moov…) ou carte. <strong>La nouvelle clé arrive toute seule</strong> dans le logiciel, dans les minutes qui suivent : rien à recopier.</p>
+        <form method="POST" action="/payer">
+          <label>Nom de la boutique <input type="text" name="nom_boutique" required maxlength="120" /></label>
+          <label>Identifiant machine (Réglages &gt; Licence, dans le logiciel) <input type="text" name="machine_id" required maxlength="120" /></label>
+          <label>Votre téléphone <input type="tel" name="telephone" required maxlength="40" /></label>
+          <label>Durée
+            <select name="jours_demandes">
+              ${Object.entries(prix).map(([j, p]) => `<option value="${j}">${j} jours — ${Number(p).toLocaleString("fr-FR")} FCFA</option>`).join("")}
+            </select>
+          </label>
+          <button type="submit">Payer</button>
+        </form>
+      </div>`
+    : "";
+
   return page(
     "Renouveler mon abonnement",
     `${blocNouveautes}
+    ${blocEnLigne}
     <div class="carte">
-      <h1>Renouveler l'abonnement</h1>
+      <h1>${blocEnLigne ? "Ou : payer par Mobile Money puis le signaler" : "Renouveler l'abonnement"}</h1>
       ${
         envoye
           ? `<p style="color:#0e5c1f">Demande envoyée. Le porteur du projet la vérifie et vous enverra
@@ -802,6 +901,8 @@ async function pageNouveautes(env) {
 }
 
 async function pageParametres(env) {
+  const prix = [];
+  for (const j of DUREES) prix.push([j, await obtenirParametre(env, `prix_${j}`, "")]);
   const numeros = await obtenirParametre(env, "numeros_paiement", "");
   const contact = await obtenirParametre(env, "contact_whatsapp", "");
   const montant = await obtenirParametre(env, "montant_indicatif", "");
@@ -817,6 +918,11 @@ async function pageParametres(env) {
         <label>Numéro(s) Mobile Money (un par ligne) <textarea name="numeros_paiement" rows="2">${echapper(numeros)}</textarea></label>
         <label>Montant indicatif à afficher (optionnel) <input type="text" name="montant_indicatif" value="${echapper(montant)}" /></label>
         <label>Ton contact (WhatsApp/téléphone) <input type="text" name="contact_whatsapp" value="${echapper(contact)}" /></label>
+        <h2>💳 Paiement en ligne (FedaPay)</h2>
+        <p style="font-size:0.85rem; color:#605e5c">${paiementActif(env)
+          ? `Clés FedaPay posées (mode ${env.FEDAPAY_MODE === "live" ? "<strong>réel</strong>" : "essai, sans argent"}). Mettez un prix pour chaque durée proposée ; vide = durée non proposée en ligne.`
+          : "Éteint : les clés FedaPay ne sont pas encore posées sur le Worker (voir docs/paiements.md). Les prix ci-dessous serviront dès qu'elles le seront."}</p>
+        ${prix.map(([j, v]) => `<label>Prix ${j} jours (FCFA) <input type="number" min="0" name="prix_${j}" value="${echapper(v)}" /></label>`).join("")}
         <button type="submit">Enregistrer</button>
       </form>
     </div>`
@@ -1267,6 +1373,9 @@ async function router(request, env) {
   "/app",
   "/decouvrir.json",
   "/renouveler",
+  "/payer",
+  "/paiement/fedapay",
+  "/paiement/retour",
 ];
     if (!env.ADMIN_PASSWORD && !PAGES_PUBLIQUES_SANS_MOT_DE_PASSE.includes(pathname)) {
       return new Response(
@@ -1348,7 +1457,7 @@ async function router(request, env) {
 
         const donnees = await request.formData();
         const nomBoutique = borner(donnees.get("nom_boutique"), 120);
-        const machineId = borner(donnees.get("machine_id"), 120);
+        const machineId = identifiantMachine(donnees.get("machine_id"));
         const numeroPaiement = borner(donnees.get("numero_paiement"), 40);
         if (!nomBoutique || !machineId || !numeroPaiement) {
           return new Response(await pageRenouveler(env, { erreur: "Merci de remplir tous les champs obligatoires." }), {
@@ -1372,6 +1481,107 @@ async function router(request, env) {
           .run();
         return new Response(await pageRenouveler(env, { envoye: true }), {
           headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+
+      // ── Paiement en ligne (FedaPay) ──
+      if (pathname === "/payer" && method === "POST") {
+        if (!paiementActif(env)) return new Response(null, { status: 302, headers: { Location: "/renouveler" } });
+        const ip = adresseAppelant(request);
+        if ((await tentativesRecentes(env, `demande:${ip}`)) >= TENTATIVES_MAX) {
+          return new Response(await pageRenouveler(env, { erreur: "Trop de demandes envoyées. Réessayez dans un quart d'heure." }), {
+            status: 429,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+        await enregistrerEchec(env, `demande:${ip}`);
+        const donnees = await request.formData();
+        const nomBoutique = borner(donnees.get("nom_boutique"), 120);
+        const machineId = identifiantMachine(donnees.get("machine_id"));
+        const telephone = borner(donnees.get("telephone"), 40);
+        const jours = parseInt(donnees.get("jours_demandes"), 10);
+        const montant = (await prixAbonnement(env))[jours];
+        if (!nomBoutique || !machineId || !telephone || !montant) {
+          return new Response(await pageRenouveler(env, { erreur: "Merci de remplir tous les champs." }), {
+            status: 400,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+        const r = await env.DB.prepare(
+          `INSERT INTO demandes (machine_id, nom_boutique, telephone, numero_paiement, jours_demandes, statut)
+           VALUES (?, ?, ?, 'paiement en ligne', ?, 'paiement_en_cours')`
+        ).bind(machineId, nomBoutique, telephone, jours).run();
+        const demandeId = r.meta.last_row_id;
+        try {
+          const { id, url: adresse } = await creerPaiement(env, {
+            montant,
+            description: `Gestion Photocopie — ${jours} jours — ${nomBoutique}`.slice(0, 200),
+            retour: `${url.origin}/paiement/retour?d=${demandeId}`,
+            demandeId,
+          });
+          await env.DB.prepare(`UPDATE demandes SET commentaire = ? WHERE id = ?`).bind(`fedapay:${id}`, demandeId).run();
+          return new Response(null, { status: 303, headers: { Location: adresse } });
+        } catch (e) {
+          console.error("Paiement en ligne :", e);
+          await env.DB.prepare(`UPDATE demandes SET statut = 'rejetee' WHERE id = ?`).bind(demandeId).run();
+          return new Response(await pageRenouveler(env, { erreur: "Le paiement en ligne est indisponible pour l'instant. Payez par Mobile Money ci-dessous." }), {
+            status: 502,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+      }
+      // Avis de FedaPay : signature vérifiée, puis la transaction est
+      // redemandée à FedaPay avant toute clé.
+      if (pathname === "/paiement/fedapay" && method === "POST") {
+        const corps = await request.text();
+        if (!(await signatureValide(env.FEDAPAY_SECRET_WEBHOOK, request.headers.get("x-fedapay-signature"), corps))) {
+          return new Response("signature", { status: 400 });
+        }
+        let avis = {};
+        try { avis = JSON.parse(corps); } catch {}
+        const t = avis.entity || avis.object || {};
+        const demandeId = parseInt(t.custom_metadata?.demande_id, 10);
+        if (demandeId > 0) {
+          const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ?`).bind(demandeId).first();
+          if (demande && String(demande.commentaire || "") === `fedapay:${t.id}`) {
+            try { await verifierPaiement(env, demande); } catch (e) { console.error("Avis FedaPay :", e); return new Response("réessayer", { status: 500 }); }
+          }
+        }
+        return new Response("ok");
+      }
+      // Retour du client après la page de paiement : on vérifie aussi de ce
+      // côté, au cas où l'avis de FedaPay tarde.
+      if (pathname === "/paiement/retour" && method === "GET") {
+        const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ?`).bind(parseInt(url.searchParams.get("d"), 10) || 0).first();
+        let paye = false;
+        if (demande && paiementActif(env)) {
+          try { paye = await verifierPaiement(env, demande); } catch (e) { console.error("Retour de paiement :", e); }
+        }
+        return new Response(
+          page(
+            paye ? "Paiement reçu" : "Paiement en attente",
+            `<div class="carte" style="margin-top:2rem">
+              <h1>${paye ? "✅ Paiement reçu, merci !" : "⏳ Paiement pas encore confirmé"}</h1>
+              <p>${paye
+                ? "Votre nouvelle clé est prête. Le logiciel de la boutique la reçoit tout seul dans les minutes qui suivent, dès que l'ordinateur a une connexion. Rien à recopier."
+                : "Si vous avez payé, la confirmation arrive en général en une à deux minutes. Rouvrez cette page plus tard. En cas de souci, écrivez-nous sur WhatsApp."}</p>
+            </div>`,
+            { connecte: false }
+          ),
+          { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
+        );
+      }
+      // Le logiciel de la boutique vient chercher sa dernière clé. Sans
+      // danger : une clé ne marche que sur la machine pour laquelle elle est faite.
+      const matchCle = pathname.match(/^\/api\/licence\/([A-Za-z0-9-]{4,120})$/);
+      if (matchCle && method === "GET") {
+        const l = await env.DB.prepare(
+          `SELECT l.cle, l.date_expiration FROM licences l JOIN boutiques b ON b.id = l.boutique_id
+           WHERE b.machine_id = ? AND b.abonnement_desactive = 0 ORDER BY l.date_expiration DESC, l.id DESC LIMIT 1`
+        ).bind(matchCle[1]).first();
+        if (!l) return new Response(JSON.stringify({}), { status: 404, headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ cle: l.cle, date_expiration: l.date_expiration }), {
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
         });
       }
 
@@ -1530,7 +1740,7 @@ async function router(request, env) {
       }
       if (pathname === "/installations" && method === "POST") {
         const donnees = await request.formData();
-        const machineId = borner(donnees.get("machine_id"), 120);
+        const machineId = identifiantMachine(donnees.get("machine_id"));
         if (!machineId) {
           return new Response(
             await pageInstallations(env, { erreur: "L'identifiant machine est obligatoire." }),
@@ -1555,7 +1765,7 @@ async function router(request, env) {
       if (pathname === "/boutiques/nouvelle" && method === "POST") {
         const donnees = await request.formData();
         const nom = borner(donnees.get("nom"), 120);
-        const machineId = borner(donnees.get("machine_id"), 120);
+        const machineId = identifiantMachine(donnees.get("machine_id"));
         if (!nom || !machineId) {
           return new Response(await pageNouvelleBoutique("Le nom et l'identifiant machine sont obligatoires."), {
             status: 400,
@@ -1633,7 +1843,7 @@ async function router(request, env) {
         if (!boutique) return new Response("Boutique introuvable.", { status: 404 });
         const donnees = await request.formData();
         const nom = borner(donnees.get("nom"), 120);
-        const machineId = borner(donnees.get("machine_id"), 120);
+        const machineId = identifiantMachine(donnees.get("machine_id"));
         if (!nom || !machineId) {
           return new Response(
             await pageModifierBoutique(boutique, "Le nom et l'identifiant machine sont obligatoires."),
@@ -1781,38 +1991,36 @@ async function router(request, env) {
         await definirParametre(env, "numeros_paiement", (donnees.get("numeros_paiement") || "").trim());
         await definirParametre(env, "montant_indicatif", (donnees.get("montant_indicatif") || "").trim());
         await definirParametre(env, "contact_whatsapp", (donnees.get("contact_whatsapp") || "").trim());
+        for (const j of DUREES) {
+          const v = parseInt(donnees.get(`prix_${j}`), 10);
+          await definirParametre(env, `prix_${j}`, v > 0 ? String(v) : "");
+        }
         return new Response(null, { status: 302, headers: { Location: "/parametres" } });
       }
 
       const matchConfirmer = pathname.match(/^\/demandes\/(\d+)\/confirmer$/);
       if (matchConfirmer && method === "POST") {
-        const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ? AND statut = 'en_attente'`)
+        const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ? AND statut IN ('en_attente', 'paiement_en_cours')`)
           .bind(matchConfirmer[1])
           .first();
         if (!demande) return new Response("Demande introuvable ou déjà traitée.", { status: 404 });
-
-        let boutique = await env.DB.prepare(`SELECT * FROM boutiques WHERE machine_id = ?`)
-          .bind(demande.machine_id)
-          .first();
-        if (!boutique) {
-          const resultat = await env.DB.prepare(
-            `INSERT INTO boutiques (nom, telephone, machine_id) VALUES (?, ?, ?)`
-          )
-            .bind(demande.nom_boutique, demande.telephone, demande.machine_id)
-            .run();
-          boutique = { id: resultat.meta.last_row_id };
-        }
-
-        const { cle, dateExpiration } = await genererCle(env, demande.machine_id, demande.jours_demandes);
-        await env.DB.prepare(
-          `INSERT INTO licences (boutique_id, cle, jours, date_expiration) VALUES (?, ?, ?, ?)`
-        )
-          .bind(boutique.id, cle, demande.jours_demandes, dateExpiration)
-          .run();
-        await env.DB.prepare(`UPDATE demandes SET statut = 'confirmee' WHERE id = ?`).bind(demande.id).run();
+        const delivree = await delivrerCle(env, demande);
+        if (!delivree) return new Response("Demande déjà traitée.", { status: 409 });
+        const { boutique, cle, dateExpiration } = delivree;
 
         const html = await pageBoutique(env, boutique.id, { cleGeneree: { cle, dateExpiration } });
         return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+
+      const matchVerifier = pathname.match(/^\/demandes\/(\d+)\/verifier$/);
+      if (matchVerifier && method === "POST") {
+        const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ?`).bind(matchVerifier[1]).first();
+        let paye = false;
+        try { paye = demande ? await verifierPaiement(env, demande) : false; } catch (e) { console.error(e); }
+        return new Response(
+          page("Vérification", `<div class="carte"><p><a href="/">&larr; Retour</a></p><h1>${paye ? "✅ Payé : clé délivrée, le logiciel la reçoit tout seul." : "⏳ FedaPay ne confirme pas (encore) ce paiement."}</h1></div>`),
+          { headers: { "content-type": "text/html; charset=utf-8" } }
+        );
       }
 
       const matchRejeter = pathname.match(/^\/demandes\/(\d+)\/rejeter$/);

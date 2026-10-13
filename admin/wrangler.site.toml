@@ -10,6 +10,14 @@ type = "Data"
 globs = ["**/*.png"]
 fallthrough = true
 
+# Nom de domaine du service (voir docs/nom-de-domaine.md). Vides tant qu'il
+# n'existe pas : tout passe par l'adresse workers.dev ci-dessus.
+#   ADRESSE_PUBLIQUE : mise dans les QR « Par Internet » et les liens du site.
+#   ADRESSE_RELAIS   : où les PC des boutiques viennent chercher les commandes.
+[vars]
+ADRESSE_PUBLIQUE = ""
+ADRESSE_RELAIS = ""
+
 [[d1_databases]]
 binding = "DB"
 database_name = "photocopie-admin"

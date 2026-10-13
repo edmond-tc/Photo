@@ -15,7 +15,7 @@ export function pageHowItWorks() {
 <h2>1. Install the software (once)</h2>
 <ul class="liste">
   <li>Download the Windows software from the <a href="/en/download">Download</a> page, then open the file.</li>
-  <li>Choose English in Settings, enter the shop name and your country: that's it. The software then starts on its own with the computer.</li>
+  <li>Tap "English" on the first screen (or later in Settings), enter the shop name and your country: that's it. The software then starts on its own with the computer.</li>
   <li>Print the poster with the QR codes from the software and put it up at the counter.</li>
 </ul>
 <h2>2. The customer sends</h2>

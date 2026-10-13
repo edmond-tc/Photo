@@ -3,7 +3,7 @@
 // propre, et rien de ce qui est réservé au porteur du projet.
 
 import { relais, nettoyer, nettoyerSiBesoin } from "./relais.js";
-import { pageAccueil, pageAccueilEn, pageAffiche, pageComment, pageConfidentialite, pageFaq, pageKit, pageTelechargerSite, robots, sitemap } from "./pages.js";
+import { definirRacine, pageAccueil, pageAccueilEn, pageAffiche, pageComment, pageConfidentialite, pageFaq, pageKit, pageTelechargerSite, robots, sitemap } from "./pages.js";
 import { pageHowItWorks, pageFaqEn, pageDownload, pagePrivacy } from "./pages-en.js";
 import { pageConditions, pageTerms, pageMentions, pageLegal } from "./pages-legal.js";
 import APERCU from "./apercu.png";
@@ -25,6 +25,7 @@ const html = (corps) =>
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    definirRacine(env.ADRESSE_PUBLIQUE);
     // La visite d'un PC déclenche, au plus une fois par heure, le nettoyage
     // du relais — après la réponse, sans la retarder.
     if (/^\/api\/relais\/[0-9A-Z]{6,10}\/attente$/.test(url.pathname)) {

@@ -21,7 +21,7 @@ contient AUCUN mot de passe ni clé : seulement leurs noms et où ils vivent.
 - Mise à jour légère : <https://photocopie-admin.atinzed2.workers.dev/telecharger/leger>
 - Application Android : <https://photocopie-admin.atinzed2.workers.dev/telecharger/apk>
 - Secours : <https://github.com/edmond-tc/Photo/releases/latest>
-- Assistance affichée dans le logiciel : WhatsApp 0151226741
+- Assistance affichée dans le logiciel : WhatsApp +229 01 51 22 67 41
 
 ## 2bis. Site public et réception par Internet
 
@@ -63,6 +63,36 @@ contient AUCUN mot de passe ni clé : seulement leurs noms et où ils vivent.
   PC ne passe plus ; le PC note sa présence au plus toutes les 2 minutes (quota
   d'écriture de la base).
 
+## 2ter. Grand public, langues, pays, paiements (13 octobre 2026, logiciel 0.5.40, Android 0.3.16)
+
+- **Par Internet, côté client** : « Mes commandes » (gardées 7 jours sur le
+  téléphone, lien de suivi `#c=…`), fiche de la boutique (adresse, horaires,
+  téléphone, plan), prénom et numéro WhatsApp obligatoires, « Pour quand ? ».
+- **Côté gérant** : bouton « 💬 Prévenir » (WhatsApp, message déjà écrit),
+  « 🚫 Bloquer » un numéro, Réglages → « 🌍 Ma boutique sur Internet », pays
+  (monnaie, indicatif : `src-tauri/src/pays.rs`) et langue.
+- **Anglais** : page du client (suit la langue du téléphone, bouton
+  English/Français), logiciel du gérant (français par défaut, même sous un
+  Windows anglais ; bouton « English » au premier écran, ou Réglages → Langue), notifications Android, site complet (`/en/…`), conditions
+  d'utilisation et mentions légales (`/conditions`, `/mentions-legales`).
+  Les dictionnaires : `client-web/langue-en.json`, `src/langue-en.json`. Un
+  texte ajouté sans traduction est signalé par le workflow « Traductions
+  complètes » (`scripts/langue/verifier.mjs`).
+- **Page du client allégée** à la construction (sans commentaires ni
+  indentation : `src-tauri/build.rs` et `admin/site/alleger.js`, mêmes
+  règles) : 97 Ko envoyés pour 120 Ko de source. Limite iPhone : ~128 Ko.
+- **Clé reçue toute seule** : le logiciel va chercher sa dernière clé sur
+  `/api/licence/<identifiant>` du tableau de bord. Paiement en ligne
+  FedaPay prêt mais éteint : voir `docs/paiements.md`.
+- **Nom de domaine** : prêt à basculer sans réimpression forcée, voir
+  `docs/nom-de-domaine.md`.
+- **À compléter par le porteur du projet** : nom légal et IFU/RCCM dans les
+  mentions légales (`admin/site/pages-legal.js`, objet `EDITEUR`) ; faire
+  relire les conditions d'utilisation par un juriste avant une diffusion à
+  grande échelle.
+- **Bancs d'essai** : `admin/essais/paiement.mjs` (paiement en ligne contre
+  un faux FedaPay), en plus de ceux de `banc-telephones/`.
+
 ## 3. Les comptes à ne jamais perdre
 
 Sans eux, le projet est figé : il tourne, mais plus personne ne peut le mettre à jour.
@@ -80,6 +110,7 @@ Sans eux, le projet est figé : il tourne, mais plus personne ne peut le mettre 
 | `ENVOYEUR_KEYSTORE_B64` et `ENVOYEUR_KEYSTORE_MDP` | GitHub → Secrets → Actions | Signe l'application Android | Android refuse de mettre à jour : les téléphones doivent désinstaller puis réinstaller |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | GitHub → Secrets → Actions | Permet à GitHub de publier le tableau de bord | On en recrée un sur dash.cloudflare.com (sans gravité) |
 | `ADMIN_PASSWORD`, `CLE_PRIVEE_LICENCE` | Cloudflare (Worker `photocopie-admin`) | Mot de passe du tableau de bord ; clé qui signe les licences | Plus de nouvelles licences possibles : tous les clients actuels devraient être réactivés avec une nouvelle clé |
+| `FEDAPAY_CLE_SECRETE`, `FEDAPAY_SECRET_WEBHOOK` (et la variable `FEDAPAY_MODE`) | Cloudflare (Worker `photocopie-admin`), quand le compte FedaPay existe | Paiement en ligne de l'abonnement | On les recopie depuis l'espace FedaPay (voir `docs/paiements.md`) |
 
 **À faire dès aujourd'hui** : garder une copie hors ligne (papier ou clé USB chiffrée,
 pas WhatsApp) des clés ci-dessus et du fichier `.jks` d'Android. Je (l'assistant) ne

@@ -45,8 +45,20 @@ function traduire(n) {
 async function chargerLangue() {
   try {
     const p = await invoke("get_boutique_settings");
-    LANGUE = p.langue || (/^en/i.test(navigator.language || "") ? "en" : "fr");
+    // Français par défaut : beaucoup de PC d'occasion ont un Windows en
+    // anglais, et leurs gérants lisent le français. L'anglais se choisit au
+    // premier écran (bouton « English ») ou dans Réglages.
+    LANGUE = p.langue === "en" ? "en" : "fr";
   } catch {}
+  document.querySelectorAll("[data-basculer-langue]").forEach((b) => {
+    b.textContent = LANGUE === "en" ? "Français" : "English";
+    b.addEventListener("click", async () => {
+      try {
+        await invoke("set_boutique_setting", { cle: "langue", valeur: LANGUE === "en" ? "fr" : "en" });
+      } catch {}
+      location.reload();
+    });
+  });
   if (LANGUE !== "en") return;
   try {
     const d = await (await fetch("langue-en.json")).json();
@@ -3777,6 +3789,12 @@ async function demarrerApplication() {
     }
   });
 
+  // Clé payée ou confirmée : le logiciel l'a reçue tout seul par Internet.
+  await listen("licence-en-ligne", async () => {
+    toast("✓ Abonnement renouvelé : la nouvelle clé est arrivée toute seule par Internet.", "succes", 8000);
+    await verifierBlocageLicence();
+    await rafraichirBadgeAbonnement();
+  });
   await listen("licence-usb", async (event) => {
     if (event.payload.reussi) {
       toast("✓ Licence activée depuis la clé USB — merci !");

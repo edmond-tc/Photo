@@ -651,11 +651,87 @@ pub fn tenter_activation_depuis_usb(app: &tauri::AppHandle, contenu: &str) {
     let _ = app.emit("licence-usb", ResultatActivationUsb { reussi });
 }
 
+// ───────────────────── Clé reçue par Internet ─────────────────────
+// Le gérant paie (en ligne, ou par Mobile Money puis confirmation du porteur
+// du projet) : sa nouvelle clé attend sur le tableau de bord. Le logiciel
+// vient la chercher tout seul dès qu'il a une connexion — plus besoin de la
+// recopier à la main. Sans danger : une clé ne marche que sur sa machine.
+
+/// Le tableau de bord, où attend la dernière clé de chaque machine.
+pub const ADRESSE_TABLEAU: &str = "https://photocopie-admin.atinzed2.workers.dev";
+
+#[derive(serde::Deserialize)]
+struct CleEnLigne {
+    cle: String,
+}
+
+/// La clé reçue remplace l'actuelle seulement si elle va plus loin.
+pub fn va_plus_loin(actuelle: Option<NaiveDate>, recue: Option<NaiveDate>) -> bool {
+    match (actuelle, recue) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some(a), Some(r)) => r > a,
+    }
+}
+
+/// Recherche en tâche de fond : toutes les 10 minutes quand l'essai ou
+/// l'abonnement se termine (le gérant vient sans doute de payer), toutes les
+/// 6 heures sinon. Silencieuse sans connexion.
+pub fn demarrer_cle_en_ligne(app: tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(90)).await;
+        let Ok(client) = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build() else { return };
+        loop {
+            let etat = app.try_state::<DbState>().and_then(|state| {
+                let conn = state.0.lock().ok()?;
+                let s = statut_licence(&conn);
+                Some((s, db::get_setting(&conn, "cle_licence")))
+            });
+            let Some((statut, actuelle)) = etat else { return };
+            let urgent = matches!(statut.statut.as_str(), "expire" | "invalide")
+                || (statut.statut == "essai" && statut.jours_restants <= 3)
+                || (statut.statut == "actif" && statut.jours_restants <= 7);
+            let id: String = statut.machine_id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+            let reponse = client.get(format!("{ADRESSE_TABLEAU}/api/licence/{id}")).send().await;
+            if let Some(r) = reponse.ok().filter(|r| r.status().is_success()) {
+                if let Ok(c) = r.json::<CleEnLigne>().await {
+                    let cle: String = c.cle.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase();
+                    let fin_actuelle = actuelle.as_deref().and_then(verifier_cle_sur_cette_machine);
+                    if va_plus_loin(fin_actuelle, verifier_cle_sur_cette_machine(&cle)) {
+                        let enregistre = app
+                            .try_state::<DbState>()
+                            .and_then(|state| state.0.lock().ok().map(|conn| db::set_setting(&conn, "cle_licence", &cle).is_ok()))
+                            .unwrap_or(false);
+                        if enregistre {
+                            if let Ok(mut a) = AUTORISATION.lock() {
+                                *a = None;
+                            }
+                            let _ = app.emit("licence-en-ligne", ());
+                        }
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(if urgent { 600 } else { 6 * 3600 })).await;
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const ID: &str = "MACHINE-DE-TEST-1234";
+
+    #[test]
+    fn une_cle_recue_ne_remplace_que_si_elle_va_plus_loin() {
+        let d = |j| NaiveDate::from_ymd_opt(2026, 11, j);
+        assert!(va_plus_loin(None, d(1)));
+        assert!(va_plus_loin(d(1), d(2)));
+        assert!(!va_plus_loin(d(2), d(1)));
+        assert!(!va_plus_loin(d(2), d(2)));
+        assert!(!va_plus_loin(d(2), None));
+    }
     // Clé produite par le tableau de bord (WebCrypto Ed25519), pour vérifier
     // que les deux côtés parlent bien la même langue : si ce test casse, plus
     // aucun gérant ne peut activer sa licence.

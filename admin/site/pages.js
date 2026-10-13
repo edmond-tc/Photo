@@ -47,7 +47,12 @@ footer{margin:48px 0 24px;padding-top:18px;border-top:1px solid var(--trait);col
 .petit{font-size:.9rem;color:var(--doux)}
 `);
 
-const RACINE = "https://photocopie-benin.atinzed2.workers.dev";
+// Adresse du site dans les liens canoniques, le plan du site et les partages :
+// le nom de domaine quand il existe (ADRESSE_PUBLIQUE, wrangler.site.toml).
+let RACINE = "https://photocopie-benin.atinzed2.workers.dev";
+export function definirRacine(adresse) {
+  if (/^https:\/\/[a-z0-9.-]+$/i.test(adresse || "")) RACINE = adresse;
+}
 
 export function gabarit({ titre, description, chemin, corps, jsonld = "", lang = "fr", alternes = null, indexer = true }) {
   const url = `${RACINE}${chemin}`;
@@ -272,13 +277,13 @@ export function pageConfidentialite() {
 }
 
 export function robots() {
-  return `User-agent: *\nAllow: /\nDisallow: /b/\nDisallow: /api/\nSitemap: https://photocopie-benin.atinzed2.workers.dev/sitemap.xml\n`;
+  return `User-agent: *\nAllow: /\nDisallow: /b/\nDisallow: /api/\nSitemap: ${RACINE}/sitemap.xml\n`;
 }
 
 export function sitemap() {
   const pages = ["/", "/en", "/comment-ca-marche", "/en/how-it-works", "/faq", "/en/faq", "/telecharger", "/en/download", "/confidentialite", "/en/privacy", "/conditions", "/en/terms", "/mentions-legales", "/en/legal"];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
-    .map((p) => `  <url><loc>https://photocopie-benin.atinzed2.workers.dev${p}</loc><lastmod>2026-10-13</lastmod></url>`)
+    .map((p) => `  <url><loc>${RACINE}${p}</loc><lastmod>2026-10-13</lastmod></url>`)
     .join("\n")}\n</urlset>\n`;
 }
 

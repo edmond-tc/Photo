@@ -131,7 +131,30 @@ pub struct Vitrine {
     pub bloques: Vec<String>,
 }
 
-pub async fn inscrire(client: &reqwest::Client, cfg: &Config, vitrine: &Vitrine) -> Result<(), ErreurInscription> {
+/// Réponse du relais à l'inscription : l'adresse publique à mettre dans les
+/// QR (le nom de domaine du service, quand il en a un) et, si le service a
+/// déménagé, sa nouvelle adresse. Le PC fait déjà confiance au relais (il lui
+/// confie son secret) : il suit ses indications, en https seulement.
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct Accueil {
+    #[serde(default)]
+    pub adresse_publique: Option<String>,
+    #[serde(default)]
+    pub relais: Option<String>,
+}
+
+/// Une adresse de service acceptable : https, un nom d'hôte, rien d'autre.
+pub fn adresse_valide(a: &str) -> bool {
+    let Some(reste) = a.strip_prefix("https://") else { return false };
+    !reste.is_empty()
+        && reste.len() <= 100
+        && reste.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        && reste.contains('.')
+        && !reste.starts_with('.')
+        && !reste.ends_with('.')
+}
+
+pub async fn inscrire(client: &reqwest::Client, cfg: &Config, vitrine: &Vitrine) -> Result<Accueil, ErreurInscription> {
     let r = client
         .post(format!("{}/api/relais/inscrire", cfg.relais))
         .json(&serde_json::json!({
@@ -147,7 +170,7 @@ pub async fn inscrire(client: &reqwest::Client, cfg: &Config, vitrine: &Vitrine)
         .await
         .map_err(|e| ErreurInscription::Autre(e.to_string()))?;
     match r.status().as_u16() {
-        200 => Ok(()),
+        200 => Ok(r.json::<Accueil>().await.unwrap_or_default()),
         409 => Err(ErreurInscription::CodePris),
         s => Err(ErreurInscription::Autre(format!("réponse {s}"))),
     }
@@ -376,7 +399,11 @@ pub fn relais_info(state: tauri::State<'_, crate::db::DbState>) -> Result<InfoRe
     let code = crate::db::get_setting(&conn, "relais_code");
     match (actif && inscrit, code) {
         (true, Some(code)) => {
-            let url = format!("{ADRESSE_RELAIS}/b/{code}");
+            // Adresse publique donnée par le relais (nom de domaine), sinon
+            // l'adresse d'origine. Les anciens QR restent valables : les deux
+            // adresses mènent au même service.
+            let base = crate::db::get_setting(&conn, "relais_public").filter(|a| adresse_valide(a)).unwrap_or_else(|| ADRESSE_RELAIS.to_string());
+            let url = format!("{base}/b/{code}");
             Ok(InfoRelais {
                 actif: true,
                 qr_data_uri: crate::qr::build_qr_data_uri(&url).ok(),
@@ -502,7 +529,7 @@ pub fn demarrer(app: tauri::AppHandle) {
                 continue;
             };
             let cfg = Config {
-                relais: ADRESSE_RELAIS.to_string(),
+                relais: reglage(&app, "relais_api").filter(|a| adresse_valide(a)).unwrap_or_else(|| ADRESSE_RELAIS.to_string()),
                 local: format!("http://127.0.0.1:{}", crate::server::PORT),
                 code,
                 secret,
@@ -514,7 +541,14 @@ pub fn demarrer(app: tauri::AppHandle) {
             let actuelle = vitrine(&app);
             if derniere_inscription.is_none_or(|t| t.elapsed() > Duration::from_secs(6 * 3600)) || actuelle != vitrine_inscrite {
                 match inscrire(&client, &cfg, &actuelle).await {
-                    Ok(()) => {
+                    Ok(accueil) => {
+                        for (cle, valeur) in [("relais_public", accueil.adresse_publique), ("relais_api", accueil.relais)] {
+                            if let Some(a) = valeur.filter(|a| adresse_valide(a)) {
+                                if reglage(&app, cle).as_deref() != Some(a.as_str()) {
+                                    noter(&app, cle, &a);
+                                }
+                            }
+                        }
                         derniere_inscription = Some(Instant::now());
                         vitrine_inscrite = actuelle;
                         noter(&app, "relais_inscrit", "oui");
@@ -596,6 +630,17 @@ mod tests {
         assert!(texte.contains("name=\"nom\"\r\n\r\nAwa\r\n"));
         assert!(texte.contains("name=\"vocal_0\"; filename=\"vocal.webm\""));
         assert!(texte.ends_with(&format!("--{frontiere}--\r\n")));
+    }
+
+    #[test]
+    fn seules_les_adresses_https_simples_sont_suivies() {
+        assert!(adresse_valide("https://gestionphotocopie.com"));
+        assert!(adresse_valide("https://photocopie-benin.atinzed2.workers.dev"));
+        assert!(!adresse_valide("http://gestionphotocopie.com"));
+        assert!(!adresse_valide("https://exemple.com/chemin"));
+        assert!(!adresse_valide("https://exemple.com@pirate.net"));
+        assert!(!adresse_valide("https://localhost"));
+        assert!(!adresse_valide("https://"));
     }
 
     #[test]

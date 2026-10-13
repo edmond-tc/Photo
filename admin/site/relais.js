@@ -309,7 +309,14 @@ async function inscrire(request, env) {
     `INSERT INTO relais_fiches (code, fiche, bloques) VALUES (?, ?, ?)
      ON CONFLICT(code) DO UPDATE SET fiche = excluded.fiche, bloques = excluded.bloques`
   ).bind(code, JSON.stringify(ficheNettoyee(corps.fiche)), JSON.stringify(bloquesNettoyes(corps.bloques))).run();
-  return json({ ok: true, code });
+  // Le jour où le service a son nom de domaine (wrangler.site.toml, [vars]),
+  // les PC le mettent dans leurs QR ; les anciennes adresses restent valables.
+  return json({
+    ok: true,
+    code,
+    adresse_publique: /^https:\/\/[a-z0-9.-]+$/i.test(env.ADRESSE_PUBLIQUE || "") ? env.ADRESSE_PUBLIQUE : null,
+    relais: /^https:\/\/[a-z0-9.-]+$/i.test(env.ADRESSE_RELAIS || "") ? env.ADRESSE_RELAIS : null,
+  });
 }
 
 /** Fiche publique de la boutique : seulement du texte court, et un lien de
