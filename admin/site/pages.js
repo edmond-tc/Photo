@@ -6,7 +6,20 @@ export const ADRESSE_ADMIN = "https://photocopie-admin.atinzed2.workers.dev";
 const WHATSAPP = "2290151226741";
 const TELEPHONE_LISIBLE = "01 51 22 67 41";
 
-const STYLE = `
+/** Couleurs du thème clair, en clair : la valeur de secours de chaque
+ * couleur. Opera Mini, UC Browser et les vieux Android, très répandus ici,
+ * ignorent les variables CSS : sans secours, les boutons y étaient du texte
+ * blanc sur fond transparent — invisibles. */
+const CLAIR = { fond: "#f6f7fb", carte: "#fff", encre: "#16213a", doux: "#55617a", accent: "#0b5cad", "accent-doux": "#e3eefb", vert: "#137a3d", trait: "#dfe3ec" };
+function avecReplis(css) {
+  return css.replace(/([a-z-]+):([^;{}]*?var\(--[a-z-]+\)[^;{}]*)/g, (tout, propriete, valeur) => {
+    if (propriete.startsWith("--")) return tout;
+    const repli = valeur.replace(/var\(--([a-z-]+)\)/g, (_, nom) => CLAIR[nom] || "inherit");
+    return `${propriete}:${repli};${propriete}:${valeur}`;
+  });
+}
+
+const STYLE = avecReplis(`
 :root{--fond:#f6f7fb;--carte:#fff;--encre:#16213a;--doux:#55617a;--accent:#0b5cad;--accent-doux:#e3eefb;--vert:#137a3d;--trait:#dfe3ec}
 @media (prefers-color-scheme:dark){:root{--fond:#0f1420;--carte:#171e2e;--encre:#eef2fa;--doux:#a9b4c9;--accent:#5ea2ec;--accent-doux:#1b2a44;--vert:#48c27a;--trait:#2a3348}}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
@@ -15,7 +28,7 @@ a{color:var(--accent)}
 .page{max-width:980px;margin:0 auto;padding:0 16px}
 header.haut{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0}
 .marque{font-weight:800;font-size:1.1rem;text-decoration:none;color:var(--encre)}
-nav a{margin-left:14px;font-size:.95rem;text-decoration:none}
+nav{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:flex-end}nav a{font-size:.95rem;text-decoration:none}
 .heros{padding:28px 0 8px}
 h1{font-size:clamp(1.7rem,5vw,2.6rem);line-height:1.15;margin:.2em 0 .4em}
 h2{font-size:1.45rem;margin:1.6em 0 .5em}
@@ -32,7 +45,7 @@ h3{font-size:1.1rem;margin:.2em 0 .3em}
 ul.liste{padding-left:1.1em}ul.liste li{margin:.35em 0}
 footer{margin:48px 0 24px;padding-top:18px;border-top:1px solid var(--trait);color:var(--doux);font-size:.9rem}
 .petit{font-size:.9rem;color:var(--doux)}
-`;
+`);
 
 const RACINE = "https://photocopie-benin.atinzed2.workers.dev";
 
@@ -111,7 +124,8 @@ export function pageAccueil() {
   <h1>Vos clients envoient leurs documents depuis leur téléphone. Vous imprimez.</h1>
   <p class="chapeau">Fini la clé USB, le câble et les « envoie-moi sur WhatsApp ». Le client scanne le QR code du guichet, choisit ses documents, et ils arrivent sur l'ordinateur de la boutique, prêts à imprimer.</p>
   <div class="boutons">
-    <a class="btn" href="/telecharger">Télécharger le logiciel<small>Windows · un mois d'essai gratuit</small></a>
+    <a class="btn" href="${ADRESSE_ADMIN}/telecharger/exe">⬇️ Télécharger pour Windows<small>Logiciel de la boutique · un mois d'essai gratuit</small></a>
+    <a class="btn second" href="${ADRESSE_ADMIN}/telecharger/apk">📱 Application Android<small>Facultative, pour les clients</small></a>
     <a class="btn second" href="/comment-ca-marche">Voir comment ça marche</a>
   </div>
 </section>
