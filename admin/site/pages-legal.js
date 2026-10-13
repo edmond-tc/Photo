@@ -4,12 +4,14 @@
 
 import { gabarit, WHATSAPP, TELEPHONE_LISIBLE } from "./pages.js";
 
-/** Éditeur du service : à compléter (nom légal, numéro IFU ou RCCM) dès
- * qu'ils sont fixés. Le reste des pages n'a pas à changer. */
+/** Éditeur du service : une personne physique, à titre personnel. Le jour
+ * où il y a un IFU ou un RCCM, l'écrire dans `immatriculation` (par ex.
+ * « IFU : 0201… ») : il s'affiche alors tout seul. */
 const EDITEUR = {
   nom: "Gestion Photocopie",
-  statut_fr: "Projet porté par un entrepreneur individuel établi au Bénin.",
-  statut_en: "A project run by a sole trader based in Benin.",
+  personne: "Edmond Atinzoun TCHOKPON",
+  statut_fr: "Service édité à titre personnel par Edmond Atinzoun TCHOKPON, personne physique résidant au Bénin.",
+  statut_en: "Service published in a personal capacity by Edmond Atinzoun TCHOKPON, an individual living in Benin.",
   immatriculation: "",
 };
 
@@ -126,6 +128,8 @@ export function pageMentions() {
 <h1>Mentions légales</h1>
 <h2>Éditeur</h2>
 <p><strong>${EDITEUR.nom}</strong><br>${EDITEUR.statut_fr}${EDITEUR.immatriculation ? `<br>${EDITEUR.immatriculation}` : ""}<br>Contact : <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a></p>
+<h2>Directeur de la publication</h2>
+<p>${EDITEUR.personne}</p>
 <h2>Hébergement</h2>
 <p>Le site et le relais Internet sont hébergés par ${HEBERGEUR}.</p>
 <h2>Propriété</h2>
@@ -146,6 +150,8 @@ export function pageLegal() {
 <h1>Legal notice</h1>
 <h2>Publisher</h2>
 <p><strong>${EDITEUR.nom}</strong><br>${EDITEUR.statut_en}${EDITEUR.immatriculation ? `<br>${EDITEUR.immatriculation}` : ""}<br>Contact: <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a></p>
+<h2>Publication director</h2>
+<p>${EDITEUR.personne}</p>
 <h2>Hosting</h2>
 <p>The website and the Internet relay are hosted by ${HOST}.</p>
 <h2>Ownership</h2>

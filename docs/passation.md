@@ -86,10 +86,11 @@ contient AUCUN mot de passe ni clé : seulement leurs noms et où ils vivent.
   FedaPay prêt mais éteint : voir `docs/paiements.md`.
 - **Nom de domaine** : prêt à basculer sans réimpression forcée, voir
   `docs/nom-de-domaine.md`.
-- **À compléter par le porteur du projet** : nom légal et IFU/RCCM dans les
-  mentions légales (`admin/site/pages-legal.js`, objet `EDITEUR`) ; faire
-  relire les conditions d'utilisation par un juriste avant une diffusion à
-  grande échelle.
+- **Mentions légales** : éditeur = Edmond Atinzoun TCHOKPON, personne
+  physique (pas encore d'IFU ni d'entreprise). Le jour où il y en a un,
+  l'écrire dans `admin/site/pages-legal.js` (objet `EDITEUR`, champ
+  `immatriculation`). Faire relire les conditions d'utilisation par un
+  juriste avant une diffusion à grande échelle.
 - **Bancs d'essai** : `admin/essais/paiement.mjs` (paiement en ligne contre
   un faux FedaPay), en plus de ceux de `banc-telephones/`.
 
