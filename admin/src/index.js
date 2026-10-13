@@ -659,6 +659,14 @@ async function delivrerCle(env, demande) {
     `UPDATE demandes SET statut = 'confirmee' WHERE id = ? AND statut IN ('en_attente', 'paiement_en_cours')`
   ).bind(demande.id).run();
   if (!prise.meta || prise.meta.changes !== 1) return null;
+  if (Number(demande.jours_demandes) === 0) {
+    // Frais d'activation payés : le code d'installation de cette machine.
+    const code = await genererCodeInstallation(env, demande.machine_id);
+    await env.DB.prepare(`INSERT INTO codes_installation (machine_id, code, note) VALUES (?, ?, ?)`)
+      .bind(demande.machine_id, code, `Activation payée — ${demande.nom_boutique}${demande.telephone ? ` (${demande.telephone})` : ""}`)
+      .run();
+    return { activation: true, code };
+  }
   let boutique = await env.DB.prepare(`SELECT * FROM boutiques WHERE machine_id = ?`).bind(demande.machine_id).first();
   if (!boutique) {
     const resultat = await env.DB.prepare(`INSERT INTO boutiques (nom, telephone, machine_id) VALUES (?, ?, ?)`)
@@ -697,12 +705,15 @@ function dateDeCle(texte) {
 
 /// Prix de l'abonnement par durée, en francs CFA (Paramètres). Vide : pas de
 /// paiement en ligne pour cette durée.
+/// La clé 0 est l'activation (frais payés une fois, à l'installation).
 async function prixAbonnement(env) {
   const prix = {};
   for (const j of DUREES) {
     const v = parseInt(await obtenirParametre(env, `prix_${j}`, ""), 10);
     if (v > 0) prix[j] = v;
   }
+  const activation = parseInt(await obtenirParametre(env, "prix_activation", ""), 10);
+  if (activation > 0) prix[0] = activation;
   return prix;
 }
 
@@ -721,7 +732,35 @@ async function verifierPaiement(env, demande) {
   return true;
 }
 
-async function pageRenouveler(env, { envoye, erreur } = {}) {
+/// Payer les frais d'activation en ligne (ouverte depuis le QR de l'écran
+/// « Installation à valider » du logiciel, identifiant déjà rempli).
+async function pageActiver(env, { machine, erreur } = {}) {
+  const prix = paiementActif(env) ? await prixAbonnement(env) : {};
+  const contact = await obtenirParametre(env, "contact_whatsapp", "");
+  const aide = contact ? `<p>Une question ? <a href="https://wa.me/${echapper(contact.replace(/[^0-9]/g, ""))}">WhatsApp</a> ou appelez le ${echapper(contact)}.</p>` : "";
+  return page(
+    "Activer Gestion Photocopie",
+    `<div class="carte">
+      <h1>Activer le logiciel</h1>
+      ${erreur ? `<p style="color:#a4262c">${echapper(erreur)}</p>` : ""}
+      ${prix[0]
+        ? `<p>Frais d'activation : <strong>${Number(prix[0]).toLocaleString("fr-FR")} FCFA</strong>, une seule fois. Mobile Money (MTN, Moov…) ou carte.
+           Le logiciel s'active <strong>tout seul</strong> juste après le paiement : rien à recopier.</p>
+           <form method="POST" action="/payer">
+             <input type="hidden" name="jours_demandes" value="0" />
+             <label>Nom de la boutique <input type="text" name="nom_boutique" required maxlength="120" /></label>
+             <label>Identifiant de l'ordinateur <input type="text" name="machine_id" required maxlength="120" value="${echapper(machine || "")}" /></label>
+             <label>Votre téléphone <input type="tel" name="telephone" required maxlength="40" /></label>
+             <button type="submit">Payer l'activation</button>
+           </form>`
+        : `<p>Le paiement en ligne n'est pas encore ouvert. Contactez-nous pour activer votre logiciel.</p>`}
+      ${aide}
+    </div>`,
+    { connecte: false }
+  );
+}
+
+async function pageRenouveler(env, { envoye, erreur, machine } = {}) {
   const numeros = await obtenirParametre(env, "numeros_paiement", "");
   const contact = await obtenirParametre(env, "contact_whatsapp", "");
   const montant = await obtenirParametre(env, "montant_indicatif", "");
@@ -744,17 +783,17 @@ async function pageRenouveler(env, { envoye, erreur } = {}) {
     : "";
 
   const prix = paiementActif(env) ? await prixAbonnement(env) : {};
-  const blocEnLigne = Object.keys(prix).length && !envoye
+  const blocEnLigne = Object.keys(prix).some((j) => Number(j) > 0) && !envoye
     ? `<div class="carte" style="border-left:4px solid #0b5cad">
         <h2>💳 Payer en ligne maintenant</h2>
         <p>Mobile Money (MTN, Moov…) ou carte. <strong>La nouvelle clé arrive toute seule</strong> dans le logiciel, dans les minutes qui suivent : rien à recopier.</p>
         <form method="POST" action="/payer">
           <label>Nom de la boutique <input type="text" name="nom_boutique" required maxlength="120" /></label>
-          <label>Identifiant machine (Réglages &gt; Licence, dans le logiciel) <input type="text" name="machine_id" required maxlength="120" /></label>
+          <label>Identifiant machine (Réglages &gt; Licence, dans le logiciel) <input type="text" name="machine_id" required maxlength="120" value="${echapper(machine || "")}" /></label>
           <label>Votre téléphone <input type="tel" name="telephone" required maxlength="40" /></label>
           <label>Durée
             <select name="jours_demandes">
-              ${Object.entries(prix).map(([j, p]) => `<option value="${j}">${j} jours — ${Number(p).toLocaleString("fr-FR")} FCFA</option>`).join("")}
+              ${Object.entries(prix).filter(([j]) => Number(j) > 0).map(([j, p]) => `<option value="${j}">${j} jours — ${Number(p).toLocaleString("fr-FR")} FCFA</option>`).join("")}
             </select>
           </label>
           <button type="submit">Payer</button>
@@ -903,6 +942,7 @@ async function pageNouveautes(env) {
 async function pageParametres(env) {
   const prix = [];
   for (const j of DUREES) prix.push([j, await obtenirParametre(env, `prix_${j}`, "")]);
+  const prixActivation = await obtenirParametre(env, "prix_activation", "");
   const numeros = await obtenirParametre(env, "numeros_paiement", "");
   const contact = await obtenirParametre(env, "contact_whatsapp", "");
   const montant = await obtenirParametre(env, "montant_indicatif", "");
@@ -922,6 +962,7 @@ async function pageParametres(env) {
         <p style="font-size:0.85rem; color:#605e5c">${paiementActif(env)
           ? `Clés FedaPay posées (mode ${env.FEDAPAY_MODE === "live" ? "<strong>réel</strong>" : "essai, sans argent"}). Mettez un prix pour chaque durée proposée ; vide = durée non proposée en ligne.`
           : "Éteint : les clés FedaPay ne sont pas encore posées sur le Worker (voir docs/paiements.md). Les prix ci-dessous serviront dès qu'elles le seront."}</p>
+        <label>Frais d'activation, une fois (FCFA) <input type="number" min="0" name="prix_activation" value="${echapper(prixActivation)}" /></label>
         ${prix.map(([j, v]) => `<label>Prix ${j} jours (FCFA) <input type="number" min="0" name="prix_${j}" value="${echapper(v)}" /></label>`).join("")}
         <button type="submit">Enregistrer</button>
       </form>
@@ -1374,6 +1415,7 @@ async function router(request, env) {
   "/decouvrir.json",
   "/renouveler",
   "/payer",
+  "/activer",
   "/paiement/fedapay",
   "/paiement/retour",
 ];
@@ -1438,7 +1480,11 @@ async function router(request, env) {
       // Page publique : n'importe quel gérant peut y accéder pour signaler
       // un paiement, sans avoir de compte ni de mot de passe.
       if (pathname === "/renouveler" && method === "GET") {
-        return new Response(await pageRenouveler(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+        // ?m= : identifiant prérempli (QR affiché par le logiciel).
+        return new Response(await pageRenouveler(env, { machine: identifiantMachine(url.searchParams.get("m")) }), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      if (pathname === "/activer" && method === "GET") {
+        return new Response(await pageActiver(env, { machine: identifiantMachine(url.searchParams.get("m")) }), { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       if (pathname === "/renouveler" && method === "POST") {
         // Formulaire ouvert à tous : sans limite, une seule personne peut
@@ -1501,8 +1547,10 @@ async function router(request, env) {
         const telephone = borner(donnees.get("telephone"), 40);
         const jours = parseInt(donnees.get("jours_demandes"), 10);
         const montant = (await prixAbonnement(env))[jours];
+        const activation = jours === 0;
         if (!nomBoutique || !machineId || !telephone || !montant) {
-          return new Response(await pageRenouveler(env, { erreur: "Merci de remplir tous les champs." }), {
+          const erreur = "Merci de remplir tous les champs.";
+          return new Response(jours === 0 ? await pageActiver(env, { erreur, machine: machineId }) : await pageRenouveler(env, { erreur }), {
             status: 400,
             headers: { "content-type": "text/html; charset=utf-8" },
           });
@@ -1515,7 +1563,7 @@ async function router(request, env) {
         try {
           const { id, url: adresse } = await creerPaiement(env, {
             montant,
-            description: `Gestion Photocopie — ${jours} jours — ${nomBoutique}`.slice(0, 200),
+            description: (activation ? `Gestion Photocopie — activation — ${nomBoutique}` : `Gestion Photocopie — ${jours} jours — ${nomBoutique}`).slice(0, 200),
             retour: `${url.origin}/paiement/retour?d=${demandeId}`,
             demandeId,
           });
@@ -1563,13 +1611,30 @@ async function router(request, env) {
             `<div class="carte" style="margin-top:2rem">
               <h1>${paye ? "✅ Paiement reçu, merci !" : "⏳ Paiement pas encore confirmé"}</h1>
               <p>${paye
-                ? "Votre nouvelle clé est prête. Le logiciel de la boutique la reçoit tout seul dans les minutes qui suivent, dès que l'ordinateur a une connexion. Rien à recopier."
+                ? Number(demande.jours_demandes) === 0
+                  ? "Votre logiciel est activé. Il le voit tout seul en moins d'une minute, dès que l'ordinateur a une connexion : l'écran « Installation à valider » disparaît. Rien à recopier."
+                  : "Votre nouvelle clé est prête. Le logiciel de la boutique la reçoit tout seul dans les minutes qui suivent, dès que l'ordinateur a une connexion. Rien à recopier."
                 : "Si vous avez payé, la confirmation arrive en général en une à deux minutes. Rouvrez cette page plus tard. En cas de souci, écrivez-nous sur WhatsApp."}</p>
             </div>`,
             { connecte: false }
           ),
           { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
         );
+      }
+      // Le logiciel vient chercher son code d'installation : seulement s'il a
+      // été délivré (activation payée, ou validée par le porteur du projet).
+      // Le code est propre à la machine : il ne sert à aucune autre.
+      const matchInstall = pathname.match(/^\/api\/installation\/([A-Za-z0-9-]{4,120})$/);
+      if (matchInstall && method === "GET") {
+        const c = await env.DB.prepare(`SELECT code FROM codes_installation WHERE machine_id = ? ORDER BY id DESC LIMIT 1`).bind(matchInstall[1]).first();
+        return new Response(JSON.stringify(c ? { code: c.code } : {}), { status: c ? 200 : 404, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+      }
+      // Ce que le logiciel peut proposer de payer en ligne (rien si FedaPay est éteint).
+      if (pathname === "/api/offre" && method === "GET") {
+        const prix = paiementActif(env) ? await prixAbonnement(env) : {};
+        return new Response(JSON.stringify({ activation: prix[0] || null, abonnement: Object.entries(prix).filter(([j]) => Number(j) > 0).map(([j, p]) => ({ jours: Number(j), prix: p })) }), {
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
+        });
       }
       // Le logiciel de la boutique vient chercher sa dernière clé. Sans
       // danger : une clé ne marche que sur la machine pour laquelle elle est faite.
@@ -1995,6 +2060,8 @@ async function router(request, env) {
           const v = parseInt(donnees.get(`prix_${j}`), 10);
           await definirParametre(env, `prix_${j}`, v > 0 ? String(v) : "");
         }
+        const activation = parseInt(donnees.get("prix_activation"), 10);
+        await definirParametre(env, "prix_activation", activation > 0 ? String(activation) : "");
         return new Response(null, { status: 302, headers: { Location: "/parametres" } });
       }
 
@@ -2006,6 +2073,11 @@ async function router(request, env) {
         if (!demande) return new Response("Demande introuvable ou déjà traitée.", { status: 404 });
         const delivree = await delivrerCle(env, demande);
         if (!delivree) return new Response("Demande déjà traitée.", { status: 409 });
+        if (delivree.activation) {
+          return new Response(await pageInstallations(env, { codeGenere: { machineId: demande.machine_id, code: delivree.code } }), {
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
         const { boutique, cle, dateExpiration } = delivree;
 
         const html = await pageBoutique(env, boutique.id, { cleGeneree: { cle, dateExpiration } });

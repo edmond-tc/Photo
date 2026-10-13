@@ -13,6 +13,7 @@
 "English"
 ],
 "textes": {
+"(Mobile Money ou carte) : scannez ce code avec votre téléphone. La nouvelle clé arrive toute seule dans le logiciel après le paiement.": "(Mobile Money or card): scan this code with your phone. The new key arrives in the software by itself after payment.",
 "(PDF, Word, Excel, PowerPoint, photos).": "(PDF, Word, Excel, PowerPoint, photos).",
 "(antivirus) bloque les téléphones.": "(antivirus) is blocking the phones.",
 "(demandez « une clé qui sait créer un Wi-Fi »), puis relancez ce test.": "(ask for \"a dongle that can create a Wi-Fi network\"), then run this test again.",
@@ -29,6 +30,8 @@
 ", scannez ce code : WhatsApp s'ouvre avec le rapport déjà écrit. Appuyez sur Envoyer.": ", scan this code: WhatsApp opens with the report already written. Press Send.",
 ", scannez ce code : la page de la boutique s'ouvre, où que vous soyez.": ", scan this code: the shop's page opens, wherever you are.",
 ", toutes les fonctionnalités incluses.": ", all features included.",
+". Elle sera rallumée toute seule.": ". It will be turned back on by itself.",
+". Sans lettre, pas de piège de majuscule, et tout le monde le tape du premier coup. 8 caractères au minimum : c'est la règle du Wi-Fi.": ". No letters, no capital-letter trap, and everyone types it right the first time. 8 characters minimum: that's the Wi-Fi rule.",
 "1 document ajouté à la file.": "1 document added to the queue.",
 "1 document trouvé sur la clé. Cochez-le pour l'ajouter.": "1 document found on the USB stick. Tick it to add it.",
 "1. Branchez le câble (un câble qui transfère, pas seulement de charge).": "1. Plug in the cable (a data cable, not just a charging cable).",
@@ -172,6 +175,7 @@
 "Code de la page d'envoi": "Sending page code",
 "Code à scanner": "Code to scan",
 "Code à scanner avec le téléphone": "Code to scan with the phone",
+"Code à scanner pour payer": "Code to scan to pay",
 "Coller ici le code d'installation reçu": "Paste the installation code you received here",
 "Coller la clé de licence reçue": "Paste the licence key you received",
 "Commandes en cours": "Orders in progress",
@@ -263,6 +267,7 @@
 "Essayez une sauvegarde plus ancienne dans la liste. Si aucune ne fonctionne,": "Try an older backup in the list. If none works,",
 "Ex: PC-Photocopie-Rapide": "E.g.: PC-Photocopie-Rapide",
 "Exporter les transactions (CSV)": "Export transactions (CSV)",
+"FCFA, Mobile Money ou carte) : scannez ce code avec votre téléphone. Le logiciel s'active tout seul après le paiement.": "FCFA, Mobile Money or card): scan this code with your phone. The software activates by itself after payment.",
 "Faire tourner le logiciel en arrière-plan quand j'allume l'ordinateur": "Run the software in the background when I turn on the computer",
 "Façon essayée :": "Method tried:",
 "Façon retenue :": "Method chosen:",
@@ -423,6 +428,8 @@
 "Ordinaire": "Plain",
 "Ou collez ici la clé de licence reçue": "Or paste the licence key you received here",
 "Ou il tire le haut de son écran et touche « Se connecter au réseau ».": "Or they pull down from the top of the screen and tap \"Sign in to network\".",
+"Ou payez l'activation en ligne": "Or pay the activation online",
+"Ou renouvelez en ligne": "Or renew online",
 "Ouverture des documents": "Opening documents",
 "Ouverture du logiciel": "Opening the software",
 "Ouvre le document dans son programme habituel (lecteur PDF, Photos, Word…). Faites Ctrl+P : vous choisissez l'imprimante, ses propriétés, les pages, tout.": "Opens the document in its usual program (PDF reader, Photos, Word…). Press Ctrl+P: you choose the printer, its properties, the pages, everything.",
@@ -728,6 +735,7 @@
 "⚡ URGENT": "⚡ URGENT",
 "⛔ Accès suspendu": "⛔ Access suspended",
 "✅ Toutes les pages imprimées ont été encaissées.": "✅ All printed pages have been paid for.",
+"✓ Abonnement renouvelé : la nouvelle clé est arrivée toute seule par Internet.": "✓ Subscription renewed: the new key arrived by itself over the Internet.",
 "✓ Activé. Les impressions apparaîtront ici dans les secondes qui suivent.": "✓ Turned on. Prints will appear here within seconds.",
 "✓ Compteur d'entretien réinitialisé": "✓ Maintenance counter reset",
 "✓ Contrôle activé. Les impressions sont comptées à partir de maintenant.": "✓ Monitoring turned on. Prints are counted from now on.",
@@ -796,10 +804,7 @@
 "🖨️ Rapport imprimable": "🖨️ Printable report",
 "🗑️ Document supprimé": "🗑️ Document deleted",
 "🚫 Bloquer": "🚫 Block",
-"🧪 Tester avec mon téléphone": "🧪 Test with my phone",
-". Elle sera rallumée toute seule.": ". It will be turned back on by itself.",
-". Sans lettre, pas de piège de majuscule, et tout le monde le tape du premier coup. 8 caractères au minimum : c'est la règle du Wi-Fi.": ". No letters, no capital-letter trap, and everyone types it right the first time. 8 characters minimum: that's the Wi-Fi rule.",
-"✓ Abonnement renouvelé : la nouvelle clé est arrivée toute seule par Internet.": "✓ Subscription renewed: the new key arrived by itself over the Internet."
+"🧪 Tester avec mon téléphone": "🧪 Test with my phone"
 },
 "motifs": [
 [

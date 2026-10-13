@@ -181,6 +181,8 @@ pub fn run() {
             relais::relais_info,
             commands::pays_boutique,
             commands::ecrire_au_client,
+            license::chercher_code_installation,
+            license::offre_en_ligne,
             commands::ouvrir_parametres_partage_connexion,
             commands::activer_point_acces_local,
             commands::desactiver_point_acces_local,

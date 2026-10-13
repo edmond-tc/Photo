@@ -712,9 +712,59 @@ pub fn demarrer_cle_en_ligne(app: tauri::AppHandle) {
                     }
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(if urgent { 600 } else { 6 * 3600 })).await;
+            // Bloqué (le gérant vient sans doute de payer) : toutes les 3 minutes.
+            let bloque = matches!(statut.statut.as_str(), "expire" | "invalide");
+            tokio::time::sleep(std::time::Duration::from_secs(if bloque { 180 } else if urgent { 600 } else { 6 * 3600 })).await;
         }
     });
+}
+
+/// Identifiant affiché, réduit aux caractères sûrs dans une adresse.
+fn identifiant_pour_adresse(conn: &rusqlite::Connection) -> String {
+    statut_licence(conn).machine_id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect()
+}
+
+/// Le code d'installation a-t-il été délivré (activation payée en ligne, ou
+/// validée par le porteur du projet) ? Si oui, il est enregistré comme s'il
+/// avait été saisi. Appelé régulièrement par l'écran « Installation à
+/// valider » : le gérant n'a plus rien à recopier.
+#[tauri::command]
+pub async fn chercher_code_installation(state: State<'_, DbState>) -> Result<bool, String> {
+    let id = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        identifiant_pour_adresse(&conn)
+    };
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build().map_err(|e| e.to_string())?;
+    let Ok(r) = client.get(format!("{ADRESSE_TABLEAU}/api/installation/{id}")).send().await else { return Ok(false) };
+    if !r.status().is_success() {
+        return Ok(false);
+    }
+    let Ok(v) = r.json::<serde_json::Value>().await else { return Ok(false) };
+    let Some(code) = v.get("code").and_then(|c| c.as_str()) else { return Ok(false) };
+    valider_code_installation(state, code.to_string())
+}
+
+/// Ce qui peut se payer en ligne (rien si le paiement en ligne est éteint),
+/// avec les QR à scanner : la page de paiement s'ouvre sur le téléphone du
+/// gérant, l'identifiant de l'ordinateur déjà rempli.
+#[tauri::command]
+pub async fn offre_en_ligne(state: State<'_, DbState>) -> Result<serde_json::Value, String> {
+    let id = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        identifiant_pour_adresse(&conn)
+    };
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(8)).build().map_err(|e| e.to_string())?;
+    let offre: serde_json::Value = match client.get(format!("{ADRESSE_TABLEAU}/api/offre")).send().await {
+        Ok(r) if r.status().is_success() => r.json().await.unwrap_or_default(),
+        _ => return Ok(serde_json::json!({})),
+    };
+    let activation = offre.get("activation").and_then(|v| v.as_i64());
+    let abonnement = offre.get("abonnement").and_then(|v| v.as_array()).is_some_and(|l| !l.is_empty());
+    Ok(serde_json::json!({
+        "activation": activation,
+        "qr_activation": activation.and_then(|_| crate::qr::build_qr_data_uri(&format!("{ADRESSE_TABLEAU}/activer?m={id}")).ok()),
+        "qr_renouveler": if abonnement { crate::qr::build_qr_data_uri(&format!("{ADRESSE_TABLEAU}/renouveler?m={id}")).ok() } else { None },
+    }))
 }
 
 #[cfg(test)]

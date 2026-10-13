@@ -12,6 +12,27 @@
 - **Payer en avance ne fait rien perdre** : la nouvelle période s'ajoute à
   la fin de l'actuelle.
 
+## Ce que vous encaissez
+
+Seulement deux choses, payées par le gérant de la boutique :
+
+1. **Les frais d'activation**, une fois, à l'installation.
+2. **La licence** (l'abonnement : 30, 90 ou 365 jours).
+
+Le client de la boutique paie ses photocopies **au guichet**, à la
+boutique : cet argent ne passe jamais par vous, et le logiciel n'y touche pas.
+
+**Activation sans rien recopier** : l'écran « Installation à valider » du
+logiciel vérifie toutes les 20 secondes si son code a été délivré, et
+s'active tout seul. Le code est délivré quand vous validez l'installation
+dans le tableau de bord (*🔒 Installations*), ou dès que le gérant a payé
+l'activation en ligne (QR affiché sur ce même écran). Sans paiement ni
+validation, aucun code n'est donné : pas d'activation gratuite.
+
+**Renouvellement** : l'écran « Accès suspendu » affiche lui aussi un QR de
+paiement en ligne ; la nouvelle clé arrive ensuite toute seule (vérifié
+toutes les 3 minutes).
+
 ## Le paiement en ligne (Mobile Money et cartes) : ce qu'il faut de votre part
 
 Le code est prêt et testé contre un faux FedaPay (`admin/essais/paiement.mjs`) :
@@ -37,9 +58,9 @@ il reste **éteint** tant que vos clés FedaPay ne sont pas posées.
    *Variables and Secrets* → *Add* (type **Secret**) :
    - `FEDAPAY_CLE_SECRETE` = la clé secrète ;
    - `FEDAPAY_SECRET_WEBHOOK` = le secret du webhook.
-4. Tableau de bord → *Paramètres* → partie « Paiement en ligne » : mettez le
-   prix de chaque durée (30, 90, 365 jours). Une durée sans prix n'est pas
-   proposée.
+4. Tableau de bord → *Paramètres* → partie « Paiement en ligne » : mettez les
+   **frais d'activation** et le prix de chaque durée (30, 90, 365 jours). Un
+   prix vide = pas proposé en ligne.
 5. Ouvrez `/renouveler` : le bloc « 💳 Payer en ligne maintenant » apparaît.
    Payez avec un numéro de test FedaPay : la demande se ferme toute seule et
    la clé est délivrée.
@@ -64,8 +85,6 @@ Refaites l'étape 2 avec les clés du mode **live**, puis ajoutez la variable
 
 - **Ghana, Nigeria** : FedaPay n'y est pas ; Paystack ou Flutterwave s'y
   branchent de la même façon (un second fichier comme `admin/src/paiement.js`).
-- **Le client qui paie sa commande avant l'impression** : c'est un autre
-  modèle (l'argent va à la boutique, pas à vous). Chaque boutique devrait
-  avoir son propre compte, ou vous encaisseriez pour elles et reverseriez :
-  c'est une décision commerciale et réglementaire à prendre avant d'écrire
-  le code.
+- **Le paiement des commandes des clients** : décidé le 13 octobre 2026 —
+  pas prévu. Le porteur du projet n'encaisse que l'activation et la licence ;
+  les clients paient la boutique au guichet.

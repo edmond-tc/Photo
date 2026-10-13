@@ -3318,6 +3318,17 @@ async function verifierBlocageLicence() {
       `Bonjour, mon abonnement Gestion Photocopie est terminé, je veux le renouveler. Identifiant de mon ordinateur : ${licence.machine_id}`
     );
     overlay.hidden = false;
+    // Renouvellement en ligne, si le paiement en ligne est ouvert. La clé
+    // arrive ensuite toute seule (license.rs, toutes les 3 minutes).
+    if (document.querySelector("#paiement-licence").hidden) {
+      invoke("offre_en_ligne")
+        .then((offre) => {
+          if (!offre.qr_renouveler) return;
+          document.querySelector("#qr-paiement-licence").src = offre.qr_renouveler;
+          document.querySelector("#paiement-licence").hidden = false;
+        })
+        .catch(() => {});
+    }
   } catch {
     // Impossible de vérifier le statut : on ne bloque jamais sur un doute,
     // seulement sur une expiration confirmée. Même raisonnement pour
@@ -4432,5 +4443,31 @@ window.addEventListener("DOMContentLoaded", async () => {
       `Bonjour, je veux valider l'installation de Gestion Photocopie. Identifiant de mon ordinateur : ${licence.machine_id}`
     );
     document.querySelector("#overlay-installation").hidden = false;
+    attendreActivation();
   }
 });
+
+/// Écran « Installation à valider » : paiement de l'activation en ligne (si
+/// ouvert), et recherche du code toutes les 20 secondes. Le code arrive
+/// tout seul, que le gérant ait payé en ligne ou que le porteur du projet
+/// ait validé l'installation depuis son tableau de bord.
+async function attendreActivation() {
+  try {
+    const offre = await invoke("offre_en_ligne");
+    if (offre.activation && offre.qr_activation) {
+      document.querySelector("#qr-paiement-installation").src = offre.qr_activation;
+      document.querySelector("#prix-activation").textContent = Number(offre.activation).toLocaleString(LOCALE());
+      document.querySelector("#paiement-installation").hidden = false;
+    }
+  } catch {}
+  const minuterie = setInterval(async () => {
+    if (document.querySelector("#overlay-installation").hidden) return clearInterval(minuterie);
+    let ok = false;
+    try { ok = await invoke("chercher_code_installation"); } catch {}
+    if (!ok) return;
+    clearInterval(minuterie);
+    document.querySelector("#overlay-installation").hidden = true;
+    toast("✓ Installation validée — merci !");
+    await demarrerApplication();
+  }, 20000);
+}

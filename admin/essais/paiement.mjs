@@ -73,6 +73,23 @@ const c2 = await cle(machine);
 const fin = (c) => c && c.slice(-8);
 verifier(c2 && Number(fin(c2)) > Number(fin(c1)), `renouvelé en avance : fin repoussée (${fin(c1)} → ${fin(c2)})`);
 
+// 8. Frais d'activation : pas de code avant paiement, code après
+const machine3 = "A1B2-C3D4-" + crypto.randomBytes(2).toString("hex").toUpperCase() + "-E5F6-0718";
+const code = async (m) => { const r = await fetch(`${ADMIN}/api/installation/${m}`); return r.ok ? (await r.json()).code : null; };
+verifier(!(await code(machine3)), "activation : aucun code avant paiement (pas d'activation gratuite)");
+const offre = await (await fetch(`${ADMIN}/api/offre`)).json();
+verifier(offre.activation === 10000 && offre.abonnement.some((o) => o.jours === 30), "offre lue par le logiciel : activation 10 000 FCFA, abonnement 30 jours");
+const pageActiver = await (await fetch(`${ADMIN}/activer?m=${machine3.toLowerCase()}`)).text();
+verifier(pageActiver.includes(`value="${machine3}"`) && pageActiver.includes("Payer l'activation"), "page d'activation ouverte par le QR : identifiant rempli (remis en majuscules)");
+r = await payer(machine3, 0);
+const id4 = Number((r.headers.get("location") || "").split("/").pop());
+verifier(faux.transactions.get(id4)?.amount === 10000, "transaction d'activation de 10 000 FCFA créée");
+const retour4 = await fetch(`http://127.0.0.1:8098/payer/${id4}`, { redirect: "manual" });
+const page4 = await (await fetch(retour4.headers.get("location"))).text();
+const c4 = await code(machine3);
+verifier(/^INST-/.test(c4 || "") && page4.includes("activé"), "activation payée : code délivré, le logiciel le lit tout seul");
+verifier(!(await cle(machine3)), "l'activation ne donne pas de licence (l'essai gratuit commence)");
+
 faux.fermer();
 console.log(`\nBILAN PAIEMENT : ${ok ? "RÉUSSI" : "ÉCHEC"}`);
 process.exit(ok ? 0 : 1);
