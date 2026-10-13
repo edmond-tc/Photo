@@ -31,7 +31,7 @@ jobs:
         run: |
           set -e
           B=https://photocopie-benin.atinzed2.workers.dev
-          for p in / /en /faq /kit /affiche /comment-ca-marche /telecharger /confidentialite /robots.txt /sitemap.xml /apercu.png; do
+          for p in / /en /faq /kit /affiche /comment-ca-marche /telecharger /confidentialite /conditions /mentions-legales /en/how-it-works /en/faq /en/download /en/privacy /en/terms /en/legal /robots.txt /sitemap.xml /apercu.png; do
             code=$(curl -s -o /dev/null -w "%{http_code}" "$B$p")
             echo "$p -> $code"
             test "$code" = "200"
@@ -47,7 +47,7 @@ jobs:
         run: |
           curl -s -o /dev/null -w "IndexNow : %{http_code}\n" -X POST https://api.indexnow.org/indexnow \
             -H 'content-type: application/json; charset=utf-8' \
-            -d '{"host":"photocopie-benin.atinzed2.workers.dev","key":"5e07389a63a1f5493cc79c62f31e023c","keyLocation":"https://photocopie-benin.atinzed2.workers.dev/5e07389a63a1f5493cc79c62f31e023c.txt","urlList":["https://photocopie-benin.atinzed2.workers.dev/","https://photocopie-benin.atinzed2.workers.dev/en","https://photocopie-benin.atinzed2.workers.dev/faq","https://photocopie-benin.atinzed2.workers.dev/comment-ca-marche","https://photocopie-benin.atinzed2.workers.dev/telecharger","https://photocopie-benin.atinzed2.workers.dev/confidentialite"]}'
+            -d '{"host":"photocopie-benin.atinzed2.workers.dev","key":"5e07389a63a1f5493cc79c62f31e023c","keyLocation":"https://photocopie-benin.atinzed2.workers.dev/5e07389a63a1f5493cc79c62f31e023c.txt","urlList":["https://photocopie-benin.atinzed2.workers.dev/","https://photocopie-benin.atinzed2.workers.dev/en","https://photocopie-benin.atinzed2.workers.dev/faq","https://photocopie-benin.atinzed2.workers.dev/comment-ca-marche","https://photocopie-benin.atinzed2.workers.dev/telecharger","https://photocopie-benin.atinzed2.workers.dev/confidentialite","https://photocopie-benin.atinzed2.workers.dev/conditions","https://photocopie-benin.atinzed2.workers.dev/mentions-legales","https://photocopie-benin.atinzed2.workers.dev/en/how-it-works","https://photocopie-benin.atinzed2.workers.dev/en/faq","https://photocopie-benin.atinzed2.workers.dev/en/download","https://photocopie-benin.atinzed2.workers.dev/en/privacy","https://photocopie-benin.atinzed2.workers.dev/en/terms","https://photocopie-benin.atinzed2.workers.dev/en/legal"]}'
 
       - name: Banc d'essai par Internet (relais en ligne)
         env:

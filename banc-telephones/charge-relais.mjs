@@ -46,6 +46,7 @@ async function client(boutique, n, attendus) {
     for (let essai = 1; ; essai++) {
       const form = new FormData();
       form.append("nom", `Client ${n}`);
+      form.append("telephone", `+229 01 ${String(boutique.code.length * 1e6 + n * 7919).padStart(8, "0").slice(-8)}`);
       form.append("nombre_fichiers", "1");
       form.append("nomreprise_0", nom);
       form.append("reprise_0", id);

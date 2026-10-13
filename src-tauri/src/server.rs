@@ -356,7 +356,8 @@ async fn infos_boutique(State(app): State<AppHandle>) -> impl IntoResponse {
         .as_deref()
         .and_then(normalize_phone);
     let bluetooth = crate::db::get_setting(&conn, "bluetooth_nom").filter(|n| !n.trim().is_empty());
-    Json(serde_json::json!({ "boutique": nom, "tarifs": tarifs, "whatsapp": whatsapp, "bluetooth": bluetooth }))
+    let devise = crate::pays::pays(crate::db::get_setting(&conn, "pays").as_deref()).devise;
+    Json(serde_json::json!({ "boutique": nom, "tarifs": tarifs, "whatsapp": whatsapp, "bluetooth": bluetooth, "devise": devise }))
 }
 
 /// Portail captif, façon Wi-Fi d'hôtel : le téléphone qui rejoint un réseau
@@ -912,7 +913,8 @@ async fn page_accueil(
 /// L'interface du client (choix des documents, options, envoi, numéro de
 /// commande). Le même fichier est embarqué dans l'application Android :
 /// voir `client-web/` à la racine du projet.
-const INTERFACE_CLIENT: &str = include_str!("../../client-web/index.html");
+// Allégée à la construction (voir build.rs) : sans commentaires ni indentation.
+const INTERFACE_CLIENT: &str = include_str!(concat!(env!("OUT_DIR"), "/client.html"));
 
 /// L'ancienne page d'envoi, gardée en secours (lien en bas de l'interface).
 async fn page_classique(State(app): State<AppHandle>) -> Html<String> {
@@ -1443,6 +1445,8 @@ struct EnvoiClient {
     /// « J'attends sur place », « Je repasse à 15:00 »…
     quand: Option<String>,
     urgent: bool,
+    /// Arrivée par le relais Internet (le client n'est pas au guichet).
+    par_internet: bool,
 }
 
 const LONGUEUR_MAX_DESCRIPTION: usize = 500;
@@ -1495,6 +1499,7 @@ async fn lire_envoi(
         vocaux: std::collections::HashMap::new(),
         quand: None,
         urgent: false,
+        par_internet: false,
     };
     let resultat = lire_champs(multipart, dossier_en_cours, budget, &mut envoi).await;
     match resultat {
@@ -1560,7 +1565,13 @@ async fn lire_champs(
                 }
                 continue;
             }
-            "nombre_fichiers" | "origine" => {
+            "origine" => {
+                if let Ok(v) = field.text().await {
+                    envoi.par_internet = v == "internet";
+                }
+                continue;
+            }
+            "nombre_fichiers" => {
                 let _ = field.text().await;
                 continue;
             }
@@ -1748,6 +1759,7 @@ async fn enregistrer_envoi(
         mut vocaux,
         quand,
         urgent,
+        par_internet,
     } = envoi;
 
     let recus_dir = data_dir.join("recus");
@@ -1807,6 +1819,9 @@ async fn enregistrer_envoi(
         }
         if urgent {
             demande.insert("urgent".into(), serde_json::Value::Bool(true));
+        }
+        if par_internet {
+            demande.insert("par_internet".into(), serde_json::Value::Bool(true));
         }
         if !demande.is_empty() {
             opts.demande_client = serde_json::to_string(&demande).ok();
@@ -2375,6 +2390,7 @@ mod tests {
             vocaux: std::collections::HashMap::new(),
             quand: None,
             urgent: false,
+            par_internet: false,
         }
     }
 
@@ -2456,6 +2472,39 @@ mod tests {
         assert!(!INTERFACE_CLIENT.contains("<script src"));
         assert!(!INTERFACE_CLIENT.contains("<link"));
         assert!(INTERFACE_CLIENT.contains("/envoyer"));
+    }
+
+    #[test]
+    fn l_allegement_ne_touche_que_les_commentaires() {
+        // « image/* » ressemble à un début de commentaire : il doit rester.
+        assert!(INTERFACE_CLIENT.contains(r#"accept="image/*""#));
+        assert!(!INTERFACE_CLIENT.contains("<!--"));
+        assert!(!INTERFACE_CLIENT.lines().any(|l| l.starts_with("//") || l.starts_with(' ')));
+        let source = include_str!("../../client-web/index.html");
+        assert!(INTERFACE_CLIENT.len() < source.len());
+        // Le script est entier : même nombre d'accolades ouvrantes et fermantes
+        // qu'à la source, une fois les commentaires mis à part.
+        let compter = |t: &str, c: char| t.lines().filter(|l| !l.trim_start().starts_with("//")).map(|l| l.matches(c).count()).sum::<usize>();
+        assert_eq!(compter(INTERFACE_CLIENT, '{') + compter(INTERFACE_CLIENT, '}'), compter(source, '{') + compter(source, '}') - accolades_en_commentaire(source));
+    }
+
+    fn accolades_en_commentaire(source: &str) -> usize {
+        let mut n = 0;
+        let mut reste = source;
+        while let Some(d) = reste.find("<!--") {
+            let f = reste[d..].find("-->").map(|f| d + f).unwrap_or(reste.len());
+            n += reste[d..f].matches(['{', '}']).count();
+            reste = &reste[f..];
+        }
+        if let (Some(d), Some(f)) = (source.find("<style>"), source.find("</style>")) {
+            let mut bloc = &source[d..f];
+            while let Some(a) = bloc.find("/*") {
+                let b = bloc[a..].find("*/").map(|b| a + b).unwrap_or(bloc.len());
+                n += bloc[a..b].matches(['{', '}']).count();
+                bloc = &bloc[b..];
+            }
+        }
+        n
     }
 
     // ── Format papier : le menu déroulant est contournable ──

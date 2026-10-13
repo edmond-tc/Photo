@@ -51,8 +51,15 @@ function formatHeure(isoString) {
   }
 }
 
+// Monnaie du pays de la boutique (Réglages → Boutique → Pays).
+let DEVISE = "FCFA";
+async function chargerDevise() {
+  try { DEVISE = (await invoke("pays_boutique")).devise || "FCFA"; } catch {}
+  document.querySelectorAll(".devise").forEach((e) => (e.textContent = DEVISE));
+}
+
 function formatFcfa(montant) {
-  return `${Number(montant ?? 0).toLocaleString("fr-FR")} FCFA`;
+  return `${Number(montant ?? 0).toLocaleString("fr-FR")} ${DEVISE}`;
 }
 
 // ── Sons ──────────────────────────────────────────────────────────────
@@ -604,6 +611,7 @@ function creerCarteCommande(item) {
   etiquettes.className = "pastilles etiquettes-commande";
   if (demande.urgent) etiquettes.append(pastille("⚡ URGENT", "urgent"));
   if (demande.quand) etiquettes.append(pastille(`⏱ ${demande.quand}`, "quand"));
+  if (demande.par_internet) etiquettes.append(pastille("🌍 Par Internet", "quand"));
   const nombre = pastille("", "neutre");
   nombre.classList.add("nombre-docs");
   etiquettes.append(nombre);
@@ -624,6 +632,14 @@ function creerCarteCommande(item) {
     pret.classList.add("bouton-pret");
     droite.appendChild(pret);
   }
+  // Le client a laissé son numéro : un toucher ouvre WhatsApp, message déjà
+  // écrit. Par Internet surtout, le client n'est pas au guichet.
+  if (item.client_telephone) {
+    droite.appendChild(bouton("💬 Prévenir", "btn-secondaire", () => prevenirClient(item, carte)));
+    if (demande.par_internet) {
+      droite.appendChild(bouton("🚫 Bloquer", "btn-secondaire", () => bloquerNumero(item.client_telephone)));
+    }
+  }
 
   const rappel = document.createElement("p");
   rappel.className = "rappel-commande";
@@ -635,6 +651,33 @@ function creerCarteCommande(item) {
   if (item.commande_jeton) appliquerEtape(carte, item.etape || "recu", false);
   majLigneTemps(carte);
   return carte;
+}
+
+async function prevenirClient(item, carte) {
+  const params = await invoke("get_boutique_settings");
+  const prenom = item.client_name ? ` ${item.client_name}` : "";
+  const boutique = params.nom ? ` chez ${params.nom}` : "";
+  const numero = item.commande_numero ? ` n° ${item.commande_numero}` : "";
+  const message = carte.dataset.etape === "pret"
+    ? `Bonjour${prenom}, votre commande${numero} est prête${boutique}. Vous pouvez passer la retirer.`
+    : `Bonjour${prenom}, au sujet de votre commande${numero}${boutique} : `;
+  try {
+    const ok = await invoke("ecrire_au_client", { telephone: item.client_telephone, message });
+    if (!ok) toast("Ce numéro n'est pas utilisable pour WhatsApp.", "attention", 5000);
+  } catch (e) {
+    toast(`WhatsApp ne s'est pas ouvert : ${e}`, "attention", 6000);
+  }
+}
+
+// Fausses commandes par Internet : le numéro ne peut plus commander à
+// distance (il peut toujours venir au guichet). Réversible dans Réglages.
+async function bloquerNumero(telephone) {
+  if (!confirm(`Bloquer ${telephone} ?\n\nCe numéro ne pourra plus vous envoyer de commandes par Internet. Vous pourrez le débloquer dans Réglages → Ma boutique sur Internet.`)) return;
+  const params = await invoke("get_boutique_settings");
+  const liste = (params.numeros_bloques || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!liste.includes(telephone)) liste.push(telephone);
+  await invoke("set_boutique_setting", { cle: "numeros_bloques", valeur: liste.join("\n") });
+  toast(`${telephone} est bloqué pour les commandes par Internet.`);
 }
 
 const SOURCES_CARTE = { qr: null, usb: "clé USB", dossier_surveille: "dossier", bluetooth: "Bluetooth" };
@@ -1719,7 +1762,7 @@ function imprimerGuideGerant() {
           Le message dit lequel de ces problèmes Windows a signalé.</td></tr>
         <tr><td>« PDF protégé par mot de passe »</td><td>Demandez le mot de passe au client : sans lui, personne ne peut imprimer le fichier.</td></tr>
         <tr><td>Un fichier ne doit pas être servi</td><td>« Ignorer », puis choisissez la raison. Rien ne disparaît sans explication.</td></tr>
-        <tr><td>L'écran demande une clé d'abonnement</td><td>Appelez le <strong>0151226741</strong> depuis votre téléphone,
+        <tr><td>L'écran demande une clé d'abonnement</td><td>Appelez le <strong>+229 01 51 22 67 41</strong> depuis votre téléphone,
           et donnez l'identifiant affiché à l'écran.</td></tr>
       </tbody>
     </table>
@@ -2280,7 +2323,7 @@ async function rendreRapports(corps) {
   const formDepense = document.createElement("form");
   formDepense.innerHTML = `
     <input type="text" placeholder="Description" id="dep-description" required />
-    <input type="number" placeholder="Montant FCFA" id="dep-montant" min="0" required />
+    <input type="number" placeholder="Montant (${DEVISE})" id="dep-montant" min="0" required />
     <select id="dep-categorie">
       <option value="papier">Papier</option>
       <option value="encre">Encre / toner</option>
@@ -2328,7 +2371,7 @@ async function rendreRapports(corps) {
   `;
   const formCloture = document.createElement("form");
   formCloture.innerHTML = `
-    <input type="number" placeholder="Montant réellement compté (FCFA)" id="clot-reel" min="0" required />
+    <input type="number" placeholder="Montant réellement compté (${DEVISE})" id="clot-reel" min="0" required />
     <button type="submit" class="btn-secondaire">Clôturer</button>
   `;
   const resultatCloture = document.createElement("p");
@@ -2508,6 +2551,55 @@ async function rendreReglages(corps) {
     toast("✓ Réglages enregistrés");
   });
   secBoutique.appendChild(formBoutique);
+
+  // Pays : la monnaie affichée partout, et l'indicatif pour écrire aux
+  // clients sur WhatsApp.
+  const infoPays = await invoke("pays_boutique");
+  const formPays = document.createElement("form");
+  formPays.innerHTML = `
+    <label>Pays de la boutique
+      <select id="reg-pays">${infoPays.liste.map((p) => `<option value="${p.code}" ${p.code === infoPays.code ? "selected" : ""}>${echapperHtml(p.nom)} (${echapperHtml(p.devise)})</option>`).join("")}</select>
+    </label>
+    <button type="submit" class="btn-secondaire">Enregistrer le pays</button>`;
+  formPays.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await invoke("set_boutique_setting", { cle: "pays", valeur: document.querySelector("#reg-pays").value });
+    await chargerDevise();
+    toast("✓ Pays enregistré : les prix s'affichent dans sa monnaie.");
+  });
+  secBoutique.appendChild(formPays);
+
+  // Ma boutique sur Internet : ce que voit un client qui commande de chez lui.
+  const secInternet = document.createElement("section");
+  secInternet.innerHTML = `<h3>🌍 Ma boutique sur Internet</h3>
+    <p style="font-size:0.85rem; color:var(--gris-texte-discret); margin-top:0">
+      Le client qui commande de chez lui voit ces informations en haut de la page d'envoi.
+      Laissez vide ce que vous ne voulez pas montrer.</p>`;
+  const formInternet = document.createElement("form");
+  formInternet.innerHTML = `
+    <label>Adresse (quartier, repère) <input type="text" id="reg-fiche-adresse" maxlength="150" placeholder="ex. Carrefour Vèdoko, à côté de la pharmacie" value="${echapperHtml(params.fiche_adresse)}" /></label>
+    <label>Horaires <input type="text" id="reg-fiche-horaires" maxlength="150" placeholder="ex. Lundi à samedi, 8 h - 20 h" value="${echapperHtml(params.fiche_horaires)}" /></label>
+    <label>Téléphone de la boutique <input type="tel" id="reg-fiche-telephone" maxlength="30" value="${echapperHtml(params.fiche_telephone)}" /></label>
+    <label>Lien du plan (facultatif) <input type="url" id="reg-fiche-plan" maxlength="300" placeholder="https://maps.app.goo.gl/…" value="${echapperHtml(params.fiche_plan)}" /></label>
+    <p style="font-size:0.8rem; color:var(--gris-texte-discret); margin:-0.5rem 0 0.75rem">
+      Dans Google Maps, sur votre téléphone : touchez votre boutique, puis « Partager » et « Copier le lien ».</p>
+    <label>Numéros bloqués (un par ligne)
+      <textarea id="reg-numeros-bloques" rows="3" placeholder="Ces numéros ne peuvent plus commander par Internet">${echapperHtml(params.numeros_bloques)}</textarea></label>
+    <button type="submit" class="btn-secondaire">Enregistrer</button>`;
+  formInternet.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      for (const [cle, id] of [["fiche_adresse", "adresse"], ["fiche_horaires", "horaires"], ["fiche_telephone", "telephone"], ["fiche_plan", "plan"]]) {
+        await invoke("set_boutique_setting", { cle, valeur: document.querySelector(`#reg-fiche-${id}`).value });
+      }
+      await invoke("set_boutique_setting", { cle: "numeros_bloques", valeur: document.querySelector("#reg-numeros-bloques").value });
+      toast("✓ Enregistré. La page Internet est mise à jour dans la minute.");
+    } catch (err) {
+      toast(`${err}`, "attention", 7000);
+    }
+  });
+  secInternet.appendChild(formInternet);
+  secBoutique.appendChild(secInternet);
 
   const logoActuel = document.createElement("p");
   logoActuel.className = "chemin-dossier";
@@ -2829,7 +2921,7 @@ async function rendreReglages(corps) {
   // Grille tarifaire
   const tarifs = await invoke("list_tarifs");
   const secTarifs = document.createElement("section");
-  secTarifs.innerHTML = "<h3>Grille tarifaire (FCFA)</h3>";
+  secTarifs.innerHTML = `<h3>Grille tarifaire (${DEVISE})</h3>`;
   for (const t of tarifs) {
     const ligne = document.createElement("div");
     ligne.className = "ligne-stock";
@@ -2875,7 +2967,7 @@ async function rendreReglages(corps) {
     for (const h of historiqueTarifs) {
       secHistoriqueTarifs.appendChild(
         ligneListe(
-          `${h.libelle} : ${h.ancien_prix} → ${h.nouveau_prix} FCFA`,
+          `${h.libelle} : ${h.ancien_prix} → ${h.nouveau_prix} ${DEVISE}`,
           formatHeure(h.changed_at) + " · " + new Date(h.changed_at).toLocaleDateString("fr-FR")
         )
       );
@@ -3041,7 +3133,7 @@ async function ouvrirEcranTechnique(corps) {
               alert(
                 `⚠️ La restauration n'a pas eu lieu — vos données actuelles sont intactes.\n\n` +
                   `Essayez une sauvegarde plus ancienne dans la liste. Si aucune ne fonctionne, ` +
-                  `appelez le 0151226741 avant de toucher à autre chose.\n\nDétail : ${err}`
+                  `appelez le +229 01 51 22 67 41 avant de toucher à autre chose.\n\nDétail : ${err}`
               );
             }
           })
@@ -3611,7 +3703,7 @@ async function demarrerApplication() {
     } else {
       toast(
         "Le fichier licence.txt de cette clé USB ne correspond pas à cet ordinateur. " +
-          "Appelez le 0151226741 en donnant l'identifiant affiché à l'écran.",
+          "Appelez le +229 01 51 22 67 41 en donnant l'identifiant affiché à l'écran.",
         "attention"
       );
     }
@@ -4061,6 +4153,7 @@ function casesUsb() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  await chargerDevise();
   document.querySelector("#btn-usb-tout").addEventListener("click", () => {
     casesUsb().forEach((c) => {
       if (c.closest("li").hidden) return;
@@ -4178,7 +4271,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       // agir. Une erreur silencieuse ici le laisse devant un bouton qui ne
       // répond pas, sans savoir s'il doit rappeler ou réessayer.
       toast(
-        `La clé n'a pas pu être enregistrée (${err}). Réessayez, puis appelez le 0151226741 si cela persiste.`,
+        `La clé n'a pas pu être enregistrée (${err}). Réessayez, puis appelez le +229 01 51 22 67 41 si cela persiste.`,
         "attention",
         7000
       );
@@ -4221,7 +4314,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     } catch (err) {
       // Écran de blocage : c'est le seul endroit où l'on peut encore agir.
       toast(
-        `Le code n'a pas pu être vérifié (${err}). Réessayez, puis appelez le 0151226741 si cela persiste.`,
+        `Le code n'a pas pu être vérifié (${err}). Réessayez, puis appelez le +229 01 51 22 67 41 si cela persiste.`,
         "attention",
         7000
       );

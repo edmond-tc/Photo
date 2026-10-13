@@ -409,6 +409,7 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
     let boutique_nom =
         db::get_setting(&conn, "boutique_nom").unwrap_or_else(|| "Photocopie".to_string());
     let logo_chemin = db::get_setting(&conn, "boutique_logo_chemin");
+    let devise = crate::pays::pays(db::get_setting(&conn, "pays").as_deref()).devise;
     drop(conn);
 
     let moyen_libelle = match moyen_paiement.as_str() {
@@ -507,7 +508,7 @@ pub fn imprimer_recu(app: AppHandle, transaction_id: i64) -> Result<(), String> 
 <div class="ligne"><span>Date</span><span>{date_lisible}</span></div>
 <hr>
 <div class="ligne"><span>{description_html}</span></div>
-<div class="ligne"><strong>Montant</strong><strong>{montant} FCFA</strong></div>
+<div class="ligne"><strong>Montant</strong><strong>{montant} {devise}</strong></div>
 <div class="ligne"><span>Paiement</span><span>{moyen_libelle_html}</span></div>
 <div class="ligne"><span>{employe_ligne_html}</span></div>
 <hr>

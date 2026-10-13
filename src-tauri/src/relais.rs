@@ -121,15 +121,27 @@ pub fn client() -> reqwest::Client {
 
 /// Se fait connaître du relais (une première fois, puis de temps en temps,
 /// pour le nom et les prix affichés au client).
-pub async fn inscrire(
-    client: &reqwest::Client,
-    cfg: &Config,
-    nom: &str,
-    tarifs: &serde_json::Value,
-) -> Result<(), ErreurInscription> {
+/// Ce que le relais montre de la boutique aux clients (nom, prix, fiche) et
+/// les numéros qu'elle refuse.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct Vitrine {
+    pub nom: String,
+    pub tarifs: serde_json::Value,
+    pub fiche: serde_json::Value,
+    pub bloques: Vec<String>,
+}
+
+pub async fn inscrire(client: &reqwest::Client, cfg: &Config, vitrine: &Vitrine) -> Result<(), ErreurInscription> {
     let r = client
         .post(format!("{}/api/relais/inscrire", cfg.relais))
-        .json(&serde_json::json!({ "code": cfg.code, "secret": cfg.secret, "nom": nom, "tarifs": tarifs }))
+        .json(&serde_json::json!({
+            "code": cfg.code,
+            "secret": cfg.secret,
+            "nom": vitrine.nom,
+            "tarifs": vitrine.tarifs,
+            "fiche": vitrine.fiche,
+            "bloques": vitrine.bloques,
+        }))
         .timeout(Duration::from_secs(20))
         .send()
         .await
@@ -411,6 +423,35 @@ fn noter(app: &tauri::AppHandle, cle: &str, valeur: &str) {
     };
 }
 
+/// La vitrine de la boutique, d'après ses réglages.
+fn vitrine(app: &tauri::AppHandle) -> Vitrine {
+    let r = |cle: &str| reglage(app, cle).unwrap_or_default();
+    let pays = crate::pays::pays(reglage(app, "pays").as_deref());
+    Vitrine {
+        nom: r("boutique_nom"),
+        tarifs: tarifs(app),
+        fiche: serde_json::json!({
+            "adresse": r("fiche_adresse"),
+            "horaires": r("fiche_horaires"),
+            "telephone": r("fiche_telephone"),
+            "plan": r("fiche_plan"),
+            "devise": pays.devise,
+        }),
+        bloques: numeros_bloques(&r("numeros_bloques")),
+    }
+}
+
+/// Un numéro par ligne (ou séparés par des virgules), tel que le gérant
+/// l'a copié de la commande.
+pub fn numeros_bloques(texte: &str) -> Vec<String> {
+    texte
+        .split(['\n', ',', ';'])
+        .map(|l| l.chars().filter(|c| c.is_ascii_digit() || *c == '+').collect::<String>())
+        .filter(|n| n.chars().filter(char::is_ascii_digit).count() >= 8)
+        .take(1000)
+        .collect()
+}
+
 fn tarifs(app: &tauri::AppHandle) -> serde_json::Value {
     let state = app.state::<crate::db::DbState>();
     let Ok(conn) = state.0.lock() else { return serde_json::json!({}) };
@@ -433,7 +474,7 @@ pub fn demarrer(app: tauri::AppHandle) {
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
         let mut derniere_inscription: Option<Instant> = None;
-        let mut nom_inscrit = String::new();
+        let mut vitrine_inscrite = Vitrine::default();
         let mut activite: Option<Instant> = None;
         let mut echecs: u32 = 0;
         // Laisse d'abord démarrer le serveur local.
@@ -468,13 +509,14 @@ pub fn demarrer(app: tauri::AppHandle) {
                 dossier,
             };
 
-            // Inscription : au début, quand le nom change, puis toutes les 6 h.
-            let nom = reglage(&app, "boutique_nom").unwrap_or_default();
-            if derniere_inscription.is_none_or(|t| t.elapsed() > Duration::from_secs(6 * 3600)) || nom != nom_inscrit {
-                match inscrire(&client, &cfg, &nom, &tarifs(&app)).await {
+            // Inscription : au début, dès que le nom, les prix, la fiche ou
+            // les numéros bloqués changent, puis toutes les 6 h.
+            let actuelle = vitrine(&app);
+            if derniere_inscription.is_none_or(|t| t.elapsed() > Duration::from_secs(6 * 3600)) || actuelle != vitrine_inscrite {
+                match inscrire(&client, &cfg, &actuelle).await {
                     Ok(()) => {
                         derniere_inscription = Some(Instant::now());
-                        nom_inscrit = nom;
+                        vitrine_inscrite = actuelle;
                         noter(&app, "relais_inscrit", "oui");
                         echecs = 0;
                     }
@@ -557,6 +599,11 @@ mod tests {
     }
 
     #[test]
+    fn numeros_bloques_copies_tels_quels() {
+        assert_eq!(numeros_bloques("+229 01 97 12 34 56\n\n0197000001, 12\nAwa"), vec!["+2290197123456", "0197000001"]);
+    }
+
+    #[test]
     fn un_nom_ne_peut_pas_casser_l_en_tete() {
         assert_eq!(nettoyer("a\"b\r\nc\\d"), "abcd");
     }
@@ -576,7 +623,8 @@ mod tests {
             dossier: std::env::temp_dir().join("relais-essai"),
         };
         let c = client();
-        inscrire(&c, &cfg, "Boutique d'essai", &serde_json::json!({"nb_a4": 25})).await.unwrap();
+        let v = Vitrine { nom: "Boutique d'essai".into(), tarifs: serde_json::json!({"nb_a4": 25}), ..Default::default() };
+        inscrire(&c, &cfg, &v).await.unwrap();
         let mut remises = Remises::new();
         let mut suivis = traiter_attente(&c, &cfg, &mut remises).await.unwrap();
         println!("commandes remises : {}", suivis.len());

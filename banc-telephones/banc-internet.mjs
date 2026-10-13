@@ -33,9 +33,29 @@ const secret = crypto.randomBytes(32).toString("hex");
 const r = await fetch(`${RELAIS}/api/relais/inscrire`, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ code, secret, nom: "Boutique d'essai Internet", tarifs: { nb_a4: 25 } }),
+  body: JSON.stringify({
+    code, secret, nom: "Boutique d'essai Internet", tarifs: { nb_a4: 25 },
+    fiche: { adresse: "Carrefour Vèdoko, Cotonou", horaires: "Lun-Sam 8h-20h", telephone: "+229 01 00 00 00 01", plan: "https://maps.app.goo.gl/essai", devise: "FCFA" },
+    bloques: ["+229 01 97 00 00 99"],
+  }),
 });
 if (!r.ok) throw new Error(`inscription refusée : ${r.status} ${await r.text()}`);
+
+// Un numéro bloqué par la boutique est refusé, sans rien stocker.
+{
+  const f = new FormData();
+  f.append("telephone", "0197000099");
+  f.append("nombre_fichiers", "1");
+  f.append("fichier_0", new Blob(["x"]), "x.pdf");
+  const b = await fetch(`${RELAIS}/b/${code}/envoyer`, { method: "POST", body: f });
+  if (b.status !== 403) throw new Error(`numéro bloqué accepté (${b.status})`);
+  const sans = new FormData();
+  sans.append("nombre_fichiers", "1");
+  sans.append("fichier_0", new Blob(["x"]), "x.pdf");
+  const s = await fetch(`${RELAIS}/b/${code}/envoyer`, { method: "POST", body: sans });
+  if (s.status !== 400) throw new Error(`commande sans numéro acceptée (${s.status})`);
+  console.log("✅ Numéro bloqué refusé, commande sans numéro refusée.");
+}
 
 const recus = new Map(); // nom du document → octets reçus par le PC
 let numero = 0;
@@ -97,6 +117,13 @@ async function essai(navigateur, t, coupure) {
       });
     }
     await page.click("#btn-vers-quand");
+    // Par Internet : « Pour quand ? », prénom et numéro WhatsApp obligatoires.
+    await page.locator('[data-ecran="quand"]').waitFor({ state: "visible", timeout: 5000 });
+    await page.click("#btn-envoyer");
+    if (!(await page.locator("#contact-erreur").isVisible())) throw new Error("envoi parti sans numéro");
+    await page.fill("#prenom-en-ligne", "Awa");
+    await page.fill("#numero-en-ligne", "+229 01 97 00 00 " + String(10 + Math.floor(Math.random() * 89)));
+    await page.click("#btn-envoyer");
     await page.locator('[data-ecran="recu"]').waitFor({ state: "visible", timeout: 120000 });
     const consigneDonnees = await page.locator("[data-conseil-donnees]:visible").count();
     // Le numéro du guichet arrive quand le PC a récupéré la commande.
@@ -107,10 +134,22 @@ async function essai(navigateur, t, coupure) {
       if (/^I-\d+$/.test(affiche)) break;
       await attendre(500);
     }
-    const ok = recus.get(nom) === taille && /^I-\d+$/.test(affiche) && consigneDonnees === 0 && erreurs.length === 0;
+    // Mes commandes : de retour à l'accueil, la commande y est, avec son
+    // numéro ; le lien de suivi (#c=…) la rouvre dans une page neuve.
+    const lien = page.url();
+    await page.click("#btn-nouvelle");
+    await page.locator("#liste-commandes .commande").first().waitFor({ state: "visible", timeout: 5000 });
+    const dansMes = (await page.textContent("#liste-commandes")).includes(affiche);
+    const fiche = (await page.textContent("#fiche-boutique")) || "";
+    const ficheOk = fiche.includes("Vèdoko") && fiche.includes("8h-20h") && (await page.locator("#fiche-boutique a[href^='tel:']").count()) === 1;
+    const autre = await ctx.newPage();
+    await autre.goto(lien);
+    await autre.locator('[data-ecran="recu"]').waitFor({ state: "visible", timeout: 10000 });
+    const rouvert = /c=[0-9a-f]{32}$/.test(lien) && (await autre.textContent("#numero-commande")).trim() === affiche;
+    const ok = recus.get(nom) === taille && /^I-\d+$/.test(affiche) && consigneDonnees === 0 && erreurs.length === 0 && dansMes && ficheOk && rouvert;
     return {
       ok,
-      detail: `boutique « ${boutique} », ${(taille / 1048576).toFixed(0)} Mo reçus par le PC : ${recus.get(nom) === taille ? "entier" : "INCOMPLET"}, numéro affiché « ${affiche} » en ${((Date.now() - debut) / 1000).toFixed(1)} s, consigne « données » ${consigneDonnees ? "AFFICHÉE À TORT" : "absente"}${erreurs.length ? ", erreurs : " + erreurs.join(" | ") : ""}`,
+      detail: `boutique « ${boutique} », ${(taille / 1048576).toFixed(0)} Mo reçus par le PC : ${recus.get(nom) === taille ? "entier" : "INCOMPLET"}, numéro affiché « ${affiche} » en ${((Date.now() - debut) / 1000).toFixed(1)} s, consigne « données » ${consigneDonnees ? "AFFICHÉE À TORT" : "absente"}, Mes commandes ${dansMes ? "ok" : "ABSENTE"}, fiche ${ficheOk ? "ok" : "ABSENTE"}, lien de suivi ${rouvert ? "ok" : "CASSÉ"}${erreurs.length ? ", erreurs : " + erreurs.join(" | ") : ""}`,
     };
   } catch (e) {
     return { ok: false, detail: `bloqué : ${e.message.split("\n")[0]}` };

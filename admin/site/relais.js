@@ -9,7 +9,10 @@
 // un stockage de fichiers (`env.TELECHARGEMENTS`, préfixe `relais/`). Changer
 // d'hébergeur revient à fournir ces deux appuis ailleurs.
 
-import PAGE_CLIENT from "../../client-web/index.html";
+import SOURCE_PAGE_CLIENT from "../../client-web/index.html";
+import { alleger } from "./alleger.js";
+
+const PAGE_CLIENT = alleger(SOURCE_PAGE_CLIENT);
 
 /** Un morceau : 1 Mo pour la page, un peu de marge. */
 const MORCEAU_MAX = 2 * 1024 * 1024;
@@ -20,6 +23,8 @@ const DIRECT_MAX = 8 * 1024 * 1024;
 /** En attente, par boutique : au-delà, la boutique doit d'abord récupérer. */
 const ATTENTE_MAX_PAR_BOUTIQUE = 2 * 1024 * 1024 * 1024;
 const FICHIERS_MAX = 20;
+/** Commandes d'un même numéro qui attendent encore la boutique. */
+const COMMANDES_MAX_PAR_NUMERO = 10;
 const ENVOI_MAX = 12 * 1024 * 1024; // une commande sans ses documents
 const DUREE_DE_VIE_MS = 24 * 3600 * 1000;
 
@@ -176,6 +181,18 @@ async function recevoirCommande(request, env, b) {
   if (!longueur || longueur > ENVOI_MAX) return new Response("Envoi trop lourd. Réessayez.", { status: 413 });
   let formulaire;
   try { formulaire = await request.formData(); } catch { return new Response("Envoi illisible. Réessayez.", { status: 400 }); }
+  // Par Internet, le client n'est pas au guichet : la boutique doit pouvoir
+  // le prévenir. Et une boutique peut bloquer un numéro (fausses commandes).
+  // Vérifié avant de stocker quoi que ce soit.
+  const numero = finDeNumero(formulaire.get("telephone"));
+  if (numero.length < 8) {
+    return new Response("Écrivez votre numéro WhatsApp : la boutique vous prévient quand c'est prêt.", { status: 400 });
+  }
+  let bloques = [];
+  try { bloques = JSON.parse((await env.DB.prepare("SELECT bloques FROM relais_fiches WHERE code = ?").bind(b.code).first())?.bloques || "[]"); } catch {}
+  if (bloques.includes(numero)) {
+    return new Response("Cette boutique n'accepte pas vos commandes par Internet. Passez la voir directement.", { status: 403 });
+  }
   const champs = {};
   const fichiers = [];
   const commande = hasard(12);
@@ -221,6 +238,13 @@ async function recevoirCommande(request, env, b) {
       }
       return json({ numero: null, jetons: [deja.jeton], en_ligne: true });
     }
+  }
+  champs.numero_client = String(champs.telephone || "").replace(/[^0-9]/g, "").slice(0, 20);
+  const enCours = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM relais_commandes WHERE code = ? AND etape = 'en_ligne' AND champs LIKE ?"
+  ).bind(b.code, `%"numero_client":"%${numero}"%`).first();
+  if ((enCours?.n || 0) >= COMMANDES_MAX_PAR_NUMERO) {
+    return new Response("Vous avez déjà plusieurs commandes qui attendent la boutique. Patientez qu'elle les reçoive.", { status: 429 });
   }
   const jeton = hasard(16);
   await env.DB.prepare(
@@ -278,7 +302,33 @@ async function inscrire(request, env) {
     await env.DB.prepare("UPDATE relais_boutiques SET nom = ?, tarifs = ?, vu = ? WHERE code = ?")
       .bind(nom, tarifs, maintenant, code).run();
   }
+  await env.DB.prepare(
+    `INSERT INTO relais_fiches (code, fiche, bloques) VALUES (?, ?, ?)
+     ON CONFLICT(code) DO UPDATE SET fiche = excluded.fiche, bloques = excluded.bloques`
+  ).bind(code, JSON.stringify(ficheNettoyee(corps.fiche)), JSON.stringify(bloquesNettoyes(corps.bloques))).run();
   return json({ ok: true, code });
+}
+
+/** Fiche publique de la boutique : seulement du texte court, et un lien de
+ * plan en https. Rien de ce qui vient du PC n'est servi tel quel. */
+function ficheNettoyee(f) {
+  if (!f || typeof f !== "object") return {};
+  const texte = (v, n) => String(v || "").replace(/[\u0000-\u001f<>]/g, " ").trim().slice(0, n);
+  const plan = texte(f.plan, 300);
+  return {
+    adresse: texte(f.adresse, 150),
+    horaires: texte(f.horaires, 150),
+    telephone: texte(f.telephone, 30).replace(/[^0-9+ ]/g, ""),
+    plan: /^https:\/\/[^\s"'<>]+$/.test(plan) ? plan : "",
+    devise: texte(f.devise, 8),
+  };
+}
+
+/** Les 8 derniers chiffres suffisent à reconnaître un numéro, qu'il soit
+ * écrit avec ou sans indicatif du pays. */
+const finDeNumero = (t) => String(t || "").replace(/[^0-9]/g, "").slice(-8);
+function bloquesNettoyes(l) {
+  return [...new Set((Array.isArray(l) ? l : []).map(finDeNumero).filter((n) => n.length === 8))].slice(0, 1000);
 }
 
 async function enAttente(env, b) {
@@ -453,7 +503,9 @@ export async function relais(request, env) {
       let tarifs = {};
       try { tarifs = JSON.parse(b.tarifs || "{}"); } catch {}
       const pcEnLigne = !!b.vu && Date.now() - Date.parse(b.vu) < 6 * 60 * 1000;
-      return json({ boutique: b.nom || "", tarifs, en_ligne: true, pc_en_ligne: pcEnLigne });
+      let fiche = {};
+      try { fiche = JSON.parse((await env.DB.prepare("SELECT fiche FROM relais_fiches WHERE code = ?").bind(b.code).first())?.fiche || "{}"); } catch {}
+      return json({ boutique: b.nom || "", tarifs, fiche, en_ligne: true, pc_en_ligne: pcEnLigne });
     }
     let s = reste.match(/^\/morceau\/([0-9a-f]{12,40})$/);
     if (s && m === "GET") return json({ recu: (await morceaux(env, b.code, s[1])).recu });

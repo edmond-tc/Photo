@@ -3,8 +3,8 @@
 // vite sur un téléphone, avec une petite connexion.
 
 export const ADRESSE_ADMIN = "https://photocopie-admin.atinzed2.workers.dev";
-const WHATSAPP = "2290151226741";
-const TELEPHONE_LISIBLE = "01 51 22 67 41";
+export const WHATSAPP = "2290151226741";
+export const TELEPHONE_LISIBLE = "+229 01 51 22 67 41";
 
 /** Couleurs du thème clair, en clair : la valeur de secours de chaque
  * couleur. Opera Mini, UC Browser et les vieux Android, très répandus ici,
@@ -49,7 +49,7 @@ footer{margin:48px 0 24px;padding-top:18px;border-top:1px solid var(--trait);col
 
 const RACINE = "https://photocopie-benin.atinzed2.workers.dev";
 
-function gabarit({ titre, description, chemin, corps, jsonld = "", lang = "fr", alternes = null, indexer = true }) {
+export function gabarit({ titre, description, chemin, corps, jsonld = "", lang = "fr", alternes = null, indexer = true }) {
   const url = `${RACINE}${chemin}`;
   const liens = alternes
     ? Object.entries(alternes).map(([l, c]) => `<link rel="alternate" hreflang="${l}" href="${RACINE}${c}">`).join("\n") +
@@ -86,13 +86,16 @@ ${jsonld}
 <header class="haut">
   <a class="marque" href="/">🖨️ Gestion Photocopie</a>
   ${en
-    ? `<nav><a href="/telecharger">Download</a><a href="/" hreflang="fr">Français</a></nav>`
-    : `<nav><a href="/comment-ca-marche">Comment ça marche</a><a href="/faq">Questions</a><a href="/telecharger">Télécharger</a><a href="/en" hreflang="en">English</a></nav>`}
+    ? `<nav><a href="/en/how-it-works">How it works</a><a href="/en/faq">FAQ</a><a href="/en/download">Download</a><a href="${(alternes && alternes.fr) || "/"}" hreflang="fr">Français</a></nav>`
+    : `<nav><a href="/comment-ca-marche">Comment ça marche</a><a href="/faq">Questions</a><a href="/telecharger">Télécharger</a><a href="${(alternes && alternes.en) || "/en"}" hreflang="en">English</a></nav>`}
 </header>
 ${corps}
 <footer>
-  <p><strong>Gestion Photocopie</strong> — le logiciel des boutiques de photocopie et cybercafés du Bénin.</p>
-  <p><a href="/comment-ca-marche">Comment ça marche</a> · <a href="/faq">Questions fréquentes</a> · <a href="/telecharger">Télécharger</a> · <a href="/confidentialite">Confidentialité</a> · <a href="/en">English</a> · <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a></p>
+  ${en
+    ? `<p><strong>Gestion Photocopie</strong> — software for print shops and cyber cafés, in English and French.</p>
+  <p><a href="/en/how-it-works">How it works</a> · <a href="/en/faq">FAQ</a> · <a href="/en/download">Download</a> · <a href="/en/privacy">Privacy</a> · <a href="/en/terms">Terms of use</a> · <a href="/en/legal">Legal notice</a> · <a href="/">Français</a> · <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a></p>`
+    : `<p><strong>Gestion Photocopie</strong> — le logiciel des boutiques de photocopie et cybercafés, en français et en anglais.</p>
+  <p><a href="/comment-ca-marche">Comment ça marche</a> · <a href="/faq">Questions fréquentes</a> · <a href="/telecharger">Télécharger</a> · <a href="/confidentialite">Confidentialité</a> · <a href="/conditions">Conditions d'utilisation</a> · <a href="/mentions-legales">Mentions légales</a> · <a href="/en">English</a> · <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a></p>`}
 </footer>
 </div>
 </body>
@@ -166,6 +169,7 @@ export function pageComment() {
     description:
       "Installation du logiciel Gestion Photocopie, envoi des documents par QR code, Wi-Fi de la boutique, envoi par Internet, Bluetooth et clé USB : le mode d'emploi en mots simples.",
     chemin: "/comment-ca-marche",
+    alternes: { fr: "/comment-ca-marche", en: "/en/how-it-works" },
     corps: `
 <h1>Comment ça marche</h1>
 <h2>1. Installer le logiciel (une fois)</h2>
@@ -207,6 +211,7 @@ export function pageTelechargerSite() {
     description:
       "Téléchargez le logiciel Gestion Photocopie pour Windows (un mois d'essai gratuit) et l'application Envoyeur Kiosque pour Android.",
     chemin: "/telecharger",
+    alternes: { fr: "/telecharger", en: "/en/download" },
     corps: `
 <h1>Télécharger</h1>
 <div class="grille">
@@ -233,9 +238,10 @@ export function pageConfidentialite() {
     description:
       "Ce que Gestion Photocopie fait de vos documents et de vos informations : rien n'est vendu, les documents envoyés par Internet sont effacés dès que la boutique les a reçus.",
     chemin: "/confidentialite",
+    alternes: { fr: "/confidentialite", en: "/en/privacy" },
     corps: `
 <h1>Confidentialité</h1>
-<p class="petit">Dernière mise à jour : 12 octobre 2026.</p>
+<p class="petit">Dernière mise à jour : 13 octobre 2026.</p>
 <h2>En bref</h2>
 <ul class="liste">
   <li>Vos documents servent à une seule chose : être imprimés par la boutique que vous avez choisie.</li>
@@ -246,7 +252,8 @@ export function pageConfidentialite() {
 <h2>Ce qui est collecté</h2>
 <ul class="liste">
   <li><strong>Les documents</strong> que vous envoyez, et les options choisies (copies, couleur, recto-verso…).</li>
-  <li><strong>Votre prénom et votre numéro de téléphone</strong>, seulement si vous les donnez : ils permettent à la boutique de vous appeler quand c'est prêt.</li>
+  <li><strong>Votre prénom et votre numéro de téléphone</strong> : facultatifs dans la boutique ; demandés pour un envoi par Internet, car vous n'êtes pas au guichet et la boutique doit pouvoir vous prévenir (sur WhatsApp) quand c'est prêt. La boutique peut refuser les commandes d'un numéro qui envoie de fausses commandes.</li>
+  <li><strong>Sur votre téléphone</strong>, la page garde vos dernières commandes 7 jours (« Mes commandes ») pour que vous retrouviez votre numéro. Rien de cela n'est envoyé ailleurs.</li>
   <li><strong>Un numéro de suivi</strong> de la commande, pour vous dire « imprimé », puis « prêt ». Il est supprimé du relais au bout de 7 jours.</li>
 </ul>
 <h2>Où vont vos documents</h2>
@@ -258,7 +265,8 @@ export function pageConfidentialite() {
 <h2>Pour les gérants</h2>
 <p>Le logiciel garde sur l'ordinateur de la boutique les informations de travail (commandes, caisse, rapports). Elles ne nous sont pas transmises. Pour la licence, nous connaissons le nom de la boutique, le nom et le numéro du gérant, et l'identifiant de l'ordinateur.</p>
 <h2>Vos droits</h2>
-<p>Vous pouvez demander à savoir ce que nous détenons sur vous, le faire corriger ou effacer : écrivez-nous sur <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a>. Au Bénin, vous pouvez aussi vous adresser à l'Autorité de Protection des Données à caractère Personnel (APDP).</p>
+<p>Vous pouvez demander à savoir ce que nous détenons sur vous, le faire corriger ou effacer : écrivez-nous sur <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a>. Vous pouvez aussi vous adresser à l'autorité de protection des données de votre pays : au Bénin, l'APDP ; en Côte d'Ivoire, l'ARTCI ; au Sénégal, la CDP ; au Togo, l'IPDCP ; au Cameroun, l'autorité compétente ; au Ghana, la Data Protection Commission ; au Nigeria, la NDPC.</p>
+<p>Voir aussi les <a href="/conditions">conditions d'utilisation</a> et les <a href="/mentions-legales">mentions légales</a>.</p>
 `,
   });
 }
@@ -268,9 +276,9 @@ export function robots() {
 }
 
 export function sitemap() {
-  const pages = ["/", "/en", "/comment-ca-marche", "/faq", "/telecharger", "/confidentialite"];
+  const pages = ["/", "/en", "/comment-ca-marche", "/en/how-it-works", "/faq", "/en/faq", "/telecharger", "/en/download", "/confidentialite", "/en/privacy", "/conditions", "/en/terms", "/mentions-legales", "/en/legal"];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
-    .map((p) => `  <url><loc>https://photocopie-benin.atinzed2.workers.dev${p}</loc><lastmod>2026-10-12</lastmod></url>`)
+    .map((p) => `  <url><loc>https://photocopie-benin.atinzed2.workers.dev${p}</loc><lastmod>2026-10-13</lastmod></url>`)
     .join("\n")}\n</urlset>\n`;
 }
 
@@ -285,6 +293,8 @@ const FAQ = [
   ["Le client sait-il quand c'est prêt ?", "Oui. Il reçoit un numéro, et sa page affiche « imprimé », puis « prêt », au fur et à mesure que le gérant avance."],
   ["Combien ça coûte ?", "Un mois d'essai gratuit. Ensuite, un petit abonnement mensuel : le prix est donné par l'équipe sur WhatsApp, selon la boutique."],
   ["Mes documents sont-ils gardés ?", "Non. Par le Wi-Fi de la boutique, ils vont directement à l'ordinateur. Par Internet, ils passent par le relais le temps de la récupération et y sont effacés, au plus tard 24 heures après l'envoi."],
+  ["Le client qui envoie par Internet doit-il donner son numéro ?", "Oui. Il n'est pas au guichet : la boutique doit pouvoir le prévenir quand c'est prêt. Le gérant le fait en un toucher sur WhatsApp, message déjà écrit. Le client retrouve aussi ses commandes dans « Mes commandes », sur son téléphone."],
+  ["Le logiciel existe-t-il en anglais et hors du Bénin ?", "Oui. Le logiciel et la page des clients sont en français et en anglais (la page suit la langue du téléphone). Le gérant choisit son pays : la monnaie et l'indicatif téléphonique suivent (franc CFA, cedi, naira, dirham…)."],
   ["Sur quels ordinateurs le logiciel fonctionne-t-il ?", "Sur les ordinateurs Windows 10 et 11. Il démarre avec l'ordinateur et travaille en arrière-plan ; sa fenêtre ne s'ouvre que quand le gérant la demande."],
 ];
 
@@ -298,6 +308,7 @@ export function pageFaq() {
     titre: "Questions fréquentes — Gestion Photocopie",
     description: "Faut-il Internet ? Le client doit-il installer une application ? Combien ça coûte ? Les réponses sur le logiciel Gestion Photocopie pour boutiques de photocopie au Bénin.",
     chemin: "/faq",
+    alternes: { fr: "/faq", en: "/en/faq" },
     jsonld,
     corps: `<h1>Questions fréquentes</h1>${FAQ.map(([q, r]) => `<div class="carte" style="margin:12px 0"><h3>${q}</h3><p>${r}</p></div>`).join("")}
 <p class="petit">Une autre question ? <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a>.</p>`,
@@ -315,7 +326,11 @@ export function pageAccueilEn() {
 <section class="heros">
   <h1>Your customers send their documents from their phone. You print.</h1>
   <p class="chapeau">No more USB sticks, cables or "send it to me on WhatsApp". The customer scans the QR code at the counter, picks the documents, and they arrive on the shop's computer, ready to print.</p>
-  <div class="boutons"><a class="btn" href="/telecharger">Download<small>Windows · one month free trial</small></a></div>
+  <div class="boutons">
+    <a class="btn" href="${ADRESSE_ADMIN}/telecharger/exe">⬇️ Download for Windows<small>Shop software · one month free trial</small></a>
+    <a class="btn second" href="${ADRESSE_ADMIN}/telecharger/apk">📱 Android app<small>Optional, for customers</small></a>
+    <a class="btn second" href="/en/how-it-works">See how it works</a>
+  </div>
 </section>
 <h2>With or without Internet</h2>
 <div class="grille">
@@ -329,7 +344,13 @@ export function pageAccueilEn() {
   <div class="carte"><p><span class="coche">✓</span> Each customer gets a number and sees "printed", then "ready" on their phone.</p></div>
   <div class="carte"><p><span class="coche">✓</span> Prices, cash and daily reports kept automatically.</p></div>
 </div>
-<p class="petit">The software is in French, made for print shops in Benin and French-speaking Africa. Questions: <a href="https://wa.me/${WHATSAPP}">WhatsApp +229 ${TELEPHONE_LISIBLE}</a>.</p>`,
+<h2>Customers sending from home</h2>
+<div class="grille">
+  <div class="carte"><p><span class="coche">✓</span> The page shows your address, opening hours, phone number and map.</p></div>
+  <div class="carte"><p><span class="coche">✓</span> "Ready" message on WhatsApp in one tap, already written.</p></div>
+  <div class="carte"><p><span class="coche">✓</span> "My orders" on the customer's phone, and fake orders blocked by number.</p></div>
+</div>
+<p class="petit">Available in English and French. Choose your country: prices in your currency (CFA franc, cedi, naira, shilling…). Questions: <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a>.</p>`,
   });
 }
 

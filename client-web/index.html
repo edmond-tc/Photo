@@ -190,6 +190,13 @@ p { margin: 0; }
 .a-savoir summary { cursor: pointer; font-weight: 700; color: var(--accent); }
 .a-savoir p { margin: 8px 0 0; font-size: 0.9rem; color: var(--discret); }
 .liens-bas { display: flex; justify-content: space-between; gap: 12px; }
+/* Mes commandes et fiche de la boutique (par Internet surtout). */
+.mes h2 { font-size: 1rem; margin: 6px 0; }
+.commande { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; width: 100%; text-align: left; border: 1.5px solid #d0d7e2; border-color: var(--trait); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; background: #fff; background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+.commande strong { grid-row: span 2; font-size: 1.3rem; align-self: center; }
+.commande small { color: var(--discret); }
+.fiche { background: #eef2f8; background: var(--surface-2); border-radius: 14px; padding: 12px 14px; display: grid; gap: 4px; font-size: 0.93rem; }
+.fiche a { color: var(--accent); font-weight: 700; }
 /* Deux fonctions séparées de l'application : le kiosque, et « Main à main » entre téléphones. */
 .onglets { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface-2); border-radius: 14px; padding: 4px; gap: 4px; }
 .onglets button { border: 0; background: transparent; border-radius: 11px; padding: 10px 8px; font-weight: 700; cursor: pointer; color: var(--discret); font-size: 0.95rem; }
@@ -273,11 +280,13 @@ p { margin: 0; }
         <p><strong>📵 Coupez vos données mobiles.</strong> Votre téléphone essaie de passer par Internet au lieu du Wi-Fi de la boutique.</p>
         <p>Tirez le haut de l'écran vers le bas et touchez <strong>« Données mobiles »</strong> pour les éteindre. La page se reconnecte toute seule. Vous les rallumerez après l'envoi.</p>
       </div>
+      <div class="fiche" id="fiche-boutique" hidden></div>
       <p class="bandeau doux" id="pc-absent" hidden>L'ordinateur de la boutique n'est pas connecté pour l'instant : vos documents l'attendront jusqu'à 24 h.</p>
       <div class="action">
         <label class="btn grand" for="fichiers">📄 Choisir mes documents<small>PDF, Word, photos… plusieurs à la fois</small></label>
         <label class="btn second" for="photo">📷 Prendre un document en photo</label>
       </div>
+      <div class="mes" id="mes-commandes" hidden><h2>Mes commandes</h2><div id="liste-commandes"></div></div>
       <div class="bandeau bloquant" id="fenetre-reduite" hidden>
         <p><strong>Cette petite fenêtre ne sait pas ouvrir vos fichiers.</strong> Touchez ce bouton : la même page s'ouvre dans votre navigateur.</p>
         <a class="btn" id="lien-navigateur" href="/" target="_blank" rel="noopener">Ouvrir dans le navigateur</a>
@@ -311,7 +320,7 @@ p { margin: 0; }
         <details class="a-savoir" data-mode-app hidden>
           <summary>Cette application marche partout</summary>
           <p>Plus rien à scanner : elle marche dans toutes les boutiques équipées (photocopie, cyber, restaurant…). Demandez au gérant ; votre téléphone vous prévient quand vous y êtes.
-            Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">01 51 22 67 41</a>.</p>
+            Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">+229 01 51 22 67 41</a>.</p>
         </details>
         <div class="liens-bas">
           <button type="button" class="lien" data-aller="decouvrir">✨ Découvrir</button>
@@ -441,6 +450,13 @@ p { margin: 0; }
   <section class="ecran" data-ecran="quand" hidden>
     <div class="entete"><button class="retour" data-aller="documents" aria-label="Retour">‹</button><h1>Pour quand ?</h1></div>
     <div class="contenu">
+      <div id="contact-en-ligne" hidden>
+        <div class="champ"><label for="prenom-en-ligne">Votre prénom</label><input id="prenom-en-ligne" class="saisie" autocomplete="given-name" maxlength="120"></div>
+        <div class="champ"><label for="numero-en-ligne">Votre numéro WhatsApp</label>
+          <p class="aide">La boutique vous écrit quand c'est prêt, ou si un document pose problème.</p>
+          <input id="numero-en-ligne" class="saisie" type="tel" autocomplete="tel" maxlength="30"></div>
+        <p class="alerte" id="contact-erreur" hidden></p>
+      </div>
       <div class="choix-quand" id="choix-quand">
         <label class="carte-choix"><input type="radio" name="quand" id="q-attends" value="J'attends sur place" checked><span><strong>J'attends sur place</strong><small>La boutique le fait tout de suite.</small></span></label>
         <label class="carte-choix"><input type="radio" name="quand" id="q-repasse" value="Je repasse"><span style="display:grid; gap:8px"><strong>Je repasse plus tard</strong>
@@ -500,7 +516,7 @@ p { margin: 0; }
           <li data-mode-app hidden><strong>La prochaine fois :</strong> rejoignez le Wi-Fi de la boutique et ouvrez l'application.</li>
           <li data-mode-app hidden><strong>Partout pareil :</strong> elle marche dans toutes les boutiques équipées (photocopie, cyber, restaurant…). Demandez au gérant.</li>
           <li><strong>Suivez votre commande ici :</strong> cet écran vous dit quand c'est imprimé, puis prêt. Donnez votre numéro au guichet.</li>
-          <li>Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">01 51 22 67 41</a>.</li>
+          <li>Boutique pas encore équipée ? Le gérant appelle le <a href="tel:+2290151226741">+229 01 51 22 67 41</a>.</li>
         </ul>
       </div>
       <p class="aide" id="message-fidelite" hidden></p>
@@ -662,7 +678,7 @@ setTimeout(function () {
     try { app.demarrer(); } catch (_) {}
   }
   function majPuces() {
-    const textes = { aucune: "Pas encore relié", encours: "En attente du Wi-Fi de la boutique…", ok: "Relié au guichet", echec: "Pas sur le Wi-Fi de la boutique", wifi: "Wi-Fi éteint" };
+    const textes = { aucune: "Pas encore relié", encours: "En attente du Wi-Fi de la boutique…", ok: enLigne ? "Boutique joignable par Internet" : "Relié au guichet", echec: "Pas sur le Wi-Fi de la boutique", wifi: "Wi-Fi éteint" };
     $$("[data-puce]").forEach((p) => {
       p.classList.toggle("ok", connexion.etat === "ok");
       p.classList.toggle("echec", connexion.etat === "echec" || connexion.etat === "wifi");
@@ -707,7 +723,21 @@ setTimeout(function () {
       }
       if (Object.keys(recus).length) { tarifs = Object.assign(tarifs, recus); ecrire("kiosque.tarifs", recus); }
       if (infos.boutique) { ecrire("kiosque.boutique", infos.boutique); afficherBoutique(); }
+      const monnaie = String(infos.devise || (infos.fiche && infos.fiche.devise) || "").trim();
+      if (/^[^<>&"]{1,8}$/.test(monnaie)) ecrire("kiosque.devise", monnaie);
       $("#pc-absent").hidden = !(enLigne && infos.pc_en_ligne === false);
+      // Fiche de la boutique (par Internet : le client n'y est pas encore).
+      const f = enLigne && infos.fiche;
+      if (f && typeof f === "object") {
+        const tel = String(f.telephone || "").replace(/[^0-9+]/g, "");
+        const plan = /^https:\/\/[^\s"<>]+$/.test(f.plan || "") ? f.plan : "";
+        const l = [];
+        if (f.adresse) l.push(`📍 ${echapper(f.adresse)}${plan ? ` · <a href="${echapper(plan)}" target="_blank" rel="noopener">Voir le plan</a>` : ""}`);
+        if (f.horaires) l.push(`🕘 ${echapper(f.horaires)}`);
+        if (tel) l.push(`📞 <a href="tel:${tel}">${echapper(f.telephone)}</a>`);
+        $("#fiche-boutique").innerHTML = l.map((x) => `<span>${x}</span>`).join("");
+        $("#fiche-boutique").hidden = !l.length;
+      }
       // Autres façons d'envoyer : numéro vérifié (chiffres seuls), nom
       // Bluetooth posé comme texte, jamais comme HTML.
       if (typeof infos.whatsapp === "string" && /^[0-9]{8,15}$/.test(infos.whatsapp)) {
@@ -744,6 +774,7 @@ setTimeout(function () {
     quand: ["Dites pour quand, puis touchez « Envoyer à la boutique ».", "Restez près du guichet pendant l'envoi."],
     envoi: ["Gardez l'application ouverte.", "Les étapes se cochent toutes seules jusqu'à « Reçu par la boutique »."],
   };
+  if (enLigne) GUIDE.quand = ["Écrivez votre prénom et votre numéro WhatsApp, puis touchez « Envoyer à la boutique ».", "Gardez cette page ouverte pendant l'envoi."];
   const guidesDits = new Set();
   function majGuide(id) {
     $$("[data-guide]").forEach((g) => g.remove());
@@ -778,9 +809,9 @@ setTimeout(function () {
     courant = id;
     $$("[data-ecran]").forEach((s) => { s.hidden = s.dataset.ecran !== id; });
     window.scrollTo(0, 0);
-    if (id === "accueil") { $$("[data-prenom]").forEach((n) => (n.textContent = profil().prenom || "")); demarrerConnexion(); }
+    if (id === "accueil") { $$("[data-prenom]").forEach((n) => (n.textContent = profil().prenom || "")); demarrerConnexion(); if (!app) rendreMesCommandes(); }
     if (id === "documents") { rendreDocs(); demarrerConnexion(); }
-    if (id === "quand") { remplirHeures(); rendreRecap(); }
+    if (id === "quand") { remplirHeures(); rendreRecap(); preparerContact(); }
     if (id === "decouvrir") chargerDecouvrir();
     if (id === "mam") ouvrirMam();
     if (id === "mam-envoi") rendreMamFichiers();
@@ -939,7 +970,9 @@ setTimeout(function () {
     for (const [cle, actif] of Object.entries(d.services)) if (actif) t += tarifs[cle] || 0;
     return t;
   }
-  const f = (n) => n.toLocaleString("fr-FR").replace(/[  ]/g, " ") + " F";
+  // Monnaie du pays de la boutique (« F » pour le franc CFA, comme on le dit).
+  const devise = () => { const d = lire("kiosque.devise", "F"); return d === "FCFA" ? "F" : d; };
+  const f = (n) => n.toLocaleString("fr-FR").replace(/[  ]/g, " ") + " " + devise();
   const echapper = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   const docsEl = $("#docs");
@@ -1143,7 +1176,9 @@ setTimeout(function () {
   $$("input[name=quand], #urgent, #q-heure").forEach((x) => x.addEventListener("change", rendreRecap));
   // Plus d'écran « Pour quand ? » : documents, réglages, Envoyer. Le
   // client attend sur place (choix par défaut).
-  $("#btn-vers-quand").addEventListener("click", () => { $("#q-attends").checked = true; $("#urgent").checked = false; envoyer(); });
+  // Au guichet : envoi direct. Par Internet : d'abord « Pour quand ? », avec
+  // le prénom et le numéro pour prévenir le client.
+  $("#btn-vers-quand").addEventListener("click", () => { if (enLigne) return aller("quand"); $("#q-attends").checked = true; $("#urgent").checked = false; envoyer(); });
 
   // ─── Préparation : photos réduites (A4 à 300 points par pouce) ───
   async function preparer(d) {
@@ -1186,6 +1221,7 @@ setTimeout(function () {
   document.addEventListener("visibilitychange", () => { verrouEcran = null; if (!document.hidden) garderEcran(); });
   async function envoyer() {
     if (envoiEnCours) return;
+    if (enLigne && !contactValide()) return;
     envoiEnCours = true;
     garderEcran();
     amorcerSon();
@@ -1827,7 +1863,12 @@ setTimeout(function () {
     aller("recu");
     signal("succes", r.numero ? `C'est envoyé. Votre numéro est ${numeroDit(r.numero)}.` : "C'est envoyé.", [120, 60, 120]);
     try { app && app.envoiTermine(r.numero || ""); } catch (_) {}
-    suivreCommande((r.jetons || [])[0]);
+    const jeton = (r.jetons || [])[0];
+    if (jeton && !app) {
+      garderCommande({ b: PREFIXE, j: jeton, n: r.numero || "", r: $("#recap-final").textContent, t: Date.now(), s: enLigne ? "en_ligne" : "recu" });
+      lienDeSuivi(jeton);
+    }
+    suivreCommande(jeton);
   }
   function majSuivi(etapeCommande) {
     const rang = { recu: 0, impression: 1, pret: 2 }[etapeCommande] ?? 0;
@@ -1864,6 +1905,7 @@ setTimeout(function () {
         // Par Internet : le numéro du guichet arrive quand le PC a récupéré.
         if (s.numero) $("#numero-commande").textContent = s.numero;
         $("#suivi-recu").textContent = s.etape === "en_ligne" ? "⏳ Envoyé — la boutique le reçoit dès que son ordinateur est connecté" : s.etape === "expire" ? "❌ La boutique ne l'a pas reçu à temps (24 h) : renvoyez-le." : "✓ Reçu par la boutique";
+        if (!app) majCommande(jeton, s);
         if (s.etape === "expire") return clearInterval(suivi);
         majSuivi(s.paye ? "pret" : s.etape);
         if (s.message) { const m = $("#message-fidelite"); m.textContent = s.message; m.hidden = false; }
@@ -1876,12 +1918,81 @@ setTimeout(function () {
   $("#btn-nouvelle").addEventListener("click", () => nouvelleCommande());
   function nouvelleCommande() {
     clearInterval(suivi);
+    lienDeSuivi("");
     docs.forEach((d) => { if (d.apercu) URL.revokeObjectURL(d.apercu); });
     docs = [];
     $("#urgent").checked = false;
     $("#q-attends").checked = true;
     if (app) connexion = { etat: "aucune" };
     aller("accueil");
+  }
+
+  // ─── Mes commandes : gardées 7 jours sur le téléphone ───
+  // Le client qui ferme la page (chez lui, c'est sûr) retrouve son numéro et
+  // l'étape de sa commande en revenant. Par Internet, l'adresse de la page
+  // porte aussi la commande (#c=…) : un favori ou un lien partagé la rouvre.
+  const ETAPES = { en_ligne: "⏳ En attente de la boutique", recu: "✓ Reçue par la boutique", impression: "🖨️ En impression", pret: "✅ Prête à retirer", expire: "❌ Non reçue à temps : renvoyez-la" };
+  const mesCommandes = () => lire("kiosque.commandes", []).filter((c) => c && /^[0-9a-f]{32}$/.test(c.j) && Date.now() - c.t < 6048e5);
+  function garderCommande(c) { ecrire("kiosque.commandes", [c, ...mesCommandes().filter((x) => x.j !== c.j)].slice(0, 20)); }
+  function majCommande(j, s) {
+    const etape = s.paye ? "pret" : s.etape;
+    ecrire("kiosque.commandes", mesCommandes().map((c) => (c.j !== j ? c : Object.assign(c, etape ? { s: etape } : {}, s.numero ? { n: String(s.numero) } : {}))));
+  }
+  function lienDeSuivi(j) { if (enLigne) try { history.replaceState(null, "", location.pathname + (j ? "#c=" + j : "")); } catch (_) {} }
+  async function rendreMesCommandes() {
+    const ici = () => mesCommandes().filter((c) => c.b === PREFIXE).slice(0, 5);
+    const dessiner = () => {
+      const l = ici();
+      $("#mes-commandes").hidden = !l.length;
+      $("#liste-commandes").innerHTML = l.map((c) => `<button type="button" class="commande" data-jeton="${c.j}"><strong>${echapper(c.n || "…")}</strong><span>${echapper(c.r || "")}</span><small>${ETAPES[c.s] || ETAPES.recu}</small></button>`).join("");
+    };
+    dessiner();
+    for (const c of ici()) {
+      if (c.s === "pret" || c.s === "expire") continue;
+      try { majCommande(c.j, await (await lirePc(`/statut/${c.j}`)).json()); } catch (_) {}
+    }
+    if (courant === "accueil") dessiner();
+  }
+  document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-jeton]"); if (b) rouvrirCommande(b.dataset.jeton); });
+  function rouvrirCommande(j) {
+    let c = mesCommandes().find((x) => x.j === j);
+    if (!c) { c = { b: PREFIXE, j, n: "", r: "", t: Date.now(), s: "en_ligne" }; garderCommande(c); }
+    heureRecu = Date.now();
+    $("#hors-ligne").hidden = true;
+    $("#message-fidelite").hidden = true;
+    $("#suite-premiere").hidden = true;
+    $("#pret").hidden = true;
+    $$("[data-suivi]").forEach((d) => (d.hidden = false));
+    $("#numero-commande").textContent = c.n || "✓";
+    $("#recap-final").textContent = c.r || "";
+    $("#suivi-recu").textContent = ETAPES[c.s] || ETAPES.recu;
+    pretAnnonce = c.s === "pret";
+    majSuivi(c.s === "pret" || c.s === "impression" ? c.s : null);
+    aller("recu");
+    lienDeSuivi(j);
+    if (c.s !== "expire") suivreCommande(j);
+  }
+  // Par Internet : prénom et numéro WhatsApp obligatoires (le client n'est
+  // pas au guichet : la boutique doit pouvoir le prévenir), et « J'attends
+  // sur place » n'a pas de sens depuis chez soi.
+  function preparerContact() {
+    if (!enLigne) return;
+    const p = profil();
+    $("#contact-en-ligne").hidden = false;
+    $("#q-attends").closest(".carte-choix").hidden = true;
+    if ($("#q-attends").checked) $("#q-repasse").checked = true;
+    if (!$("#prenom-en-ligne").value) $("#prenom-en-ligne").value = p.prenom || "";
+    if (!$("#numero-en-ligne").value) $("#numero-en-ligne").value = p.numero || "";
+  }
+  function contactValide() {
+    const prenom = $("#prenom-en-ligne").value.trim();
+    const numero = $("#numero-en-ligne").value.trim();
+    const e = $("#contact-erreur");
+    e.textContent = prenom.length < 2 ? "Écrivez votre prénom." : numero.replace(/[^0-9]/g, "").length < 8 ? "Écrivez votre numéro WhatsApp : la boutique vous prévient quand c'est prêt." : "";
+    e.hidden = !e.textContent;
+    if (e.textContent) { e.scrollIntoView({ block: "center" }); return false; }
+    ecrire("kiosque.profil", { prenom, numero });
+    return true;
   }
 
   // ─── Démarrage ───
@@ -1912,6 +2023,9 @@ setTimeout(function () {
   }
   aller(premier);
   if (premier === "accueil") chargerPartages();
+  // Lien de suivi (#c=…) : la commande s'ouvre directement.
+  const suiviDemande = enLigne && location.hash.match(/^#c=([0-9a-f]{32})$/);
+  if (suiviDemande) rouvrirCommande(suiviDemande[1]);
 })();
 </script>
 </body>

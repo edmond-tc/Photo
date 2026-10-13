@@ -1,3 +1,4 @@
+pub mod pays;
 pub mod activite;
 pub mod appel_ble;
 pub mod arrivees;
@@ -177,6 +178,8 @@ pub fn run() {
             commands::choisir_logo_boutique,
             commands::get_server_info,
             relais::relais_info,
+            commands::pays_boutique,
+            commands::ecrire_au_client,
             commands::ouvrir_parametres_partage_connexion,
             commands::activer_point_acces_local,
             commands::desactiver_point_acces_local,

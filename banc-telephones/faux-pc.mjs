@@ -4,6 +4,7 @@
 // plus (elles restent sans réponse, comme des paquets partis ailleurs).
 import http from "node:http";
 import fs from "node:fs";
+import { alleger } from "../admin/site/alleger.js";
 
 const PAGE = process.env.PAGE || new URL("../client-web/index.html", import.meta.url);
 
@@ -26,7 +27,8 @@ export function demarrerFauxPc(port) {
     };
     if (req.method === "GET" && (chemin === "/" || chemin === "/index.html")) {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(fs.readFileSync(PAGE));
+      // Allégée comme par le vrai PC (build.rs) et le relais.
+      res.end(alleger(fs.readFileSync(PAGE, "utf8")));
       return;
     }
     if (req.method === "GET" && chemin === "/infos") {

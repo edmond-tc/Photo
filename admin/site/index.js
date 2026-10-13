@@ -4,6 +4,8 @@
 
 import { relais, nettoyer, nettoyerSiBesoin } from "./relais.js";
 import { pageAccueil, pageAccueilEn, pageAffiche, pageComment, pageConfidentialite, pageFaq, pageKit, pageTelechargerSite, robots, sitemap } from "./pages.js";
+import { pageHowItWorks, pageFaqEn, pageDownload, pagePrivacy } from "./pages-en.js";
+import { pageConditions, pageTerms, pageMentions, pageLegal } from "./pages-legal.js";
 import APERCU from "./apercu.png";
 
 /** Clé IndexNow (Bing, Yandex…) : publique par nature, elle prouve seulement
@@ -46,6 +48,14 @@ export default {
         case "/confidentialite": return html(pageConfidentialite());
         case "/faq": return html(pageFaq());
         case "/en": return html(pageAccueilEn());
+        case "/en/how-it-works": return html(pageHowItWorks());
+        case "/en/faq": return html(pageFaqEn());
+        case "/en/download": return html(pageDownload());
+        case "/en/privacy": return html(pagePrivacy());
+        case "/en/terms": return html(pageTerms());
+        case "/en/legal": return html(pageLegal());
+        case "/conditions": return html(pageConditions());
+        case "/mentions-legales": return html(pageMentions());
         case "/kit": return html(pageKit());
         case "/affiche": return html(pageAffiche());
         case "/apercu.png": return new Response(APERCU, { headers: { "content-type": "image/png", "cache-control": "public, max-age=86400" } });

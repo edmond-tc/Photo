@@ -261,7 +261,7 @@ fn exiger_licence(state: &State<DbState>) -> Result<(), String> {
     if crate::license::utilisation_autorisee(&conn) {
         Ok(())
     } else {
-        Err("Abonnement terminé : renouvelez la licence pour continuer (appelez le 0151226741).".to_string())
+        Err("Abonnement terminé : renouvelez la licence pour continuer (appelez le +229 01 51 22 67 41).".to_string())
     }
 }
 
@@ -401,6 +401,13 @@ pub fn get_boutique_settings(state: State<DbState>) -> Result<serde_json::Value,
         "bluetooth_nom": db::get_setting(&conn, "bluetooth_nom"),
         "retention_jours": db::get_setting(&conn, "retention_jours"),
         "visite_guidee_vue": db::get_setting(&conn, "visite_guidee_vue"),
+        "fiche_adresse": db::get_setting(&conn, "fiche_adresse"),
+        "fiche_horaires": db::get_setting(&conn, "fiche_horaires"),
+        "fiche_telephone": db::get_setting(&conn, "fiche_telephone"),
+        "fiche_plan": db::get_setting(&conn, "fiche_plan"),
+        "numeros_bloques": db::get_setting(&conn, "numeros_bloques"),
+        "pays": crate::pays::pays(db::get_setting(&conn, "pays").as_deref()).code,
+        "langue": db::get_setting(&conn, "langue").unwrap_or_else(|| "fr".into()),
     }))
 }
 
@@ -426,6 +433,15 @@ pub fn set_boutique_setting(
         // Visite guidée déjà suivie : évite de la reproposer à chaque
         // démarrage (voir demarrerVisite, côté interface).
         "visite_guidee_vue",
+        // Fiche de la boutique, montrée aux clients qui envoient par Internet.
+        "fiche_adresse",
+        "fiche_horaires",
+        "fiche_telephone",
+        "fiche_plan",
+        // Numéros qui ne peuvent plus commander par Internet (un par ligne).
+        "numeros_bloques",
+        "pays",
+        "langue",
     ];
     if !CLES_AUTORISEES.contains(&cle.as_str()) {
         return Err("réglage inconnu".to_string());
@@ -435,6 +451,24 @@ pub fn set_boutique_setting(
     // gérant sache tout de suite que sa saisie n'a pas été prise en compte.
     let valeur = valeur.trim();
     match cle.as_str() {
+        "fiche_adresse" | "fiche_horaires" if valeur.chars().count() > 150 => {
+            return Err("150 caractères au plus.".to_string());
+        }
+        "fiche_telephone" if valeur.chars().count() > 30 => {
+            return Err("Numéro trop long.".to_string());
+        }
+        "fiche_plan" if !valeur.is_empty() && (!valeur.starts_with("https://") || valeur.len() > 300 || valeur.contains(char::is_whitespace)) => {
+            return Err("Le lien du plan doit commencer par https:// (copiez-le depuis Google Maps : Partager → Copier le lien).".to_string());
+        }
+        "numeros_bloques" if valeur.len() > 20_000 => {
+            return Err("Liste trop longue.".to_string());
+        }
+        "pays" if !crate::pays::PAYS.iter().any(|p| p.code == valeur) => {
+            return Err("Pays inconnu.".to_string());
+        }
+        "langue" if valeur != "fr" && valeur != "en" => {
+            return Err("Langue inconnue.".to_string());
+        }
         "fidelite_seuil_visites" if !valeur.is_empty() => {
             let n: i64 = valeur
                 .parse()
@@ -1328,4 +1362,62 @@ pub fn lire_vocal(state: State<DbState>, id: i64) -> Result<String, String> {
         "data:{type_mime};base64,{}",
         base64::engine::general_purpose::STANDARD.encode(octets)
     ))
+}
+
+/// Pays proposés dans les réglages, et celui de la boutique (monnaie,
+/// indicatif téléphonique).
+#[tauri::command]
+pub fn pays_boutique(state: State<DbState>) -> Result<serde_json::Value, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let actuel = crate::pays::pays(db::get_setting(&conn, "pays").as_deref());
+    Ok(serde_json::json!({
+        "code": actuel.code,
+        "devise": actuel.devise,
+        "indicatif": actuel.indicatif,
+        "liste": crate::pays::PAYS.iter().map(|p| serde_json::json!({ "code": p.code, "nom": p.nom, "name": p.name, "devise": p.devise })).collect::<Vec<_>>(),
+    }))
+}
+
+/// « Prévenir sur WhatsApp » : ouvre la discussion avec le client d'une
+/// commande, le message déjà écrit (le gérant n'a plus qu'à envoyer).
+/// Rend `false` si la commande n'a pas de numéro utilisable.
+#[tauri::command]
+pub fn ecrire_au_client(app: tauri::AppHandle, state: State<DbState>, telephone: String, message: String) -> Result<bool, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let lien = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        let pays = crate::pays::pays(db::get_setting(&conn, "pays").as_deref());
+        lien_whatsapp(&telephone, pays.indicatif, &message)
+    };
+    let Some(lien) = lien else { return Ok(false) };
+    app.opener().open_url(lien, None::<&str>).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+pub fn lien_whatsapp(telephone: &str, indicatif: &str, message: &str) -> Option<String> {
+    crate::pays::numero_international(telephone, indicatif).map(|n| {
+        let texte: String = message.chars().take(500).collect();
+        format!("https://wa.me/{n}?text={}", urlencoding_simple(&texte))
+    })
+}
+
+#[cfg(test)]
+mod tests_whatsapp {
+    #[test]
+    fn lien_avec_message_encode() {
+        assert_eq!(
+            super::lien_whatsapp("01 97 12 34 56", "229", "N° A-12 prêt").as_deref(),
+            Some("https://wa.me/2290197123456?text=N%C2%B0%20A-12%20pr%C3%AAt")
+        );
+        assert_eq!(super::lien_whatsapp("", "229", "x"), None);
+    }
+}
+
+fn urlencoding_simple(t: &str) -> String {
+    t.bytes()
+        .map(|o| match o {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (o as char).to_string(),
+            _ => format!("%{o:02X}"),
+        })
+        .collect()
 }
