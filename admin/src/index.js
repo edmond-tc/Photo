@@ -1063,6 +1063,7 @@ async function pageParametres(env, { enregistre = false } = {}) {
           ❌ SebPay ne répond pas comme prévu : le paiement en ligne reste caché aux gérants.
           Faites une capture de ce cadre et envoyez-la.<br>
           Réponse de SebPay (code ${t.statut}) :<br><code style="word-break:break-all">${echapper(t.extrait || "(vide)")}</code>
+          ${t.ip ? `<br>Adresse IP du tableau de bord en ce moment : <strong>${echapper(t.ip)}</strong>` : ""}
         </div>`;
   }
   const prix = [];

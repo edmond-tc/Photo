@@ -116,7 +116,10 @@ export async function testerSebpay(env, pays = "BJ") {
     operateursEnCache.delete(pays);
     let ops = [];
     try { ops = r.ok ? await operateurs(env, pays) : []; } catch {}
-    return { statut: r.status, extrait: texte.slice(0, 600), operateurs: ops };
+    // L'adresse IP que SebPay voit (à comparer avec sa liste d'adresses autorisées).
+    let ip = "";
+    try { ip = String((await (await fetch("https://api.ipify.org?format=json")).json()).ip || ""); } catch {}
+    return { statut: r.status, extrait: texte.slice(0, 600), operateurs: ops, ip };
   } catch (e) {
     return { statut: 0, extrait: String(e.message || e).slice(0, 300), operateurs: [] };
   }
