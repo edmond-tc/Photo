@@ -12,7 +12,8 @@ const CLIENTS = Number(process.env.CLIENTS || 20);
 const MO = 1024 * 1024;
 let demandes = 0;
 const reprises = { n: 0 };
-const f = (url, opts) => { demandes += 1; return fetch(url, opts); };
+// Une limite de temps sur chaque demande, comme le vrai PC et la vraie page.
+const f = (url, opts = {}) => { demandes += 1; return fetch(url, { signal: AbortSignal.timeout(60000), ...opts }); };
 const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";

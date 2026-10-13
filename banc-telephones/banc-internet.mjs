@@ -63,14 +63,17 @@ let pcEnMarche = true;
 (async function pc() {
   while (pcEnMarche) {
     try {
-      const a = await (await fetch(`${RELAIS}/api/relais/${code}/attente`, { headers: { "x-secret": secret } })).json();
+      // Comme le vrai PC (relais.rs) : chaque demande a une limite de temps.
+      // Sans elle, une seule réponse lente du relais bloquait toute la file.
+      const a = await (await fetch(`${RELAIS}/api/relais/${code}/attente`, { headers: { "x-secret": secret }, signal: AbortSignal.timeout(20000) })).json();
       for (const c of a.commandes) {
         for (const f of c.fichiers) {
-          const corps = await (await fetch(`${RELAIS}/api/relais/${code}/fichier/${c.id}/${f.champ}`, { headers: { "x-secret": secret } })).arrayBuffer();
+          const corps = await (await fetch(`${RELAIS}/api/relais/${code}/fichier/${c.id}/${f.champ}`, { headers: { "x-secret": secret }, signal: AbortSignal.timeout(30000) })).arrayBuffer();
           recus.set(f.nom, corps.byteLength);
         }
         numero += 1;
         await fetch(`${RELAIS}/api/relais/${code}/accuse/${c.id}`, {
+          signal: AbortSignal.timeout(20000),
           method: "POST",
           headers: { "x-secret": secret, "content-type": "application/json" },
           body: JSON.stringify({ numero: `I-${numero}` }),
@@ -129,7 +132,8 @@ async function essai(navigateur, t, coupure) {
     // Le numéro du guichet arrive quand le PC a récupéré la commande.
     const debut = Date.now();
     let affiche = "";
-    while (Date.now() - debut < 30000) {
+    // Le vrai PC passe toutes les 15 s quand il est au repos : jusqu'à une minute.
+    while (Date.now() - debut < 60000) {
       affiche = (await page.textContent("#numero-commande")).trim();
       if (/^I-\d+$/.test(affiche)) break;
       await attendre(500);
