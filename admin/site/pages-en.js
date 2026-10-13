@@ -130,13 +130,15 @@ export function pagePrivacy() {
 <h2>Where your documents go</h2>
 <ul class="liste">
   <li>In the shop: on the shop's computer, which keeps them as long as needed for the work, then deletes them automatically.</li>
-  <li>Over the Internet: on the service's relay, hosted by Cloudflare, only while the shop collects them.</li>
+  <li>Over the Internet: on the service's relay, hosted by Cloudflare, only while the shop collects them. Cloudflare has servers worldwide, including in the United States: your documents may therefore travel outside Benin, encrypted in transit.</li>
   <li>Only the shop's computer, with its secret key, can collect the documents sent to it.</li>
 </ul>
 <h2>For shops</h2>
 <p>The software keeps working information (orders, till, reports) on the shop's computer. It is not sent to us. For the licence, we know the shop name, the manager's name and number, and the computer's identifier.</p>
 <h2>Your rights</h2>
 <p>You can ask what we hold about you, have it corrected or deleted: write to us on <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a>. You can also contact the data protection authority of your country (for example the Data Protection Commission in Ghana, the NDPC in Nigeria, the ODPC in Kenya, the APDP in Benin).</p>
+<h2>Fraudulent pages</h2>
+<p>A shop page that pretends to be a bank or an authority, or asks for ID documents or money, can be reported with the "Report this page" link at the bottom of the page. We close it if needed.</p>
 <p>See also the <a href="/en/terms">terms of use</a> and the <a href="/en/legal">legal notice</a>.</p>
 `,
   });

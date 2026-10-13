@@ -50,6 +50,11 @@ export function pageConditions() {
   <li>La boutique répond des informations qu'elle publie sur sa page (adresse, horaires, prix).</li>
   <li>Il est interdit de contourner la licence, de copier le logiciel pour le revendre ou d'utiliser le relais pour autre chose que des commandes de clients.</li>
 </ul>
+<h2>4 bis. Pages frauduleuses et contenus illicites</h2>
+<ul class="liste">
+  <li>Il est interdit d'utiliser une page de boutique pour tromper les clients : se faire passer pour une banque, une administration ou un opérateur, réclamer des pièces d'identité, des codes ou de l'argent.</li>
+  <li>Toute page peut être signalée par le lien « Signaler cette page ». Nous pouvons fermer sans préavis une page frauduleuse ou utilisée pour des contenus illicites, et transmettre les informations utiles aux autorités qui les demandent légalement.</li>
+</ul>
 <h2>5. Disponibilité</h2>
 <p>Nous faisons notre possible pour que le service marche en continu. L'envoi par Internet dépend des réseaux mobiles et de notre hébergeur ; une coupure peut retarder une commande. L'envoi sans Internet, par le Wi-Fi de la boutique, ne dépend d'aucun serveur.</p>
 <h2>6. Responsabilité</h2>
@@ -98,6 +103,11 @@ export function pageTerms() {
   <li>The shop handles its customers' documents discreetly, uses them only for the order, and lets them be deleted (the software does this automatically).</li>
   <li>The shop is responsible for the information it publishes on its page (address, opening hours, prices).</li>
   <li>Circumventing the licence, copying the software to resell it, or using the relay for anything other than customer orders is forbidden.</li>
+</ul>
+<h2>4a. Fraudulent pages and illegal content</h2>
+<ul class="liste">
+  <li>Using a shop page to deceive customers is forbidden: pretending to be a bank, an authority or an operator, asking for ID documents, codes or money.</li>
+  <li>Any page can be reported with the "Report this page" link. We may close a fraudulent page, or one used for illegal content, without notice, and pass relevant information to authorities that lawfully request it.</li>
 </ul>
 <h2>5. Availability</h2>
 <p>We do our best to keep the service running. Sending over the Internet depends on mobile networks and our hosting provider; an outage may delay an order. Sending without Internet, over the shop's Wi-Fi, does not depend on any server.</p>

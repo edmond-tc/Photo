@@ -457,8 +457,8 @@ pub fn set_boutique_setting(
         "fiche_telephone" if valeur.chars().count() > 30 => {
             return Err("Numéro trop long.".to_string());
         }
-        "fiche_plan" if !valeur.is_empty() && (!valeur.starts_with("https://") || valeur.len() > 300 || valeur.contains(char::is_whitespace)) => {
-            return Err("Le lien du plan doit commencer par https:// (copiez-le depuis Google Maps : Partager → Copier le lien).".to_string());
+        "fiche_plan" if !valeur.is_empty() && !lien_de_carte(valeur) => {
+            return Err("Le lien du plan doit venir d'un site de cartes (copiez-le depuis Google Maps : Partager → Copier le lien).".to_string());
         }
         "numeros_bloques" if valeur.len() > 20_000 => {
             return Err("Liste trop longue.".to_string());
@@ -1420,4 +1420,43 @@ fn urlencoding_simple(t: &str) -> String {
             _ => format!("%{o:02X}"),
         })
         .collect()
+}
+
+/// Un lien de plan acceptable : https, vers un site de cartes connu (Google
+/// Maps, OpenStreetMap, Apple Plans, Waze, Bing). Même règle que le relais
+/// (admin/site/relais.js, SITES_DE_CARTES) : une fausse boutique ne doit pas
+/// pouvoir envoyer les clients vers une page piège.
+pub fn lien_de_carte(lien: &str) -> bool {
+    let Some(reste) = lien.strip_prefix("https://") else { return false };
+    if lien.len() > 300 || lien.chars().any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>')) {
+        return false;
+    }
+    let hote = reste.split(['/', '?', '#']).next().unwrap_or("").to_ascii_lowercase();
+    let chemin = &reste[hote.len()..];
+    let google = |h: &str| {
+        let h = h.strip_prefix("www.").unwrap_or(h);
+        h.strip_prefix("google.").is_some_and(|tld| !tld.is_empty() && tld.len() <= 6 && tld.chars().all(|c| c.is_ascii_lowercase() || c == '.'))
+    };
+    match hote.as_str() {
+        "maps.app.goo.gl" | "osm.org" | "openstreetmap.org" | "www.openstreetmap.org" | "maps.apple.com" | "waze.com" | "www.waze.com" => true,
+        "goo.gl" => chemin.starts_with("/maps"),
+        "bing.com" | "www.bing.com" => chemin.starts_with("/maps"),
+        h if h.starts_with("maps.google.") => google(&h["maps.".len()..]),
+        h if google(h) => chemin.starts_with("/maps"),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests_plan {
+    use super::lien_de_carte;
+    #[test]
+    fn seuls_les_sites_de_cartes() {
+        for bon in ["https://maps.app.goo.gl/AbC", "https://www.google.com/maps/place/x", "https://maps.google.bj/?q=x", "https://goo.gl/maps/x", "https://www.openstreetmap.org/#map=1/2/3", "https://maps.apple.com/?q=x"] {
+            assert!(lien_de_carte(bon), "{bon}");
+        }
+        for mauvais in ["https://pirate.com/maps", "https://maps.app.goo.gl.pirate.com/x", "https://google.com.pirate.net/maps", "http://maps.app.goo.gl/x", "https://www.google.com/search?q=x", "https://www.google.com/maps\"><script>"] {
+            assert!(!lien_de_carte(mauvais), "{mauvais}");
+        }
+    }
 }

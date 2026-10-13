@@ -379,6 +379,7 @@ async function pageAccueil(env) {
       <h1>Boutiques (${boutiques.length})</h1>
       <a class="btn" href="/boutiques/nouvelle">+ Ajouter une boutique</a>
       <a class="btn secondaire" href="/installations">🔒 Installations</a>
+      <a class="btn secondaire" href="/relais">🌍 Boutiques Internet</a>
       <a class="btn secondaire" href="/parametres">Paramètres</a>
       <a class="btn secondaire" href="/telecharger" target="_blank">Page de téléchargement ↗</a>
       <a class="btn secondaire" href="/nouveautes">Nouveautés</a>
@@ -734,6 +735,37 @@ async function verifierPaiement(env, demande) {
 
 /// Payer les frais d'activation en ligne (ouverte depuis le QR de l'écran
 /// « Installation à valider » du logiciel, identifiant déjà rempli).
+/// Les pages « Par Internet » des boutiques : qui est inscrit, actif ou non,
+/// et le bouton pour fermer une page signalée comme frauduleuse.
+async function pageRelais(env) {
+  let lignes = [];
+  try {
+    ({ results: lignes } = await env.DB.prepare(
+      `SELECT b.code, b.nom, b.cree, b.vu, b.actif,
+              (SELECT COUNT(*) FROM relais_commandes c WHERE c.code = b.code) AS commandes
+       FROM relais_boutiques b ORDER BY b.actif ASC, b.vu DESC LIMIT 500`
+    ).all());
+  } catch {}
+  const date = (t) => (t ? echapper(String(t).slice(0, 16).replace("T", " ")) : "—");
+  return page(
+    "Boutiques Internet",
+    `<div class="carte">
+      <p><a href="/">&larr; Retour</a></p>
+      <h1>🌍 Boutiques Internet (${lignes.length})</h1>
+      <p style="font-size:0.85rem; color:#605e5c">Chaque boutique dont le logiciel a une connexion a sa page d'envoi par Internet
+      (<code>/b/CODE</code>). Une page signalée comme frauduleuse (« Signaler cette page ») se ferme ici : elle n'accepte
+      plus rien, et ses clients voient « page introuvable ».</p>
+      <table><tr><th>Boutique</th><th>Code</th><th>Créée</th><th>Vue</th><th>Commandes</th><th></th></tr>
+      ${lignes.map((b) => `<tr${b.actif ? "" : ' style="opacity:0.55"'}>
+        <td>${echapper(b.nom || "—")}</td><td><code>${echapper(b.code)}</code></td><td>${date(b.cree)}</td><td>${date(b.vu)}</td><td>${Number(b.commandes) || 0}</td>
+        <td><form method="POST" action="/relais/${echapper(b.code)}/basculer" style="display:inline">
+          <button type="submit" class="${b.actif ? "secondaire" : ""}" style="font-size:0.8rem; padding:0.3rem 0.6rem">${b.actif ? "⛔ Fermer la page" : "↩️ Rouvrir"}</button>
+        </form></td></tr>`).join("")}
+      </table>
+    </div>`
+  );
+}
+
 async function pageActiver(env, { machine, erreur } = {}) {
   const prix = paiementActif(env) ? await prixAbonnement(env) : {};
   const contact = await obtenirParametre(env, "contact_whatsapp", "");
@@ -1175,9 +1207,14 @@ function pageTelecharger(disponible, empreinte, taille, leger, telephone, window
 /// Le tableau de bord n'utilise aucun JavaScript : on peut donc l'interdire
 /// complètement. Même si une valeur mal échappée se glissait dans une page,
 /// le navigateur refuserait d'exécuter quoi que ce soit.
+///
+/// form-action : le bouton « Payer » envoie au tableau de bord, qui renvoie
+/// vers la page de paiement FedaPay. Chrome applique cette règle aussi à la
+/// redirection : sans FedaPay ici, le paiement était bloqué dans le
+/// navigateur du gérant (trouvé à l'audit, essais/paiement-navigateur.mjs).
 const EN_TETES_SECURITE = {
   "content-security-policy":
-    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self' https://*.fedapay.com; base-uri 'none'; frame-ancestors 'none'",
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
   "x-frame-options": "DENY",
@@ -1798,6 +1835,15 @@ async function router(request, env) {
 
       if (pathname === "/" && method === "GET") {
         return new Response(await pageAccueil(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+
+      if (pathname === "/relais" && method === "GET") {
+        return new Response(await pageRelais(env), { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      const matchBasculer = pathname.match(/^\/relais\/([0-9A-Z]{6,10})\/basculer$/);
+      if (matchBasculer && method === "POST") {
+        await env.DB.prepare(`UPDATE relais_boutiques SET actif = CASE actif WHEN 1 THEN 0 ELSE 1 END WHERE code = ?`).bind(matchBasculer[1]).run();
+        return new Response(null, { status: 302, headers: { Location: "/relais" } });
       }
 
       if (pathname === "/installations" && method === "GET") {

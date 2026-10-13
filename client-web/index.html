@@ -528,7 +528,8 @@ p { margin: 0; }
     </div>
   </section>
 
-  <p class="pied" data-mode-web hidden>Un souci ? <a href="/classique">Page d'envoi simple</a></p>
+  <p class="pied" data-mode-web data-local hidden>Un souci ? <a href="/classique">Page d'envoi simple</a></p>
+  <p class="pied" id="pied-signaler" hidden><a id="lien-signaler" href="#">Signaler cette page</a></p>
 </main>
 
 <input id="fichiers" type="file" multiple hidden>
@@ -861,6 +862,8 @@ setTimeout(function () {
   $$("[data-mode-app]").forEach((e) => (e.hidden = !app));
   $$("[data-mode-web]").forEach((e) => (e.hidden = !!app));
   if (enLigne) $$("[data-local]").forEach((e) => (e.hidden = true));
+  // Par Internet : une page de boutique frauduleuse peut être signalée.
+  if (enLigne) { $("#lien-signaler").href = `${PREFIXE}/signaler`; $("#pied-signaler").hidden = false; }
 
   // ─── Autorisations et profil ───
   const profil = () => lire("kiosque.profil", { prenom: "", numero: "" });

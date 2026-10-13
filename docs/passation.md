@@ -4,6 +4,9 @@ Ce document est écrit pour deux lecteurs : le porteur du projet (Edmond),
 et la personne ou l'assistant qui reprendra le code plus tard. Il ne
 contient AUCUN mot de passe ni clé : seulement leurs noms et où ils vivent.
 
+**Sécurité et règles à respecter** : voir `docs/audit-securite-juridique.md`
+(audit du 13 octobre 2026, avec la liste de ce qui reste à faire).
+
 ## 1. Ce que le projet contient
 
 | Morceau | Dossier | Rôle |

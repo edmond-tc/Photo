@@ -136,12 +136,32 @@ async function effacerCommande(env, code, commande) {
 
 // ───────────────────────────── Côté client ─────────────────────────────
 
+/** « Signaler cette page » : une fausse boutique (qui réclame des pièces
+ * d'identité, se fait passer pour une banque…) est signalée au porteur du
+ * projet, qui peut la désactiver depuis son tableau de bord. */
+function pageSignaler(b) {
+  const nom = String(b.nom || "").replace(/[<>&"]/g, "");
+  const texte = encodeURIComponent(`Je signale la page boutique « ${nom} » (code ${b.code}) sur Gestion Photocopie. Raison : `);
+  return new Response(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Signaler une page</title>
+<style>body{font-family:system-ui,sans-serif;max-width:520px;margin:2rem auto;padding:0 16px;line-height:1.5;color:#16213a;background:#fff}a.btn{display:inline-block;background:#137a3d;color:#fff;padding:12px 18px;border-radius:12px;text-decoration:none;font-weight:700}</style></head>
+<body><h1>Signaler cette page</h1>
+<p>Cette page (« ${nom} », code <strong>${b.code}</strong>) vous semble frauduleuse ? Par exemple : elle se fait passer pour une banque ou une administration, elle réclame des pièces d'identité ou de l'argent.</p>
+<p>Prévenez-nous : nous vérifions et, si besoin, nous la fermons.</p>
+<p><a class="btn" href="https://wa.me/2290151226741?text=${texte}">Signaler sur WhatsApp</a></p>
+<p>Report this page (fraud, fake bank, ID requests): use the button above.</p>
+<p><a href="/b/${b.code}/">← Retour</a></p></body></html>`, {
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+  });
+}
+
 async function pageClient(b) {
   // La même page que dans la boutique ; elle sait qu'elle passe par
   // Internet grâce à son adresse (/b/CODE). Le nom de la boutique est posé
   // comme texte, jamais comme code.
   const nom = String(b.nom || "Photocopie").replace(/[<>&"]/g, "");
-  return new Response(PAGE_CLIENT.replace("<title>", `<title>${nom} · `), {
+  // Fonction de remplacement : un nom contenant « $' » ou « $& » ne doit pas
+  // être lu comme un motif spécial (il recopiait toute la page dans le titre).
+  return new Response(PAGE_CLIENT.replace("<title>", () => `<title>${nom} · `), {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
@@ -282,6 +302,24 @@ async function pcAutorise(request, env, code) {
   return egalConstant(await empreinte(secret), b.empreinte_secret) ? b : null;
 }
 
+/** Nouvelles boutiques : 10 par heure et par adresse Internet (une
+ * installation n'en crée qu'une), et 500 par jour en tout. Au-delà, c'est un
+ * robot qui remplit la base. Les boutiques existantes ne sont jamais
+ * concernées. */
+const creations = new Map();
+const CREATIONS_PAR_HEURE = 10;
+const CREATIONS_PAR_JOUR = 500;
+function creationPermise(request) {
+  const ip = request.headers.get("cf-connecting-ip") || "local";
+  const maintenant = Date.now();
+  let c = creations.get(ip);
+  if (!c || maintenant - c.depuis > 3600 * 1000) c = { depuis: maintenant, n: 0 };
+  c.n += 1;
+  creations.set(ip, c);
+  if (creations.size > 5000) creations.clear();
+  return c.n <= CREATIONS_PAR_HEURE;
+}
+
 async function inscrire(request, env) {
   let corps;
   try { corps = await request.json(); } catch { return json({ erreur: "illisible" }, 400); }
@@ -294,6 +332,10 @@ async function inscrire(request, env) {
   const existant = await env.DB.prepare("SELECT empreinte_secret FROM relais_boutiques WHERE code = ?").bind(code).first();
   const maintenant = new Date().toISOString();
   if (!existant) {
+    if (!creationPermise(request)) return json({ erreur: "trop de créations" }, 429);
+    const jour = await env.DB.prepare("SELECT COUNT(*) AS n FROM relais_boutiques WHERE cree > ?")
+      .bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()).first();
+    if ((jour?.n || 0) >= CREATIONS_PAR_JOUR) return json({ erreur: "trop de créations" }, 429);
     await env.DB.prepare(
       `INSERT INTO relais_boutiques (code, empreinte_secret, nom, tarifs, cree, vu, actif, octets_attente)
        VALUES (?, ?, ?, ?, ?, ?, 1, 0)`
@@ -319,6 +361,11 @@ async function inscrire(request, env) {
   });
 }
 
+/** Le lien « Voir le plan » ne peut mener qu'à un site de cartes : sinon une
+ * fausse boutique pourrait envoyer les clients vers une page piège. */
+const SITES_DE_CARTES = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.[a-z.]{2,6}\/maps|maps\.google\.[a-z.]{2,6}|(www\.)?openstreetmap\.org|osm\.org|maps\.apple\.com|(www\.)?waze\.com|(www\.)?bing\.com\/maps)(\/|\?|$)[^\s"'<>]*$/i;
+export const planValide = (lien) => SITES_DE_CARTES.test(String(lien || ""));
+
 /** Fiche publique de la boutique : seulement du texte court, et un lien de
  * plan en https. Rien de ce qui vient du PC n'est servi tel quel. */
 function ficheNettoyee(f) {
@@ -329,7 +376,7 @@ function ficheNettoyee(f) {
     adresse: texte(f.adresse, 150),
     horaires: texte(f.horaires, 150),
     telephone: texte(f.telephone, 30).replace(/[^0-9+ ]/g, ""),
-    plan: /^https:\/\/[^\s"'<>]+$/.test(plan) ? plan : "",
+    plan: planValide(plan) ? plan : "",
     devise: texte(f.devise, 8),
   };
 }
@@ -528,6 +575,7 @@ export async function relais(request, env) {
       return recevoirMorceau(request, env, b, s[1], debut);
     }
     if (reste === "/envoyer" && m === "POST") return recevoirCommande(request, env, b);
+    if (reste === "/signaler" && m === "GET") return pageSignaler(b);
     s = reste.match(/^\/statut\/([0-9a-f]+)$/);
     if (s && m === "GET") return statutClient(env, b, s[1]);
     return json({}, 404);

@@ -31,7 +31,7 @@ jobs:
           gradle-version: "8.14.3"
 
       # Clé de publication secrète (voir android/app/build.gradle.kts). Sans
-      # les secrets, l'APK est signé avec la clé d'essai, comme avant.
+      # les secrets : refus sur main ; clé d'essai sur les branches d'essai.
       - name: Préparer la clé de publication
         env:
           CLE_B64: ${{ secrets.ENVOYEUR_KEYSTORE_B64 }}
@@ -40,8 +40,13 @@ jobs:
             echo "$CLE_B64" | base64 -d > "$RUNNER_TEMP/envoyeur-publication.jks"
             echo "ENVOYEUR_KEYSTORE=$RUNNER_TEMP/envoyeur-publication.jks" >> "$GITHUB_ENV"
             echo "Clé de publication utilisée."
+          elif [ "$GITHUB_REF_NAME" = "main" ]; then
+            # La clé d'essai est publique (dans le dépôt) : un APK publié avec
+            # elle pourrait être imité par n'importe qui. Jamais pour main.
+            echo "::error::Secrets ENVOYEUR_KEYSTORE_B64 absents : publication refusée (la clé d'essai est publique)."
+            exit 1
           else
-            echo "::warning::Secrets ENVOYEUR_KEYSTORE_B64 absents : APK signé avec la clé d'ESSAI."
+            echo "::warning::Secrets ENVOYEUR_KEYSTORE_B64 absents : APK d'essai signé avec la clé d'ESSAI (branche $GITHUB_REF_NAME)."
           fi
 
       - name: Compiler l'envoyeur (APK)

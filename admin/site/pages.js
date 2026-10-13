@@ -264,13 +264,15 @@ export function pageConfidentialite() {
 <h2>Où vont vos documents</h2>
 <ul class="liste">
   <li>Dans la boutique : sur l'ordinateur du gérant, qui les garde le temps nécessaire au travail, puis les efface automatiquement.</li>
-  <li>Par Internet : sur le relais du service, hébergé chez Cloudflare, uniquement le temps de la récupération.</li>
+  <li>Par Internet : sur le relais du service, hébergé chez Cloudflare, uniquement le temps de la récupération. Cloudflare a des serveurs dans le monde entier, notamment aux États-Unis : vos documents peuvent donc transiter hors du Bénin, chiffrés pendant le transport.</li>
   <li>Seul l'ordinateur de la boutique, avec sa clé secrète, peut récupérer les documents qui lui sont envoyés.</li>
 </ul>
 <h2>Pour les gérants</h2>
 <p>Le logiciel garde sur l'ordinateur de la boutique les informations de travail (commandes, caisse, rapports). Elles ne nous sont pas transmises. Pour la licence, nous connaissons le nom de la boutique, le nom et le numéro du gérant, et l'identifiant de l'ordinateur.</p>
 <h2>Vos droits</h2>
 <p>Vous pouvez demander à savoir ce que nous détenons sur vous, le faire corriger ou effacer : écrivez-nous sur <a href="https://wa.me/${WHATSAPP}">WhatsApp ${TELEPHONE_LISIBLE}</a>. Vous pouvez aussi vous adresser à l'autorité de protection des données de votre pays : au Bénin, l'APDP ; en Côte d'Ivoire, l'ARTCI ; au Sénégal, la CDP ; au Togo, l'IPDCP ; au Cameroun, l'autorité compétente ; au Ghana, la Data Protection Commission ; au Nigeria, la NDPC.</p>
+<h2>Pages frauduleuses</h2>
+<p>Une page de boutique qui se fait passer pour une banque ou une administration, ou qui réclame des pièces d'identité ou de l'argent, peut être signalée avec le lien « Signaler cette page » en bas de la page. Nous la fermons si besoin.</p>
 <p>Voir aussi les <a href="/conditions">conditions d'utilisation</a> et les <a href="/mentions-legales">mentions légales</a>.</p>
 `,
   });

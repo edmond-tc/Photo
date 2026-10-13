@@ -18,7 +18,9 @@ export function demarrerFauxFedapay(port, { cle = "sk_test_banc" } = {}) {
       return json(200, { "v1/transaction": t });
     }
     let m = url.pathname.match(/^\/v1\/transactions\/(\d+)\/token$/);
-    if (req.method === "POST" && m) return json(200, { token: "tok" + m[1], url: `http://127.0.0.1:${port}/payer/${m[1]}` });
+    // Adresse de paiement : celle du faux FedaPay, ou (essai dans un vrai
+    // navigateur) une adresse « fedapay.com » que le navigateur intercepte.
+    if (req.method === "POST" && m) return json(200, { token: "tok" + m[1], url: process.env.ADRESSE_PAGE_PAIEMENT ? `${process.env.ADRESSE_PAGE_PAIEMENT}/${m[1]}` : `http://127.0.0.1:${port}/payer/${m[1]}` });
     m = url.pathname.match(/^\/v1\/transactions\/(\d+)$/);
     if (req.method === "GET" && m) {
       const t = transactions.get(Number(m[1]));
