@@ -47,7 +47,21 @@ contient AUCUN mot de passe ni clé : seulement leurs noms et où ils vivent.
   allumées en même temps, passer à l'offre payante de Cloudflare (environ 5 dollars
   par mois) ou espacer les visites dans `relais.rs`.
 - **Bancs d'essai** : `node banc-telephones/banc.mjs` (Wi-Fi de la boutique) et
-  `RELAIS=… node banc-telephones/banc-internet.mjs` (par Internet).
+  `RELAIS=… node banc-telephones/banc-internet.mjs` (par Internet), et
+  `RELAIS=… BOUTIQUES=6 CLIENTS=20 node banc-telephones/charge-relais.mjs` (plusieurs
+  boutiques et beaucoup de clients en même temps).
+- **Plusieurs utilisateurs (audit du 13 octobre 2026)** : chaque boutique ne voit que
+  ses commandes (secret propre à chaque PC) ; un morceau reçu deux fois n'est compté
+  qu'une fois ; « Réessayer » après une coupure rend la même commande au lieu d'en
+  créer une seconde ; si l'accusé de réception se perd, le PC ne remet pas la commande
+  deux fois au guichet (registre `relais_remises`) ; une commande sans ses documents
+  est limitée à 12 Mo (une commande énorme aurait pu faire tomber le relais pour
+  toutes les boutiques) ; 2 Go par heure au plus par adresse Internet et par boutique
+  (large : les clients d'un même opérateur mobile partagent souvent une adresse) ;
+  la page du client interroge le relais toutes les 15 s (pas 3 s), s'arrête quand
+  l'écran est caché ou après 3 h, et dit « la boutique n'est pas allumée » quand le
+  PC ne passe plus ; le PC note sa présence au plus toutes les 2 minutes (quota
+  d'écriture de la base).
 
 ## 3. Les comptes à ne jamais perdre
 

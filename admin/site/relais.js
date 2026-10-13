@@ -16,11 +16,32 @@ const MORCEAU_MAX = 2 * 1024 * 1024;
 /** Un document : de quoi passer un mémoire scanné, pas un film. */
 const FICHIER_MAX = 300 * 1024 * 1024;
 /** Fichier joint directement (message vocal, document vide). */
-const DIRECT_MAX = 20 * 1024 * 1024;
+const DIRECT_MAX = 8 * 1024 * 1024;
 /** En attente, par boutique : au-delà, la boutique doit d'abord récupérer. */
 const ATTENTE_MAX_PAR_BOUTIQUE = 2 * 1024 * 1024 * 1024;
 const FICHIERS_MAX = 20;
+const ENVOI_MAX = 12 * 1024 * 1024; // une commande sans ses documents
 const DUREE_DE_VIE_MS = 24 * 3600 * 1000;
+
+/** Par téléphone et par boutique, sur une heure : de quoi servir un vrai
+ * client (plusieurs gros documents), pas de quoi remplir l'attente d'une
+ * boutique pour la bloquer. Tenu en mémoire de chaque instance du relais :
+ * une protection de bon sens, pas une garantie absolue. */
+// Large : au Bénin, les clients d'un même opérateur mobile sortent souvent
+// par la même adresse Internet, et se partagent donc cette limite.
+const DEBIT_MAX_PAR_HEURE = 2 * 1024 * 1024 * 1024;
+const debits = new Map();
+function debitPermis(request, code, octets) {
+  const ip = request.headers.get("cf-connecting-ip") || "local";
+  const cle = `${code}|${ip}`;
+  const maintenant = Date.now();
+  let d = debits.get(cle);
+  if (!d || maintenant - d.depuis > 3600 * 1000) d = { depuis: maintenant, octets: 0 };
+  d.octets += octets;
+  debits.set(cle, d);
+  if (debits.size > 5000) debits.clear();
+  return d.octets <= DEBIT_MAX_PAR_HEURE;
+}
 
 const CODE_VALIDE = /^[0-9A-HJKMNP-TV-Z]{6,10}$/;
 const ID_VALIDE = /^[0-9a-f]{12,40}$/;
@@ -128,16 +149,31 @@ async function recevoirMorceau(request, env, b, id, debut) {
   if ((b.octets_attente || 0) + longueur > ATTENTE_MAX_PAR_BOUTIQUE) {
     return new Response("La boutique a trop de documents en attente. Réessayez dans un moment.", { status: 507 });
   }
+  if (!debitPermis(request, b.code, longueur)) {
+    return new Response("Trop d'envois depuis ce téléphone en peu de temps. Réessayez dans quelques minutes.", { status: 429 });
+  }
   const { recu } = await morceaux(env, b.code, id);
   if (debut !== recu) return json({ recu }, 409);
-  await env.TELECHARGEMENTS.put(cleMorceau(b.code, id, debut), request.body, {
+  const cle = cleMorceau(b.code, id, debut);
+  // Le même morceau peut arriver deux fois en même temps (le téléphone
+  // renvoie quand le réseau hésite) : il n'est compté qu'une fois. Trouvé à
+  // l'essai de charge : le compteur d'attente dérivait de plusieurs Mo par
+  // vingt clients, jusqu'à bloquer à terme la boutique pour rien.
+  const deja = await env.TELECHARGEMENTS.head(cle);
+  await env.TELECHARGEMENTS.put(cle, request.body, {
     httpMetadata: { contentType: "application/octet-stream" },
   });
-  await compterAttente(env, b.code, longueur);
+  if (!deja) await compterAttente(env, b.code, longueur);
   return json({ recu: recu + longueur });
 }
 
 async function recevoirCommande(request, env, b) {
+  // La commande elle-même est petite (réglages et messages vocaux ; les
+  // documents arrivent avant, par morceaux). Lue d'un bloc en mémoire, une
+  // commande énorme pourrait faire tomber le relais pour toutes les autres
+  // boutiques en même temps : refusée avant d'être lue.
+  const longueur = Number(request.headers.get("content-length") || 0);
+  if (!longueur || longueur > ENVOI_MAX) return new Response("Envoi trop lourd. Réessayez.", { status: 413 });
   let formulaire;
   try { formulaire = await request.formData(); } catch { return new Response("Envoi illisible. Réessayez.", { status: 400 }); }
   const champs = {};
@@ -168,6 +204,23 @@ async function recevoirCommande(request, env, b) {
   }
   if (!fichiers.some((f) => f.champ.startsWith("fichier_"))) {
     return new Response("Aucun document n'est arrivé. Réessayez.", { status: 400 });
+  }
+  // La liaison a coupé juste après l'enregistrement et le client a touché
+  // « Réessayer » : même document envoyé par morceaux = même commande. On
+  // rend la première au lieu d'en créer une seconde (sinon la boutique
+  // imprimerait deux fois).
+  const premier = fichiers.find((f) => f.type === "morceaux");
+  if (premier) {
+    const deja = await env.DB.prepare(
+      "SELECT jeton FROM relais_commandes WHERE code = ? AND fichiers LIKE ? LIMIT 1"
+    ).bind(b.code, `%"id":"${premier.id}"%`).first();
+    if (deja) {
+      for (const f of fichiers) if (f.type === "direct") {
+        await env.TELECHARGEMENTS.delete(f.cle);
+        await compterAttente(env, b.code, -f.taille);
+      }
+      return json({ numero: null, jetons: [deja.jeton], en_ligne: true });
+    }
   }
   const jeton = hasard(16);
   await env.DB.prepare(
@@ -229,7 +282,13 @@ async function inscrire(request, env) {
 }
 
 async function enAttente(env, b) {
-  await env.DB.prepare("UPDATE relais_boutiques SET vu = ? WHERE code = ?").bind(new Date().toISOString(), b.code).run();
+  // Une écriture à chaque visite (toutes les 15 s par PC) aurait épuisé le
+  // quota gratuit d'écritures (100 000 par jour) vers 17 boutiques. Au plus
+  // une toutes les 2 minutes : assez pour dire au client si le PC est là.
+  const maintenant = Date.now();
+  if (!b.vu || maintenant - Date.parse(b.vu) > 120 * 1000) {
+    await env.DB.prepare("UPDATE relais_boutiques SET vu = ? WHERE code = ?").bind(new Date(maintenant).toISOString(), b.code).run();
+  }
   const r = await env.DB.prepare(
     "SELECT id, champs, fichiers, cree FROM relais_commandes WHERE code = ? AND etape = 'en_ligne' ORDER BY cree LIMIT 10"
   ).bind(b.code).all();
@@ -333,9 +392,27 @@ export async function nettoyer(env) {
     }
     curseur = r.truncated ? r.cursor : undefined;
   } while (curseur);
+  // Le compteur d'attente de chaque boutique, recalculé d'après ce qui est
+  // réellement stocké : aucune dérive ne peut durer plus d'une heure.
+  const reel = new Map();
+  let suite;
+  do {
+    const r = await env.TELECHARGEMENTS.list({ prefix: "relais/", cursor: suite });
+    for (const o of r.objects) {
+      const code = o.key.split("/")[1];
+      reel.set(code, (reel.get(code) || 0) + o.size);
+    }
+    suite = r.truncated ? r.cursor : undefined;
+  } while (suite);
+  await env.DB.prepare("UPDATE relais_boutiques SET octets_attente = 0 WHERE octets_attente != 0").run();
+  for (const [code, octets] of reel) {
+    if (CODE_VALIDE.test(code)) {
+      await env.DB.prepare("UPDATE relais_boutiques SET octets_attente = ? WHERE code = ?").bind(octets, code).run();
+    }
+  }
   // Les boutiques fictives de l'essai automatique (essai-relais.yml).
   await env.DB.prepare(
-    "DELETE FROM relais_boutiques WHERE nom = 'Boutique d''essai Internet' AND code LIKE 'E%' AND cree < ?"
+    "DELETE FROM relais_boutiques WHERE ((nom = 'Boutique d''essai Internet' AND code LIKE 'E%') OR (nom LIKE 'Charge %' AND code LIKE 'CHG%' AND length(code) = 9)) AND cree < ?"
   ).bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()).run();
   // Les commandes traitées depuis plus de 7 jours : plus rien à suivre.
   await env.DB.prepare("DELETE FROM relais_commandes WHERE cree < ?")
@@ -375,7 +452,8 @@ export async function relais(request, env) {
     if (m === "GET" && reste === "/infos") {
       let tarifs = {};
       try { tarifs = JSON.parse(b.tarifs || "{}"); } catch {}
-      return json({ boutique: b.nom || "", tarifs, en_ligne: true });
+      const pcEnLigne = !!b.vu && Date.now() - Date.parse(b.vu) < 6 * 60 * 1000;
+      return json({ boutique: b.nom || "", tarifs, en_ligne: true, pc_en_ligne: pcEnLigne });
     }
     let s = reste.match(/^\/morceau\/([0-9a-f]{12,40})$/);
     if (s && m === "GET") return json({ recu: (await morceaux(env, b.code, s[1])).recu });

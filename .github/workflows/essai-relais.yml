@@ -55,3 +55,16 @@ jobs:
         run: |
           node banc-telephones/banc-internet.mjs | tee resultat.txt
           grep -q "BILAN INTERNET : 20/20" resultat.txt
+
+      # Plusieurs boutiques et leurs clients en même temps sur le VRAI relais :
+      # chaque boutique reçoit ses commandes, intactes, une seule fois, et le
+      # bouton « Réessayer » ne crée pas de double. (Boutiques d'essai
+      # « Charge … » effacées par le nettoyage.)
+      - name: Essai à plusieurs boutiques en même temps
+        env:
+          RELAIS: https://photocopie-benin.atinzed2.workers.dev
+          BOUTIQUES: "3"
+          CLIENTS: "10"
+        run: |
+          node banc-telephones/charge-relais.mjs | tee charge.txt
+          grep -q "BILAN CHARGE : RÉUSSI" charge.txt

@@ -141,9 +141,15 @@ pub async fn inscrire(
     }
 }
 
+/// Commandes déjà remises au guichet : identifiant sur le relais → (numéro,
+/// jeton de suivi). Si l'accusé de réception se perd en route (connexion qui
+/// tombe), le relais la représente au tour suivant : sans ce registre, le
+/// guichet l'aurait reçue deux fois.
+pub type Remises = std::collections::HashMap<String, (String, String)>;
+
 /// Récupère les commandes en attente, les remet au guichet, et prévient le
 /// relais. Rend celles qui ont abouti, pour en suivre l'étape.
-pub async fn traiter_attente(client: &reqwest::Client, cfg: &Config) -> Result<Vec<Suivi>, String> {
+pub async fn traiter_attente(client: &reqwest::Client, cfg: &Config, remises: &mut Remises) -> Result<Vec<Suivi>, String> {
     let attente: Attente = client
         .get(format!("{}/api/relais/{}/attente", cfg.relais, cfg.code))
         .header("x-secret", &cfg.secret)
@@ -157,10 +163,16 @@ pub async fn traiter_attente(client: &reqwest::Client, cfg: &Config) -> Result<V
         .await
         .map_err(|e| e.to_string())?;
 
-    let mut remises = Vec::new();
+    let mut suivis = Vec::new();
     for commande in attente.commandes {
-        match remettre(client, cfg, &commande).await {
+        let deja = remises.get(&commande.id).cloned();
+        let resultat = match deja {
+            Some(remise) => Ok(remise),
+            None => remettre(client, cfg, &commande).await,
+        };
+        match resultat {
             Ok((numero, jeton)) => {
+                remises.insert(commande.id.clone(), (numero.clone(), jeton.clone()));
                 let _ = client
                     .post(format!("{}/api/relais/{}/accuse/{}", cfg.relais, cfg.code, commande.id))
                     .header("x-secret", &cfg.secret)
@@ -168,7 +180,7 @@ pub async fn traiter_attente(client: &reqwest::Client, cfg: &Config) -> Result<V
                     .timeout(Duration::from_secs(20))
                     .send()
                     .await;
-                remises.push(Suivi {
+                suivis.push(Suivi {
                     commande: commande.id.clone(),
                     jeton_local: jeton,
                     depuis: Instant::now(),
@@ -176,10 +188,12 @@ pub async fn traiter_attente(client: &reqwest::Client, cfg: &Config) -> Result<V
                 });
             }
             // Laissée sur le relais : elle sera reprise au prochain tour.
-            Err(e) => return Err(e),
+            // Celles déjà remises restent suivies.
+            Err(e) if suivis.is_empty() => return Err(e),
+            Err(_) => break,
         }
     }
-    Ok(remises)
+    Ok(suivis)
 }
 
 /// Télécharge les fichiers d'une commande puis la remet au serveur local du
@@ -415,6 +429,9 @@ pub fn demarrer(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let client = client();
         let mut suivis: Vec<Suivi> = Vec::new();
+        let mut remises: Remises = reglage(&app, "relais_remises")
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
         let mut derniere_inscription: Option<Instant> = None;
         let mut nom_inscrit = String::new();
         let mut activite: Option<Instant> = None;
@@ -475,7 +492,22 @@ pub fn demarrer(app: tauri::AppHandle) {
                 }
             }
 
-            match traiter_attente(&client, &cfg).await {
+            let avant = remises.len();
+            let tour = traiter_attente(&client, &cfg, &mut remises).await;
+            if remises.len() != avant {
+                // Les 200 dernières suffisent : le relais efface tout en 24 h.
+                if remises.len() > 200 {
+                    let mut cles: Vec<String> = remises.keys().cloned().collect();
+                    cles.sort();
+                    for c in cles.into_iter().take(remises.len() - 200) {
+                        remises.remove(&c);
+                    }
+                }
+                if let Ok(t) = serde_json::to_string(&remises) {
+                    noter(&app, "relais_remises", &t);
+                }
+            }
+            match tour {
                 Ok(nouvelles) => {
                     echecs = 0;
                     if !nouvelles.is_empty() {
@@ -545,9 +577,39 @@ mod tests {
         };
         let c = client();
         inscrire(&c, &cfg, "Boutique d'essai", &serde_json::json!({"nb_a4": 25})).await.unwrap();
-        let mut suivis = traiter_attente(&c, &cfg).await.unwrap();
+        let mut remises = Remises::new();
+        let mut suivis = traiter_attente(&c, &cfg, &mut remises).await.unwrap();
         println!("commandes remises : {}", suivis.len());
         assert!(!suivis.is_empty(), "aucune commande en attente");
         synchroniser_etats(&c, &cfg, &mut suivis).await;
+    }
+
+    /// L'accusé de réception s'est perdu : le relais représente une commande
+    /// déjà remise. Le guichet ne doit PAS la recevoir une seconde fois ; le
+    /// relais reçoit simplement l'accusé, avec le numéro déjà donné.
+    /// Lancé à la main (mêmes variables que `bout_en_bout`) :
+    /// cargo test --lib relais::tests::pas_de_doublon -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn pas_de_doublon_si_l_accuse_s_est_perdu() {
+        let cfg = Config {
+            relais: std::env::var("RELAIS").unwrap(),
+            local: std::env::var("GUICHET").unwrap(),
+            code: std::env::var("CODE").unwrap(),
+            secret: std::env::var("SECRET").unwrap(),
+            dossier: std::env::temp_dir().join("relais-essai-doublon"),
+        };
+        let c = client();
+        let attente: serde_json::Value = c
+            .get(format!("{}/api/relais/{}/attente", cfg.relais, cfg.code))
+            .header("x-secret", &cfg.secret)
+            .send().await.unwrap().json().await.unwrap();
+        let id = attente["commandes"][0]["id"].as_str().expect("une commande en attente").to_string();
+        let mut remises = Remises::new();
+        remises.insert(id.clone(), ("A-9".to_string(), "jeton-deja-remis".to_string()));
+        let suivis = traiter_attente(&c, &cfg, &mut remises).await.unwrap();
+        assert_eq!(suivis.len(), 1);
+        assert_eq!(suivis[0].jeton_local, "jeton-deja-remis");
+        println!("commande {id} : accusée sans nouvelle remise au guichet");
     }
 }

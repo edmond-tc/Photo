@@ -18,3 +18,18 @@ Lancer : `node banc-telephones/banc.mjs` (Playwright et Chromium installés).
 Ce que ce banc ne remplace pas : le Wi-Fi réel, le système Android lui-même
 (choix entre Wi-Fi et données mobiles), Safari sur iPhone. Pour cela, un
 essai en boutique reste nécessaire.
+
+## Par Internet, plusieurs boutiques en même temps
+
+`charge-relais.mjs` : plusieurs boutiques inscrites sur le relais, et pour
+chacune beaucoup de clients qui envoient en même temps (documents de 0,5 à
+4 Mo). Un client sur cinq imite un réseau qui hésite : le même morceau part
+deux fois, et le bouton « Réessayer » est touché après la commande. Le faux
+PC de chaque boutique récupère ses commandes. Le banc vérifie que chaque
+boutique reçoit exactement SES commandes, intactes, une seule fois, et que
+le client voit le numéro donné par le guichet.
+
+    RELAIS=http://127.0.0.1:8787 BOUTIQUES=6 CLIENTS=20 node banc-telephones/charge-relais.mjs
+
+Il tourne aussi, plus petit (3 boutiques × 10 clients), contre le vrai
+relais en ligne après chaque déploiement (`.github/workflows/essai-relais.yml`).

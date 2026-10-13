@@ -273,6 +273,7 @@ p { margin: 0; }
         <p><strong>📵 Coupez vos données mobiles.</strong> Votre téléphone essaie de passer par Internet au lieu du Wi-Fi de la boutique.</p>
         <p>Tirez le haut de l'écran vers le bas et touchez <strong>« Données mobiles »</strong> pour les éteindre. La page se reconnecte toute seule. Vous les rallumerez après l'envoi.</p>
       </div>
+      <p class="bandeau doux" id="pc-absent" hidden>L'ordinateur de la boutique n'est pas connecté pour l'instant : vos documents l'attendront jusqu'à 24 h.</p>
       <div class="action">
         <label class="btn grand" for="fichiers">📄 Choisir mes documents<small>PDF, Word, photos… plusieurs à la fois</small></label>
         <label class="btn second" for="photo">📷 Prendre un document en photo</label>
@@ -562,6 +563,7 @@ setTimeout(function () {
   // Ouverte depuis le relais Internet (/b/CODE) : tout passe par lui.
   const PREFIXE = (location.pathname.match(/^\/b\/[0-9A-Za-z]{6,10}/) || [""])[0];
   const enLigne = !!PREFIXE && !app;
+  const R = () => enLigne ? "votre connexion Internet" : "le Wi-Fi de la boutique";
   let connexion = app ? { etat: "aucune" } : { etat: "ok", base: PREFIXE };
   const baseUrl = () => connexion.base ?? "";
 
@@ -705,6 +707,7 @@ setTimeout(function () {
       }
       if (Object.keys(recus).length) { tarifs = Object.assign(tarifs, recus); ecrire("kiosque.tarifs", recus); }
       if (infos.boutique) { ecrire("kiosque.boutique", infos.boutique); afficherBoutique(); }
+      $("#pc-absent").hidden = !(enLigne && infos.pc_en_ligne === false);
       // Autres façons d'envoyer : numéro vérifié (chiffres seuls), nom
       // Bluetooth posé comme texte, jamais comme HTML.
       if (typeof infos.whatsapp === "string" && /^[0-9]{8,15}$/.test(infos.whatsapp)) {
@@ -1386,9 +1389,9 @@ setTimeout(function () {
         if (!debutCoupure.t) debutCoupure.t = Date.now();
         // Plus de 10 minutes sans liaison : on arrête et on le dit.
         if (Date.now() - debutCoupure.t > 10 * 60 * 1000) {
-          throw new Error("La liaison avec la boutique est coupée depuis trop longtemps. Vérifiez que vous êtes sur le Wi-Fi de la boutique, puis touchez « Réessayer » : l'envoi reprendra là où il s'est arrêté.");
+          throw new Error(`La liaison avec la boutique est coupée depuis trop longtemps. Vérifiez ${R()}, puis touchez « Réessayer » : l'envoi reprendra là où il s'est arrêté.`);
         }
-        $("#erreur-envoi").textContent = "Liaison perdue… reprise automatique. Restez sur le Wi-Fi de la boutique, écran allumé.";
+        $("#erreur-envoi").textContent = `Liaison perdue… reprise automatique. Restez sur ${R()}, écran allumé.`;
         $("#erreur-envoi").hidden = false;
         conseilDonnees(true);
         await attendre(Math.min(2000 * echecs, 8000));
@@ -1451,13 +1454,13 @@ setTimeout(function () {
         if (xhr.status >= 200 && xhr.status < 300) { try { ok(JSON.parse(xhr.responseText)); } catch (_) { ok({}); } }
         else ko(new Error(xhr.responseText && xhr.responseText.length < 200 ? xhr.responseText : "La boutique a refusé l'envoi. Réessayez."));
       };
-      xhr.onerror = () => { fini(); conseilDonnees(true); ko(new Error("La liaison avec la boutique a été coupée. Restez près du guichet et réessayez.")); };
+      xhr.onerror = () => { fini(); conseilDonnees(true); ko(new Error(enLigne ? "La liaison a été coupée. Réessayez." : "La liaison avec la boutique a été coupée. Restez près du guichet et réessayez.")); };
       xhr.ontimeout = () => { fini(); ko(new Error("L'envoi a pris trop de temps. Réessayez.")); };
       xhr.onabort = () => {
         fini();
         if (bloque) conseilDonnees(true);
         ko(new Error(bloque
-          ? "L'envoi s'est arrêté : le Wi-Fi de la boutique a été coupé, ou l'écran s'est verrouillé. Vérifiez que vous êtes toujours sur le Wi-Fi de la boutique, puis touchez de nouveau « Envoyer », écran allumé."
+          ? `L'envoi s'est arrêté : la liaison a été coupée, ou l'écran s'est verrouillé. Vérifiez ${R()}, puis touchez de nouveau « Envoyer », écran allumé.`
           : "Envoi annulé."));
       };
       xhr.send(form);
@@ -1803,8 +1806,9 @@ setTimeout(function () {
   }
   let heureRecu = 0;
   // Rouverte plus de 10 minutes après : l'application repart de l'accueil.
+  // Par Internet (téléphone du client, chez lui) : le reçu reste 3 h.
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && courant === "recu" && Date.now() - heureRecu > 10 * 60 * 1000) nouvelleCommande();
+    if (!document.hidden && courant === "recu" && Date.now() - heureRecu > (enLigne ? 108e5 : 6e5)) nouvelleCommande();
   });
 
   function montrerRecu(r) {
@@ -1847,14 +1851,20 @@ setTimeout(function () {
   function suivreCommande(jeton) {
     clearInterval(suivi);
     if (!jeton) return;
-    let echecs = 0;
+    let echecs = 0, n = 0;
+    // Par Internet, chaque visite compte dans le quota du relais : toutes les
+    // 3 s les 2 premières minutes (le numéro arrive), puis toutes les 15 s,
+    // pas quand la page est cachée, et 3 h au plus.
     suivi = setInterval(async () => {
+      const t = Date.now() - heureRecu;
+      if (enLigne && (document.hidden || t > 108e5 || (t > 12e4 && ++n % 5))) return;
       try {
         const s = await (await lirePc(`/statut/${jeton}`)).json();
         echecs = 0;
         // Par Internet : le numéro du guichet arrive quand le PC a récupéré.
         if (s.numero) $("#numero-commande").textContent = s.numero;
-        $("#suivi-recu").textContent = s.etape === "en_ligne" ? "⏳ Envoyé — la boutique le reçoit dès que son ordinateur est connecté" : "✓ Reçu par la boutique";
+        $("#suivi-recu").textContent = s.etape === "en_ligne" ? "⏳ Envoyé — la boutique le reçoit dès que son ordinateur est connecté" : s.etape === "expire" ? "❌ La boutique ne l'a pas reçu à temps (24 h) : renvoyez-le." : "✓ Reçu par la boutique";
+        if (s.etape === "expire") return clearInterval(suivi);
         majSuivi(s.paye ? "pret" : s.etape);
         if (s.message) { const m = $("#message-fidelite"); m.textContent = s.message; m.hidden = false; }
         if (s.paye) clearInterval(suivi);
