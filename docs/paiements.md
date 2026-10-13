@@ -1,4 +1,4 @@
-# Paiements : ce qui marche déjà, et comment allumer le paiement en ligne
+# Paiements : ce qui marche déjà, et comment allumer le paiement en ligne (SebPay)
 
 ## Ce qui marche dès maintenant (sans rien faire)
 
@@ -33,10 +33,42 @@ validation, aucun code n'est donné : pas d'activation gratuite.
 paiement en ligne ; la nouvelle clé arrive ensuite toute seule (vérifié
 toutes les 3 minutes).
 
-## Le paiement en ligne (Mobile Money et cartes) : ce qu'il faut de votre part
+## Brancher SebPay (votre compte) — 5 minutes
 
-Le code est prêt et testé contre un faux FedaPay (`admin/essais/paiement.mjs`) :
-il reste **éteint** tant que vos clés FedaPay ne sont pas posées.
+Le code est prêt et testé contre un faux SebPay
+(`admin/essais/paiement-sebpay.mjs`, 25 essais). Il reste **éteint** tant que
+les clés ne sont pas posées. Pas de page de paiement : le gérant choisit son
+Mobile Money (MTN, Moov…), donne le numéro qui paie, et reçoit la demande
+directement sur son téléphone. Il la valide avec son code secret ; la clé (ou
+le code d'activation) arrive ensuite toute seule dans le logiciel.
+
+1. Dans SebPay, appuyez sur **« Régénérer »** pour avoir une clé secrète que
+   personne n'a vue. Ne l'envoyez à personne, même pas par WhatsApp.
+2. Cloudflare → *Workers & Pages* → **photocopie-admin** → *Settings* →
+   *Variables and Secrets* → *Add*, type **Secret**, deux fois :
+   - `SEBPAY_CLE_PUBLIQUE` = la clé `pk_live_…` ;
+   - `SEBPAY_CLE_SECRETE` = la clé `sk_live_…`.
+3. Tableau de bord → *Paramètres* → « Paiement en ligne » : mettez les
+   **frais d'activation** et les prix (30, 90, 365 jours). Pour le premier
+   essai, mettez **100** FCFA à 30 jours.
+4. Ouvrez `https://photocopie-admin.atinzed2.workers.dev/renouveler` sur
+   votre téléphone et payez 100 FCFA avec votre propre numéro.
+   - « ✅ Paiement reçu » : tout marche. Remettez les vrais prix.
+   - Une erreur s'affiche avec un « Détail » : envoyez-moi une capture.
+     Si le détail parle d'adresse IP (« IP not allowed », 403…), c'est la
+     liste « Adresses IP autorisées » de SebPay : demandez-leur de
+     l'enlever pour votre compte, car Cloudflare n'a pas d'adresse fixe.
+
+L'avis de paiement de SebPay arrive sur
+`https://photocopie-admin.atinzed2.workers.dev/paiement/sebpay` : il est donné
+à SebPay à chaque paiement, rien à régler chez eux.
+
+Si SebPay et FedaPay sont branchés tous les deux, c'est SebPay qui sert.
+
+## Autre possibilité : FedaPay (Mobile Money et cartes)
+
+Aussi prêt et testé (`admin/essais/paiement.mjs`), au cas où vous ouvririez un
+jour un compte FedaPay. Éteint tant que ses clés ne sont pas posées.
 
 ### 1. Ouvrir un compte FedaPay (vous)
 
@@ -72,33 +104,35 @@ Refaites l'étape 2 avec les clés du mode **live**, puis ajoutez la variable
 
 ### Sûreté
 
-- Un avis de paiement n'est cru que s'il porte la bonne signature (moins de
-  5 minutes, secret du webhook).
-- Même signé, il ne suffit pas : le tableau de bord redemande la transaction
-  à FedaPay et vérifie le statut « approuvé », le montant et la demande.
+- Un avis de paiement n'est cru que s'il porte la bonne signature (SebPay :
+  signature faite avec votre clé secrète ; FedaPay : moins de 5 minutes,
+  secret du webhook).
+- Même signé, il ne suffit pas : le tableau de bord redemande le paiement au
+  service lui-même et vérifie le statut « approuvé », le montant et la
+  demande.
 - Une demande ne délivre qu'une seule clé, même si deux avis arrivent.
 - Si un avis se perd, la page de retour du gérant vérifie aussi, et le
   tableau de bord montre les paiements commencés non confirmés, avec un
-  bouton « 🔎 Vérifier auprès de FedaPay ».
+  bouton « 🔎 Vérifier le paiement ».
 
 ## Paiement lent (Mobile Money qui confirme tard)
 
 Il arrive que le paiement mette plusieurs minutes à être confirmé. Ce délai
 vient le plus souvent de l'opérateur (MTN, Moov) : le client valide le code
-sur son téléphone, puis l'opérateur prévient FedaPay. Le logiciel est prévu
+sur son téléphone, puis l'opérateur prévient le service de paiement. Le logiciel est prévu
 pour ça :
 
 - la page « Paiement en attente » se met à jour toute seule toutes les
   10 secondes pendant 15 minutes : le gérant n'a rien à faire ;
-- même si le gérant ferme cette page et que l'avis de FedaPay se perd, le
+- même si le gérant ferme cette page et que l'avis de paiement se perd, le
   logiciel de la boutique, en venant chercher sa clé (toutes les 20 s pour
   l'activation, toutes les 3 min quand l'accès est suspendu), fait vérifier
-  le paiement auprès de FedaPay : la clé arrive dès la confirmation, jusqu'à
+  le paiement auprès de SebPay : la clé arrive dès la confirmation, jusqu'à
   2 jours après ;
 - la page dit au gérant de **ne pas payer une deuxième fois** si l'argent a
   été retiré.
 
-Pour savoir si FedaPay est assez rapide aujourd'hui : en mode **live**, mettez
+Pour savoir si SebPay est assez rapide aujourd'hui, mettez
 un prix de 100 FCFA, payez vous-même 3 ou 4 fois (MTN et Moov), et notez le
 temps entre la validation du code et « ✅ Paiement reçu ». Remettez ensuite le
 vrai prix. Si c'est trop lent ou trop souvent en échec, une autre passerelle
@@ -107,8 +141,9 @@ comme `admin/src/paiement.js`.
 
 ## Plus tard
 
-- **Ghana, Nigeria** : FedaPay n'y est pas ; Paystack ou Flutterwave s'y
-  branchent de la même façon (un second fichier comme `admin/src/paiement.js`).
+- **Ghana, Nigeria** : franc CFA seulement pour l'instant (Bénin, Togo,
+  Côte d'Ivoire, Sénégal, Burkina, Mali, Niger). Paystack ou Flutterwave s'y
+  brancheraient de la même façon (un fichier comme `admin/src/sebpay.js`).
 - **Le paiement des commandes des clients** : décidé le 13 octobre 2026 —
   pas prévu. Le porteur du projet n'encaisse que l'activation et la licence ;
   les clients paient la boutique au guichet.

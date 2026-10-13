@@ -1,4 +1,11 @@
 import { paiementActif, creerPaiement, lireTransaction, transactionPayee, signatureValide, DUREES } from "./paiement.js";
+import {
+  sebpayActif, PAYS_SEBPAY, operateurs, numeroInternational, creerCollecte, lireCollecte,
+  collectePayee, collecteRefusee, signatureSebpayValide, ErreurSebpay,
+} from "./sebpay.js";
+
+/** Paiement en ligne ouvert : SebPay en priorité, sinon FedaPay. */
+const enLigne = (env) => sebpayActif(env) || paiementActif(env);
 
 // Tableau de bord administrateur pour le porteur du projet "Gestion
 // Photocopie" — suivi des boutiques déployées et génération des clés de
@@ -359,9 +366,9 @@ async function pageAccueil(env) {
         <br><span style="font-size:0.75rem; color:#605e5c">Machine : <code>${echapper(d.machine_id)}</code></span>
         ${d.commentaire ? `<br><span style="font-size:0.8rem; color:#605e5c">${echapper(d.commentaire)}</span>` : ""}
         <br>
-        ${d.statut === "paiement_en_cours" ? `<br><span style="font-size:0.8rem; color:#a4262c">💳 Paiement en ligne commencé, pas encore confirmé par FedaPay.</span>
+        ${d.statut === "paiement_en_cours" ? `<br><span style="font-size:0.8rem; color:#a4262c">💳 Paiement en ligne commencé, pas encore confirmé.</span>
         <form method="POST" action="/demandes/${d.id}/verifier" style="display:inline">
-          <button type="submit" class="secondaire" style="font-size:0.8rem; padding:0.3rem 0.6rem">🔎 Vérifier auprès de FedaPay</button>
+          <button type="submit" class="secondaire" style="font-size:0.8rem; padding:0.3rem 0.6rem">🔎 Vérifier le paiement</button>
         </form>` : ""}
         <form method="POST" action="/demandes/${d.id}/confirmer" style="display:inline">
           <button type="submit" style="font-size:0.8rem; padding:0.3rem 0.6rem">✅ Confirmer et générer la clé</button>
@@ -720,13 +727,32 @@ async function prixAbonnement(env) {
 
 /// La demande payée en ligne : vérifiée auprès de FedaPay lui-même, puis clé
 /// délivrée. Rend vrai si la demande est (désormais) close.
-async function verifierPaiement(env, demande) {
+async function verifierPaiement(env, demande, avisSigne = null) {
   if (demande.statut === "confirmee") return true;
-  const m = String(demande.commentaire || "").match(/^fedapay:(\d+)$/);
-  if (!m) return false;
   const prix = await prixAbonnement(env);
   const montant = prix[demande.jours_demandes];
   if (!montant) return false;
+  const s = String(demande.commentaire || "").match(/^sebpay:([A-Za-z0-9-]+)$/);
+  if (s) {
+    let t;
+    try {
+      t = await lireCollecte(env, s[1]);
+    } catch (e) {
+      // Si SebPay ne permet pas de relire une collecte, l'avis (déjà vérifié
+      // par sa signature HMAC) fait foi.
+      if (avisSigne && e instanceof ErreurSebpay && [404, 405].includes(e.statut)) t = avisSigne;
+      else throw e;
+    }
+    if (collecteRefusee(t)) {
+      await env.DB.prepare(`UPDATE demandes SET statut = 'rejetee' WHERE id = ? AND statut = 'paiement_en_cours'`).bind(demande.id).run();
+      return false;
+    }
+    if (!collectePayee(t, { montant, reference: s[1] })) return false;
+    await delivrerCle(env, demande);
+    return true;
+  }
+  const m = String(demande.commentaire || "").match(/^fedapay:(\d+)$/);
+  if (!m) return false;
   const t = await lireTransaction(env, m[1]);
   if (!transactionPayee(t, { montant, demandeId: demande.id })) return false;
   await delivrerCle(env, demande);
@@ -739,10 +765,10 @@ async function verifierPaiement(env, demande) {
  * 3 min quand l'accès est suspendu), relance donc lui-même la vérification
  * de ses paiements commencés depuis moins de 2 jours. */
 async function verifierPaiementsEnCours(env, machineId) {
-  if (!paiementActif(env)) return;
+  if (!enLigne(env)) return;
   const { results } = await env.DB.prepare(
     `SELECT * FROM demandes WHERE machine_id = ? AND statut = 'paiement_en_cours'
-       AND commentaire LIKE 'fedapay:%' AND created_at > datetime('now', '-2 days')
+       AND (commentaire LIKE 'fedapay:%' OR commentaire LIKE 'sebpay:%') AND created_at > datetime('now', '-2 days')
      ORDER BY id DESC LIMIT 2`
   ).bind(identifiantMachine(machineId)).all();
   for (const d of results || []) {
@@ -787,8 +813,39 @@ async function pageRelais(env) {
   );
 }
 
-async function pageActiver(env, { machine, erreur } = {}) {
-  const prix = paiementActif(env) ? await prixAbonnement(env) : {};
+/** Champs propres à SebPay dans le formulaire de paiement : pays, opérateur,
+ * numéro qui paie, et code OTP pour les opérateurs qui l'exigent. Rend null
+ * si SebPay ne répond pas (le formulaire n'est alors pas proposé). */
+async function champsSebpay(env, { pays, machine, chemin }) {
+  if (!sebpayActif(env)) return "";
+  const code = PAYS_SEBPAY.some(([c]) => c === pays) ? pays : "BJ";
+  let ops;
+  try {
+    ops = await operateurs(env, code);
+  } catch (e) {
+    console.error("Opérateurs SebPay :", e);
+    return null;
+  }
+  if (!ops.length) return null;
+  const nomPays = PAYS_SEBPAY.find(([c]) => c === code)[1];
+  const autres = PAYS_SEBPAY.filter(([c]) => c !== code)
+    .map(([c, n]) => `<a href="${chemin}?pays=${c}${machine ? `&amp;m=${encodeURIComponent(machine)}` : ""}">${echapper(n)}</a>`)
+    .join(" · ");
+  const avecOtp = ops.filter((o) => o.otp);
+  return `<input type="hidden" name="pays" value="${code}" />
+    <p style="font-size:0.85rem">Pays : <strong>${echapper(nomPays)}</strong>. <span style="color:#605e5c">Autre pays : ${autres}</span></p>
+    <fieldset style="border:1px solid #e1dfdd; border-radius:6px; padding:0.5rem 0.75rem; margin-bottom:0.75rem">
+      <legend>Votre Mobile Money</legend>
+      ${ops.map((o, i) => `<label style="display:block; font-weight:normal"><input type="radio" name="operateur" value="${echapper(o.slug)}" ${i === 0 ? "checked" : ""} required style="width:auto" /> ${echapper(o.nom)}${o.otp ? ` <span style="font-size:0.8rem; color:#605e5c">(code OTP : composez ${echapper(o.ussd)})</span>` : ""}</label>`).join("")}
+    </fieldset>
+    <label>Numéro Mobile Money qui paie <input type="tel" name="numero_paiement" required maxlength="20" placeholder="ex. 01 97 00 00 00" /></label>
+    ${avecOtp.length ? `<label>Code OTP (seulement pour ${avecOtp.map((o) => echapper(o.nom)).join(", ")}) <input type="text" name="otp" inputmode="numeric" maxlength="12" /></label>` : ""}
+    <p style="font-size:0.85rem; color:#605e5c">Après « Payer », une demande arrive sur ce téléphone : validez-la avec votre code secret Mobile Money.</p>`;
+}
+
+async function pageActiver(env, { machine, erreur, pays } = {}) {
+  const prix = enLigne(env) ? await prixAbonnement(env) : {};
+  const champs = await champsSebpay(env, { pays, machine, chemin: "/activer" });
   const contact = await obtenirParametre(env, "contact_whatsapp", "");
   const aide = contact ? `<p>Une question ? <a href="https://wa.me/${echapper(contact.replace(/[^0-9]/g, ""))}">WhatsApp</a> ou appelez le ${echapper(contact)}.</p>` : "";
   return page(
@@ -796,14 +853,15 @@ async function pageActiver(env, { machine, erreur } = {}) {
     `<div class="carte">
       <h1>Activer le logiciel</h1>
       ${erreur ? `<p style="color:#a4262c">${echapper(erreur)}</p>` : ""}
-      ${prix[0]
-        ? `<p>Frais d'activation : <strong>${Number(prix[0]).toLocaleString("fr-FR")} FCFA</strong>, une seule fois. Mobile Money (MTN, Moov…) ou carte.
+      ${prix[0] && champs !== null
+        ? `<p>Frais d'activation : <strong>${Number(prix[0]).toLocaleString("fr-FR")} FCFA</strong>, une seule fois, ${sebpayActif(env) ? "par Mobile Money" : "par Mobile Money (MTN, Moov…) ou carte"}.
            Le logiciel s'active <strong>tout seul</strong> juste après le paiement : rien à recopier.</p>
            <form method="POST" action="/payer">
              <input type="hidden" name="jours_demandes" value="0" />
              <label>Nom de la boutique <input type="text" name="nom_boutique" required maxlength="120" /></label>
              <label>Identifiant de l'ordinateur <input type="text" name="machine_id" required maxlength="120" value="${echapper(machine || "")}" /></label>
-             <label>Votre téléphone <input type="tel" name="telephone" required maxlength="40" /></label>
+             <label>Votre téléphone (pour vous joindre) <input type="tel" name="telephone" required maxlength="40" /></label>
+             ${champs}
              <button type="submit">Payer l'activation</button>
            </form>`
         : `<p>Le paiement en ligne n'est pas encore ouvert. Contactez-nous pour activer votre logiciel.</p>`}
@@ -813,7 +871,7 @@ async function pageActiver(env, { machine, erreur } = {}) {
   );
 }
 
-async function pageRenouveler(env, { envoye, erreur, machine } = {}) {
+async function pageRenouveler(env, { envoye, erreur, erreurEnLigne, machine, pays } = {}) {
   const numeros = await obtenirParametre(env, "numeros_paiement", "");
   const contact = await obtenirParametre(env, "contact_whatsapp", "");
   const montant = await obtenirParametre(env, "montant_indicatif", "");
@@ -835,20 +893,23 @@ async function pageRenouveler(env, { envoye, erreur, machine } = {}) {
       </div>`
     : "";
 
-  const prix = paiementActif(env) ? await prixAbonnement(env) : {};
-  const blocEnLigne = Object.keys(prix).some((j) => Number(j) > 0) && !envoye
+  const prix = enLigne(env) ? await prixAbonnement(env) : {};
+  const champs = await champsSebpay(env, { pays, machine, chemin: "/renouveler" });
+  const blocEnLigne = Object.keys(prix).some((j) => Number(j) > 0) && !envoye && champs !== null
     ? `<div class="carte" style="border-left:4px solid #0b5cad">
         <h2>💳 Payer en ligne maintenant</h2>
-        <p>Mobile Money (MTN, Moov…) ou carte. <strong>La nouvelle clé arrive toute seule</strong> dans le logiciel, dans les minutes qui suivent : rien à recopier.</p>
+        ${erreurEnLigne ? `<p style="color:#a4262c">${echapper(erreurEnLigne).replace(/\n/g, "<br>")}</p>` : ""}
+        <p>${sebpayActif(env) ? "Mobile Money." : "Mobile Money (MTN, Moov…) ou carte."} <strong>La nouvelle clé arrive toute seule</strong> dans le logiciel, dans les minutes qui suivent : rien à recopier.</p>
         <form method="POST" action="/payer">
           <label>Nom de la boutique <input type="text" name="nom_boutique" required maxlength="120" /></label>
           <label>Identifiant machine (Réglages &gt; Licence, dans le logiciel) <input type="text" name="machine_id" required maxlength="120" value="${echapper(machine || "")}" /></label>
-          <label>Votre téléphone <input type="tel" name="telephone" required maxlength="40" /></label>
+          <label>Votre téléphone (pour vous joindre) <input type="tel" name="telephone" required maxlength="40" /></label>
           <label>Durée
             <select name="jours_demandes">
               ${Object.entries(prix).filter(([j]) => Number(j) > 0).map(([j, p]) => `<option value="${j}">${j} jours — ${Number(p).toLocaleString("fr-FR")} FCFA</option>`).join("")}
             </select>
           </label>
+          ${champs}
           <button type="submit">Payer</button>
         </form>
       </div>`
@@ -1011,10 +1072,12 @@ async function pageParametres(env) {
         <label>Numéro(s) Mobile Money (un par ligne) <textarea name="numeros_paiement" rows="2">${echapper(numeros)}</textarea></label>
         <label>Montant indicatif à afficher (optionnel) <input type="text" name="montant_indicatif" value="${echapper(montant)}" /></label>
         <label>Ton contact (WhatsApp/téléphone) <input type="text" name="contact_whatsapp" value="${echapper(contact)}" /></label>
-        <h2>💳 Paiement en ligne (FedaPay)</h2>
-        <p style="font-size:0.85rem; color:#605e5c">${paiementActif(env)
-          ? `Clés FedaPay posées (mode ${env.FEDAPAY_MODE === "live" ? "<strong>réel</strong>" : "essai, sans argent"}). Mettez un prix pour chaque durée proposée ; vide = durée non proposée en ligne.`
-          : "Éteint : les clés FedaPay ne sont pas encore posées sur le Worker (voir docs/paiements.md). Les prix ci-dessous serviront dès qu'elles le seront."}</p>
+        <h2>💳 Paiement en ligne</h2>
+        <p style="font-size:0.85rem; color:#605e5c">${sebpayActif(env)
+          ? "SebPay branché (vrais paiements Mobile Money). Mettez un prix pour chaque durée proposée ; vide = durée non proposée en ligne."
+          : paiementActif(env)
+            ? `FedaPay branché (mode ${env.FEDAPAY_MODE === "live" ? "<strong>réel</strong>" : "essai, sans argent"}). Mettez un prix pour chaque durée proposée ; vide = durée non proposée en ligne.`
+            : "Éteint : les clés SebPay ne sont pas encore posées sur le Worker (voir docs/paiements.md). Les prix ci-dessous serviront dès qu'elles le seront."}</p>
         <label>Frais d'activation, une fois (FCFA) <input type="number" min="0" name="prix_activation" value="${echapper(prixActivation)}" /></label>
         ${prix.map(([j, v]) => `<label>Prix ${j} jours (FCFA) <input type="number" min="0" name="prix_${j}" value="${echapper(v)}" /></label>`).join("")}
         <button type="submit">Enregistrer</button>
@@ -1475,6 +1538,7 @@ async function router(request, env) {
   "/payer",
   "/activer",
   "/paiement/fedapay",
+  "/paiement/sebpay",
   "/paiement/retour",
 ];
     if (!env.ADMIN_PASSWORD && !PAGES_PUBLIQUES_SANS_MOT_DE_PASSE.includes(pathname)) {
@@ -1539,10 +1603,10 @@ async function router(request, env) {
       // un paiement, sans avoir de compte ni de mot de passe.
       if (pathname === "/renouveler" && method === "GET") {
         // ?m= : identifiant prérempli (QR affiché par le logiciel).
-        return new Response(await pageRenouveler(env, { machine: identifiantMachine(url.searchParams.get("m")) }), { headers: { "content-type": "text/html; charset=utf-8" } });
+        return new Response(await pageRenouveler(env, { machine: identifiantMachine(url.searchParams.get("m")), pays: url.searchParams.get("pays") }), { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       if (pathname === "/activer" && method === "GET") {
-        return new Response(await pageActiver(env, { machine: identifiantMachine(url.searchParams.get("m")) }), { headers: { "content-type": "text/html; charset=utf-8" } });
+        return new Response(await pageActiver(env, { machine: identifiantMachine(url.searchParams.get("m")), pays: url.searchParams.get("pays") }), { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       if (pathname === "/renouveler" && method === "POST") {
         // Formulaire ouvert à tous : sans limite, une seule personne peut
@@ -1588,9 +1652,9 @@ async function router(request, env) {
         });
       }
 
-      // ── Paiement en ligne (FedaPay) ──
+      // ── Paiement en ligne (SebPay, sinon FedaPay) ──
       if (pathname === "/payer" && method === "POST") {
-        if (!paiementActif(env)) return new Response(null, { status: 302, headers: { Location: "/renouveler" } });
+        if (!enLigne(env)) return new Response(null, { status: 302, headers: { Location: "/renouveler" } });
         const ip = adresseAppelant(request);
         if ((await tentativesRecentes(env, `demande:${ip}`)) >= TENTATIVES_MAX) {
           return new Response(await pageRenouveler(env, { erreur: "Trop de demandes envoyées. Réessayez dans un quart d'heure." }), {
@@ -1606,22 +1670,72 @@ async function router(request, env) {
         const jours = parseInt(donnees.get("jours_demandes"), 10);
         const montant = (await prixAbonnement(env))[jours];
         const activation = jours === 0;
-        if (!nomBoutique || !machineId || !telephone || !montant) {
-          const erreur = "Merci de remplir tous les champs.";
-          return new Response(jours === 0 ? await pageActiver(env, { erreur, machine: machineId }) : await pageRenouveler(env, { erreur }), {
-            status: 400,
-            headers: { "content-type": "text/html; charset=utf-8" },
-          });
+        const pays = String(donnees.get("pays") || "BJ").toUpperCase();
+        const refuser = async (erreur, statut = 400) =>
+          new Response(
+            activation
+              ? await pageActiver(env, { erreur, machine: machineId, pays })
+              : await pageRenouveler(env, { erreurEnLigne: erreur, machine: machineId, pays }),
+            { status: statut, headers: { "content-type": "text/html; charset=utf-8" } }
+          );
+        if (!nomBoutique || !machineId || !telephone || !montant) return refuser("Merci de remplir tous les champs.");
+
+        // SebPay : la demande de paiement part directement sur le téléphone
+        // du gérant ; il n'y a pas de page de paiement à ouvrir.
+        let sebpay = null;
+        if (sebpayActif(env)) {
+          const lignePays = PAYS_SEBPAY.find(([c]) => c === pays);
+          let ops = [];
+          try { ops = lignePays ? await operateurs(env, pays) : []; } catch (e) { console.error("Opérateurs SebPay :", e); }
+          const op = ops.find((o) => o.slug === String(donnees.get("operateur") || ""));
+          const numero = lignePays ? numeroInternational(donnees.get("numero_paiement"), lignePays[2]) : "";
+          const otp = String(donnees.get("otp") || "").replace(/\s+/g, "").slice(0, 12);
+          if (!op) return refuser("Choisissez votre Mobile Money.");
+          if (!numero) return refuser("Le numéro Mobile Money qui paie n'est pas complet.");
+          if (op.otp && !/^[0-9A-Za-z]{3,12}$/.test(otp)) return refuser(`${op.nom} demande un code OTP : composez ${op.ussd} sur votre téléphone, puis recopiez le code reçu.`);
+          sebpay = { op, numero, otp };
         }
+
         const r = await env.DB.prepare(
           `INSERT INTO demandes (machine_id, nom_boutique, telephone, numero_paiement, jours_demandes, statut)
-           VALUES (?, ?, ?, 'paiement en ligne', ?, 'paiement_en_cours')`
-        ).bind(machineId, nomBoutique, telephone, jours).run();
+           VALUES (?, ?, ?, ?, ?, 'paiement_en_cours')`
+        ).bind(machineId, nomBoutique, telephone, sebpay ? `${sebpay.op.nom} +${sebpay.numero}` : "paiement en ligne", jours).run();
         const demandeId = r.meta.last_row_id;
+        const description = (activation ? `Gestion Photocopie — activation — ${nomBoutique}` : `Gestion Photocopie — ${jours} jours — ${nomBoutique}`).slice(0, 200);
+
+        if (sebpay) {
+          // Référence propre à cette demande (SebPay ne crée jamais deux
+          // collectes pour la même référence).
+          const reference = `GP${demandeId}-${crypto.randomUUID().slice(0, 8)}`;
+          // Enregistrée AVANT l'appel : un avis très rapide retrouve la demande.
+          await env.DB.prepare(`UPDATE demandes SET commentaire = ? WHERE id = ?`).bind(`sebpay:${reference}`, demandeId).run();
+          try {
+            const c = await creerCollecte(env, {
+              montant,
+              telephone: sebpay.numero,
+              operateur: sebpay.op.slug,
+              pays,
+              reference,
+              otp: sebpay.otp,
+              retour: `${url.origin}/paiement/sebpay`,
+              description,
+            });
+            if (c.statut === "rejected") throw new ErreurSebpay(200, "collecte refusée tout de suite par l'opérateur");
+            return new Response(null, { status: 303, headers: { Location: `/paiement/retour?d=${demandeId}` } });
+          } catch (e) {
+            console.error("Paiement SebPay :", e);
+            await env.DB.prepare(`UPDATE demandes SET statut = 'rejetee' WHERE id = ?`).bind(demandeId).run();
+            return refuser(
+              `Le paiement n'a pas pu être lancé. Vérifiez le numéro et le Mobile Money choisi, puis réessayez.\n(Détail : ${String(e.message || e).slice(0, 160)})`,
+              502
+            );
+          }
+        }
+
         try {
           const { id, url: adresse } = await creerPaiement(env, {
             montant,
-            description: (activation ? `Gestion Photocopie — activation — ${nomBoutique}` : `Gestion Photocopie — ${jours} jours — ${nomBoutique}`).slice(0, 200),
+            description,
             retour: `${url.origin}/paiement/retour?d=${demandeId}`,
             demandeId,
           });
@@ -1655,38 +1769,69 @@ async function router(request, env) {
         }
         return new Response("ok");
       }
+      // Avis de SebPay : signature HMAC vérifiée (clé secrète), puis la
+      // collecte est redemandée à SebPay avant toute clé. Réponse rapide (200).
+      if (pathname === "/paiement/sebpay" && method === "POST") {
+        const corps = await request.text();
+        if (!(await signatureSebpayValide(env.SEBPAY_CLE_SECRETE, request.headers.get("x-sebpay-signature"), corps))) {
+          return new Response("signature", { status: 400 });
+        }
+        let avis = {};
+        try { avis = JSON.parse(corps); } catch {}
+        const t = avis?.data && typeof avis.data === "object" ? avis.data : avis;
+        const reference = String(t?.external_reference || "");
+        if (/^[A-Za-z0-9-]{1,80}$/.test(reference)) {
+          const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE commentaire = ?`).bind(`sebpay:${reference}`).first();
+          if (demande) {
+            try { await verifierPaiement(env, demande, t); } catch (e) { console.error("Avis SebPay :", e); return new Response("réessayer", { status: 500 }); }
+          }
+        }
+        return new Response("ok");
+      }
       // Retour du client après la page de paiement : on vérifie aussi de ce
       // côté, au cas où l'avis de FedaPay tarde.
       if (pathname === "/paiement/retour" && method === "GET") {
-        const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ?`).bind(parseInt(url.searchParams.get("d"), 10) || 0).first();
+        let demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ?`).bind(parseInt(url.searchParams.get("d"), 10) || 0).first();
         // Tant que ce n'est pas confirmé, la page se recharge seule toutes
         // les 10 s pendant 15 minutes : le Mobile Money confirme parfois
         // tard, et le gérant n'a rien à faire.
         const essai = Math.max(0, parseInt(url.searchParams.get("n"), 10) || 0);
         let paye = false;
-        if (demande && paiementActif(env)) {
+        if (demande && enLigne(env)) {
           try { paye = await verifierPaiement(env, demande); } catch (e) { console.error("Retour de paiement :", e); }
+          demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ?`).bind(demande.id).first();
+        }
+        const refuse = !paye && demande?.statut === "rejetee";
+        const parTelephone = String(demande?.commentaire || "").startsWith("sebpay:");
+        const activation = Number(demande?.jours_demandes) === 0;
+        const recommencer = `${activation ? "/activer" : "/renouveler"}?m=${encodeURIComponent(demande?.machine_id || "")}`;
+        const attendre = !paye && !refuse && demande && essai < 90;
+        let titre, texte;
+        if (paye) {
+          titre = "✅ Paiement reçu, merci !";
+          texte = activation
+            ? "Votre logiciel est activé. Il le voit tout seul en moins d'une minute, dès que l'ordinateur a une connexion : l'écran « Installation à valider » disparaît. Rien à recopier."
+            : "Votre nouvelle clé est prête. Le logiciel de la boutique la reçoit tout seul dans les minutes qui suivent, dès que l'ordinateur a une connexion. Rien à recopier.";
+        } else if (refuse) {
+          titre = "❌ Paiement refusé ou annulé";
+          texte = `Aucun argent n'a été pris pour cette demande (refusée, annulée ou expirée). <a href="${echapper(recommencer)}">Recommencer le paiement</a>.`;
+        } else if (attendre && parTelephone) {
+          titre = "📱 Validez le paiement sur votre téléphone";
+          texte = `Une demande de paiement a été envoyée au <strong>${echapper(demande.numero_paiement || "")}</strong>. Validez-la avec votre code secret Mobile Money (si rien n'apparaît, regardez le menu de votre Mobile Money, par exemple « Approbations en attente »). <strong>Gardez cette page ouverte</strong> : elle se met à jour toute seule. Si vous la fermez, le logiciel recevra quand même sa clé dès la confirmation.`;
+        } else if (attendre) {
+          titre = "⏳ Paiement pas encore confirmé";
+          texte = "Si vous avez payé (code Mobile Money validé), la confirmation peut prendre quelques minutes. <strong>Gardez cette page ouverte</strong> : elle se met à jour toute seule. Vous pouvez aussi la fermer : le logiciel de la boutique recevra quand même sa clé dès que le paiement sera confirmé.";
+        } else {
+          titre = "⏳ Paiement pas encore confirmé";
+          texte = "Le paiement n'est toujours pas confirmé. Si l'argent a été retiré de votre compte, ne payez pas une deuxième fois : le logiciel recevra sa clé dès la confirmation. Sinon, ou si rien n'arrive d'ici une heure, écrivez-nous sur WhatsApp.";
         }
         return new Response(
-          page(
-            paye ? "Paiement reçu" : "Paiement en attente",
-            `<div class="carte" style="margin-top:2rem">
-              <h1>${paye ? "✅ Paiement reçu, merci !" : "⏳ Paiement pas encore confirmé"}</h1>
-              <p>${paye
-                ? Number(demande.jours_demandes) === 0
-                  ? "Votre logiciel est activé. Il le voit tout seul en moins d'une minute, dès que l'ordinateur a une connexion : l'écran « Installation à valider » disparaît. Rien à recopier."
-                  : "Votre nouvelle clé est prête. Le logiciel de la boutique la reçoit tout seul dans les minutes qui suivent, dès que l'ordinateur a une connexion. Rien à recopier."
-                : demande && essai < 90
-                  ? "Si vous avez payé (code Mobile Money validé), la confirmation peut prendre quelques minutes. <strong>Gardez cette page ouverte</strong> : elle se met à jour toute seule. Vous pouvez aussi la fermer : le logiciel de la boutique recevra quand même sa clé dès que le paiement sera confirmé."
-                  : "Le paiement n'est toujours pas confirmé. Si l'argent a été retiré de votre compte, ne payez pas une deuxième fois : le logiciel recevra sa clé dès la confirmation. Sinon, ou si rien n'arrive d'ici une heure, écrivez-nous sur WhatsApp."}</p>
-            </div>`,
-            { connecte: false }
-          ),
+          page(paye ? "Paiement reçu" : refuse ? "Paiement refusé" : "Paiement en attente", `<div class="carte" style="margin-top:2rem"><h1>${titre}</h1><p>${texte}</p></div>`, { connecte: false }),
           {
             headers: {
               "content-type": "text/html; charset=utf-8",
               "cache-control": "no-store",
-              ...(!paye && demande && essai < 90 ? { refresh: `10; url=/paiement/retour?d=${demande.id}&n=${essai + 1}` } : {}),
+              ...(attendre ? { refresh: `10; url=/paiement/retour?d=${demande.id}&n=${essai + 1}` } : {}),
             },
           }
         );
@@ -1702,7 +1847,7 @@ async function router(request, env) {
       }
       // Ce que le logiciel peut proposer de payer en ligne (rien si FedaPay est éteint).
       if (pathname === "/api/offre" && method === "GET") {
-        const prix = paiementActif(env) ? await prixAbonnement(env) : {};
+        const prix = enLigne(env) ? await prixAbonnement(env) : {};
         return new Response(JSON.stringify({ activation: prix[0] || null, abonnement: Object.entries(prix).filter(([j]) => Number(j) > 0).map(([j, p]) => ({ jours: Number(j), prix: p })) }), {
           headers: { "content-type": "application/json", "cache-control": "no-store" },
         });
@@ -2171,7 +2316,7 @@ async function router(request, env) {
         let paye = false;
         try { paye = demande ? await verifierPaiement(env, demande) : false; } catch (e) { console.error(e); }
         return new Response(
-          page("Vérification", `<div class="carte"><p><a href="/">&larr; Retour</a></p><h1>${paye ? "✅ Payé : clé délivrée, le logiciel la reçoit tout seul." : "⏳ FedaPay ne confirme pas (encore) ce paiement."}</h1></div>`),
+          page("Vérification", `<div class="carte"><p><a href="/">&larr; Retour</a></p><h1>${paye ? "✅ Payé : clé délivrée, le logiciel la reçoit tout seul." : "⏳ Le service de paiement ne confirme pas (encore) ce paiement."}</h1></div>`),
           { headers: { "content-type": "text/html; charset=utf-8" } }
         );
       }
