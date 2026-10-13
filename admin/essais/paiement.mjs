@@ -90,6 +90,25 @@ const c4 = await code(machine3);
 verifier(/^INST-/.test(c4 || "") && page4.includes("activé"), "activation payée : code délivré, le logiciel le lit tout seul");
 verifier(!(await cle(machine3)), "l'activation ne donne pas de licence (l'essai gratuit commence)");
 
+// 9. Mobile Money lent : le client paie tard, ferme la page, et l'avis de
+// FedaPay se perd. La page d'attente se recharge seule, et le logiciel, en
+// venant chercher sa clé, la fait délivrer quand même.
+const machine5 = "BANC-" + crypto.randomBytes(4).toString("hex").toUpperCase();
+r = await payer(machine5);
+const id5 = Number((r.headers.get("location") || "").split("/").pop());
+const demande5 = faux.transactions.get(id5)?.custom_metadata?.demande_id;
+const attente = await fetch(`${ADMIN}/paiement/retour?d=${demande5}`);
+const texteAttente = await attente.text();
+verifier(
+  texteAttente.includes("pas encore confirmé") && /^10; url=\/paiement\/retour\?d=\d+&n=1$/.test(attente.headers.get("refresh") || ""),
+  "paiement pas encore confirmé : la page d'attente se recharge toute seule"
+);
+verifier(!(await cle(machine5)), "paiement lent : pas de clé tant que FedaPay n'a pas confirmé");
+await fetch(`http://127.0.0.1:8098/payer/${id5}`, { redirect: "manual" }); // payé, sans retour ni avis
+verifier(!!(await cle(machine5)), "paiement confirmé tard, sans avis ni retour : le logiciel reçoit quand même sa clé");
+const fini = await fetch(`${ADMIN}/paiement/retour?d=${demande5}&n=3`);
+verifier((await fini.text()).includes("Paiement reçu") && !fini.headers.get("refresh"), "la page d'attente affiche ensuite « Paiement reçu » et ne se recharge plus");
+
 faux.fermer();
 console.log(`\nBILAN PAIEMENT : ${ok ? "RÉUSSI" : "ÉCHEC"}`);
 process.exit(ok ? 0 : 1);

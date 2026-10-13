@@ -733,6 +733,27 @@ async function verifierPaiement(env, demande) {
   return true;
 }
 
+/** Paiement lent : le Mobile Money confirme parfois après plusieurs minutes,
+ * et l'avis de FedaPay peut tarder ou se perdre. Le logiciel de la boutique,
+ * qui revient chercher sa clé (toutes les 20 s pour l'activation, toutes les
+ * 3 min quand l'accès est suspendu), relance donc lui-même la vérification
+ * de ses paiements commencés depuis moins de 2 jours. */
+async function verifierPaiementsEnCours(env, machineId) {
+  if (!paiementActif(env)) return;
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM demandes WHERE machine_id = ? AND statut = 'paiement_en_cours'
+       AND commentaire LIKE 'fedapay:%' AND created_at > datetime('now', '-2 days')
+     ORDER BY id DESC LIMIT 2`
+  ).bind(identifiantMachine(machineId)).all();
+  for (const d of results || []) {
+    try {
+      if (await verifierPaiement(env, d)) return;
+    } catch (e) {
+      console.error("Vérification d'un paiement en cours :", e);
+    }
+  }
+}
+
 /// Payer les frais d'activation en ligne (ouverte depuis le QR de l'écran
 /// « Installation à valider » du logiciel, identifiant déjà rempli).
 /// Les pages « Par Internet » des boutiques : qui est inscrit, actif ou non,
@@ -1638,6 +1659,10 @@ async function router(request, env) {
       // côté, au cas où l'avis de FedaPay tarde.
       if (pathname === "/paiement/retour" && method === "GET") {
         const demande = await env.DB.prepare(`SELECT * FROM demandes WHERE id = ?`).bind(parseInt(url.searchParams.get("d"), 10) || 0).first();
+        // Tant que ce n'est pas confirmé, la page se recharge seule toutes
+        // les 10 s pendant 15 minutes : le Mobile Money confirme parfois
+        // tard, et le gérant n'a rien à faire.
+        const essai = Math.max(0, parseInt(url.searchParams.get("n"), 10) || 0);
         let paye = false;
         if (demande && paiementActif(env)) {
           try { paye = await verifierPaiement(env, demande); } catch (e) { console.error("Retour de paiement :", e); }
@@ -1651,11 +1676,19 @@ async function router(request, env) {
                 ? Number(demande.jours_demandes) === 0
                   ? "Votre logiciel est activé. Il le voit tout seul en moins d'une minute, dès que l'ordinateur a une connexion : l'écran « Installation à valider » disparaît. Rien à recopier."
                   : "Votre nouvelle clé est prête. Le logiciel de la boutique la reçoit tout seul dans les minutes qui suivent, dès que l'ordinateur a une connexion. Rien à recopier."
-                : "Si vous avez payé, la confirmation arrive en général en une à deux minutes. Rouvrez cette page plus tard. En cas de souci, écrivez-nous sur WhatsApp."}</p>
+                : demande && essai < 90
+                  ? "Si vous avez payé (code Mobile Money validé), la confirmation peut prendre quelques minutes. <strong>Gardez cette page ouverte</strong> : elle se met à jour toute seule. Vous pouvez aussi la fermer : le logiciel de la boutique recevra quand même sa clé dès que le paiement sera confirmé."
+                  : "Le paiement n'est toujours pas confirmé. Si l'argent a été retiré de votre compte, ne payez pas une deuxième fois : le logiciel recevra sa clé dès la confirmation. Sinon, ou si rien n'arrive d'ici une heure, écrivez-nous sur WhatsApp."}</p>
             </div>`,
             { connecte: false }
           ),
-          { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
+          {
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "cache-control": "no-store",
+              ...(!paye && demande && essai < 90 ? { refresh: `10; url=/paiement/retour?d=${demande.id}&n=${essai + 1}` } : {}),
+            },
+          }
         );
       }
       // Le logiciel vient chercher son code d'installation : seulement s'il a
@@ -1663,6 +1696,7 @@ async function router(request, env) {
       // Le code est propre à la machine : il ne sert à aucune autre.
       const matchInstall = pathname.match(/^\/api\/installation\/([A-Za-z0-9-]{4,120})$/);
       if (matchInstall && method === "GET") {
+        await verifierPaiementsEnCours(env, matchInstall[1]);
         const c = await env.DB.prepare(`SELECT code FROM codes_installation WHERE machine_id = ? ORDER BY id DESC LIMIT 1`).bind(matchInstall[1]).first();
         return new Response(JSON.stringify(c ? { code: c.code } : {}), { status: c ? 200 : 404, headers: { "content-type": "application/json", "cache-control": "no-store" } });
       }
@@ -1677,6 +1711,7 @@ async function router(request, env) {
       // danger : une clé ne marche que sur la machine pour laquelle elle est faite.
       const matchCle = pathname.match(/^\/api\/licence\/([A-Za-z0-9-]{4,120})$/);
       if (matchCle && method === "GET") {
+        await verifierPaiementsEnCours(env, matchCle[1]);
         const l = await env.DB.prepare(
           `SELECT l.cle, l.date_expiration FROM licences l JOIN boutiques b ON b.id = l.boutique_id
            WHERE b.machine_id = ? AND b.abonnement_desactive = 0 ORDER BY l.date_expiration DESC, l.id DESC LIMIT 1`

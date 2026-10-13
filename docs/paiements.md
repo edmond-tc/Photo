@@ -81,6 +81,30 @@ Refaites l'étape 2 avec les clés du mode **live**, puis ajoutez la variable
   tableau de bord montre les paiements commencés non confirmés, avec un
   bouton « 🔎 Vérifier auprès de FedaPay ».
 
+## Paiement lent (Mobile Money qui confirme tard)
+
+Il arrive que le paiement mette plusieurs minutes à être confirmé. Ce délai
+vient le plus souvent de l'opérateur (MTN, Moov) : le client valide le code
+sur son téléphone, puis l'opérateur prévient FedaPay. Le logiciel est prévu
+pour ça :
+
+- la page « Paiement en attente » se met à jour toute seule toutes les
+  10 secondes pendant 15 minutes : le gérant n'a rien à faire ;
+- même si le gérant ferme cette page et que l'avis de FedaPay se perd, le
+  logiciel de la boutique, en venant chercher sa clé (toutes les 20 s pour
+  l'activation, toutes les 3 min quand l'accès est suspendu), fait vérifier
+  le paiement auprès de FedaPay : la clé arrive dès la confirmation, jusqu'à
+  2 jours après ;
+- la page dit au gérant de **ne pas payer une deuxième fois** si l'argent a
+  été retiré.
+
+Pour savoir si FedaPay est assez rapide aujourd'hui : en mode **live**, mettez
+un prix de 100 FCFA, payez vous-même 3 ou 4 fois (MTN et Moov), et notez le
+temps entre la validation du code et « ✅ Paiement reçu ». Remettez ensuite le
+vrai prix. Si c'est trop lent ou trop souvent en échec, une autre passerelle
+béninoise (par exemple KkiaPay) se branche de la même façon : un second fichier
+comme `admin/src/paiement.js`.
+
 ## Plus tard
 
 - **Ghana, Nigeria** : FedaPay n'y est pas ; Paystack ou Flutterwave s'y
