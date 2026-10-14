@@ -233,6 +233,8 @@ class AmphiService : Service() {
                     // Lecture dans la page (PDF, images, vidéos, sons) : pas de
                     // téléchargement « non sécurisé » signalé par Chrome.
                     r.methode == "GET" && r.chemin == "/lire" -> actif(sortie, "amphi/lire.html", "text/html; charset=utf-8")
+                    // UE et crédits officiels : intégrés à l'application, ils ne disparaissent jamais.
+                    r.methode == "GET" && r.chemin == "/maquettes.json" -> actif(sortie, "amphi/maquettes.json", "application/json; charset=utf-8")
                     r.methode == "GET" && (r.chemin == "/lib/pdf.min.js" || r.chemin == "/lib/pdf.worker.min.js") ->
                         actif(sortie, "amphi" + r.chemin, "text/javascript; charset=utf-8", "max-age=604800")
                     r.methode == "GET" && r.chemin.startsWith("/f/") -> envoyerFichier(sortie, r, r.chemin.removePrefix("/f/"))

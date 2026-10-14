@@ -1,0 +1,46 @@
+{
+  "maquettes": [
+    {
+      "id": "l3-physique-fondamentale",
+      "titre": "Licence 3 · Physique Fondamentale",
+      "source": "Réforme LMD · note de la FNEB",
+      "motsCles": ["physique fondamentale", "pf"],
+      "total": 60,
+      "semestres": [
+        {
+          "titre": "Semestre 5",
+          "credits": 30,
+          "note": "Tous les cours de la L3 ont lieu au semestre 5.",
+          "ues": [
+            { "code": "INF1526", "nom": "Physique numérique", "credits": 3, "ecue": [
+              { "code": "INF1526-1", "nom": "Programmation informatique" },
+              { "code": "INF1526-2", "nom": "Méthode numérique" } ] },
+            { "code": "PHY1520", "nom": "Physique quantique", "credits": 6, "ecue": [
+              { "code": "PHY1520-1", "nom": "Mécanique quantique" },
+              { "code": "PHY1520-2", "nom": "Mécanique statistique" } ] },
+            { "code": "PHY1521", "nom": "Méthodes mathématiques pour la physique", "credits": 5, "ecue": [
+              { "code": "PHY1521-1", "nom": "Équations aux dérivées partielles (EDP)" },
+              { "code": "PHY1521-2", "nom": "Fonctions spéciales" } ] },
+            { "code": "PHY1522", "nom": "Physique de la matière condensée", "credits": 4, "ecue": [] },
+            { "code": "PHY1523", "nom": "Ondes et vibrations", "credits": 3, "ecue": [] },
+            { "code": "PHY1524", "nom": "Mécanique analytique", "credits": 4, "ecue": [] },
+            { "code": "PHY1525", "nom": "Mécanique des milieux déformables", "credits": 5, "ecue": [
+              { "code": "PHY1525-1", "nom": "Mécanique des solides déformables" },
+              { "code": "PHY1525-2", "nom": "Mécanique des fluides" } ] }
+          ]
+        },
+        {
+          "titre": "Semestre 6",
+          "credits": 30,
+          "note": "Réservé au stage et à la soutenance.",
+          "ues": [
+            { "code": "PSR1690", "nom": "Stage", "credits": 22, "ecue": [] },
+            { "code": "TCC1690", "nom": "Rédaction et soutenance", "credits": 8, "ecue": [
+              { "code": "TCC1690-1", "nom": "Rédaction du rapport de stage" },
+              { "code": "TCC1690-2", "nom": "Soutenance du rapport de stage" } ] }
+          ]
+        }
+      ]
+    }
+  ]
+}

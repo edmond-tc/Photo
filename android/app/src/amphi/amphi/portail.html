@@ -273,6 +273,30 @@
 
   /* Publicité : passage en fondu glissé */
   #pub-haut .carte { animation: pub .6s cubic-bezier(.2, .8, .2, 1) both; }
+  /* UE et crédits : fiche permanente de la filière */
+  .ue-tete { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--bordure); }
+  .ue-tete h3 { font-size: 1rem; color: var(--nuit); text-wrap: balance; }
+  .ue-tete p { font-size: .8rem; color: var(--discret); }
+  .ue-total { flex: none; text-align: center; background: var(--nuit); color: #fff; border-radius: 12px; padding: 6px 12px; font: 800 1.25rem/1.1 var(--mono); }
+  .ue-total small { display: block; font: 600 .66rem var(--police); opacity: .85; letter-spacing: .04em; text-transform: uppercase; }
+  .ue-sem { padding: 12px 16px; border-bottom: 1px solid var(--bordure); }
+  .ue-sem h4 { margin: 0; display: flex; justify-content: space-between; gap: 8px; font-size: .95rem; color: var(--nuit); }
+  .ue-sem h4 b { font-family: var(--mono); white-space: nowrap; }
+  .ue-sem .note { font-size: .8rem; color: var(--discret); margin-top: 2px; }
+  .ue-barre { display: flex; gap: 2px; height: 9px; border-radius: 6px; overflow: hidden; margin: 8px 0 4px; }
+  .ue-barre i { display: block; height: 100%; transform-origin: left; animation: remplir .9s cubic-bezier(.2, .8, .2, 1) both; }
+  .ue { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 8px 0; border-top: 1px dashed var(--bordure); }
+  .ue-sem > h4 + .ue, .ue-sem > .note + .ue, .ue-barre + .ue { border-top: 0; }
+  .ue-total b { display: block; }
+  .ue .code { font: 700 .7rem var(--mono); color: #fff; padding: 3px 6px; border-radius: 6px; letter-spacing: .02em; }
+  .ue .nom { font-weight: 650; line-height: 1.25; }
+  .ue .cr { font: 800 .9rem var(--mono); color: var(--nuit); white-space: nowrap; }
+  .ue .cr small { font: 600 .7rem var(--police); color: var(--discret); }
+  .ue .ecue { grid-column: 2 / 4; font-size: .8rem; color: var(--discret); }
+  .ue .ecue span { display: block; }
+  .ue .ecue code { font: 600 .7rem var(--mono); color: var(--bleu); margin-right: 4px; }
+  .ue-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px 14px; }
+  .ue-actions .bouton { flex: 1 1 auto; }
   @keyframes pub { from { transform: translateX(30px); opacity: 0; } }
 
   /* Confettis */
@@ -300,6 +324,7 @@
 <div class="onglets"><nav id="onglets">
   <a href="#accueil" class="actif">Accueil</a>
   <a href="#programme">Programme</a>
+  <a href="#ue">UE</a>
   <a href="#documents">Documents</a>
   <a href="#annonces">Annonces</a>
   <a href="#promo">Promo</a>
@@ -360,6 +385,9 @@
 
   <h2 class="titre-section" id="programme">📅 Programme de la semaine</h2>
   <div class="carte" id="semaine"></div>
+
+  <h2 class="titre-section" id="ue">📘 UE et crédits</h2>
+  <div class="carte" id="maquette"></div>
 
   <div id="pub-milieu"></div>
 
@@ -453,7 +481,7 @@
     <h3>Ma moyenne du semestre</h3>
     <p class="aide">Matière, crédits et note sur 20. Rien n'est envoyé : tout reste sur votre téléphone.</p>
     <table class="moyenne"><thead><tr><th>Matière (UE)</th><th>Crédits</th><th>Note /20</th></tr></thead><tbody id="m-lignes"></tbody></table>
-    <button class="bouton second" id="m-ajouter" type="button" style="margin-top:8px">+ Ajouter une matière</button>
+    <div class="ue-actions" style="padding:8px 0 0"><button class="bouton second" id="m-ajouter" type="button">+ Ajouter une matière</button><button class="bouton second" id="m-ue" type="button" hidden>📘 Remplir avec mes UE</button></div>
     <div class="resultat" id="m-resultat">Remplissez vos notes.</div>
   </div></div>
 
@@ -618,7 +646,7 @@
     var avecPuces = matieres.length >= 1 && tous.length >= 2;
     var zoneM = $("matieres"); zoneM.textContent = ""; zoneM.hidden = !avecPuces;
     var dl = $("liste-matieres"); dl.textContent = "";
-    matieres.forEach(function (m) { var o = el("option"); o.value = m; dl.appendChild(o); });
+    matieres.concat(nomsUe().filter(function (n) { return matieres.indexOf(n) < 0; })).forEach(function (m) { var o = el("option"); o.value = m; dl.appendChild(o); });
     if (avecPuces) {
       [""].concat(matieres).forEach(function (m) {
         var b = el("button", m === matiere ? "choisie" : "", m || "Toutes");
@@ -749,12 +777,112 @@
     photo.hidden = !acc.photo;
     if (acc.photo) photo.src = lienFichier(acc.photo, "photo", "image/jpeg");
     rendreProgramme();
+    rendreMaquette();
     rendreDocuments();
     rendreAnnonces();
     rendrePubs();
     rendreExamens();
     rendreSondages();
   }
+
+  // ── UE et crédits : la maquette officielle est intégrée à l'application
+  // (maquettes.json) ; elle ne dépend d'aucune annonce et ne disparaît jamais.
+  // Le délégué peut en publier une autre pour une filière (contenu.maquettes).
+  var maquettesIntegrees = [];
+  var COULEURS_UE = ["#2b579a", "#0e746f", "#8a3ffc", "#c0261b", "#b25e00", "#0b7a3b", "#16306f", "#a3366f"];
+  function sansAccent(t) { return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+  function maquetteActuelle() {
+    var perso = donnees && donnees.maquettes && donnees.maquettes[filiere];
+    if (perso && perso.integree) return maquettesIntegrees.filter(function (m) { return m.id === perso.integree; })[0] || null;
+    if (perso && perso.semestres && perso.semestres.length) return perso;
+    if (!donnees) return maquettesIntegrees[0] || null;
+    var nomF = sansAccent(((donnees.filieres.filter(function (x) { return x.id === filiere; })[0] || {}).nom || "") + (donnees.filieres.length === 1 ? " " + (donnees.titre || "") : ""));
+    var trouvee = maquettesIntegrees.filter(function (m) {
+      return (m.motsCles || []).some(function (k) { return new RegExp("(^|[^a-z])" + sansAccent(k) + "([^a-z]|$)").test(nomF); });
+    })[0];
+    if (trouvee) return trouvee;
+    // Une seule filière (l'amphi de L3 PF) et rien d'autre de publié : la maquette intégrée.
+    var autres = donnees.maquettes && Object.keys(donnees.maquettes).length;
+    return donnees.filieres.length === 1 && !autres ? maquettesIntegrees[0] || null : null;
+  }
+  function nomsUe() {
+    var m = maquetteActuelle(), n = [];
+    if (m) m.semestres.forEach(function (s) { (s.ues || []).forEach(function (u) { if (u.nom) n.push(u.nom); }); });
+    return n;
+  }
+  function remplirMoyenne(sem) {
+    var notes = {};
+    lignes.forEach(function (l) { if (l.m) notes[sansAccent(l.m)] = l.n; });
+    lignes = sem.ues.map(function (u) { return { m: u.nom, c: String(u.credits || ""), n: notes[sansAccent(u.nom)] || "" }; });
+    rendreMoyenne();
+    $("outils").scrollIntoView({ behavior: "smooth" });
+    setTimeout(function () { var i = document.querySelector("#m-lignes td.n:last-child input"); if (i) i.focus({ preventScroll: true }); }, 600);
+  }
+  function rendreMaquette() {
+    var boite = $("maquette"), m = maquetteActuelle();
+    boite.textContent = "";
+    var bm = $("m-ue");
+    if (!m) {
+      boite.appendChild(el("p", "corps vide", "La répartition des UE et des crédits de votre filière sera publiée ici."));
+      bm.hidden = true;
+      return;
+    }
+    var total = m.total || m.semestres.reduce(function (t, s) { return t + (s.credits || (s.ues || []).reduce(function (a, u) { return a + (+u.credits || 0); }, 0)); }, 0);
+    var tete = el("div", "ue-tete"), g = el("div");
+    g.appendChild(el("h3", null, m.titre || "UE et crédits"));
+    if (m.source) g.appendChild(el("p", null, m.source));
+    tete.appendChild(g);
+    var t = el("div", "ue-total"); t.appendChild(el("b", null, String(total))); t.appendChild(el("small", null, "crédits"));
+    tete.appendChild(t);
+    boite.appendChild(tete);
+    var couleur = 0;
+    m.semestres.forEach(function (s) {
+      var ues = s.ues || [];
+      var cr = s.credits || ues.reduce(function (a, u) { return a + (+u.credits || 0); }, 0);
+      var z = el("div", "ue-sem"), h = el("h4", null, s.titre || "");
+      h.appendChild(el("b", null, cr + " crédits"));
+      z.appendChild(h);
+      if (s.note) z.appendChild(el("p", "note", s.note));
+      var barre = el("div", "ue-barre"), depart = couleur;
+      ues.forEach(function (u, i) {
+        var b = el("i"); b.style.flex = String(+u.credits || 1); b.style.background = COULEURS_UE[(depart + i) % COULEURS_UE.length];
+        b.style.animationDelay = (i * 0.08) + "s"; b.title = u.nom + " : " + u.credits + " crédits";
+        barre.appendChild(b);
+      });
+      if (ues.length > 1) z.appendChild(barre);
+      ues.forEach(function (u) {
+        var l = el("div", "ue");
+        var c = el("span", "code", u.code || "UE"); c.style.background = COULEURS_UE[couleur++ % COULEURS_UE.length];
+        l.appendChild(c);
+        l.appendChild(el("span", "nom", u.nom || ""));
+        var n = el("span", "cr", String(u.credits || "")); n.appendChild(el("small", null, " cr"));
+        l.appendChild(n);
+        if (u.ecue && u.ecue.length) {
+          var e = el("div", "ecue");
+          u.ecue.forEach(function (x) { var sp = el("span"); if (x.code) sp.appendChild(el("code", null, x.code)); sp.appendChild(document.createTextNode(x.nom || "")); e.appendChild(sp); });
+          l.appendChild(e);
+        }
+        z.appendChild(l);
+      });
+      boite.appendChild(z);
+    });
+    var act = el("div", "ue-actions");
+    m.semestres.forEach(function (s) {
+      if (!s.ues || !s.ues.length) return;
+      var b = el("button", "bouton second", "🧮 Ma moyenne du " + (s.titre || "semestre").replace(/^semestre\s*/i, "S"));
+      b.type = "button"; b.onclick = function () { remplirMoyenne(s); };
+      act.appendChild(b);
+    });
+    boite.appendChild(act);
+    var premier = m.semestres.filter(function (s) { return s.ues && s.ues.length; })[0];
+    bm.hidden = !premier;
+    if (premier) bm.onclick = function () { remplirMoyenne(premier); };
+  }
+  fetch("/maquettes.json").then(function (r) { return r.json(); }).then(function (d) {
+    maquettesIntegrees = d.maquettes || [];
+    rendreMaquette();
+    if (donnees) rendreDocuments();
+  }).catch(function () {});
 
   // ── Examens à venir ──
   function rendreExamens() {
@@ -1216,7 +1344,7 @@
   new MutationObserver(function (ms) {
     ms.forEach(function (x) { Array.prototype.forEach.call(x.addedNodes, function (n) {
       if (n.nodeType !== 1) return;
-      Array.prototype.forEach.call(n.querySelectorAll ? n.querySelectorAll(".examen b.j, .sondage .option b") : [], defiler);
+      Array.prototype.forEach.call(n.querySelectorAll ? n.querySelectorAll(".examen b.j, .sondage .option b, .ue-total b") : [], defiler);
     }); });
   }).observe(document.querySelector("main"), { childList: true, subtree: true });
 

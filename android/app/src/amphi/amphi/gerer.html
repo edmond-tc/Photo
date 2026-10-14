@@ -198,6 +198,20 @@
     <div class="boutons"><button class="bouton" id="b-filiere">Ajouter la filière</button></div>
   </details>
 
+  <details class="carte">
+    <summary>📘 UE et crédits (permanent)</summary>
+    <p class="aide">Toujours visible sur la page des étudiants : ne disparaît jamais, comme une annonce le ferait. La maquette de la L3 Physique Fondamentale (60 crédits) est intégrée à l'application. Les étudiants peuvent remplir leur calculateur de moyenne avec ces UE.</p>
+    <label for="u-filiere">Filière</label>
+    <select id="u-filiere" class="choix-filiere"></select>
+    <p class="bilan ok" id="u-etat" style="margin-top:8px"></p>
+    <div id="u-apercu"></div>
+    <div class="boutons"><button class="bouton second" id="b-ue-integree">Utiliser la maquette L3 Physique Fondamentale</button></div>
+    <label for="u-brut">Autre filière : collez la note des UE et crédits</label>
+    <textarea id="u-brut" style="min-height:130px" placeholder="SEMESTRE 5&#10;INF1526 (Physique numérique) : 3 Cr&#10;→ INF1526-1 : Programmation informatique&#10;PHY1520 (Physique quantique) : 6 Cr"></textarea>
+    <div class="boutons"><button class="bouton second" id="b-ue-lire">Lire la note</button><button class="bouton" id="b-ue-publier">Publier pour cette filière</button></div>
+    <div class="boutons"><button class="bouton petit second" id="b-ue-auto">Revenir au choix automatique</button></div>
+  </details>
+
   <details class="carte" open>
     <summary>📅 Programme de la semaine</summary>
     <label for="p-filiere">Filière</label>
@@ -441,6 +455,7 @@
         if (!confirm("Retirer « " + f.nom + " » et son programme ?")) return;
         contenu.filieres = contenu.filieres.filter(function (x) { return x !== f; });
         delete contenu.programmes[f.id];
+        if (contenu.maquettes) delete contenu.maquettes[f.id];
         enregistrer("Filière retirée");
       }));
       lf.appendChild(l);
@@ -486,7 +501,99 @@
     $("c-editeur").value = a.editeur || "";
     rendreListes();
     remplirProgramme();
+    rendreMaquette();
   }
+
+  // ── UE et crédits (maquette) ──
+  var integrees = [], maquetteLue = null;
+  fetch("/maquettes.json").then(function (r) { return r.json(); }).then(function (d) { integrees = d.maquettes || []; if (contenu.filieres) rendreMaquette(); }).catch(function () {});
+  function sansAccent(t) { return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+  /** Même choix que la page des étudiants. */
+  function maquettePour(fid) {
+    var perso = contenu.maquettes && contenu.maquettes[fid];
+    if (perso && perso.integree) return { m: integrees.filter(function (x) { return x.id === perso.integree; })[0], d: "intégrée à l'application" };
+    if (perso && perso.semestres && perso.semestres.length) return { m: perso, d: "publiée par vous" };
+    var nomF = sansAccent(nomFiliere(fid) + (contenu.filieres.length === 1 ? " " + (contenu.titre || "") : ""));
+    var t = integrees.filter(function (x) { return (x.motsCles || []).some(function (k) { return new RegExp("(^|[^a-z])" + sansAccent(k) + "([^a-z]|$)").test(nomF); }); })[0];
+    if (t) return { m: t, d: "intégrée à l'application" };
+    var autres = contenu.maquettes && Object.keys(contenu.maquettes).length;
+    if (contenu.filieres.length === 1 && !autres && integrees[0]) return { m: integrees[0], d: "intégrée à l'application" };
+    return { m: null };
+  }
+  function apercuMaquette(m, z) {
+    z.textContent = "";
+    m.semestres.forEach(function (s) {
+      var b = el("div", "apercu-jour");
+      var cr = s.credits || s.ues.reduce(function (a, u) { return a + (+u.credits || 0); }, 0);
+      b.appendChild(el("p", "t", (s.titre || "Semestre") + " · " + cr + " crédits"));
+      s.ues.forEach(function (u) {
+        b.appendChild(el("p", "c", (u.code ? u.code + " · " : "") + u.nom + " · " + u.credits + " cr" + (u.ecue && u.ecue.length ? " (" + u.ecue.map(function (e) { return e.nom; }).join(", ") + ")" : "")));
+      });
+      z.appendChild(b);
+    });
+  }
+  function rendreMaquette() {
+    var fid = $("u-filiere").value || (contenu.filieres[0] || {}).id, r = maquettePour(fid);
+    var etat = $("u-etat");
+    if (r.m) {
+      var total = r.m.total || r.m.semestres.reduce(function (t, s) { return t + (s.credits || s.ues.reduce(function (a, u) { return a + (+u.credits || 0); }, 0)); }, 0);
+      etat.className = "bilan ok"; etat.textContent = "✓ Les étudiants voient : " + (r.m.titre || "UE et crédits") + " · " + total + " crédits (" + r.d + ").";
+      apercuMaquette(r.m, $("u-apercu"));
+    } else {
+      etat.className = "bilan non"; etat.textContent = "Rien pour cette filière : collez la note des UE ci-dessous.";
+      $("u-apercu").textContent = "";
+    }
+  }
+  /** Note des UE (WhatsApp, PDF copié) → semestres, UE, crédits, ECUE. */
+  function lireMaquette(texte) {
+    var sems = [], sem = null, ue = null, total = 0;
+    String(texte).split(/\r?\n/).forEach(function (brute) {
+      var l = brute.replace(/[*_•▪➡️→►▶️👉]/g, " ").replace(/\s+/g, " ").trim();
+      if (!l) return;
+      var ms = l.match(/semestre\s*(\d+)/i);
+      var me = l.match(/\b([A-Z]{2,4}\s?\d{3,4}-\d+)\b\s*[:–—-]?\s*(.*)/);
+      var mu = l.match(/\b([A-Z]{2,4}\s?\d{3,4})\b(?!-\d)/);
+      var mc = l.match(/(\d+(?:[.,]\d+)?)\s*(?:cr[ée]dits?|cr(?![a-zà-ÿ]))/i);
+      if (/total/i.test(l) && mc && !mu) { total = parseFloat(mc[1].replace(",", ".")); return; }
+      if (ms && !mu) { sem = { titre: "Semestre " + ms[1], ues: [] }; if (mc) sem.credits = parseFloat(mc[1].replace(",", ".")); sems.push(sem); ue = null; return; }
+      if (me && ue) { ue.ecue.push({ code: me[1].replace(/\s/g, ""), nom: me[2].replace(/^[\s:–—-]+/, "").trim() }); return; }
+      if (mu && mc) {
+        if (!sem) { sem = { titre: "Semestre", ues: [] }; sems.push(sem); }
+        var paren = (l.match(/\(([^)]+)\)/g) || []).map(function (x) { return x.slice(1, -1); }).filter(function (x) { return !/\d\s*cr/i.test(x); })[0];
+        var nom = paren || l.slice(l.indexOf(mu[1]) + mu[1].length).replace(mc[0], "").replace(/\(\s*\)/g, "").replace(/[():=–—-]+/g, " ").trim();
+        ue = { code: mu[1].replace(/\s/g, ""), nom: nom.trim(), credits: parseFloat(mc[1].replace(",", ".")), ecue: [] };
+        sem.ues.push(ue);
+      }
+    });
+    sems = sems.filter(function (s) { return s.ues.length; });
+    return sems.length ? { titre: nomFiliere($("u-filiere").value), source: "Publié par le délégué", semestres: sems, total: total || undefined } : null;
+  }
+  $("u-filiere").onchange = function () { maquetteLue = null; rendreMaquette(); };
+  $("b-ue-lire").onclick = function () {
+    maquetteLue = lireMaquette($("u-brut").value);
+    var etat = $("u-etat");
+    if (!maquetteLue) { etat.className = "bilan non"; etat.textContent = "Aucune UE trouvée. Chaque UE doit avoir son code et ses crédits (ex. : PHY1520 (Physique quantique) : 6 Cr)."; $("u-apercu").textContent = ""; return; }
+    var nb = maquetteLue.semestres.reduce(function (a, s) { return a + s.ues.length; }, 0);
+    etat.className = "bilan ok"; etat.textContent = "✓ " + nb + " UE trouvées. Vérifiez puis touchez « Publier pour cette filière ».";
+    apercuMaquette(maquetteLue, $("u-apercu"));
+  };
+  $("b-ue-publier").onclick = function () {
+    if (!maquetteLue) { $("b-ue-lire").click(); if (!maquetteLue) return; }
+    contenu.maquettes = contenu.maquettes || {};
+    contenu.maquettes[$("u-filiere").value] = maquetteLue;
+    maquetteLue = null;
+    enregistrer("UE et crédits publiés ✓").then(rendreMaquette);
+  };
+  $("b-ue-integree").onclick = function () {
+    if (!integrees[0]) return toast("Maquette intégrée introuvable.");
+    contenu.maquettes = contenu.maquettes || {};
+    contenu.maquettes[$("u-filiere").value] = { integree: integrees[0].id };
+    enregistrer("Maquette L3 Physique Fondamentale publiée ✓").then(rendreMaquette);
+  };
+  $("b-ue-auto").onclick = function () {
+    if (contenu.maquettes) delete contenu.maquettes[$("u-filiere").value];
+    enregistrer("Choix automatique ✓").then(rendreMaquette);
+  };
 
   // ── Échanges avec les étudiants ──
   var echanges = { propositions: [], questions: [], resultats: {} };
