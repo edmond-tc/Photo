@@ -188,9 +188,9 @@ class AmphiService : Service() {
         return Requete(premiere[0].uppercase(), chemin, query, entetes, entree)
     }
 
-    private fun repondre(sortie: OutputStream, code: Int, type: String, corps: ByteArray, extra: Map<String, String> = emptyMap()) {
+    private fun repondre(sortie: OutputStream, code: Int, type: String, corps: ByteArray, extra: Map<String, String> = emptyMap(), cache: String = "no-store") {
         val texte = when (code) { 200 -> "OK"; 206 -> "Partial Content"; 403 -> "Forbidden"; 404 -> "Not Found"; 413 -> "Payload Too Large"; 416 -> "Range Not Satisfiable"; 507 -> "Insufficient Storage"; else -> "Error" }
-        val tete = StringBuilder("HTTP/1.1 $code $texte\r\nContent-Type: $type\r\nContent-Length: ${corps.size}\r\nConnection: close\r\nCache-Control: no-store\r\n")
+        val tete = StringBuilder("HTTP/1.1 $code $texte\r\nContent-Type: $type\r\nContent-Length: ${corps.size}\r\nConnection: close\r\nCache-Control: $cache\r\n")
         extra.forEach { (k, v) -> tete.append("$k: $v\r\n") }
         tete.append("\r\n")
         sortie.write(tete.toString().toByteArray())
@@ -215,6 +215,11 @@ class AmphiService : Service() {
                         actif(sortie, "amphi/portail.html", "text/html; charset=utf-8")
                     }
                     r.methode == "GET" && r.chemin == "/donnees.json" -> json(sortie, contenuPublic())
+                    // Lecture dans la page (PDF, images, vidéos, sons) : pas de
+                    // téléchargement « non sécurisé » signalé par Chrome.
+                    r.methode == "GET" && r.chemin == "/lire" -> actif(sortie, "amphi/lire.html", "text/html; charset=utf-8")
+                    r.methode == "GET" && (r.chemin == "/lib/pdf.min.js" || r.chemin == "/lib/pdf.worker.min.js") ->
+                        actif(sortie, "amphi" + r.chemin, "text/javascript; charset=utf-8", "max-age=604800")
                     r.methode == "GET" && r.chemin.startsWith("/f/") -> envoyerFichier(sortie, r, r.chemin.removePrefix("/f/"))
                     r.methode == "POST" && r.chemin.startsWith("/c/") -> {
                         // Clic sur une publicité (appel, WhatsApp) : la preuve pour l'annonceur.
@@ -237,9 +242,9 @@ class AmphiService : Service() {
         }
     }
 
-    private fun actif(sortie: OutputStream, chemin: String, type: String) {
+    private fun actif(sortie: OutputStream, chemin: String, type: String, cache: String = "no-store") {
         val octets = assets.open(chemin).use { it.readBytes() }
-        repondre(sortie, 200, type, octets)
+        repondre(sortie, 200, type, octets, cache = cache)
     }
 
     // ── Contenu ────────────────────────────────────────────────────────────

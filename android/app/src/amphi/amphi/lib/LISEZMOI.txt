@@ -1,0 +1,2 @@
+pdf.min.js et pdf.worker.min.js : PDF.js 3.11.174 (Mozilla), licence Apache 2.0 (LICENCE-pdfjs.txt).
+qrcode.js : QR Code Generator for JavaScript, Kazuhiko Arase, licence MIT.

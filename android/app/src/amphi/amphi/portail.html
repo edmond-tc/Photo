@@ -329,9 +329,11 @@
         if (recent(d.date)) nom.appendChild(el("span", "nouveau", "Nouveau"));
         info.appendChild(nom);
         info.appendChild(el("p", "meta", taille(d.taille) + (d.date ? " · " + new Date(d.date).toLocaleDateString("fr-FR") : "")));
+        // Tout s'ouvre dans la page de lecture (PDF, images, vidéos, sons), avec
+        // « Enregistrer » à part : pas de téléchargement « non sécurisé » de Chrome.
         var lecture = /^(video|audio)\//.test(d.type || "") || /^image\//.test(d.type || "") || ext === "pdf";
-        var a = el("a", "bouton", lecture ? "Ouvrir" : "Télécharger");
-        a.href = lienFichier(d.id, d.nom, d.type, !lecture);
+        var a = el("a", "bouton", lecture ? "Ouvrir" : "Enregistrer");
+        a.href = "/lire?id=" + encodeURIComponent(d.id) + "&nom=" + encodeURIComponent(d.nom || "document") + "&type=" + encodeURIComponent(d.type || "application/octet-stream") + "&taille=" + (+d.taille || 0);
         ligne.appendChild(type); ligne.appendChild(info); ligne.appendChild(a);
         boite.appendChild(ligne);
       });

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#16306f">
+<title>Document</title>
+<style>
+  :root { --bleu: #2b579a; --nuit: #16306f; --fond: #eef1f7; --discret: #5d6475; --police: "Segoe UI", Roboto, Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fond); font: 16px/1.45 var(--police); color: #1f2430; }
+  .barre { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--nuit); color: #fff; }
+  .barre a, .barre button { flex: none; color: #fff; background: rgba(255,255,255,.15); border: 0; border-radius: 10px; padding: 8px 12px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+  .barre button { background: #fff; color: var(--nuit); }
+  .barre .titre { flex: 1; min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .contenu { max-width: 900px; margin: 0 auto; padding: 12px 8px 40px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .page { width: 100%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12); min-height: 200px; position: relative; }
+  .page canvas { display: block; width: 100%; height: auto; }
+  .page span { position: absolute; right: 8px; bottom: 6px; font-size: .75rem; color: var(--discret); background: rgba(255,255,255,.85); padding: 0 6px; border-radius: 6px; }
+  img.media, video.media { max-width: 100%; border-radius: 10px; background: #000; }
+  audio { width: 100%; margin-top: 30px; }
+  .message { background: #fff; border-radius: 14px; padding: 18px; text-align: center; margin-top: 20px; max-width: 520px; }
+  .message p + p { margin-top: 8px; color: var(--discret); font-size: .92rem; }
+  .gros { display: inline-block; margin-top: 14px; padding: 12px 18px; border-radius: 12px; background: var(--bleu); color: #fff; font-weight: 700; text-decoration: none; border: 0; font: inherit; cursor: pointer; }
+  .chargement { color: var(--discret); margin-top: 30px; }
+  .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #1f2430; color: #fff; padding: 10px 16px; border-radius: 999px; font-weight: 600; display: none; max-width: 92%; text-align: center; }
+</style>
+</head>
+<body>
+<div class="barre">
+  <a href="/" id="retour">←</a>
+  <span class="titre" id="titre">Document</span>
+  <button type="button" id="enregistrer">💾 Enregistrer</button>
+</div>
+<div class="contenu" id="contenu"><p class="chargement">Ouverture…</p></div>
+<div class="toast" id="toast"></div>
+<script>
+(function () {
+  "use strict";
+  var q = new URLSearchParams(location.search);
+  var id = q.get("id") || "", nom = q.get("nom") || "document", type = q.get("type") || "application/octet-stream", taille = +q.get("taille") || 0;
+  var adresse = "/f/" + encodeURIComponent(id) + "?nom=" + encodeURIComponent(nom) + "&type=" + encodeURIComponent(type);
+  var zone = document.getElementById("contenu");
+  document.getElementById("titre").textContent = nom;
+  document.title = nom;
+  function el(t, c, x) { var e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; }
+  function toast(t) { var b = document.getElementById("toast"); b.textContent = t; b.style.display = "block"; clearTimeout(toast.m); toast.m = setTimeout(function () { b.style.display = "none"; }, 3500); }
+  var ext = nom.split(".").pop().toLowerCase();
+
+  // Enregistrer dans le téléphone sans passer par le téléchargement « non
+  // sécurisé » de Chrome : le fichier est lu dans la page, puis remis au
+  // téléphone. Au-delà de 60 Mo (vidéos), lien direct.
+  document.getElementById("enregistrer").onclick = function () {
+    if (taille > 60e6) { location.href = adresse + "&dl=1"; return; }
+    toast("Préparation…");
+    fetch(adresse).then(function (r) { if (!r.ok) throw new Error(); return r.blob(); }).then(function (b) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = nom;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+      toast("Enregistré dans Téléchargements ✓ (si le téléphone demande, choisissez « Conserver »)");
+    }).catch(function () { location.href = adresse + "&dl=1"; });
+  };
+
+  function nonLisible() {
+    zone.textContent = "";
+    var m = el("div", "message");
+    m.appendChild(el("p", null, "Ce type de document (" + ext.toUpperCase() + ") ne s'affiche pas dans la page."));
+    m.appendChild(el("p", null, "Enregistrez-le, puis ouvrez-le avec l'application qui convient (Word, WPS Office, etc.)."));
+    var b = el("button", "gros", "💾 Enregistrer le document");
+    b.onclick = function () { document.getElementById("enregistrer").click(); };
+    m.appendChild(b);
+    zone.appendChild(m);
+  }
+
+  if (/^image\//.test(type)) {
+    zone.textContent = "";
+    var i = el("img", "media"); i.src = adresse; i.alt = nom; zone.appendChild(i);
+  } else if (/^video\//.test(type)) {
+    zone.textContent = "";
+    var v = el("video", "media"); v.src = adresse; v.controls = true; v.playsInline = true; v.preload = "metadata"; zone.appendChild(v);
+  } else if (/^audio\//.test(type)) {
+    zone.textContent = "";
+    var a = el("audio"); a.src = adresse; a.controls = true; zone.appendChild(a);
+  } else if (ext === "pdf" || type === "application/pdf") {
+    var s = document.createElement("script");
+    s.src = "/lib/pdf.min.js";
+    s.onload = function () {
+      var lib = window.pdfjsLib;
+      lib.GlobalWorkerOptions.workerSrc = "/lib/pdf.worker.min.js";
+      lib.getDocument({ url: adresse, disableAutoFetch: true }).promise.then(function (pdf) {
+        zone.textContent = "";
+        var largeur = Math.min(zone.clientWidth - 16, 900);
+        var ratio = Math.min(window.devicePixelRatio || 1, 2);
+        // Chaque page est dessinée quand elle arrive à l'écran : les gros
+        // polycopiés s'ouvrent vite, même sur un petit téléphone.
+        var observateur = new IntersectionObserver(function (entrees) {
+          entrees.forEach(function (e) {
+            if (!e.isIntersecting || e.target.dataset.fait) return;
+            e.target.dataset.fait = "1";
+            var n = +e.target.dataset.n;
+            pdf.getPage(n).then(function (page) {
+              var v1 = page.getViewport({ scale: 1 });
+              var echelle = largeur / v1.width;
+              var vue = page.getViewport({ scale: echelle * ratio });
+              var c = document.createElement("canvas");
+              c.width = vue.width; c.height = vue.height;
+              e.target.insertBefore(c, e.target.firstChild);
+              e.target.style.minHeight = "";
+              page.render({ canvasContext: c.getContext("2d"), viewport: vue });
+            });
+          });
+        }, { rootMargin: "800px 0px" });
+        pdf.getPage(1).then(function (p1) {
+          var v1 = p1.getViewport({ scale: 1 });
+          var hauteur = Math.round(largeur * v1.height / v1.width);
+          for (var n = 1; n <= pdf.numPages; n++) {
+            var d = el("div", "page");
+            d.dataset.n = n;
+            d.style.minHeight = hauteur + "px";
+            d.appendChild(el("span", null, n + " / " + pdf.numPages));
+            zone.appendChild(d);
+            observateur.observe(d);
+          }
+        });
+      }).catch(function () {
+        zone.textContent = "";
+        var m = el("div", "message");
+        m.appendChild(el("p", null, "Ce PDF n'a pas pu être affiché."));
+        var b = el("button", "gros", "💾 Enregistrer le document");
+        b.onclick = function () { document.getElementById("enregistrer").click(); };
+        m.appendChild(b);
+        zone.appendChild(m);
+      });
+    };
+    s.onerror = nonLisible;
+    document.head.appendChild(s);
+  } else {
+    nonLisible();
+  }
+})();
+</script>
+</body>
+</html>
