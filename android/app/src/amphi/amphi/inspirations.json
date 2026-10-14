@@ -1,0 +1,177 @@
+[
+ {
+  "nom": "Abdus Salam",
+  "dates": "1926-1996",
+  "pays": "Pakistan",
+  "texte": "Prix Nobel 1979 pour l'unification des interactions électromagnétique et faible. Il a fondé en 1964 le Centre international de physique théorique (ICTP) de Trieste, qui forme depuis des milliers de physiciens d'Afrique et des pays du Sud.",
+  "lecon": "On peut venir d'un pays sans grands laboratoires et changer la physique mondiale."
+ },
+ {
+  "nom": "Francis Allotey",
+  "dates": "1932-2017",
+  "pays": "Ghana",
+  "texte": "Physicien mathématicien, connu pour l'« Allotey formalism » en spectroscopie des rayons X mous. Il a œuvré toute sa vie pour les sciences mathématiques en Afrique, notamment pour l'institut AIMS au Ghana.",
+  "lecon": "La rigueur mathématique ouvre toutes les portes, partout."
+ },
+ {
+  "nom": "Cheikh Anta Diop",
+  "dates": "1923-1986",
+  "pays": "Sénégal",
+  "texte": "Formé à la physique nucléaire à Paris, il a créé à Dakar, à l'IFAN, l'un des premiers laboratoires africains de datation au carbone 14.",
+  "lecon": "La physique sert aussi à écrire l'histoire."
+ },
+ {
+  "nom": "Thomas Mensah",
+  "dates": "né en 1950",
+  "pays": "Ghana",
+  "texte": "Ingénieur chimiste et inventeur, auteur de plusieurs brevets sur la fabrication de la fibre optique, la technologie qui transporte aujourd'hui Internet.",
+  "lecon": "Une bonne idée d'ingénieur peut toucher des milliards de personnes."
+ },
+ {
+  "nom": "Philip Emeagwali",
+  "dates": "né en 1954",
+  "pays": "Nigeria",
+  "texte": "Prix Gordon Bell 1989 pour avoir utilisé des milliers de processeurs en parallèle afin de simuler des gisements de pétrole : un exemple de physique numérique.",
+  "lecon": "La simulation numérique est une vraie façon de faire de la physique."
+ },
+ {
+  "nom": "Marie Curie",
+  "dates": "1867-1934",
+  "pays": "Pologne, France",
+  "texte": "Pionnière de la radioactivité, seule personne à avoir reçu deux prix Nobel dans deux sciences différentes : physique (1903) et chimie (1911).",
+  "lecon": "Le travail patient finit par payer, même dans des conditions difficiles."
+ },
+ {
+  "nom": "Albert Einstein",
+  "dates": "1879-1955",
+  "pays": "Allemagne, Suisse, États-Unis",
+  "texte": "En 1905, à 26 ans, employé d'un bureau des brevets, il publie l'effet photoélectrique, le mouvement brownien et la relativité restreinte. Prix Nobel 1921.",
+  "lecon": "On peut faire de grandes découvertes avant même d'avoir un poste de chercheur."
+ },
+ {
+  "nom": "Max Planck",
+  "dates": "1858-1947",
+  "pays": "Allemagne",
+  "texte": "En 1900, pour expliquer le rayonnement du corps noir, il suppose que l'énergie est échangée par paquets E = hν. C'est la naissance de la physique quantique.",
+  "lecon": "Oser une hypothèse étrange quand les calculs l'exigent."
+ },
+ {
+  "nom": "Erwin Schrödinger",
+  "dates": "1887-1961",
+  "pays": "Autriche",
+  "texte": "En 1926, il écrit l'équation d'onde qui porte son nom, cœur de la mécanique quantique que vous étudiez en PHY1520.",
+  "lecon": "Une bonne équation résume des milliers d'expériences."
+ },
+ {
+  "nom": "Werner Heisenberg",
+  "dates": "1901-1976",
+  "pays": "Allemagne",
+  "texte": "À 23 ans, il fonde la mécanique matricielle (1925), puis énonce en 1927 le principe d'incertitude Δx·Δp ≥ ħ/2.",
+  "lecon": "La jeunesse n'empêche pas de bouleverser une science."
+ },
+ {
+  "nom": "Paul Dirac",
+  "dates": "1902-1984",
+  "pays": "Royaume-Uni",
+  "texte": "En 1928, son équation relativiste de l'électron prédit l'antimatière, découverte quatre ans plus tard (le positron).",
+  "lecon": "Les mathématiques peuvent annoncer ce que personne n'a encore vu."
+ },
+ {
+  "nom": "Ludwig Boltzmann",
+  "dates": "1844-1906",
+  "pays": "Autriche",
+  "texte": "Père de la physique statistique : la formule S = k log W est gravée sur sa tombe à Vienne.",
+  "lecon": "Comprendre le grand nombre en raisonnant sur l'infiniment petit."
+ },
+ {
+  "nom": "Satyendra Nath Bose",
+  "dates": "1894-1974",
+  "pays": "Inde",
+  "texte": "En 1924, il envoie à Einstein une nouvelle façon de compter les photons. Les « bosons » portent son nom.",
+  "lecon": "Une seule lettre bien écrite à la bonne personne peut changer une carrière."
+ },
+ {
+  "nom": "Enrico Fermi",
+  "dates": "1901-1954",
+  "pays": "Italie, États-Unis",
+  "texte": "Il établit en 1926 la statistique des fermions (Fermi-Dirac) et dirige en 1942 la construction du premier réacteur nucléaire.",
+  "lecon": "Être à la fois très bon en théorie et en expérience."
+ },
+ {
+  "nom": "Emmy Noether",
+  "dates": "1882-1935",
+  "pays": "Allemagne",
+  "texte": "Son théorème de 1918 relie chaque symétrie à une loi de conservation (temps → énergie, espace → impulsion). Vous l'utilisez en mécanique analytique.",
+  "lecon": "Une idée profonde peut unifier toute la physique."
+ },
+ {
+  "nom": "Joseph-Louis Lagrange",
+  "dates": "1736-1813",
+  "pays": "Italie, France",
+  "texte": "Sa « Mécanique analytique » (1788) reformule toute la mécanique sans un seul dessin, à partir de L = T − V.",
+  "lecon": "Changer de point de vue simplifie les problèmes les plus durs."
+ },
+ {
+  "nom": "William Rowan Hamilton",
+  "dates": "1805-1865",
+  "pays": "Irlande",
+  "texte": "Il reformule la mécanique avec le hamiltonien H (1833-1835), le langage qu'utilisera ensuite la mécanique quantique.",
+  "lecon": "Un outil créé pour un domaine peut servir à un autre un siècle plus tard."
+ },
+ {
+  "nom": "Joseph Fourier",
+  "dates": "1768-1830",
+  "pays": "France",
+  "texte": "Dans sa « Théorie analytique de la chaleur » (1822), il décompose les fonctions en séries de sinus et cosinus : les séries de Fourier de PHY1521.",
+  "lecon": "Les méthodes mathématiques naissent souvent d'un problème physique concret."
+ },
+ {
+  "nom": "Lawrence Bragg",
+  "dates": "1890-1971",
+  "pays": "Australie, Royaume-Uni",
+  "texte": "Avec son père, il explique la diffraction des rayons X par les cristaux (2d sin θ = nλ). Prix Nobel 1915 à 25 ans : le plus jeune lauréat en physique.",
+  "lecon": "Ce que vous apprenez en matière condensée a valu un Nobel à un étudiant."
+ },
+ {
+  "nom": "Daniel Bernoulli",
+  "dates": "1700-1782",
+  "pays": "Suisse",
+  "texte": "Dans « Hydrodynamica » (1738), il pose les bases de la mécanique des fluides et le principe qui porte son nom.",
+  "lecon": "Observer l'eau qui coule peut mener à une loi universelle."
+ },
+ {
+  "nom": "Osborne Reynolds",
+  "dates": "1842-1912",
+  "pays": "Royaume-Uni",
+  "texte": "Par ses expériences de 1883 avec un filet d'encre dans un tube, il montre le passage du laminaire au turbulent, caractérisé par le nombre de Reynolds.",
+  "lecon": "Une expérience simple et bien pensée vaut mieux qu'un appareil compliqué."
+ },
+ {
+  "nom": "Subrahmanyan Chandrasekhar",
+  "dates": "1910-1995",
+  "pays": "Inde, États-Unis",
+  "texte": "Encore étudiant, pendant son voyage en bateau vers l'Angleterre (1930), il calcule la masse limite des naines blanches. Prix Nobel 1983.",
+  "lecon": "Vos calculs d'étudiant peuvent être justes avant d'être acceptés par tous."
+ },
+ {
+  "nom": "Lise Meitner",
+  "dates": "1878-1968",
+  "pays": "Autriche, Suède",
+  "texte": "En 1938-1939, elle donne avec Otto Frisch l'explication physique de la fission nucléaire.",
+  "lecon": "La persévérance compte, même quand la reconnaissance tarde."
+ },
+ {
+  "nom": "Chien-Shiung Wu",
+  "dates": "1912-1997",
+  "pays": "Chine, États-Unis",
+  "texte": "En 1956, son expérience très précise montre que l'interaction faible ne respecte pas la symétrie miroir (violation de la parité).",
+  "lecon": "La précision expérimentale peut renverser une idée que tout le monde croyait vraie."
+ },
+ {
+  "nom": "Richard Feynman",
+  "dates": "1918-1988",
+  "pays": "États-Unis",
+  "texte": "Prix Nobel 1965 pour l'électrodynamique quantique. Ses « Cours de physique », donnés à des étudiants de première année, sont encore lus partout.",
+  "lecon": "Expliquer simplement est le meilleur test pour savoir si l'on a compris."
+ }
+]

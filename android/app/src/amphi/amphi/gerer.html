@@ -260,6 +260,41 @@
     <div id="liste-honneur"></div>
   </details>
 
+  <details class="carte" id="carte-avenir">
+    <summary>🚀 Après la L3 : stages, opportunités, conseils</summary>
+    <p class="aide">Affiché dans « Avenir » sur la page des étudiants. Les offres et opportunités disparaissent toutes seules après leur date limite.</p>
+    <h3 style="margin-top:10px; font-size:1rem; color:var(--nuit)">🎓 Soutenance</h3>
+    <label for="av-soutenance">Date des soutenances (compte à rebours)</label>
+    <input type="date" id="av-soutenance">
+    <div class="boutons"><button class="bouton second" id="b-av-soutenance">Enregistrer la date</button></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">💼 Offre de stage</h3>
+    <input type="text" id="st-titre" maxlength="100" placeholder="Ex. : Stage en physique des matériaux">
+    <input type="text" id="st-structure" maxlength="80" placeholder="Structure (laboratoire, entreprise…)">
+    <input type="text" id="st-lieu" maxlength="60" placeholder="Lieu (ex. : Abomey-Calavi)">
+    <input type="text" id="st-contact" maxlength="100" placeholder="Comment postuler (contact, dépôt…)">
+    <label for="st-limite">Date limite</label>
+    <input type="date" id="st-limite">
+    <textarea id="st-texte" maxlength="500" placeholder="Détails (durée, profil, pièces à fournir)"></textarea>
+    <div class="boutons"><button class="bouton" id="b-stage">Publier l'offre</button></div>
+    <div id="liste-stages"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">🌍 Opportunité (bourse, Master, concours…)</h3>
+    <input type="text" id="op-titre" maxlength="100" placeholder="Ex. : Bourse de Master AIMS">
+    <select id="op-type"><option>Bourse</option><option>Master</option><option>Concours</option><option>Conférence</option><option>Olympiade</option><option>Formation</option><option>Autre</option></select>
+    <label for="op-limite">Date limite</label>
+    <input type="date" id="op-limite">
+    <input type="text" id="op-lien" maxlength="150" placeholder="Où postuler (site, adresse, contact)">
+    <textarea id="op-texte" maxlength="500" placeholder="Conditions, pièces, conseils"></textarea>
+    <div class="boutons"><button class="bouton" id="b-opportunite">Publier l'opportunité</button></div>
+    <div id="liste-opportunites"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">🧭 Conseil d'un aîné</h3>
+    <p class="aide">Les aînés peuvent aussi l'envoyer eux-mêmes depuis la page (à valider dans « Vie de la promo »).</p>
+    <input type="text" id="cs-auteur" maxlength="60" placeholder="Prénom de l'aîné">
+    <input type="text" id="cs-parcours" maxlength="80" placeholder="Parcours (ex. : Master 2 Physique, UAC)">
+    <textarea id="cs-texte" maxlength="800" placeholder="Son conseil"></textarea>
+    <div class="boutons"><button class="bouton" id="b-conseil">Publier le conseil</button></div>
+    <div id="liste-conseils"></div>
+  </details>
+
   <details class="carte">
     <summary>🎉 Événements de la promo</summary>
     <p class="aide">Soirée, sortie, match, anniversaire collectif, réunion… Affichés en haut de la page avec un compte à rebours ; les étudiants touchent « J'y serai » et vous voyez combien viennent.</p>
@@ -692,7 +727,7 @@
   }
   function poster(url, corps) { return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corps || {}) }).then(function (r) { return r.json(); }); }
   function aujourdhuiIso() { var d = new Date(), m = d.getMonth() + 1, j = d.getDate(); return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (j < 10 ? "0" : "") + j; }
-  var NOMS_PROMO = { dedicace: "💌 Dédicace", perdu: "🔎 Perdu", trouve: "🔎 Trouvé", vente: "🛒 À vendre", achat: "🛒 Recherché", binome: "👥 Cherche binôme" };
+  var NOMS_PROMO = { dedicace: "💌 Dédicace", perdu: "🔎 Perdu", trouve: "🔎 Trouvé", vente: "🛒 À vendre", achat: "🛒 Recherché", binome: "👥 Cherche binôme", conseil: "🧭 Conseil d'aîné" };
   var NOMS_ALERTE = { present: "✅ Le prof est là", annule: "❌ Cours annulé", salle: "🔄 Salle changée", retard: "⏳ Prof en retard" };
   function rendrePromo() {
     var pubs = (echanges.publications || []).slice().sort(function (a, b) { return b.date - a.date; });
@@ -740,6 +775,7 @@
     sp.forEach(function (x) { zsp.appendChild(ligneStar(x, false)); });
     if (sa.length) { $("nb-promo").hidden = false; $("nb-promo").textContent = attente.length + sa.length; }
     rendreEvenements();
+    rendreAvenir();
     rendreDefi();
     var za = $("liste-promo-attente"); za.textContent = "";
     if (!attente.length && !sa.length) za.appendChild(el("p", "aide", "Rien à vérifier pour l'instant."));
@@ -938,6 +974,41 @@
       [0, 1, 2, 3].forEach(function (i) { $("df-c" + i).value = ""; });
       chargerEchanges();
     });
+  };
+  // ── Après la L3 ──
+  function dateFr(iso) { return iso ? iso.split("-").reverse().join("/") : ""; }
+  function rendreAvenir() {
+    if (document.activeElement !== $("av-soutenance")) $("av-soutenance").value = contenu.soutenance || "";
+    [["stages", "liste-stages", function (x) { return [x.titre, [x.structure, x.lieu, x.limite ? "limite " + dateFr(x.limite) : ""].filter(Boolean).join(" · ")]; }],
+     ["opportunites", "liste-opportunites", function (x) { return [x.type + " · " + x.titre, x.limite ? "limite " + dateFr(x.limite) : "sans date limite"]; }],
+     ["conseils", "liste-conseils", function (x) { return [x.auteur + (x.parcours ? " (" + x.parcours + ")" : ""), x.texte.slice(0, 90)]; }]].forEach(function (d) {
+      var z = $(d[1]); z.textContent = "";
+      (contenu[d[0]] || []).forEach(function (x) {
+        var t = d[2](x), l = el("div", "ligne"), i = el("div", "info");
+        i.appendChild(el("p", "nom", t[0])); i.appendChild(el("p", "meta", t[1])); l.appendChild(i);
+        l.appendChild(bouton("Retirer", "danger", function () { contenu[d[0]] = contenu[d[0]].filter(function (y) { return y !== x; }); enregistrer("Retiré"); }));
+        z.appendChild(l);
+      });
+    });
+  }
+  $("b-av-soutenance").onclick = function () { contenu.soutenance = $("av-soutenance").value; enregistrer("Date enregistrée ✓"); };
+  $("b-stage").onclick = function () {
+    var t = $("st-titre").value.trim(); if (!t) return toast("Un titre pour l'offre.");
+    (contenu.stages = contenu.stages || []).push({ id: nouvelId(), titre: t, structure: $("st-structure").value.trim(), lieu: $("st-lieu").value.trim(), contact: $("st-contact").value.trim(), limite: $("st-limite").value, texte: $("st-texte").value.trim(), date: Date.now() });
+    ["st-titre", "st-structure", "st-lieu", "st-contact", "st-limite", "st-texte"].forEach(function (k) { $(k).value = ""; });
+    enregistrer("Offre publiée ✓");
+  };
+  $("b-opportunite").onclick = function () {
+    var t = $("op-titre").value.trim(); if (!t) return toast("Un titre pour l'opportunité.");
+    (contenu.opportunites = contenu.opportunites || []).push({ id: nouvelId(), titre: t, type: $("op-type").value, limite: $("op-limite").value, lien: $("op-lien").value.trim(), texte: $("op-texte").value.trim(), date: Date.now() });
+    ["op-titre", "op-limite", "op-lien", "op-texte"].forEach(function (k) { $(k).value = ""; });
+    enregistrer("Opportunité publiée ✓");
+  };
+  $("b-conseil").onclick = function () {
+    var a = $("cs-auteur").value.trim(), t = $("cs-texte").value.trim(); if (!a || t.length < 10) return toast("Le prénom de l'aîné et son conseil.");
+    (contenu.conseils = contenu.conseils || []).push({ id: nouvelId(), auteur: a, parcours: $("cs-parcours").value.trim(), texte: t, date: Date.now() });
+    ["cs-auteur", "cs-parcours", "cs-texte"].forEach(function (k) { $(k).value = ""; });
+    enregistrer("Conseil publié ✓");
   };
   function rendreEvenements() {
     var z = $("liste-evenements"); if (!z) return; z.textContent = "";

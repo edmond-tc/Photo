@@ -389,6 +389,20 @@
   .plan-tache { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px dashed var(--bordure); font-size: .9rem; }
   .plan-tache input { margin-top: 3px; flex: none; }
   .plan-tache.fait span { text-decoration: line-through; color: var(--discret); }
+  .inspiration h3 { font-family: var(--titre); font-size: 1.3rem; color: var(--nuit); margin-top: 4px; }
+  .inspiration #in-texte { margin-top: 6px; }
+  .lecon { margin-top: 8px; padding: 8px 12px; border-left: 4px solid var(--bleu); background: var(--ciel); border-radius: 0 8px 8px 0; font-weight: 600; color: var(--nuit); }
+  .guide { margin-top: 10px; border-top: 1px solid var(--bordure); padding-top: 8px; }
+  .guide summary { cursor: pointer; font-weight: 700; color: var(--nuit); }
+  .guide ol, .guide ul { margin: 8px 0 0; padding-left: 20px; font-size: .92rem; }
+  .guide li + li { margin-top: 4px; }
+  .offre { padding: 10px 0; border-top: 1px solid var(--bordure); display: flex; flex-direction: column; gap: 3px; }
+  .offre-tete { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .offre-tete b.j { flex: none; font: 800 .8rem var(--mono); background: var(--ciel); color: var(--nuit); padding: 3px 9px; border-radius: 999px; }
+  .offre-tete b.j.urgent { background: #fdecea; color: var(--rouge); }
+  .alerte-limite { color: var(--rouge); font-weight: 700; font-size: .85rem; }
+  .conseil { padding: 10px 12px; margin-top: 8px; background: var(--fond); border-radius: 10px; }
+  .conseil p:first-child { font-style: italic; }
   .et-salle { margin-top: 6px; font-weight: 600; }
   .et-salle b { font: 800 1.6rem var(--mono); color: var(--vert); }
   .et-chrono { text-align: center; margin: 10px 0 6px; }
@@ -471,6 +485,7 @@
   <a href="#partager">Partager</a>
   <a href="#questions">Questions</a>
   <a href="#outils">Outils</a>
+  <a href="#avenir">Avenir</a>
 </nav></div>
 
 <div class="filieres" id="filieres" hidden></div>
@@ -750,6 +765,69 @@
       <select class="champ" id="ob-cible" style="width:auto;margin:0"><option value="10">10 · valider</option><option value="12">12 · Assez bien</option><option value="14">14 · Bien</option><option value="16">16 · Très bien</option></select>
     </label>
     <div class="resultat" id="ob-resultat"></div>
+  </div></div>
+
+  <h2 class="titre-section" id="avenir">🚀 Après la L3</h2>
+  <div class="carte" id="carte-inspiration"><div class="corps inspiration">
+    <p class="etiquette">✨ Inspiration de la semaine</p>
+    <h3 id="in-nom"></h3>
+    <p class="aide" id="in-meta"></p>
+    <p id="in-texte"></p>
+    <p class="lecon" id="in-lecon"></p>
+    <button class="bouton second" id="in-suivant" type="button" style="margin-top:8px">Une autre figure →</button>
+  </div></div>
+  <div class="carte"><div class="corps">
+    <h3 class="titre-carte">🎓 Stage et mémoire (S6)</h3>
+    <p class="resultat" id="av-soutenance" hidden></p>
+    <div id="av-stages" style="margin-top:8px"></div>
+    <details class="guide"><summary>📑 Plan type du rapport de stage</summary>
+      <ol>
+        <li><b>Page de garde</b> : université, filière, titre, nom, maître de stage, encadrant, année.</li>
+        <li><b>Remerciements</b> (courts) puis <b>résumé</b> d'une demi-page (en français et en anglais si demandé).</li>
+        <li><b>Introduction</b> : contexte, problème posé, objectif du stage, plan du rapport.</li>
+        <li><b>Présentation de la structure</b> d'accueil (1 à 2 pages, pas plus).</li>
+        <li><b>Cadre théorique</b> : les notions de physique utiles, avec les équations numérotées.</li>
+        <li><b>Méthodes et matériel</b> : montage, protocole, codes de calcul, hypothèses.</li>
+        <li><b>Résultats et discussion</b> : figures légendées, unités, incertitudes, comparaison avec la théorie.</li>
+        <li><b>Conclusion et perspectives</b> : ce qui est acquis, ce qui reste à faire.</li>
+        <li><b>Bibliographie</b> (même style partout) et <b>annexes</b>.</li>
+      </ol>
+    </details>
+    <details class="guide"><summary>🎤 Réussir la soutenance</summary>
+      <ul>
+        <li>15 à 20 minutes : comptez environ une diapositive par minute.</li>
+        <li>Une idée par diapositive, de grandes figures, très peu de texte.</li>
+        <li>Répétez au moins trois fois à voix haute, chronomètre en main, devant des camarades.</li>
+        <li>Préparez les questions probables : hypothèses, ordres de grandeur, limites de la méthode.</li>
+        <li>Si vous ne savez pas, dites-le honnêtement et proposez une piste : le jury apprécie.</li>
+        <li>Le jour J : arrivez tôt, testez le vidéoprojecteur, gardez une copie sur clé USB et dans votre téléphone.</li>
+      </ul>
+    </details>
+    <details class="guide"><summary>✅ Check-list avant de partir en stage</summary>
+      <ul>
+        <li>Convention de stage signée (université, structure, vous).</li>
+        <li>Sujet et objectifs écrits, validés par le maître de stage.</li>
+        <li>Un cahier de bord : notez chaque jour ce que vous faites, les mesures, les idées.</li>
+        <li>Sauvegardez vos fichiers à deux endroits chaque semaine.</li>
+        <li>Commencez la rédaction dès la 2e semaine, pas à la fin.</li>
+      </ul>
+    </details>
+  </div></div>
+  <div class="carte"><div class="corps">
+    <h3 class="titre-carte">🌍 Opportunités</h3>
+    <p class="aide">Bourses, Masters, concours, conférences : avec la date limite.</p>
+    <div id="av-opportunites" style="margin-top:8px"></div>
+  </div></div>
+  <div class="carte"><div class="corps">
+    <h3 class="titre-carte">🧭 Conseils des aînés</h3>
+    <div id="av-conseils" style="margin-top:6px"></div>
+    <details class="guide"><summary>Vous êtes en Master ou ancien de la L3 ? Donnez un conseil</summary>
+      <input class="champ" id="av-auteur" maxlength="60" placeholder="Votre prénom">
+      <input class="champ" id="av-parcours" maxlength="60" placeholder="Votre parcours (ex. : Master 1 Physique, UAC)">
+      <textarea class="champ" id="av-texte" maxlength="300" placeholder="Votre conseil aux L3 (méthode, stage, choix du Master…)"></textarea>
+      <button class="bouton" id="av-envoyer" type="button" style="margin-top:8px">Envoyer (publié après vérification)</button>
+      <p class="aide" id="av-etat" style="margin-top:6px"></p>
+    </details>
   </div></div>
 
   <div id="pub-bas"></div>
@@ -1165,6 +1243,7 @@
     rendreProgramme();
     rendreMaquette();
     rendrePlan();
+    rendreAvenir();
     rendreDocuments();
     rendreAnnonces();
     rendrePubs();
@@ -1468,6 +1547,7 @@
     liste($("liste-objets"), ["perdu", "trouve"]);
     liste($("liste-marche"), ["vente", "achat"]);
     liste($("liste-binomes"), ["binome"]);
+    rendreAvenir();
     if (echanges.salle) rendreSalle(echanges.salle);
   }
   Array.prototype.forEach.call(document.querySelectorAll("[data-alerte]"), function (b) {
@@ -2550,6 +2630,67 @@
     }
     $("plan-progres").textContent = total ? fait + " / " + total + " séances faites cette semaine" : "";
   }
+
+  // ── Après la L3 : stage et mémoire, opportunités, conseils des aînés, inspiration ──
+  function joursAvant(iso) { var p = String(iso || "").split("-"); if (p.length < 3) return null; var d = new Date(+p[0], +p[1] - 1, +p[2]), a = new Date(); a.setHours(0, 0, 0, 0); return Math.round((d - a) / 864e5); }
+  function pastille(j) { return j === 0 ? "Aujourd'hui" : j === 1 ? "Demain" : "J-" + j; }
+  function rendreAvenir() {
+    if (!donnees) return;
+    var j = joursAvant(donnees.soutenance), so = $("av-soutenance");
+    so.hidden = j == null || j < 0;
+    if (!so.hidden) so.textContent = "🎤 Soutenances " + (j === 0 ? "aujourd'hui ! Courage à tous." : "dans " + j + " jour" + (j > 1 ? "s" : "") + " (" + dateLisible(donnees.soutenance) + ")");
+    var z = $("av-stages"); z.textContent = "";
+    var st = (donnees.stages || []).filter(function (x) { var k = joursAvant(x.limite); return k == null || k >= 0; });
+    if (!st.length) z.appendChild(el("p", "vide", "Les offres de stage publiées par le délégué apparaîtront ici."));
+    st.forEach(function (x) { z.appendChild(offre("💼", x.titre, [x.structure, x.lieu].filter(Boolean).join(" · "), x.texte, x.contact, x.limite)); });
+    var o = $("av-opportunites"); o.textContent = "";
+    var op = (donnees.opportunites || []).filter(function (x) { var k = joursAvant(x.limite); return k == null || k >= 0; })
+      .sort(function (a, b) { return (joursAvant(a.limite) == null ? 999 : joursAvant(a.limite)) - (joursAvant(b.limite) == null ? 999 : joursAvant(b.limite)); });
+    if (!op.length) o.appendChild(el("p", "vide", "Bourses, Masters, concours : les opportunités apparaîtront ici avec leur date limite."));
+    op.forEach(function (x) { o.appendChild(offre("🌍", x.titre, x.type, x.texte, x.lien, x.limite)); });
+    var c = $("av-conseils"); c.textContent = "";
+    var tous = (donnees.conseils || []).map(function (x) { return { auteur: x.auteur, parcours: x.parcours, texte: x.texte, date: x.date }; })
+      .concat(((echanges && echanges.publications) || []).filter(function (p) { return p.sorte === "conseil"; }).map(function (p) { return { auteur: p.contact, parcours: p.ue, texte: p.texte, date: p.date }; }))
+      .sort(function (a, b) { return (b.date || 0) - (a.date || 0); });
+    if (!tous.length) c.appendChild(el("p", "vide", "Aucun conseil pour l'instant. Vous êtes en Master ou ancien de la L3 ? Partagez le vôtre ci-dessous."));
+    tous.forEach(function (x) {
+      var d = el("div", "conseil");
+      d.appendChild(el("p", null, "« " + x.texte + " »"));
+      d.appendChild(el("p", "meta", "— " + (x.auteur || "Un aîné") + (x.parcours ? ", " + x.parcours : "")));
+      c.appendChild(d);
+    });
+  }
+  function offre(icone, titre, sous, texte, contact, limite) {
+    var d = el("div", "offre"), j = joursAvant(limite);
+    var t = el("div", "offre-tete"); t.appendChild(el("p", "nom", icone + " " + titre));
+    if (j != null) t.appendChild(el("b", "j" + (j <= 7 ? " urgent" : ""), pastille(j)));
+    d.appendChild(t);
+    if (sous) d.appendChild(el("p", "meta", sous));
+    if (texte) d.appendChild(el("p", null, texte));
+    if (contact) d.appendChild(el("p", "meta", "👉 " + contact));
+    if (j != null && j <= 7) d.appendChild(el("p", "alerte-limite", "⚠️ Date limite le " + dateLisible(limite) + " : ne tardez pas !"));
+    return d;
+  }
+  $("av-envoyer").onclick = function () {
+    var a = $("av-auteur").value.trim();
+    if (!a) { $("av-etat").textContent = "Écrivez votre prénom."; return; }
+    publierPromo("conseil", $("av-texte").value, { contact: a, ue: $("av-parcours").value.trim() }, null, $("av-etat"), this)
+      .then(function (ok) { if (ok) $("av-texte").value = ""; });
+  };
+  var inspirations = [], inspiIndex = 0;
+  function rendreInspiration() {
+    var x = inspirations[inspiIndex]; if (!x) return;
+    $("in-nom").textContent = x.nom; $("in-meta").textContent = x.dates + " · " + x.pays;
+    $("in-texte").textContent = x.texte; $("in-lecon").textContent = "💡 " + x.lecon;
+  }
+  fetch("/inspirations.json").then(function (r) { return r.json(); }).then(function (l) {
+    inspirations = l || [];
+    // Une figure par semaine, la même pour toute la promo.
+    var semaineN = Math.floor((Date.now() / 864e5 + 3) / 7);
+    inspiIndex = inspirations.length ? semaineN % inspirations.length : 0;
+    rendreInspiration();
+  }).catch(function () { $("carte-inspiration").hidden = true; });
+  $("in-suivant").onclick = function () { if (!inspirations.length) return; inspiIndex = (inspiIndex + 1) % inspirations.length; rendreInspiration(); };
 
   // ── « Quelle note me faut-il ? » : à partir du calculateur de moyenne ──
   function objectif() {

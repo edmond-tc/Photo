@@ -240,6 +240,7 @@ class AmphiService : Service() {
                     // UE et crédits officiels : intégrés à l'application, ils ne disparaissent jamais.
                     r.methode == "GET" && r.chemin == "/maquettes.json" -> actif(sortie, "amphi/maquettes.json", "application/json; charset=utf-8")
                     r.methode == "GET" && r.chemin == "/formulaire.json" -> actif(sortie, "amphi/formulaire.json", "application/json; charset=utf-8", "max-age=86400")
+                    r.methode == "GET" && r.chemin == "/inspirations.json" -> actif(sortie, "amphi/inspirations.json", "application/json; charset=utf-8", "max-age=86400")
                     // Icône « Amphi » sur l'écran d'accueil des étudiants.
                     r.methode == "GET" && r.chemin == "/manifest.json" -> actif(sortie, "amphi/manifest.json", "application/manifest+json; charset=utf-8", "max-age=86400")
                     r.methode == "GET" && (r.chemin == "/icone-192.png" || r.chemin == "/icone-512.png") ->
@@ -948,7 +949,7 @@ class AmphiService : Service() {
     private val fichierPublications get() = File(dossier, "publications.json")
     private val fichierAlertes get() = File(dossier, "alertes.json")
     private val fichierDevinette get() = File(dossier, "devinette.json")
-    private val SORTES_PUBLICATION = setOf("dedicace", "perdu", "trouve", "vente", "achat", "binome")
+    private val SORTES_PUBLICATION = setOf("dedicace", "perdu", "trouve", "vente", "achat", "binome", "conseil")
     private val NUMERO = Regex("(\\+?\\d[\\s.-]?){8,}")
 
     private fun publier(sortie: OutputStream, r: Requete, ip: String) {
@@ -990,7 +991,8 @@ class AmphiService : Service() {
             if (statut != "publie" && statut != "clos") continue
             val age = maintenant - o.optLong("date")
             // Dédicaces : 7 jours ; objets et annonces du marché : 30 jours ; clos : 3 jours.
-            val duree = if (statut == "clos") 3L else if (o.optString("sorte") == "dedicace") 7L else 30L
+            // Les conseils des aînés restent un an.
+            val duree = if (statut == "clos") 3L else when (o.optString("sorte")) { "dedicace" -> 7L; "conseil" -> 365L; else -> 30L }
             if (age > duree * 86_400_000L) continue
             val p = JSONObject(o.toString()); p.remove("ip")
             r.put(p)
