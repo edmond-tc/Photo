@@ -397,6 +397,14 @@
   .plan-tache.fait span { text-decoration: line-through; color: var(--discret); }
   .inspiration h3 { font-family: var(--titre); font-size: 1.3rem; color: var(--nuit); margin-top: 4px; }
   .inspiration #in-texte { margin-top: 6px; }
+  .avec-portrait { display: flex; gap: 12px; align-items: center; margin-top: 6px; }
+  .avec-portrait > div:last-child { flex: 1; min-width: 0; }
+  .portrait { flex: none; width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: var(--ciel); display: grid; place-items: center; box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--bleu); }
+  .avec-portrait.grand .portrait { width: 84px; height: 84px; }
+  .portrait img { width: 100%; height: 100%; object-fit: cover; }
+  .portrait.initiales { font: 800 1.3rem var(--titre); color: var(--nuit); }
+  .portrait.icone { font-size: 2rem; }
+  .credit-photo { margin-top: 6px; font-size: .68rem; color: var(--discret); }
   .lecon { margin-top: 8px; padding: 8px 12px; border-left: 4px solid var(--bleu); background: var(--ciel); border-radius: 0 8px 8px 0; font-weight: 600; color: var(--nuit); }
   .guide { margin-top: 10px; border-top: 1px solid var(--bordure); padding-top: 8px; }
   .guide summary { cursor: pointer; font-weight: 700; color: var(--nuit); }
@@ -522,8 +530,11 @@
     <div id="evenements" style="display:flex;flex-direction:column;gap:16px"></div>
     <div class="carte" id="carte-mot" hidden><div class="corps">
       <p class="etiquette">💬 Le mot du jour</p>
-      <p class="citation" id="mot-texte"></p>
-      <p class="citation-auteur" id="mot-auteur"></p>
+      <div class="avec-portrait"><div id="mot-portrait"></div><div>
+        <p class="citation" id="mot-texte"></p>
+        <p class="citation-auteur" id="mot-auteur"></p>
+      </div></div>
+      <p class="credit-photo" id="mot-credit"></p>
     </div></div>
     <div class="carte" id="carte-devinette" hidden><div class="corps">
       <p class="etiquette">🧩 La devinette du jour</p>
@@ -782,10 +793,13 @@
   <h2 class="titre-section" id="avenir">🚀 Après la L3</h2>
   <div class="carte" id="carte-inspiration"><div class="corps inspiration">
     <p class="etiquette">✨ Inspiration de la semaine</p>
-    <h3 id="in-nom"></h3>
-    <p class="aide" id="in-meta"></p>
+    <div class="avec-portrait grand"><div id="in-portrait"></div><div>
+      <h3 id="in-nom"></h3>
+      <p class="aide" id="in-meta"></p>
+    </div></div>
     <p id="in-texte"></p>
     <p class="lecon" id="in-lecon"></p>
+    <p class="credit-photo" id="in-credit"></p>
     <button class="bouton second" id="in-suivant" type="button" style="margin-top:8px">Une autre figure →</button>
   </div></div>
   <div class="carte"><div class="corps">
@@ -1508,6 +1522,23 @@
   }
   function messageEnvoi(r, publie, attente) { return r && r.statut === "publie" ? publie : attente; }
 
+  // ── Portraits (photos libres de Wikimedia Commons, rangées dans l'application) ──
+  var credits = null, attentePortraits = [];
+  fetch("/portraits/credits.json").then(function (r) { return r.json(); }).then(function (c) { credits = c || {}; attentePortraits.forEach(function (f) { f(); }); attentePortraits = []; }).catch(function () { credits = {}; });
+  function clePortrait(nom) { return sansAccent(nom).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+  function initiales(nom) { return String(nom || "?").split(/[\s-]+/).filter(Boolean).slice(0, 2).map(function (m) { return m[0].toUpperCase(); }).join(""); }
+  function placerPortrait(boite, credit, nom) {
+    if (!credits) { attentePortraits.push(function () { placerPortrait(boite, credit, nom); }); return; }
+    boite.textContent = ""; boite.className = "portrait"; if (credit) credit.textContent = "";
+    var k = clePortrait(nom), c = credits[k];
+    if (/^proverbe/i.test(nom)) { boite.className = "portrait icone"; boite.textContent = /africain/i.test(nom) ? "🌍" : /japonais/i.test(nom) ? "🗾" : "📜"; return; }
+    if (!c) { boite.className = "portrait initiales"; boite.textContent = initiales(nom); return; }
+    var im = document.createElement("img"); im.src = "/portraits/" + k + ".jpg"; im.alt = nom; im.loading = "lazy";
+    im.onerror = function () { boite.className = "portrait initiales"; boite.textContent = initiales(nom); };
+    boite.appendChild(im);
+    if (credit) credit.textContent = "Photo : " + (c.auteur ? c.auteur + ", " : "") + c.licence + " · Wikimedia Commons";
+  }
+
   // ── Vie de la promo ──
   var ALERTES = { present: ["✅", "Le prof est là"], annule: ["❌", "Cours annulé"], salle: ["🔄", "Salle changée"], retard: ["⏳", "Le prof sera en retard"] };
   function ilYa(ms) { var m = Math.max(0, Math.round((Date.now() - ms) / 60000)); return m < 1 ? "à l'instant" : m < 60 ? "il y a " + m + " min" : "il y a " + Math.round(m / 60) + " h"; }
@@ -1531,6 +1562,7 @@
     $("carte-mot").hidden = !m.texte;
     $("mot-texte").textContent = m.texte ? "« " + m.texte + " »" : "";
     $("mot-auteur").textContent = m.auteur ? "— " + m.auteur : "";
+    placerPortrait($("mot-portrait"), $("mot-credit"), m.auteur || "");
     // Devinette
     var d = echanges.devinette || {};
     $("carte-devinette").hidden = !d.question;
@@ -2915,6 +2947,7 @@
     var x = inspirations[inspiIndex]; if (!x) return;
     $("in-nom").textContent = x.nom; $("in-meta").textContent = x.dates + " · " + x.pays;
     $("in-texte").textContent = x.texte; $("in-lecon").textContent = "💡 " + x.lecon;
+    placerPortrait($("in-portrait"), $("in-credit"), x.nom);
   }
   fetch("/inspirations.json").then(function (r) { return r.json(); }).then(function (l) {
     inspirations = l || [];

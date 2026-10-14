@@ -243,6 +243,10 @@ class AmphiService : Service() {
                     // UE et crédits officiels : intégrés à l'application, ils ne disparaissent jamais.
                     r.methode == "GET" && r.chemin == "/maquettes.json" -> actif(sortie, "amphi/maquettes.json", "application/json; charset=utf-8")
                     r.methode == "GET" && r.chemin == "/formulaire.json" -> actif(sortie, "amphi/formulaire.json", "application/json; charset=utf-8", "max-age=86400")
+                    // Portraits libres (Wikimedia Commons) des auteurs et des physiciens.
+                    r.methode == "GET" && r.chemin == "/portraits/credits.json" -> actif(sortie, "amphi/portraits/credits.json", "application/json; charset=utf-8", "max-age=86400")
+                    r.methode == "GET" && r.chemin.matches(Regex("^/portraits/[a-z0-9-]{2,60}\\.jpg$")) ->
+                        try { actif(sortie, "amphi" + r.chemin, "image/jpeg", "max-age=604800") } catch (_: Exception) { repondre(sortie, 404, "text/plain", ByteArray(0)) }
                     r.methode == "GET" && r.chemin == "/inspirations.json" -> actif(sortie, "amphi/inspirations.json", "application/json; charset=utf-8", "max-age=86400")
                     // Icône « Amphi » sur l'écran d'accueil des étudiants.
                     r.methode == "GET" && r.chemin == "/manifest.json" -> actif(sortie, "amphi/manifest.json", "application/manifest+json; charset=utf-8", "max-age=86400")
