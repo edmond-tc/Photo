@@ -155,6 +155,7 @@
   .alerte .quoi { font-weight: 800; }
   .alerte .meta { font-size: .8rem; color: var(--discret); }
   .alerte .officiel { display: inline-block; background: var(--vert-fond); color: var(--vert); font-size: .7rem; font-weight: 800; padding: 1px 7px; border-radius: 999px; margin-left: 4px; }
+  #liste-alertes:empty + .signaler { border-top: 0; }
   .signaler { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 14px; border-top: 1px dashed var(--bordure); }
   .signaler button { border: 1px solid var(--bordure); background: #fff; border-radius: 999px; padding: 6px 10px; font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; }
   .citation { font-size: 1.05rem; font-style: italic; line-height: 1.45; color: var(--nuit); }
@@ -174,10 +175,120 @@
   .hors-ligne.on { display: block; }
   @media (prefers-reduced-motion: reduce) { .pilule i { animation: none; } html { scroll-behavior: auto; } }
 </style>
+<style id="habillage">
+  /* Direction : l'écran d'un oscilloscope de labo de physique. En haut, un
+     écran phosphore (traces vertes sur quadrillage) qui bouge sans arrêt ;
+     dessous, des fiches claires « papier de labo » qui s'animent à l'arrivée.
+     Écriture : condensée pour les titres (police du téléphone), chiffres en
+     chasse fixe. Tout reste lisible à l'arrêt ; mouvements coupés si le
+     téléphone demande moins d'animations. */
+  :root {
+    --fond: #eef2ef; --texte: #16201c; --discret: #56645e; --bordure: #d6dfda;
+    --bleu: #0e746f; --nuit: #0d2b2b; --ciel: #dff0ec;
+    --ecran: #06110d; --phosphore: #3dffa2; --ambre: #f3aa3c; --grille: rgba(61, 255, 162, .10);
+    --vert: #0b7a3b; --vert-fond: #d9f5e3; --rouge: #c0261b; --or: #8a5a00; --or-fond: #fff0c7;
+    --titre: "Roboto Condensed", "sans-serif-condensed", "Arial Narrow", "Segoe UI", sans-serif;
+    --mono: "Roboto Mono", "Droid Sans Mono", ui-monospace, monospace;
+  }
+  body { background: var(--fond); color: var(--texte); }
+
+  /* Écran d'oscilloscope */
+  .hero { background: var(--ecran); padding-bottom: 22px; isolation: isolate; }
+  .hero::after { display: none; }
+  #oscillo { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; }
+  .hero-in { z-index: 1; }
+  .hero h1 { font-family: var(--titre); font-weight: 700; letter-spacing: .01em; color: #f2fff8; text-shadow: 0 1px 10px rgba(0, 0, 0, .85), 0 0 18px rgba(61, 255, 162, .3); }
+  .hero .sous, .hero .heure, .hero .pilule { text-shadow: 0 1px 6px rgba(0, 0, 0, .9); }
+  .hero h1 .lettre { display: inline-block; animation: monter .7s cubic-bezier(.2, .8, .2, 1.2) both; }
+  .hero .sous { color: #bfe9d6; }
+  .heure { font-family: var(--mono); color: var(--phosphore); opacity: 1; text-shadow: 0 0 8px rgba(61, 255, 162, .6); }
+  .pilule { background: rgba(61, 255, 162, .10); border-color: rgba(61, 255, 162, .35); color: #d9ffee; }
+  .mesure { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); bottom: 8px; z-index: 1; font: 600 .7rem var(--mono); color: var(--phosphore); opacity: .8; letter-spacing: .04em; }
+  @keyframes monter { from { transform: translateY(.6em) rotate(4deg); opacity: 0; } }
+
+  /* Onglets : un trait qui glisse sous l'onglet actif */
+  .onglets nav { position: relative; }
+  .onglets a { border-bottom-color: transparent !important; transition: color .25s; }
+  .onglets a.actif { color: var(--nuit); }
+  .curseur-onglet { position: absolute; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--bleu); transition: transform .35s cubic-bezier(.3, .9, .3, 1), width .35s cubic-bezier(.3, .9, .3, 1); pointer-events: none; }
+
+  /* Fiches : arrivée en cascade, relief au toucher */
+  .carte { animation: arriver .55s cubic-bezier(.2, .8, .2, 1) both; transition: transform .2s, box-shadow .2s; }
+  .carte:active { transform: scale(.985); }
+  main > :nth-child(1) { animation-delay: .05s; } main > :nth-child(2) { animation-delay: .1s; } main > :nth-child(3) { animation-delay: .15s; }
+  #accueil > .carte:nth-child(1) { animation-delay: .12s; } #accueil > .carte:nth-child(2) { animation-delay: .2s; } #accueil > .carte:nth-child(3) { animation-delay: .28s; }
+  #accueil > .carte:nth-child(4) { animation-delay: .36s; } #accueil > .carte:nth-child(5) { animation-delay: .44s; } #accueil > .carte:nth-child(6) { animation-delay: .52s; }
+  @keyframes arriver { from { transform: translateY(18px) scale(.97); opacity: 0; } }
+  /* Plus bas dans la page : la fiche se soulève en entrant à l'écran (toujours lisible). */
+  .a-venir { transform: translateY(14px) scale(.985); }
+  .vue { transform: none; transition: transform .6s cubic-bezier(.2, .8, .2, 1); }
+  .titre-section { font-family: var(--titre); font-weight: 700; letter-spacing: .01em; }
+  .titre-section::after { content: ""; flex: 1; height: 2px; margin-left: 6px; background: linear-gradient(90deg, var(--bleu), transparent); transform-origin: left; animation: trait 1s .3s ease both; opacity: .5; }
+  @keyframes trait { from { transform: scaleX(0); } }
+
+  /* Cours en ce moment : barre de progression et horloge qui bat */
+  .prochain .icone { animation: battre 2s ease-in-out infinite; }
+  @keyframes battre { 0%, 100% { transform: scale(1) rotate(0); } 10% { transform: scale(1.12) rotate(-8deg); } 20% { transform: scale(1) rotate(6deg); } 30% { transform: rotate(0); } }
+  .avancement { margin-top: 8px; height: 6px; border-radius: 6px; background: var(--ciel); overflow: hidden; }
+  .avancement i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--bleu), var(--phosphore), var(--bleu)); background-size: 200% 100%; animation: couler 2.4s linear infinite, remplir 1.2s cubic-bezier(.2, .8, .2, 1) both; transform-origin: left; }
+  @keyframes couler { to { background-position: -200% 0; } }
+  @keyframes remplir { from { transform: scaleX(0); } }
+  .horaire, .code-partage, .examen b.j { font-family: var(--mono); }
+
+  /* Badges vivants */
+  .nouveau { animation: sautiller 2.4s ease-in-out infinite; }
+  @keyframes sautiller { 0%, 80%, 100% { transform: translateY(0); } 88% { transform: translateY(-3px); } 94% { transform: translateY(0); } }
+  .onglets b { animation: pouls-rouge 1.8s infinite; }
+  @keyframes pouls-rouge { 0% { box-shadow: 0 0 0 0 rgba(192, 38, 27, .55); } 70% { box-shadow: 0 0 0 7px rgba(192, 38, 27, 0); } 100% { box-shadow: 0 0 0 0 rgba(192, 38, 27, 0); } }
+  .badge { animation: pouls-vert 2s infinite; }
+  @keyframes pouls-vert { 0% { box-shadow: 0 0 0 0 rgba(11, 122, 59, .45); } 70% { box-shadow: 0 0 0 7px rgba(11, 122, 59, 0); } 100% { box-shadow: 0 0 0 0 rgba(11, 122, 59, 0); } }
+  .etat { animation: pouls-vert 2s infinite; }
+
+  /* Alertes : arrivée par la gauche, l'alerte « annulé » clignote doucement */
+  .alerte { animation: glisser .5s cubic-bezier(.2, .8, .2, 1) both; }
+  @keyframes glisser { from { transform: translateX(-24px); opacity: 0; } }
+  .alerte:not(.present) .icone { animation: secouer 3s ease-in-out infinite; }
+  @keyframes secouer { 0%, 86%, 100% { transform: rotate(0); } 89% { transform: rotate(-14deg); } 92% { transform: rotate(12deg); } 95% { transform: rotate(-8deg); } }
+
+  /* Sondages et jauges qui se remplissent */
+  .sondage .option .jauge { transform-origin: left; animation: remplir 1s cubic-bezier(.2, .8, .2, 1) both; background: linear-gradient(90deg, var(--ciel), #c4ebe3); }
+  .sondage .option { transition: transform .15s, border-color .2s; }
+  .sondage .option:active { transform: scale(.98); }
+
+  /* Devinette : le champ tremble si c'est faux */
+  .faux { animation: trembler .45s; }
+  @keyframes trembler { 20%, 60% { transform: translateX(-7px); } 40%, 80% { transform: translateX(7px); } }
+
+  /* Mot du jour : la citation s'écrit en fondu */
+  .citation { animation: apparaitre 1.4s .4s ease both; }
+  @keyframes apparaitre { from { opacity: 0; filter: blur(3px); letter-spacing: .03em; } }
+
+  /* Boutons : onde au toucher, enfoncement */
+  .bouton, .signaler button, .puces button, .filieres button, .question .plus { position: relative; overflow: hidden; transition: transform .12s; }
+  .bouton:active, .signaler button:active, .puces button:active, .filieres button:active, .question .plus:active { transform: scale(.95); }
+  .onde { position: absolute; border-radius: 50%; background: currentColor; opacity: .28; transform: scale(0); animation: onde .6s ease-out forwards; pointer-events: none; }
+  @keyframes onde { to { transform: scale(4); opacity: 0; } }
+  .question .plus.fait { animation: plop .4s; }
+  @keyframes plop { 50% { transform: scale(1.18); } }
+
+  /* Publicité : passage en fondu glissé */
+  #pub-haut .carte { animation: pub .6s cubic-bezier(.2, .8, .2, 1) both; }
+  @keyframes pub { from { transform: translateX(30px); opacity: 0; } }
+
+  /* Confettis */
+  #confettis { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .a-venir { transform: none; }
+  }
+</style>
 </head>
 <body>
 <div class="hors-ligne" id="hors-ligne">Connexion au Wi-Fi de l'amphi perdue. La page se remet à jour dès votre retour.</div>
 <header class="hero">
+  <canvas id="oscillo" aria-hidden="true"></canvas>
+  <span class="mesure" id="mesure" aria-hidden="true">X:Y = 1:2 · φ = 0</span>
   <div class="hero-in">
     <span class="pilule"><i></i>Wi-Fi de l'amphi · gratuit, sans forfait</span>
     <h1 id="titre">Wi-Fi de l'amphi</h1>
@@ -479,6 +590,16 @@
       $("prochain-quoi").textContent = choix.c.ue || "";
       var quand = choix.j.date === aujourdhui ? "Aujourd'hui" : dateLisible(choix.j.date);
       $("prochain-quand").textContent = quand.replace(/^./, function (c) { return c.toUpperCase(); }) + ", de " + libelle(choix.c.debut) + " à " + libelle(choix.c.fin) + ((choix.c.lieu || p.lieu) ? " · " + (choix.c.lieu || p.lieu) : "");
+      var barre = document.getElementById("avancement");
+      if (barre) barre.remove();
+      if (enCours) {
+        // Où en est le cours : la barre avance avec l'heure.
+        var fait = Math.min(100, Math.max(2, Math.round((mn - minutes(choix.c.debut)) * 100 / Math.max(1, minutes(choix.c.fin) - minutes(choix.c.debut)))));
+        barre = el("div", "avancement"); barre.id = "avancement";
+        var trait = el("i"); trait.style.width = fait + "%"; barre.appendChild(trait);
+        barre.title = fait + " % du cours";
+        $("prochain-quand").parentNode.appendChild(barre);
+      }
     }
   }
 
@@ -805,7 +926,8 @@
       .then(function (r) { return r.json(); }).then(function (r) {
         if (r.erreur) { $("dev-message").textContent = r.erreur; return; }
         $("dev-message").textContent = r.juste ? (r.rang ? "🎉 Bravo ! Vous êtes " + (r.rang === 1 ? "le 1er" : "le " + r.rang + "e") + " à trouver aujourd'hui." : "✅ Déjà trouvé !") : "❌ Ce n'est pas ça. Encore " + r.essaisRestants + " essai(s) aujourd'hui.";
-        if (r.juste) chargerEchanges();
+        if (r.juste) { chargerEchanges(); if (window.amphiFete) window.amphiFete(); }
+        else { var z = $("dev-reponse"); z.classList.remove("faux"); void z.offsetWidth; z.classList.add("faux"); }
       });
   };
   /** Envoi d'une publication (avec photo réduite facultative). */
@@ -953,6 +1075,169 @@
   setInterval(charger, 60000);
   chargerEchanges();
   setInterval(chargerEchanges, 30000);
+})();
+</script>
+<canvas id="confettis" aria-hidden="true"></canvas>
+<script>
+(function () {
+  "use strict";
+  var calme = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ── Titre : les lettres montent l'une après l'autre ──
+  function animerTitre() {
+    var h = document.getElementById("titre");
+    if (!h || calme) return;
+    var texte = h.textContent;
+    if (h.getAttribute("data-anime") === texte) return;
+    h.setAttribute("data-anime", texte);
+    h.textContent = "";
+    Array.prototype.forEach.call(texte, function (c, i) {
+      var s = document.createElement("span");
+      s.className = "lettre";
+      s.textContent = c === " " ? "\u00a0" : c;
+      s.style.animationDelay = (i * 0.025) + "s";
+      h.appendChild(s);
+    });
+    h.setAttribute("aria-label", texte);
+  }
+  new MutationObserver(function () { animerTitre(); }).observe(document.getElementById("titre"), { childList: true, characterData: true, subtree: true });
+  animerTitre();
+
+  // ── Écran d'oscilloscope : quadrillage, trace de Lissajous, onde qui défile ──
+  var c = document.getElementById("oscillo"), g = c.getContext("2d");
+  var rapports = [[1, 2], [2, 3], [3, 4], [1, 3], [3, 5], [5, 4]], indice = 0, phase = 0, visible = true;
+  var echos = [];
+  function taille() {
+    var r = c.getBoundingClientRect(), k = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.round(r.width * k); c.height = Math.round(r.height * k);
+    g.setTransform(k, 0, 0, k, 0, 0);
+  }
+  function dessiner(t) {
+    var L = c.clientWidth, H = c.clientHeight;
+    g.clearRect(0, 0, L, H);
+    // Quadrillage gradué de l'écran
+    g.strokeStyle = "rgba(61, 255, 162, .09)"; g.lineWidth = 1;
+    var pas = 28;
+    for (var x = (L / 2) % pas; x < L; x += pas) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+    for (var y = (H / 2) % pas; y < H; y += pas) { g.beginPath(); g.moveTo(0, y); g.lineTo(L, y); g.stroke(); }
+    g.strokeStyle = "rgba(61, 255, 162, .18)";
+    g.beginPath(); g.moveTo(0, H / 2); g.lineTo(L, H / 2); g.moveTo(L / 2, 0); g.lineTo(L / 2, H); g.stroke();
+    // Onde qui défile en bas (amortie)
+    g.lineWidth = 1.6; g.strokeStyle = "rgba(243, 170, 60, .55)"; g.beginPath();
+    for (var i = 0; i <= L; i += 4) {
+      var yy = H - 26 + Math.sin(i / 22 - t / 380) * 9 * Math.exp(-i / (L * 1.3));
+      i ? g.lineTo(i, yy) : g.moveTo(i, yy);
+    }
+    g.stroke();
+    // Figure de Lissajous, avec traînée phosphore
+    var r = rapports[indice], a = r[0], b = r[1];
+    phase += 0.012;
+    // À droite, en retrait derrière le texte : la figure ne gêne pas la lecture.
+    var rx = Math.min(L * 0.15, 90), ry = Math.min(H * 0.3, 70), cx = L - rx - 14, cy = H * 0.5;
+    g.shadowColor = "rgba(61, 255, 162, .8)"; g.shadowBlur = 8;
+    g.strokeStyle = "rgba(61, 255, 162, .42)"; g.lineWidth = 2; g.beginPath();
+    for (var k = 0; k <= 240; k++) {
+      var u = k / 240 * Math.PI * 2;
+      var px = cx + rx * Math.sin(a * u + phase), py = cy + ry * Math.sin(b * u);
+      k ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.stroke(); g.shadowBlur = 0;
+    // Point lumineux qui parcourt la courbe
+    var w = t / 900, dx = cx + rx * Math.sin(a * w + phase), dy = cy + ry * Math.sin(b * w);
+    g.fillStyle = "#eafff5"; g.beginPath(); g.arc(dx, dy, 3, 0, Math.PI * 2); g.fill();
+    // Ondes circulaires créées au toucher
+    echos = echos.filter(function (e) { return t - e.t < 1600; });
+    echos.forEach(function (e) {
+      var age = (t - e.t) / 1600;
+      g.strokeStyle = "rgba(61, 255, 162, " + (0.6 * (1 - age)) + ")"; g.lineWidth = 1.5;
+      for (var n = 0; n < 3; n++) { var rr = age * 140 - n * 18; if (rr > 0) { g.beginPath(); g.arc(e.x, e.y, rr, 0, Math.PI * 2); g.stroke(); } }
+    });
+    document.getElementById("mesure").textContent = "X:Y = " + a + ":" + b + " · φ = " + (phase % (Math.PI * 2)).toFixed(2) + " rad";
+  }
+  function boucle(t) { if (visible) dessiner(t); if (!calme) requestAnimationFrame(boucle); }
+  taille();
+  window.addEventListener("resize", taille);
+  document.querySelector(".hero").addEventListener("click", function (e) {
+    var r = c.getBoundingClientRect();
+    echos.push({ x: e.clientX - r.left, y: e.clientY - r.top, t: performance.now() });
+    indice = (indice + 1) % rapports.length;
+  });
+  if ("IntersectionObserver" in window) new IntersectionObserver(function (x) { visible = x[0].isIntersecting; }).observe(c);
+  document.addEventListener("visibilitychange", function () { visible = !document.hidden; });
+  if (calme) dessiner(0); else requestAnimationFrame(boucle);
+
+  // ── Onglets : le trait suit l'onglet actif ──
+  var nav = document.getElementById("onglets"), trait = document.createElement("span");
+  trait.className = "curseur-onglet"; nav.appendChild(trait);
+  function placer() {
+    var a = nav.querySelector("a.actif"); if (!a) return;
+    trait.style.width = a.offsetWidth + "px";
+    trait.style.transform = "translateX(" + a.offsetLeft + "px)";
+  }
+  new MutationObserver(placer).observe(nav, { attributes: true, subtree: true, attributeFilter: ["class"] });
+  window.addEventListener("resize", placer); setTimeout(placer, 50);
+
+  // ── Fiches plus bas : elles se soulèvent en entrant à l'écran ──
+  if ("IntersectionObserver" in window && !calme) {
+    var vues = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("vue"); e.target.classList.remove("a-venir"); vues.unobserve(e.target); } });
+    }, { rootMargin: "0px 0px -30px 0px" });
+    var suivre = function () {
+      Array.prototype.forEach.call(document.querySelectorAll("main .carte:not(.vue):not(.a-venir), .titre-section:not(.vue):not(.a-venir)"), function (x) {
+        if (x.getBoundingClientRect().top > window.innerHeight) { x.classList.add("a-venir"); vues.observe(x); }
+      });
+    };
+    new MutationObserver(function () { clearTimeout(suivre.m); suivre.m = setTimeout(suivre, 60); }).observe(document.querySelector("main"), { childList: true, subtree: true });
+    setTimeout(suivre, 300);
+  }
+
+  // ── Onde au toucher sur chaque bouton ──
+  document.addEventListener("pointerdown", function (e) {
+    var b = e.target.closest && e.target.closest(".bouton, .signaler button, .puces button, .filieres button, .question .plus, .sondage .option");
+    if (!b || calme) return;
+    var r = b.getBoundingClientRect(), d = Math.max(r.width, r.height);
+    var o = document.createElement("span"); o.className = "onde";
+    o.style.width = o.style.height = d + "px";
+    o.style.left = (e.clientX - r.left - d / 2) + "px"; o.style.top = (e.clientY - r.top - d / 2) + "px";
+    b.appendChild(o); setTimeout(function () { o.remove(); }, 650);
+  });
+
+  // ── Chiffres qui défilent (compteurs, J-…, votes) ──
+  function defiler(el) {
+    var m = el.textContent.match(/^(\D*)(\d+)(\D*)$/); if (!m || calme) return;
+    var fin = +m[2], debut = Math.max(0, fin - Math.max(3, Math.round(fin * 0.6))), t0 = performance.now();
+    if (el.getAttribute("data-compte") === el.textContent) return;
+    (function pas(t) {
+      var k = Math.min(1, (t - t0) / 700), v = Math.round(debut + (fin - debut) * (1 - Math.pow(1 - k, 3)));
+      el.textContent = m[1] + v + m[3];
+      if (k < 1) requestAnimationFrame(pas); else el.setAttribute("data-compte", el.textContent);
+    })(t0);
+  }
+  new MutationObserver(function (ms) {
+    ms.forEach(function (x) { Array.prototype.forEach.call(x.addedNodes, function (n) {
+      if (n.nodeType !== 1) return;
+      Array.prototype.forEach.call(n.querySelectorAll ? n.querySelectorAll(".examen b.j, .sondage .option b") : [], defiler);
+    }); });
+  }).observe(document.querySelector("main"), { childList: true, subtree: true });
+
+  // ── Confettis (devinette trouvée) ──
+  var cc = document.getElementById("confettis"), cg = cc.getContext("2d"), morceaux = [];
+  window.amphiFete = function () {
+    if (calme) return;
+    var k = Math.min(window.devicePixelRatio || 1, 2);
+    cc.width = innerWidth * k; cc.height = innerHeight * k; cg.setTransform(k, 0, 0, k, 0, 0);
+    var couleurs = ["#3dffa2", "#f3aa3c", "#0e746f", "#c0261b", "#ffffff", "#7cc6ff"];
+    for (var i = 0; i < 140; i++) morceaux.push({ x: innerWidth / 2, y: innerHeight * 0.45, vx: (Math.random() - 0.5) * 14, vy: -Math.random() * 13 - 4, r: Math.random() * 6 + 3, c: couleurs[i % couleurs.length], a: Math.random() * 6, va: (Math.random() - 0.5) * 0.4 });
+    if (morceaux.length === 140) (function anime() {
+      cg.clearRect(0, 0, innerWidth, innerHeight);
+      morceaux = morceaux.filter(function (p) { return p.y < innerHeight + 20; });
+      morceaux.forEach(function (p) {
+        p.vy += 0.35; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.a += p.va;
+        cg.save(); cg.translate(p.x, p.y); cg.rotate(p.a); cg.fillStyle = p.c; cg.fillRect(-p.r / 2, -p.r / 4, p.r, p.r / 2); cg.restore();
+      });
+      if (morceaux.length) requestAnimationFrame(anime); else cg.clearRect(0, 0, innerWidth, innerHeight);
+    })();
+  };
 })();
 </script>
 </body>
