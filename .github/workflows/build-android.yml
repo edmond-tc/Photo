@@ -67,6 +67,9 @@ jobs:
           mkdir -p sortie
           cp android/app/build/outputs/apk/release/app-release.apk sortie/EnvoyeurKiosque.apk
           (cd sortie && sha256sum EnvoyeurKiosque.apk > empreinte-sha256-envoyeur.txt)
+          # Application des étudiants « Amphi » (aussi rangée dans l'envoyeur).
+          cp android/etudiant/build/outputs/apk/release/etudiant-release.apk sortie/Amphi.apk
+          (cd sortie && sha256sum Amphi.apk > empreinte-sha256-amphi.txt)
           # Lu par la page de téléchargement (CLE_VERSION_APK, admin/src/index.js).
           grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts | tr -d '\n' > sortie/version-envoyeur.txt
 
@@ -76,7 +79,7 @@ jobs:
         run: |
           cd admin
           npm ci
-          for nom in EnvoyeurKiosque.apk empreinte-sha256-envoyeur.txt version-envoyeur.txt; do
+          for nom in EnvoyeurKiosque.apk empreinte-sha256-envoyeur.txt version-envoyeur.txt Amphi.apk empreinte-sha256-amphi.txt; do
             npx wrangler r2 object put "photocopie-telechargements/$nom" --file="../sortie/$nom" --remote
           done
         env:

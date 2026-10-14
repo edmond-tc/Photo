@@ -3,6 +3,28 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+/**
+ * L'application étudiante « Amphi » est rangée dans les ressources de
+ * l'envoyeur (amphi/Amphi.apk) : le téléphone du portail peut la donner
+ * aux étudiants sur le Wi-Fi de l'amphi, sans Internet.
+ */
+abstract class CopierApkEtudiant : DefaultTask() {
+    @get:InputFiles abstract val apk: ConfigurableFileCollection
+    @get:OutputDirectory abstract val sortie: DirectoryProperty
+
+    @TaskAction
+    fun copier() {
+        val dossier = sortie.get().asFile.resolve("amphi")
+        dossier.deleteRecursively(); dossier.mkdirs()
+        apk.asFileTree.files.firstOrNull { it.name.endsWith(".apk") }?.copyTo(dossier.resolve("Amphi.apk"), overwrite = true)
+    }
+}
+
+val copierApkEtudiant = tasks.register<CopierApkEtudiant>("copierApkEtudiant") {
+    dependsOn(":etudiant:assembleRelease")
+    apk.from(rootProject.layout.projectDirectory.dir("etudiant/build/outputs/apk/release"))
+}
+
 android {
     namespace = "bj.photocopie.envoyeur"
     compileSdk = 35
@@ -14,8 +36,8 @@ android {
         // choisis, sans fenêtre de confirmation.
         minSdk = 29
         targetSdk = 35
-        versionCode = 54
-        versionName = "0.3.38"
+        versionCode = 55
+        versionName = "0.3.39"
     }
 
     // L'écran de l'application est l'interface web du client, la même que
@@ -72,5 +94,11 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+}
+
+androidComponents {
+    onVariants { variante ->
+        variante.sources.assets?.addGeneratedSourceDirectory(copierApkEtudiant, CopierApkEtudiant::sortie)
     }
 }

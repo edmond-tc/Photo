@@ -248,6 +248,12 @@ class AmphiService : Service() {
                     r.methode == "GET" && (r.chemin == "/lib/pdf.min.js" || r.chemin == "/lib/pdf.worker.min.js") ->
                         actif(sortie, "amphi" + r.chemin, "text/javascript; charset=utf-8", "max-age=604800")
                     r.methode == "GET" && r.chemin.startsWith("/f/") -> envoyerFichier(sortie, r, r.chemin.removePrefix("/f/"))
+                    // L'application des étudiants « Amphi » (sans couper les données mobiles).
+                    r.methode == "GET" && r.chemin == "/amphi.apk" -> {
+                        val octets = try { assets.open("amphi/Amphi.apk").use { it.readBytes() } } catch (_: Exception) { null }
+                        if (octets == null) repondre(sortie, 404, "text/plain; charset=utf-8", "Application non disponible.".toByteArray())
+                        else repondre(sortie, 200, "application/vnd.android.package-archive", octets, mapOf("Content-Disposition" to "attachment; filename=\"Amphi.apk\""), "max-age=3600")
+                    }
                     // L'application elle-même : un étudiant l'installe pour devenir relais.
                     r.methode == "GET" && r.chemin == "/application.apk" ->
                         envoyerChemin(sortie, r, File(applicationInfo.sourceDir), "application/vnd.android.package-archive", "Portail-Amphi.apk", null)

@@ -91,6 +91,8 @@
   // sécurisé » de Chrome : le fichier est lu dans la page, puis remis au
   // téléphone. Au-delà de 60 Mo (vidéos), lien direct.
   document.getElementById("enregistrer").onclick = function () {
+    // Dans l'application « Amphi » : enregistré directement dans Téléchargements.
+    if (window.AmphiApp) { window.AmphiApp.telecharger(new URL(adresse, location.href).href, nom, type); toast("Téléchargement…"); return; }
     if (taille > 60e6) { location.href = adresse + (adresse.indexOf("?") < 0 ? "?" : "&") + "dl=1"; return; }
     toast("Préparation…");
     fetch(adresse).then(function (r) { if (!r.ok) throw new Error(); return r.blob(); }).then(function (b) {

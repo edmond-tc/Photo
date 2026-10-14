@@ -543,7 +543,13 @@
       <div class="editeur" id="editeur" hidden><img id="editeur-photo" alt="" hidden><span>Page publiée par <strong id="editeur-nom"></strong></span></div>
     </div></div>
     <div class="carte" id="carte-icone" hidden><div class="corps">
-      <h3>📲 La prochaine fois, sans rien taper</h3>
+      <div class="appli-amphi" id="appli-amphi" hidden>
+        <h3>📲 L'application Amphi</h3>
+        <p class="aide" style="margin-top:4px">Plus besoin de couper vos données mobiles : WhatsApp et les appels continuent de marcher pendant que vous êtes sur la page de l'amphi. Et plus d'adresse à taper : un bouton suffit.</p>
+        <button class="bouton" id="appli-telecharger" type="button" style="margin-top:8px">📥 Installer l'application Amphi</button>
+        <p class="aide" id="appli-etat" style="margin-top:6px"></p>
+      </div>
+      <h3 id="icone-titre">📲 La prochaine fois, sans rien taper</h3>
       <p class="aide" id="icone-consigne" style="margin-top:4px"></p>
       <div class="ue-actions" style="padding:10px 0 0">
         <button class="bouton" id="icone-installer" type="button" hidden>📲 Mettre l'icône « Amphi »</button>
@@ -1681,6 +1687,7 @@
       if (liste.length > 1) {
         var tout = el("button", "bouton second", "💾 Tout enregistrer"); tout.type = "button"; tout.style.marginTop = "10px";
         tout.onclick = function () {
+          if (window.AmphiApp) { liste.forEach(function (x, k) { window.AmphiApp.telecharger(new URL("/partage/" + code + "/f?i=" + k, location.href).href, x.nom, x.type); }); tout.textContent = "✅ Téléchargement lancé"; return; }
           tout.disabled = true;
           var chaine = Promise.resolve();
           liste.forEach(function (x, k) {
@@ -2219,6 +2226,12 @@
   $("st-enregistrer").onclick = function () {
     var nom = $("st-nom").value.trim() || "star";
     modeCadrage(false);
+    if (window.AmphiApp) {
+      window.AmphiApp.enregistrer(toile.toDataURL("image/jpeg", 0.92), "anniversaire-" + nom.replace(/[^\wÀ-ÿ-]+/g, "-") + ".jpg", "image/jpeg");
+      $("st-etat").textContent = "✅ Image enregistrée dans vos téléchargements : mettez-la en statut !";
+      if (window.amphiFete) window.amphiFete();
+      return;
+    }
     toile.toBlob(function (b) {
       if (!b) { $("st-etat").textContent = "❌ L'image n'a pas pu être créée."; return; }
       var a = document.createElement("a");
@@ -2993,6 +3006,7 @@
   // téléphone : pas d'alerte « téléchargement non sécurisé ») ──
   $("relais-apk").onclick = function () {
     var b = this, z = $("relais-apk-etat");
+    if (window.AmphiApp) { window.AmphiApp.telecharger(new URL("/application.apk", location.href).href, "Portail-Amphi.apk", "application/vnd.android.package-archive"); z.textContent = "Téléchargement lancé : ouvrez ensuite « Portail-Amphi.apk »."; return; }
     b.disabled = true; z.textContent = "Téléchargement…";
     fetch("/application.apk").then(function (r) { if (!r.ok) throw new Error(); return r.blob(); }).then(function (blob) {
       var a = document.createElement("a");
@@ -3001,6 +3015,18 @@
       document.body.appendChild(a); a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
       z.textContent = "✅ Téléchargé. Ouvrez « Portail-Amphi.apk » dans vos téléchargements pour l'installer.";
+    }).catch(function () { z.textContent = "❌ Échec du téléchargement. Réessayez."; }).then(function () { b.disabled = false; });
+  };
+
+  $("appli-telecharger").onclick = function () {
+    var b = this, z = $("appli-etat");
+    b.disabled = true; z.textContent = "Téléchargement…";
+    fetch("/amphi.apk").then(function (r) { if (!r.ok) throw new Error(); return r.blob(); }).then(function (blob) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([blob], { type: "application/vnd.android.package-archive" }));
+      a.download = "Amphi.apk"; document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+      z.textContent = "✅ Téléchargé. Ouvrez « Amphi.apk » dans vos téléchargements pour l'installer (autorisez l'installation si le téléphone le demande).";
     }).catch(function () { z.textContent = "❌ Échec du téléchargement. Réessayez."; }).then(function () { b.disabled = false; });
   };
 
@@ -3015,9 +3041,12 @@
       : "Dans Chrome, touchez ⋮ en haut à droite, puis « Ajouter à l'écran d'accueil ». L'icône « Amphi » apparaît : les autres jours, connectez-vous au Wi-Fi de l'amphi et touchez-la.";
     // WhatsApp ne rend jamais cliquable une adresse en chiffres (192.168…) :
     // on donne des consignes courtes, puis l'icône évite de retaper.
-    var texte = "📶 Page de l'amphi (gratuite, sans forfait)\n1. Connectez-vous au Wi-Fi de l'amphi\n2. Coupez vos données mobiles\n3. Dans Chrome, tapez : " + location.host + "\n4. Menu ⋮ → « Ajouter à l'écran d'accueil » : ensuite l'icône « Amphi » suffit.";
+    var texte = "📶 Page de l'amphi (gratuite, sans forfait)\n1. Connectez-vous au Wi-Fi de l'amphi\n2. Coupez vos données mobiles\n3. Dans Chrome, tapez : " + location.host + "\n4. Sur la page, installez l'application « Amphi » : ensuite plus besoin de couper vos données ni de taper l'adresse.";
     $("icone-whatsapp").href = "whatsapp://send?text=" + encodeURIComponent(texte);
-    $("carte-icone").hidden = installe || fait;
+    $("carte-icone").hidden = !!window.AmphiApp || ((installe || fait) && iphone);
+    // Android dans un navigateur : proposer l'application Amphi.
+    $("appli-amphi").hidden = !!window.AmphiApp || iphone || !/Android/.test(navigator.userAgent);
+    if (installe || fait) { $("icone-titre").hidden = true; $("icone-consigne").hidden = true; }
     $("icone-fermer").onclick = function () { $("carte-icone").hidden = true; try { localStorage.setItem("amphi-icone", "1"); } catch (e) {} };
     var invite = null;
     window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); invite = e; $("icone-installer").hidden = false; });

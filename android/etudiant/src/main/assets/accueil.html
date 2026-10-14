@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Amphi</title>
+<style>
+  :root { --ecran: #06110d; --phosphore: #3dffa2; --texte: #1f2430; --discret: #5d6475; --bleu: #2b579a; --nuit: #16306f; --fond: #eef3f7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fond); color: var(--texte); font: 15px/1.45 Roboto, "Segoe UI", Arial, sans-serif; }
+  header { background: var(--ecran); color: #fff; padding: 28px 20px 26px; position: relative; overflow: hidden; }
+  header canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .55; }
+  header .in { position: relative; }
+  .pilule { display: inline-flex; gap: 6px; align-items: center; border: 1px solid rgba(61,255,162,.4); background: rgba(61,255,162,.1); color: #d9ffee; border-radius: 999px; padding: 3px 12px; font-size: .8rem; font-weight: 700; }
+  h1 { margin: 10px 0 4px; font-size: 1.6rem; }
+  header p { margin: 0; color: #bfe9d6; }
+  main { padding: 16px; display: flex; flex-direction: column; gap: 14px; max-width: 520px; margin: 0 auto; }
+  .carte { background: #fff; border-radius: 16px; padding: 16px; box-shadow: 0 2px 10px rgba(16,24,40,.08); }
+  label { display: block; font-weight: 700; font-size: .9rem; margin-bottom: 6px; color: var(--nuit); }
+  input { width: 100%; font: inherit; font-size: 1.1rem; padding: 12px; border: 1px solid #cfd6e4; border-radius: 12px; }
+  button { width: 100%; font: inherit; font-weight: 800; border: 0; border-radius: 12px; padding: 14px; margin-top: 10px; cursor: pointer; }
+  .principal { background: var(--bleu); color: #fff; font-size: 1.05rem; }
+  .second { background: #e3eaf6; color: var(--nuit); }
+  #etat { margin-top: 10px; font-weight: 600; color: var(--nuit); min-height: 1.4em; }
+  ol { margin: 0; padding-left: 20px; } li + li { margin-top: 6px; }
+  .aide { color: var(--discret); font-size: .88rem; }
+</style>
+</head>
+<body>
+<header><canvas id="onde"></canvas><div class="in">
+  <span class="pilule">● Wi-Fi de l'amphi · gratuit, sans forfait</span>
+  <h1>Amphi</h1>
+  <p>Programme, documents, défis, quiz… sans couper vos données mobiles.</p>
+</div></header>
+<main>
+  <div class="carte">
+    <label for="mdp">Mot de passe du Wi-Fi (écrit au tableau)</label>
+    <input id="mdp" autocomplete="off" autocapitalize="off">
+    <button class="principal" id="connecter" type="button">📶 Se connecter au Wi-Fi de l'amphi</button>
+    <p id="etat"></p>
+  </div>
+  <div class="carte">
+    <ol class="aide">
+      <li>Touchez le bouton bleu : Android affiche le Wi-Fi « DIRECT-AM-… ». Touchez-le.</li>
+      <li>La page de l'amphi s'ouvre ici. WhatsApp, Facebook et les appels continuent de marcher avec vos données.</li>
+      <li>Les autres jours : ouvrez « Amphi », touchez le bouton bleu, c'est tout.</li>
+    </ol>
+    <button class="second" id="deja" type="button">Je suis déjà connecté au Wi-Fi de l'amphi</button>
+    <button class="second" id="donner" type="button">📤 Donner l'application à un camarade</button>
+  </div>
+</main>
+<script>
+  var a = window.AmphiApp;
+  window.etat = function (t) { document.getElementById("etat").textContent = t; };
+  var m = decodeURIComponent((location.hash || "").slice(1));
+  if (m) etat(m);
+  document.getElementById("mdp").value = a ? a.motDePasse() : "amphi2026";
+  document.getElementById("connecter").onclick = function () {
+    var mdp = document.getElementById("mdp").value.trim();
+    if (mdp.length < 8) { etat("Le mot de passe a au moins 8 caractères."); return; }
+    etat("Recherche du Wi-Fi de l'amphi…");
+    if (a) a.connecter(mdp);
+  };
+  document.getElementById("deja").onclick = function () { if (a) a.dejaConnecte(); };
+  document.getElementById("donner").onclick = function () { if (a) a.partagerApplication(); };
+  // Petite onde d'oscilloscope, comme sur la page de l'amphi.
+  var c = document.getElementById("onde"), g = c.getContext("2d"), t0 = performance.now();
+  function anime(t) {
+    var w = c.width = c.clientWidth, h = c.height = c.clientHeight, p = (t - t0) / 1000;
+    g.strokeStyle = "#3dffa2"; g.lineWidth = 2; g.shadowColor = "#3dffa2"; g.shadowBlur = 8; g.beginPath();
+    for (var x = 0; x <= w; x += 4) { var y = h * 0.78 + Math.sin(x / w * Math.PI * 4 + p * 2) * 12; if (x) g.lineTo(x, y); else g.moveTo(x, y); }
+    g.stroke(); requestAnimationFrame(anime);
+  }
+  requestAnimationFrame(anime);
+</script>
+</body>
+</html>

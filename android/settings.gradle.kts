@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "envoyeur"
-include(":app")
+include(":app", ":etudiant")
