@@ -14,19 +14,20 @@
     --police: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
   *, *::before, *::after { box-sizing: border-box; }
-  html { scroll-behavior: smooth; scroll-padding-top: 64px; }
-  body { margin: 0; background: var(--fond); color: var(--texte); font: 16px/1.5 var(--police); -webkit-text-size-adjust: 100%; }
+  /* Écriture plus petite (14 px de base) : plus de contenu visible d'un coup. */
+  html { font-size: 14px; scroll-behavior: smooth; scroll-padding-top: 56px; }
+  body { margin: 0; background: var(--fond); color: var(--texte); font: 1rem/1.45 var(--police); -webkit-text-size-adjust: 100%; }
   h1, h2, h3, p { margin: 0; }
   a { color: var(--bleu); }
   button { font: inherit; }
 
-  .hero { background: linear-gradient(150deg, #16306f 0%, #2b579a 55%, #3f7bd1 100%); color: #fff; padding: calc(22px + env(safe-area-inset-top)) 18px 26px; position: relative; overflow: hidden; }
+  .hero { background: linear-gradient(150deg, #16306f 0%, #2b579a 55%, #3f7bd1 100%); color: #fff; padding: calc(16px + env(safe-area-inset-top)) 16px 18px; position: relative; overflow: hidden; }
   .hero::after { content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.18), transparent 70%); }
   .hero-in { max-width: 600px; margin: 0 auto; position: relative; z-index: 1; }
   .pilule { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); padding: 4px 12px; border-radius: 999px; font-size: .82rem; font-weight: 600; }
   .pilule i { width: 8px; height: 8px; border-radius: 50%; background: #5cf08b; box-shadow: 0 0 0 0 rgba(92,240,139,.7); animation: pouls 2s infinite; }
   @keyframes pouls { 70% { box-shadow: 0 0 0 8px rgba(92,240,139,0); } 100% { box-shadow: 0 0 0 0 rgba(92,240,139,0); } }
-  .hero h1 { font-size: 1.75rem; line-height: 1.15; margin: 14px 0 6px; text-wrap: balance; }
+  .hero h1 { font-size: 1.45rem; line-height: 1.15; margin: 10px 0 4px; text-wrap: balance; }
   .hero .sous { opacity: .92; }
   .heure { font-variant-numeric: tabular-nums; font-size: .9rem; opacity: .85; margin-top: 10px; }
 
@@ -39,17 +40,17 @@
   main { max-width: 600px; margin: 14px auto 0; padding: 0 14px 40px; position: relative; z-index: 2; display: flex; flex-direction: column; gap: 16px; }
   .carte { background: #fff; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 6px 18px rgba(16,24,40,.06); overflow: hidden; }
   .carte .corps { padding: 16px; }
-  .titre-section { display: flex; align-items: center; gap: 8px; font-size: 1.15rem; color: var(--nuit); margin: 10px 2px 0; }
+  .titre-section { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; color: var(--nuit); margin: 10px 2px 0; }
   .vide { color: var(--discret); font-style: italic; padding: 4px 2px; }
 
   .prochain { display: flex; gap: 14px; align-items: center; padding: 16px; }
-  .prochain .icone { flex: none; width: 52px; height: 52px; border-radius: 12px; background: var(--ciel); display: grid; place-items: center; font-size: 1.6rem; }
-  .prochain .quoi { font-weight: 700; font-size: 1.08rem; line-height: 1.3; }
+  .prochain .icone { flex: none; width: 42px; height: 42px; border-radius: 10px; background: var(--ciel); display: grid; place-items: center; font-size: 1.3rem; }
+  .prochain .quoi { font-weight: 700; font-size: 1rem; line-height: 1.3; }
   .prochain .quand { color: var(--discret); font-size: .92rem; }
   .etiquette { font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--bleu); }
   .etiquette.vert { color: var(--vert); }
 
-  .bienvenue h2 { font-size: 1.25rem; color: var(--nuit); margin-bottom: 6px; }
+  .bienvenue h2 { font-size: 1.1rem; color: var(--nuit); margin-bottom: 6px; }
   .editeur { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--bordure); font-size: .9rem; color: var(--discret); }
   .editeur img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
   .editeur strong { color: var(--texte); }
