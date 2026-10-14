@@ -19,23 +19,23 @@
 "peigne",
 "fourchette",
 "scie",
-"rateau"
+"râteau"
 ]
 },
 {
 "question": "Plus il y en a, moins on y voit. Qu'est-ce que c'est ?",
 "reponses": [
-"obscurite",
+"obscurité",
 "noir",
 "nuit",
 "brouillard",
-"fumee"
+"fumée"
 ]
 },
 {
 "question": "Qu'est-ce qui monte mais ne descend jamais ?",
 "reponses": [
-"age"
+"âge"
 ]
 },
 {
@@ -47,7 +47,7 @@
 {
 "question": "Je suis plein de trous, mais je retiens l'eau. Qui suis-je ?",
 "reponses": [
-"eponge"
+"éponge"
 ]
 },
 {
@@ -74,7 +74,7 @@
 "question": "Il est à toi, mais les autres l'utilisent plus que toi. Qu'est-ce que c'est ?",
 "reponses": [
 "nom",
-"prenom"
+"prénom"
 ]
 },
 {
@@ -93,13 +93,13 @@
 {
 "question": "Je parle sans bouche et j'entends sans oreilles. Qui suis-je ?",
 "reponses": [
-"echo"
+"écho"
 ]
 },
 {
 "question": "Elle court mais ne marche jamais, elle a un lit mais ne dort jamais. Qui est-ce ?",
 "reponses": [
-"riviere",
+"rivière",
 "fleuve"
 ]
 },
@@ -151,7 +151,7 @@
 "l'être humain",
 "homme",
 "humain",
-"etre humain"
+"être humain"
 ]
 },
 {
@@ -196,8 +196,8 @@
 "question": "Qu'est-ce qui a une tête et une queue, mais pas de corps ?",
 "reponses": [
 "une pièce de monnaie",
-"piece",
-"piece de monnaie",
+"pièce",
+"pièce de monnaie",
 "monnaie"
 ]
 },
@@ -226,15 +226,15 @@
 "reponses": [
 "la lettre T (thé)",
 "t",
-"the"
+"thé"
 ]
 },
 {
 "question": "Qu'est-ce qui fait le tour de la maison sans bouger ?",
 "reponses": [
 "mur",
-"cloture",
-"barriere"
+"clôture",
+"barrière"
 ]
 },
 {
@@ -264,7 +264,7 @@
 {
 "question": "En physique, on me mesure en hertz. Qui suis-je ?",
 "reponses": [
-"frequence"
+"fréquence"
 ]
 },
 {
@@ -273,14 +273,14 @@
 "l'accélération de la pesanteur (g)",
 "g",
 "pesanteur",
-"acceleration de la pesanteur",
-"gravite"
+"accélération de la pesanteur",
+"gravité"
 ]
 },
 {
 "question": "Je suis la particule de charge négative qui tourne autour du noyau. Qui suis-je ?",
 "reponses": [
-"electron"
+"électron"
 ]
 },
 {
