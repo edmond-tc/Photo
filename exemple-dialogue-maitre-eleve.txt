@@ -1,0 +1,20 @@
+# Si tu stagnes, regarde qui t'entoure
+ÉCRAN: TITRE | Tu travailles dur | et rien ne bouge ?
+ÉLÈVE: Maître, depuis trois ans je travaille sans relâche. Et je suis toujours au même point.
+MAÎTRE: Je vais te dire une chose qui pique. Ton problème n'est pas ton travail. Ce sont les voix que tu entends chaque jour. Tu crois choisir tes idées, mais la plupart du temps, tu les empruntes à ceux qui t'entourent. Ils parlent, tu écoutes, et petit à petit leur façon de voir devient la tienne.
+ÉLÈVE: Mes amis ? Mais ils sont gentils.
+ÉCRAN: TEXTE | Imagine une rue | où tout le monde marche à pied
+MAÎTRE: Gentils, oui, et je ne dis pas le contraire. Mais regarde où ils vont. Imagine une rue où tout le monde marche à pied. Tu y vis dix ans. Un jour, quelqu'un te dit : prends-toi une moto. Tu éclates de rire. Pas parce que c'est impossible, mais parce que personne autour de toi n'y a jamais pensé.
+ÉLÈVE: Hein…
+MAÎTRE: Et le contraire marche aussi. Mets-toi parmi des gens qui roulent déjà en moto. Chaque jour, ils parlent de prix, de crédit, de démarches. Sans le décider, ta tête cherche déjà comment s'y prendre. Ton entourage règle ce que tu crois possible.
+ÉLÈVE: C'est un peu effrayant, Maître.
+ÉCRAN: DÉFI | Ces trois personnes | te tirent vers le haut ? | Ou te retiennent ?
+MAÎTRE: Et pourtant, c'est une bonne nouvelle, parce que ça se change. Toi qui m'écoutes, pense aux trois personnes que tu vois le plus. Elles te tirent vers le haut, ou elles te retiennent ?
+ÉLÈVE: Honnêtement… une seule me pousse. Les autres rigolent quand je parle de projets.
+ÉCRAN: RÉPONSE | Garde tes amis | Ajoute quelqu'un qui a déjà réussi
+MAÎTRE: Tu viens de dire la phrase la plus importante de cette vidéo. Tu n'as pas à rejeter personne. Tu gardes tes amis, et tu ajoutes une personne qui a déjà fait ce que tu veux faire : un commerçant, un voisin, un livre. Passe du temps avec elle, pose-lui des questions, regarde comment elle pense.
+ÉLÈVE: Et si je n'en connais aucune ?
+MAÎTRE: Alors commence par celle que tu peux atteindre aujourd'hui : un livre, une vidéo, un commerçant de ton quartier. Une conversation de dix minutes peut déplacer ce que tu crois possible.
+ÉLÈVE: Donc je ne change pas ma vie. Je change qui j'écoute.
+ÉCRAN: RETENIR | On devient ce qu'on côtoie | Choisis qui tu écoutes
+MAÎTRE: C'est ça. L'année passée à travailler seul, tu peux la remplacer par une rencontre qui change ta façon de penser. Dis-moi en commentaire : qui t'a déjà fait croire que c'était possible ?
