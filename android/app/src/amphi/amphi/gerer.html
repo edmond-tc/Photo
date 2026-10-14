@@ -59,6 +59,9 @@
   .toast.on { transform: translateX(-50%) translateY(0); }
   .case { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-weight: 600; color: var(--texte); }
   .case input { width: 20px; height: 20px; }
+  .pastille { display: inline-block; min-width: 22px; padding: 0 7px; border-radius: 999px; background: var(--rouge); color: #fff; font-size: .78rem; line-height: 22px; text-align: center; margin-left: 6px; }
+  .jauge { height: 8px; border-radius: 4px; background: var(--ciel); overflow: hidden; margin-top: 3px; }
+  .jauge i { display: block; height: 100%; background: var(--bleu); }
   .vignette { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; flex: none; background: var(--fond); }
 </style>
 </head>
@@ -123,6 +126,45 @@
     <p class="aide">Montrez ces chiffres aux commerçants qui veulent une publicité sur le portail.</p>
   </section>
 
+  <details class="carte" id="carte-valider">
+    <summary>📥 Documents proposés par les étudiants <span class="pastille" id="nb-valider" hidden></span></summary>
+    <p class="aide">Rien n'est publié sans votre accord. Corrigez le titre ou la matière si besoin, puis publiez.</p>
+    <div id="liste-propositions"></div>
+  </details>
+
+  <details class="carte">
+    <summary>💬 Questions et demandes <span class="pastille" id="nb-questions" hidden></span></summary>
+    <p class="aide">Les plus demandées d'abord. Répondez (la réponse s'affiche pour tous), masquez ou supprimez un message déplacé.</p>
+    <div id="liste-questions"></div>
+  </details>
+
+  <details class="carte">
+    <summary>📊 Sondages</summary>
+    <label for="s-question">Question</label>
+    <input type="text" id="s-question" placeholder="Ex. : Quel jour pour le TD de rattrapage ?">
+    <label for="s-options">Réponses possibles (une par ligne)</label>
+    <textarea id="s-options" placeholder="Mercredi 16h&#10;Jeudi 7h&#10;Samedi 10h"></textarea>
+    <label for="s-filiere">Pour qui</label>
+    <select id="s-filiere" class="choix-filiere avec-tous"></select>
+    <div class="boutons"><button class="bouton" id="b-sondage">Lancer le sondage</button></div>
+    <div id="liste-sondages" style="margin-top:12px"></div>
+  </details>
+
+  <details class="carte">
+    <summary>📝 Examens et dates importantes</summary>
+    <p class="aide">Affichés en haut de la page des étudiants avec un compte à rebours (J-5, Demain…).</p>
+    <label for="e-titre">Examen ou événement</label>
+    <input type="text" id="e-titre" placeholder="Ex. : Examen de Mécanique quantique">
+    <label for="e-date">Date</label>
+    <input type="date" id="e-date">
+    <label for="e-heure">Heure et lieu (facultatif)</label>
+    <input type="text" id="e-heure" placeholder="Ex. : 8h, Amphi Téléthon">
+    <label for="e-filiere">Pour qui</label>
+    <select id="e-filiere" class="choix-filiere avec-tous"></select>
+    <div class="boutons"><button class="bouton" id="b-examen">Ajouter</button></div>
+    <div id="liste-examens" style="margin-top:12px"></div>
+  </details>
+
   <details class="carte">
     <summary>🎓 Filières et niveaux</summary>
     <p class="aide">Une filière par groupe d'étudiants (ex. : Physique L3, Chimie L2). Chaque étudiant choisit la sienne sur la page ; le programme, les annonces et les documents peuvent être propres à une filière ou pour tous.</p>
@@ -168,6 +210,9 @@
     <summary>📚 Documents (cours, TD, épreuves, vidéos)</summary>
     <label for="d-filiere">Pour qui</label>
     <select id="d-filiere" class="choix-filiere avec-tous"></select>
+    <label for="d-matiere">Matière</label>
+    <input type="text" id="d-matiere" list="matieres-connues" placeholder="Ex. : Mécanique quantique">
+    <datalist id="matieres-connues"></datalist>
     <label for="d-categorie">Type</label>
     <select id="d-categorie"><option>Cours</option><option>TD et TP</option><option>Épreuves et corrigés</option><option>Vidéos</option><option>Applications</option><option>Autres</option></select>
     <label for="d-fichiers">Fichiers</label>
@@ -317,7 +362,7 @@
   // ── Enregistrement ──
   function enregistrer(message) {
     return fetch("/gerer/contenu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(contenu) })
-      .then(function (r) { if (!r.ok) throw new Error(); toast(message || "Publié ✓"); rendreListes(); })
+      .then(function (r) { if (!r.ok) throw new Error(); toast(message || "Publié ✓"); rendreListes(); rendreEchanges(); })
       .catch(function () { toast("Échec de l'enregistrement. Réessayez."); });
   }
 
@@ -419,6 +464,99 @@
     remplirProgramme();
   }
 
+  // ── Échanges avec les étudiants ──
+  var echanges = { propositions: [], questions: [], resultats: {} };
+  function chargerEchanges() {
+    return fetch("/gerer/echanges", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (e) { echanges = e; rendreEchanges(); }).catch(function () {});
+  }
+  function poster(url, corps) { return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corps || {}) }).then(function (r) { return r.json(); }); }
+  function rendreEchanges() {
+    if (!contenu) return;
+    var nbP = echanges.propositions.length;
+    $("nb-valider").hidden = !nbP; $("nb-valider").textContent = nbP;
+    var lp = $("liste-propositions"); lp.textContent = "";
+    if (!nbP) lp.appendChild(el("p", "aide", "Rien à vérifier pour l'instant."));
+    echanges.propositions.forEach(function (p) {
+      var bloc = el("div", "ligne"); bloc.style.flexDirection = "column"; bloc.style.alignItems = "stretch";
+      bloc.appendChild(el("p", "nom", p.nom + " · " + taille(p.taille)));
+      bloc.appendChild(el("p", "meta", "Proposé " + (p.auteur ? "par " + p.auteur + " " : "") + "le " + new Date(p.date).toLocaleString("fr-FR")));
+      var titre = el("input"); titre.type = "text"; titre.value = p.titre || p.nom.replace(/\.[^.]+$/, ""); titre.placeholder = "Titre";
+      var mat = el("input"); mat.type = "text"; mat.value = p.matiere || ""; mat.placeholder = "Matière"; mat.setAttribute("list", "matieres-connues");
+      bloc.appendChild(titre); bloc.appendChild(mat);
+      var bs = el("div", "boutons");
+      bs.appendChild(bouton("Publier", "", function () {
+        poster("/gerer/proposition/" + p.id + "/accepter").then(function (r) {
+          if (!r.ok) return toast(r.erreur || "Échec");
+          var d = r.document;
+          (contenu.documents = contenu.documents || []).push({ id: d.id, nom: d.nom, titre: titre.value.trim() || d.nom, type: d.type, taille: d.taille, categorie: "Notes d'étudiants", matiere: mat.value.trim(), filiere: "", date: Date.now(), auteur: d.auteur || "" });
+          return enregistrer("Publié dans la bibliothèque ✓").then(chargerEchanges);
+        });
+      }));
+      bs.appendChild(bouton("Voir", "second", function () { location.href = "/gerer/proposition/" + p.id + "/f?type=" + encodeURIComponent(p.type) + "&nom=" + encodeURIComponent(p.nom); }));
+      bs.appendChild(bouton("Refuser", "danger", function () { if (confirm("Refuser et effacer ce document ?")) poster("/gerer/proposition/" + p.id + "/refuser").then(chargerEchanges); }));
+      bloc.appendChild(bs);
+      lp.appendChild(bloc);
+    });
+    var visibles = echanges.questions.filter(function (q) { return !q.masquee && !q.reponse; }).length;
+    $("nb-questions").hidden = !visibles; $("nb-questions").textContent = visibles;
+    var lq = $("liste-questions"); lq.textContent = "";
+    if (!echanges.questions.length) lq.appendChild(el("p", "aide", "Aucune question pour l'instant."));
+    echanges.questions.slice().sort(function (a, b) { return (b.votes || 0) - (a.votes || 0) || b.date - a.date; }).forEach(function (q) {
+      var l = el("div", "ligne"); l.style.flexWrap = "wrap";
+      var i = el("div", "info");
+      i.appendChild(el("p", "nom", (q.masquee ? "🙈 " : "") + q.texte));
+      i.appendChild(el("p", "meta", ({ question: "Question", demande: "Je cherche", info: "Info" }[q.sorte] || "") + " · +" + (q.votes || 0) + " · " + new Date(q.date).toLocaleString("fr-FR") + (q.reponse ? " · répondu : " + q.reponse : "")));
+      l.appendChild(i);
+      l.appendChild(bouton("Répondre", "second", function () { var t = prompt("Votre réponse (visible par tous)", q.reponse || ""); if (t !== null) poster("/gerer/question/" + q.id, { action: "repondre", reponse: t }).then(chargerEchanges); }));
+      l.appendChild(bouton(q.masquee ? "Afficher" : "Masquer", "second", function () { poster("/gerer/question/" + q.id, { action: q.masquee ? "afficher" : "masquer" }).then(chargerEchanges); }));
+      l.appendChild(bouton("Supprimer", "danger", function () { if (confirm("Supprimer ce message ?")) poster("/gerer/question/" + q.id, { action: "supprimer" }).then(chargerEchanges); }));
+      lq.appendChild(l);
+    });
+    var ls = $("liste-sondages"); ls.textContent = "";
+    (contenu.sondages || []).forEach(function (sd) {
+      var bloc = el("div", "ligne"); bloc.style.flexDirection = "column"; bloc.style.alignItems = "stretch";
+      bloc.appendChild(el("p", "nom", (sd.ouvert === false ? "🔒 " : "") + sd.question));
+      var res = (echanges.resultats || {})[sd.id] || {}, total = 0;
+      Object.keys(res).forEach(function (k) { total += res[k]; });
+      sd.options.forEach(function (o, k) {
+        var n = res[k] || 0, pc = total ? Math.round(n * 100 / total) : 0;
+        bloc.appendChild(el("p", "meta", o + " : " + n + " (" + pc + " %)"));
+        var j = el("div", "jauge"), b = el("i"); b.style.width = pc + "%"; j.appendChild(b); bloc.appendChild(j);
+      });
+      var bs = el("div", "boutons");
+      bs.appendChild(bouton(sd.ouvert === false ? "Rouvrir" : "Clore", "second", function () { sd.ouvert = sd.ouvert === false; enregistrer(sd.ouvert ? "Sondage rouvert" : "Sondage clos"); }));
+      bs.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer ce sondage ?")) { contenu.sondages = contenu.sondages.filter(function (x) { return x !== sd; }); enregistrer("Sondage retiré"); } }));
+      bloc.appendChild(bs); ls.appendChild(bloc);
+    });
+    var le = $("liste-examens"); le.textContent = "";
+    (contenu.examens || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (x) {
+      var l = el("div", "ligne"), i = el("div", "info");
+      i.appendChild(el("p", "nom", x.titre)); i.appendChild(el("p", "meta", x.date.split("-").reverse().join("/") + (x.heure ? " · " + x.heure : "") + " · " + nomFiliere(x.filiere || "")));
+      l.appendChild(i);
+      l.appendChild(bouton("Retirer", "danger", function () { contenu.examens = contenu.examens.filter(function (y) { return y !== x; }); enregistrer("Retiré"); }));
+      le.appendChild(l);
+    });
+    var dl = $("matieres-connues"); dl.textContent = "";
+    var vues = {};
+    (contenu.documents || []).forEach(function (d) { if (d.matiere && !vues[d.matiere]) { vues[d.matiere] = 1; var o = el("option"); o.value = d.matiere; dl.appendChild(o); } });
+  }
+  $("b-sondage").onclick = function () {
+    var q = $("s-question").value.trim(), opts = $("s-options").value.split(/\n/).map(function (x) { return x.trim(); }).filter(Boolean);
+    if (!q || opts.length < 2) return toast("Une question et au moins deux réponses.");
+    (contenu.sondages = contenu.sondages || []).unshift({ id: nouvelId(), question: q, options: opts.slice(0, 10), filiere: $("s-filiere").value, ouvert: true, date: Date.now() });
+    $("s-question").value = ""; $("s-options").value = "";
+    enregistrer("Sondage lancé ✓");
+  };
+  $("b-examen").onclick = function () {
+    var t = $("e-titre").value.trim(), d = $("e-date").value;
+    if (!t || !d) return toast("Un titre et une date.");
+    (contenu.examens = contenu.examens || []).push({ id: nouvelId(), titre: t, date: d, heure: $("e-heure").value.trim(), filiere: $("e-filiere").value });
+    $("e-titre").value = ""; $("e-date").value = ""; $("e-heure").value = "";
+    enregistrer("Ajouté ✓");
+  };
+  chargerEchanges();
+  setInterval(chargerEchanges, 10000);
+
   function remplirProgramme() {
     var p = contenu.programmes[$("p-filiere").value] || {};
     $("p-titre").value = p.titre || "";
@@ -493,7 +631,7 @@
       var f = fichiers[i];
       $("d-etat").textContent = "Envoi de « " + f.name + " » (" + (i + 1) + "/" + fichiers.length + ")…";
       return envoyerFichier(f, function (x) { barre.firstChild.style.width = Math.round(x * 100) + "%"; }).then(function (r) {
-        (contenu.documents = contenu.documents || []).push({ id: r.id, nom: f.name, titre: f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "), type: f.type || "application/octet-stream", taille: r.taille, categorie: $("d-categorie").value, filiere: $("d-filiere").value, date: Date.now() });
+        (contenu.documents = contenu.documents || []).push({ id: r.id, nom: f.name, titre: f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "), type: f.type || "application/octet-stream", taille: r.taille, categorie: $("d-categorie").value, matiere: $("d-matiere").value.trim(), filiere: $("d-filiere").value, date: Date.now() });
         i++; return suivant();
       }).catch(function (e) { barre.hidden = true; $("d-etat").textContent = "Échec pour « " + f.name + " » : " + (e.message || "erreur") + "."; i++; return suivant(); });
     }
@@ -622,7 +760,7 @@
   };
   $("b-voir").onclick = function () { location.href = adresseActuelle || ("http://127.0.0.1:" + location.port + "/"); };
 
-  fetch("/gerer/contenu", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) { contenu = normaliser(c); remplirFormulaires(); });
+  fetch("/gerer/contenu", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) { contenu = normaliser(c); remplirFormulaires(); rendreEchanges(); });
   etat();
   setInterval(etat, 5000);
 })();

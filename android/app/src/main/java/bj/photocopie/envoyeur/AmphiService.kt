@@ -236,6 +236,15 @@ class AmphiService : Service() {
                     r.methode == "GET" && (r.chemin == "/lib/pdf.min.js" || r.chemin == "/lib/pdf.worker.min.js") ->
                         actif(sortie, "amphi" + r.chemin, "text/javascript; charset=utf-8", "max-age=604800")
                     r.methode == "GET" && r.chemin.startsWith("/f/") -> envoyerFichier(sortie, r, r.chemin.removePrefix("/f/"))
+                    // ── Échanges entre étudiants (lecture et dépôt, sans compte) ──
+                    r.methode == "GET" && r.chemin == "/echanges.json" -> json(sortie, echangesPublics(s.inetAddress.hostAddress ?: ""))
+                    r.methode == "POST" && r.chemin == "/partage" -> deposerPartage(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "GET" && r.chemin.matches(Regex("^/partage/\\d{4}$")) -> infoPartage(sortie, r.chemin.removePrefix("/partage/"))
+                    r.methode == "GET" && r.chemin.matches(Regex("^/partage/\\d{4}/f$")) -> fichierPartage(sortie, r, r.chemin.removePrefix("/partage/").removeSuffix("/f"))
+                    r.methode == "POST" && r.chemin == "/proposer" -> proposer(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/question" -> poserQuestion(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/question/[a-z0-9]{6,30}/plus$")) -> plusUn(sortie, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/vote" -> voter(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.startsWith("/c/") -> {
                         // Clic sur une publicité (appel, WhatsApp) : la preuve pour l'annonceur.
                         r.chemin.removePrefix("/c/").takeIf { it.matches(Regex("^[a-z0-9]{4,40}$")) }?.let { compter("clics", it) }
@@ -249,6 +258,19 @@ class AmphiService : Service() {
                     r.methode == "POST" && r.chemin == "/gerer/contenu" -> enregistrerContenu(sortie, r)
                     r.methode == "POST" && r.chemin == "/gerer/fichier" -> recevoirFichier(sortie, r)
                     r.methode == "POST" && r.chemin == "/gerer/sauvegarder" -> json(sortie, sauvegarder())
+                    r.methode == "GET" && r.chemin == "/gerer/echanges" -> json(sortie, echangesGestion())
+                    r.methode == "GET" && r.chemin.matches(Regex("^/gerer/proposition/[a-z0-9]{8,40}/f$")) -> {
+                        val f = File(dossierPropositions, r.chemin.split("/")[3])
+                        if (f.isFile) envoyerChemin(sortie, r, f, r.query["type"], r.query["nom"], null)
+                        else repondre(sortie, 404, "text/plain", "Introuvable".toByteArray())
+                    }
+                    r.methode == "POST" && r.chemin.matches(Regex("^/gerer/proposition/[a-z0-9]{8,40}/(accepter|refuser)$")) -> {
+                        val morceaux = r.chemin.split("/")
+                        json(sortie, deciderProposition(morceaux[3], morceaux[4] == "accepter"))
+                    }
+                    r.methode == "POST" && r.chemin.matches(Regex("^/gerer/question/[a-z0-9]{6,30}$")) -> {
+                        json(sortie, modererQuestion(r.chemin.split("/")[3], lireJson(r)))
+                    }
                     r.methode == "POST" && r.chemin == "/gerer/wifi" -> {
                         val q = lireJson(r)
                         json(sortie, creerWifi(q.optString("nom"), q.optString("motDePasse")))
@@ -348,7 +370,7 @@ class AmphiService : Service() {
         val maintenant = System.currentTimeMillis()
         dossierFichiers.listFiles()?.forEach { f ->
             // Un fichier tout juste reçu (pas encore enregistré dans le contenu) est gardé une heure.
-            if (f.name !in utilises && maintenant - f.lastModified() > 3_600_000) f.delete()
+            if (f.isFile && f.name !in utilises && maintenant - f.lastModified() > 3_600_000) f.delete()
         }
     }
 
@@ -382,9 +404,14 @@ class AmphiService : Service() {
     private fun envoyerFichier(sortie: OutputStream, r: Requete, id: String) {
         if (!idValide(id)) return repondre(sortie, 404, "text/plain", "Introuvable".toByteArray())
         val f = File(dossierFichiers, id)
-        if (!f.exists()) return repondre(sortie, 404, "text/plain", "Introuvable".toByteArray())
-        val type = r.query["type"]?.takeIf { it.matches(Regex("^[a-z]+/[a-z0-9.+-]+$")) } ?: "application/octet-stream"
-        val nom = (r.query["nom"] ?: "document").replace(Regex("[\\r\\n\"\\\\]"), "_").take(150)
+        if (!f.isFile) return repondre(sortie, 404, "text/plain", "Introuvable".toByteArray())
+        envoyerChemin(sortie, r, f, r.query["type"], r.query["nom"], id)
+    }
+
+    private fun envoyerChemin(sortie: OutputStream, r: Requete, f: File, typeDemande: String?, nomDemande: String?, compte: String?) {
+        val id = compte ?: ""
+        val type = typeDemande?.takeIf { it.matches(Regex("^[a-z]+/[a-z0-9.+-]+$")) } ?: "application/octet-stream"
+        val nom = (nomDemande ?: "document").replace(Regex("[\\r\\n\"\\\\]"), "_").take(150)
         val disposition = if (r.query["dl"] == "1") "attachment" else "inline"
         val total = f.length()
         // Plage demandée (vidéos : avancer dans la lecture sans tout recharger).
@@ -402,7 +429,7 @@ class AmphiService : Service() {
             }
         }
         // Un téléchargement (ou l'affichage d'une image de publicité) = un de plus.
-        if (debut == 0L) compter("telechargements", id)
+        if (debut == 0L && id.isNotEmpty()) compter("telechargements", id)
         if (debut > fin || debut >= total) {
             return repondre(sortie, 416, "text/plain", ByteArray(0), mapOf("Content-Range" to "bytes */$total"))
         }
@@ -549,6 +576,251 @@ class AmphiService : Service() {
             tmp.renameTo(fichierContenu)
         }
         json(sortie, JSONObject().put("ok", true).put("fichiers", fichiers))
+    }
+
+    // ── Échanges entre étudiants ───────────────────────────────────────────
+    //
+    // Ce que les étudiants déposent est rangé à part du contenu de l'éditeur
+    // (fichiers JSON séparés) : une publication de l'éditeur n'écrase jamais
+    // une question ou un vote. Limites par adresse contre les abus.
+
+    private val fichierQuestions get() = File(dossier, "questions.json")
+    private val fichierVotes get() = File(dossier, "votes.json")
+    private val fichierPropositions get() = File(dossier, "propositions.json")
+    private val dossierPartages get() = File(dossierFichiers, "partages").apply { mkdirs() }
+    private val dossierPropositions get() = File(dossierFichiers, "propositions").apply { mkdirs() }
+    private val verrouEchanges = Any()
+    private val essais = HashMap<String, MutableList<Long>>()
+
+    /** Au plus [max] actions de ce genre par adresse sur [fenetreMs]. */
+    private fun permis(ip: String, genre: String, max: Int, fenetreMs: Long): Boolean {
+        synchronized(essais) {
+            val cle = "$genre|$ip"
+            val maintenant = System.currentTimeMillis()
+            val liste = essais.getOrPut(cle) { mutableListOf() }
+            liste.removeAll { maintenant - it > fenetreMs }
+            if (liste.size >= max) return false
+            liste.add(maintenant)
+            return true
+        }
+    }
+
+    private fun lireTableau(f: File): JSONArray = try { if (f.exists()) JSONArray(f.readText()) else JSONArray() } catch (_: Exception) { JSONArray() }
+    private fun lireObjet(f: File): JSONObject = try { if (f.exists()) JSONObject(f.readText()) else JSONObject() } catch (_: Exception) { JSONObject() }
+    private fun ecrire(f: File, contenu: Any) {
+        val tmp = File(f.parentFile, f.name + ".tmp")
+        tmp.writeText(contenu.toString())
+        tmp.renameTo(f)
+    }
+
+    private val MOTS_INTERDITS = Regex("\\b(con(nard|nasse)?|salope|pute|encul\\w*|fdp|ntm|batard|bâtard|merde)\\b", RegexOption.IGNORE_CASE)
+    private fun texteCorrect(t: String) = !MOTS_INTERDITS.containsMatchIn(t)
+
+    private fun recevoirVers(f: File, r: Requete, max: Long): Long? {
+        val taille = r.entetes["content-length"]?.toLongOrNull() ?: 0
+        if (taille <= 0 || taille > max || dossierFichiers.usableSpace < taille + 300_000_000L) return null
+        f.outputStream().use { o ->
+            val tampon = ByteArray(64 * 1024)
+            var reste = taille
+            while (reste > 0) {
+                val n = r.corps.read(tampon, 0, minOf(tampon.size.toLong(), reste).toInt())
+                if (n < 0) break
+                o.write(tampon, 0, n)
+                reste -= n
+            }
+            if (reste > 0) { f.delete(); return null }
+        }
+        return taille
+    }
+
+    private fun nomPropre(n: String?) = (n ?: "fichier").replace(Regex("[\\\\/:*?\"<>|\\r\\n]"), "_").trim().take(120).ifEmpty { "fichier" }
+    private fun typePropre(t: String?) = t?.takeIf { it.matches(Regex("^[a-z]+/[a-z0-9.+-]+$")) } ?: "application/octet-stream"
+    private fun texte(v: String?, max: Int) = (v ?: "").replace(Regex("[\\u0000-\\u0008\\u000B-\\u001F]"), "").trim().take(max)
+
+    /** Partage d'un téléphone à l'autre : un code à 4 chiffres, valable 24 heures. */
+    private fun deposerPartage(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "partage", 15, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop de partages : réessayez dans une heure."), 429)
+        nettoyerPartages()
+        val code: String = synchronized(verrouEchanges) {
+            var c: String
+            do { c = (1000..9999).random().toString() } while (dossierPartages.listFiles()?.any { it.name.startsWith("$c-") } == true)
+            c
+        }
+        val nom = nomPropre(r.query["nom"])
+        val f = File(dossierPartages, "$code-" + java.util.UUID.randomUUID().toString().replace("-", "").take(12))
+        val taille = recevoirVers(f, r, 150_000_000L)
+            ?: return json(sortie, JSONObject().put("erreur", "Fichier trop gros (150 Mo au plus) ou téléphone plein."), 413)
+        File(f.path + ".json").writeText(JSONObject().put("nom", nom).put("type", typePropre(r.query["type"])).put("taille", taille).put("date", System.currentTimeMillis()).toString())
+        json(sortie, JSONObject().put("ok", true).put("code", code))
+    }
+
+    private fun trouverPartage(code: String): Pair<File, JSONObject>? {
+        nettoyerPartages()
+        val f = dossierPartages.listFiles()?.firstOrNull { it.name.startsWith("$code-") && !it.name.endsWith(".json") } ?: return null
+        val info = try { JSONObject(File(f.path + ".json").readText()) } catch (_: Exception) { return null }
+        return f to info
+    }
+
+    private fun infoPartage(sortie: OutputStream, code: String) {
+        val (_, info) = trouverPartage(code) ?: return json(sortie, JSONObject().put("erreur", "Code inconnu ou expiré."), 404)
+        json(sortie, info)
+    }
+
+    private fun fichierPartage(sortie: OutputStream, r: Requete, code: String) {
+        val (f, info) = trouverPartage(code) ?: return repondre(sortie, 404, "text/plain", "Code inconnu ou expiré.".toByteArray())
+        envoyerChemin(sortie, r, f, info.optString("type"), info.optString("nom"), null)
+    }
+
+    private fun nettoyerPartages() {
+        val limite = System.currentTimeMillis() - 24 * 3_600_000L
+        dossierPartages.listFiles()?.forEach { if (it.lastModified() < limite) it.delete() }
+    }
+
+    /** Un étudiant propose un document à la bibliothèque : publié seulement après validation. */
+    private fun proposer(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "proposer", 10, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop d'envois : réessayez dans une heure."), 429)
+        val id = java.util.UUID.randomUUID().toString().replace("-", "").take(20)
+        val f = File(dossierPropositions, id)
+        val taille = recevoirVers(f, r, 200_000_000L)
+            ?: return json(sortie, JSONObject().put("erreur", "Fichier trop gros (200 Mo au plus) ou téléphone plein."), 413)
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierPropositions)
+            t.put(JSONObject()
+                .put("id", id).put("nom", nomPropre(r.query["nom"])).put("type", typePropre(r.query["type"]))
+                .put("titre", texte(r.query["titre"], 120)).put("matiere", texte(r.query["matiere"], 60))
+                .put("auteur", texte(r.query["auteur"], 40)).put("taille", taille).put("date", System.currentTimeMillis()))
+            ecrire(fichierPropositions, t)
+        }
+        json(sortie, JSONObject().put("ok", true))
+    }
+
+    private fun deciderProposition(id: String, accepter: Boolean): JSONObject {
+      synchronized(verrouEchanges) {
+        val t = lireTableau(fichierPropositions)
+        val gardees = JSONArray()
+        var trouvee: JSONObject? = null
+        for (i in 0 until t.length()) { val o = t.getJSONObject(i); if (o.optString("id") == id) trouvee = o else gardees.put(o) }
+        ecrire(fichierPropositions, gardees)
+        val o = trouvee ?: return JSONObject().put("erreur", "Déjà traitée.")
+        val f = File(dossierPropositions, id)
+        if (!accepter) { f.delete(); return JSONObject().put("ok", true) }
+        // Le fichier rejoint la bibliothèque ; la page de gestion l'ajoute au contenu.
+        val nouvelId = java.util.UUID.randomUUID().toString().replace("-", "").take(20)
+        if (!f.renameTo(File(dossierFichiers, nouvelId))) return JSONObject().put("erreur", "Fichier introuvable.")
+        return JSONObject().put("ok", true).put("document", JSONObject(o.toString()).put("id", nouvelId))
+      }
+    }
+
+    /** Questions au professeur et demandes de documents : le mur de la promo. */
+    private fun poserQuestion(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "question", 6, 600_000)) return json(sortie, JSONObject().put("erreur", "Trop de messages : attendez quelques minutes."), 429)
+        val q = lireJson(r)
+        val t = texte(q.optString("texte"), 400)
+        if (t.length < 3) return json(sortie, JSONObject().put("erreur", "Message trop court."), 400)
+        if (!texteCorrect(t)) return json(sortie, JSONObject().put("erreur", "Message refusé : restez correct."), 400)
+        val sorte = q.optString("sorte").takeIf { it in setOf("question", "demande", "info") } ?: "question"
+        val id = java.util.UUID.randomUUID().toString().replace("-", "").take(12)
+        synchronized(verrouEchanges) {
+            val tout = lireTableau(fichierQuestions)
+            tout.put(JSONObject().put("id", id).put("texte", t).put("sorte", sorte).put("filiere", texte(q.optString("filiere"), 40))
+                .put("date", System.currentTimeMillis()).put("votes", 0).put("ip", ip))
+            // 300 messages au plus : les plus anciens partent.
+            while (tout.length() > 300) tout.remove(0)
+            ecrire(fichierQuestions, tout)
+        }
+        json(sortie, JSONObject().put("ok", true).put("id", id))
+    }
+
+    private fun plusUn(sortie: OutputStream, id: String, ip: String) {
+        synchronized(verrouEchanges) {
+            val tout = lireTableau(fichierQuestions)
+            for (i in 0 until tout.length()) {
+                val o = tout.getJSONObject(i)
+                if (o.optString("id") != id) continue
+                val qui = o.optJSONArray("qui") ?: JSONArray()
+                val deja = (0 until qui.length()).any { qui.optString(it) == ip }
+                if (!deja) { qui.put(ip); o.put("qui", qui); o.put("votes", o.optInt("votes") + 1); ecrire(fichierQuestions, tout) }
+                break
+            }
+        }
+        json(sortie, JSONObject().put("ok", true))
+    }
+
+    private fun voter(sortie: OutputStream, r: Requete, ip: String) {
+        val q = lireJson(r)
+        val sondage = q.optString("sondage")
+        val option = q.optInt("option", -1)
+        if (!sondage.matches(Regex("^[a-z0-9]{4,30}$")) || option < 0 || option > 20) return json(sortie, JSONObject().put("erreur", "Vote invalide."), 400)
+        val s = lireContenu().optJSONArray("sondages")
+        val existe = s != null && (0 until s.length()).any { s.optJSONObject(it)?.let { o -> o.optString("id") == sondage && o.optBoolean("ouvert", true) } == true }
+        if (!existe) return json(sortie, JSONObject().put("erreur", "Ce sondage est clos."), 400)
+        synchronized(verrouEchanges) {
+            val v = lireObjet(fichierVotes)
+            val parIp = v.optJSONObject(sondage) ?: JSONObject()
+            parIp.put(ip, option) // un vote par téléphone ; revoter le change
+            v.put(sondage, parIp)
+            ecrire(fichierVotes, v)
+        }
+        json(sortie, JSONObject().put("ok", true))
+    }
+
+    private fun resultats(): JSONObject {
+        val v = lireObjet(fichierVotes)
+        val res = JSONObject()
+        v.keys().forEach { sondage ->
+            val parIp = v.optJSONObject(sondage) ?: return@forEach
+            val comptes = HashMap<Int, Int>()
+            parIp.keys().forEach { ip -> val o = parIp.optInt(ip, -1); if (o >= 0) comptes[o] = (comptes[o] ?: 0) + 1 }
+            val t = JSONObject()
+            comptes.forEach { (o, n) -> t.put(o.toString(), n) }
+            res.put(sondage, t)
+        }
+        return res
+    }
+
+    /** Ce que voient les étudiants : questions visibles (sans adresses), résultats des sondages. */
+    private fun echangesPublics(ip: String): JSONObject {
+        val tout = lireTableau(fichierQuestions)
+        val visibles = JSONArray()
+        for (i in 0 until tout.length()) {
+            val o = tout.getJSONObject(i)
+            if (o.optBoolean("masquee")) continue
+            val qui = o.optJSONArray("qui")
+            val jai = qui != null && (0 until qui.length()).any { qui.optString(it) == ip }
+            visibles.put(JSONObject().put("id", o.optString("id")).put("texte", o.optString("texte")).put("sorte", o.optString("sorte"))
+                .put("filiere", o.optString("filiere")).put("date", o.optLong("date")).put("votes", o.optInt("votes"))
+                .put("reponse", o.optString("reponse")).put("moi", jai))
+        }
+        val v = lireObjet(fichierVotes)
+        val mesVotes = JSONObject()
+        v.keys().forEach { k -> v.optJSONObject(k)?.let { if (it.has(ip)) mesVotes.put(k, it.optInt(ip)) } }
+        return JSONObject().put("questions", visibles).put("resultats", resultats()).put("mesVotes", mesVotes)
+    }
+
+    private fun echangesGestion(): JSONObject {
+        val q = lireTableau(fichierQuestions)
+        val sansIp = JSONArray()
+        for (i in 0 until q.length()) { val o = JSONObject(q.getJSONObject(i).toString()); o.remove("ip"); o.remove("qui"); sansIp.put(o) }
+        return JSONObject().put("propositions", lireTableau(fichierPropositions)).put("questions", sansIp).put("resultats", resultats())
+    }
+
+    private fun modererQuestion(id: String, q: JSONObject): JSONObject = synchronized(verrouEchanges) {
+        val tout = lireTableau(fichierQuestions)
+        val gardees = JSONArray()
+        for (i in 0 until tout.length()) {
+            val o = tout.getJSONObject(i)
+            if (o.optString("id") == id) {
+                when (q.optString("action")) {
+                    "supprimer" -> continue
+                    "masquer" -> o.put("masquee", true)
+                    "afficher" -> o.put("masquee", false)
+                    "repondre" -> o.put("reponse", texte(q.optString("reponse"), 600))
+                }
+            }
+            gardees.put(o)
+        }
+        ecrire(fichierQuestions, gardees)
+        JSONObject().put("ok", true)
     }
 
     // ── Le Wi-Fi de l'amphi, créé par le téléphone (Wi-Fi Direct) ─────────
@@ -720,6 +992,7 @@ class AmphiService : Service() {
             .put("vues7jours", vues7)
             .put("placeLibre", dossierFichiers.usableSpace)
             .put("compteurs", compteurs())
+            .put("aValider", lireTableau(fichierPropositions).length())
             .put("wifi", JSONObject()
                 .put("actif", prefs().getBoolean("wifi", false) && adressesWifiDirect().isNotEmpty())
                 .put("voulu", prefs().getBoolean("wifi", false))

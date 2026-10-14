@@ -112,6 +112,38 @@
   .filieres button { border: 1px solid var(--bordure); background: #fff; color: var(--nuit); border-radius: 999px; padding: 6px 12px; font-weight: 600; font-size: .88rem; cursor: pointer; }
   .filieres button.choisie { background: var(--bleu); border-color: var(--bleu); color: #fff; }
   .recherche { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--bordure); border-radius: 10px; margin: 0 0 4px; background: #fff; }
+  .corps h3 { font-size: 1.02rem; color: var(--nuit); margin-bottom: 4px; }
+  .aide { font-size: .88rem; color: var(--discret); }
+  .champ { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--bordure); border-radius: 10px; background: #fff; margin-top: 8px; }
+  textarea.champ { min-height: 70px; resize: vertical; }
+  .ligne-champs { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .ligne-champs .champ { margin-top: 0; }
+  .barre-envoi { height: 7px; border-radius: 4px; background: var(--ciel); overflow: hidden; margin-top: 8px; }
+  .barre-envoi i { display: block; height: 100%; width: 0; background: var(--bleu); transition: width .2s; }
+  .code-partage { font-size: 2.2rem; font-weight: 800; letter-spacing: .25em; color: var(--nuit); text-align: center; margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+  .puces { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 2px; }
+  .puces button { border: 1px solid var(--bordure); background: #fff; color: var(--nuit); border-radius: 999px; padding: 5px 11px; font-weight: 600; font-size: .85rem; cursor: pointer; }
+  .puces button.choisie { background: var(--nuit); border-color: var(--nuit); color: #fff; }
+  .question { padding: 12px 16px; display: flex; gap: 12px; }
+  .question + .question { border-top: 1px solid var(--bordure); }
+  .question .plus { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 46px; border: 1px solid var(--bordure); border-radius: 10px; background: #fff; color: var(--nuit); font-weight: 800; cursor: pointer; padding: 4px; }
+  .question .plus.fait { background: var(--ciel); border-color: var(--bleu); }
+  .question .plus small { font-weight: 600; font-size: .7rem; color: var(--discret); }
+  .question .sorte { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--bleu); }
+  .question .reponse { margin-top: 6px; padding: 8px 10px; background: var(--vert-fond); border-radius: 8px; color: #0b4a22; font-size: .92rem; }
+  .sondage .option { display: block; width: 100%; text-align: left; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--bordure); border-radius: 10px; background: #fff; font: inherit; cursor: pointer; position: relative; overflow: hidden; }
+  .sondage .option .jauge { position: absolute; inset: 0 auto 0 0; background: var(--ciel); z-index: 0; }
+  .sondage .option span { position: relative; z-index: 1; }
+  .sondage .option b { float: right; position: relative; z-index: 1; }
+  .sondage .option.mien { border-color: var(--bleu); box-shadow: inset 0 0 0 1px var(--bleu); }
+  .examen { display: flex; justify-content: space-between; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--bordure); }
+  .examen b.j { color: var(--rouge); white-space: nowrap; }
+  table.moyenne { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .92rem; }
+  table.moyenne th { text-align: left; font-size: .75rem; color: var(--discret); font-weight: 700; padding: 4px; }
+  table.moyenne td { padding: 3px 4px; }
+  table.moyenne input { width: 100%; font: inherit; padding: 7px 8px; border: 1px solid var(--bordure); border-radius: 8px; }
+  table.moyenne td.n { width: 22%; }
+  .resultat { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--ciel); color: var(--nuit); font-weight: 700; }
   .hors-ligne { display: none; background: var(--or-fond); color: var(--or); text-align: center; padding: 8px; font-size: .9rem; font-weight: 600; }
   .hors-ligne.on { display: block; }
   @media (prefers-reduced-motion: reduce) { .pilule i { animation: none; } html { scroll-behavior: auto; } }
@@ -132,6 +164,9 @@
   <a href="#programme">Programme</a>
   <a href="#documents">Documents</a>
   <a href="#annonces">Annonces</a>
+  <a href="#partager">Partager</a>
+  <a href="#questions">Questions</a>
+  <a href="#outils">Outils</a>
 </nav></div>
 
 <div class="filieres" id="filieres" hidden></div>
@@ -148,6 +183,8 @@
       </div>
     </div>
     <div class="carte" id="une" hidden></div>
+    <div class="carte" id="examens" hidden></div>
+    <div id="sondages" style="display:flex;flex-direction:column;gap:16px"></div>
     <div class="carte bienvenue"><div class="corps">
       <h2 id="accueil-titre"></h2>
       <p id="accueil-texte"></p>
@@ -163,10 +200,59 @@
 
   <h2 class="titre-section" id="documents">📚 Documents</h2>
   <input type="search" class="recherche" id="recherche" placeholder="🔎 Chercher un document (matière, TD, épreuve…)" hidden>
+  <div class="puces" id="matieres" hidden></div>
   <div class="carte" id="liste-docs"></div>
 
   <h2 class="titre-section" id="annonces">📢 Annonces</h2>
   <div class="carte" id="liste-annonces"></div>
+
+  <h2 class="titre-section" id="partager">🔁 Partager sans forfait</h2>
+  <div class="carte"><div class="corps">
+    <h3>Envoyer un fichier à quelqu'un</h3>
+    <p class="aide">Choisissez le fichier : vous recevez un code à 4 chiffres, à donner à votre camarade. Valable 24 heures, sans Internet.</p>
+    <input type="file" class="champ" id="p-envoi">
+    <div class="barre-envoi" id="p-barre" hidden><i></i></div>
+    <div id="p-code"></div>
+  </div></div>
+  <div class="carte"><div class="corps">
+    <h3>Recevoir un fichier</h3>
+    <div class="ligne-champs"><input class="champ" id="p-saisie" inputmode="numeric" maxlength="4" placeholder="Code à 4 chiffres"><button class="bouton" id="p-recevoir" type="button">Recevoir</button></div>
+    <div id="p-recu"></div>
+  </div></div>
+  <div class="carte"><div class="corps">
+    <h3>Proposer un document à la bibliothèque</h3>
+    <p class="aide">Vos notes, photos du tableau, TD corrigés, anciens sujets… Il sera publié pour tous après vérification.</p>
+    <input class="champ" id="prop-titre" maxlength="120" placeholder="Titre (ex. : Notes du cours d'Ondes, chapitre 2)">
+    <input class="champ" id="prop-matiere" maxlength="60" placeholder="Matière (ex. : Ondes et vibrations)" list="liste-matieres">
+    <datalist id="liste-matieres"></datalist>
+    <input class="champ" id="prop-auteur" maxlength="40" placeholder="Votre prénom (facultatif)">
+    <input type="file" class="champ" id="prop-fichier">
+    <div class="barre-envoi" id="prop-barre" hidden><i></i></div>
+    <button class="bouton" id="prop-envoyer" type="button" style="margin-top:10px">Envoyer pour vérification</button>
+    <p class="aide" id="prop-etat" style="margin-top:6px"></p>
+  </div></div>
+
+  <h2 class="titre-section" id="questions">💬 Questions et demandes</h2>
+  <div class="carte"><div class="corps">
+    <select class="champ" id="q-sorte">
+      <option value="question">Question au professeur ou au délégué</option>
+      <option value="demande">Je cherche un document</option>
+      <option value="info">Information utile</option>
+    </select>
+    <textarea class="champ" id="q-texte" maxlength="400" placeholder="Écrivez ici (anonyme)"></textarea>
+    <button class="bouton" id="q-publier" type="button" style="margin-top:10px">Publier</button>
+    <p class="aide" style="margin-top:6px">Anonyme. Touchez « +1 » sur une question que vous vous posez aussi : les plus demandées passent en premier. Les messages déplacés sont retirés.</p>
+  </div></div>
+  <div class="carte" id="liste-questions"></div>
+
+  <h2 class="titre-section" id="outils">🧮 Outils</h2>
+  <div class="carte"><div class="corps">
+    <h3>Ma moyenne du semestre</h3>
+    <p class="aide">Matière, crédits et note sur 20. Rien n'est envoyé : tout reste sur votre téléphone.</p>
+    <table class="moyenne"><thead><tr><th>Matière (UE)</th><th>Crédits</th><th>Note /20</th></tr></thead><tbody id="m-lignes"></tbody></table>
+    <button class="bouton second" id="m-ajouter" type="button" style="margin-top:8px">+ Ajouter une matière</button>
+    <div class="resultat" id="m-resultat">Remplissez vos notes.</div>
+  </div></div>
 
   <div id="pub-bas"></div>
 
@@ -185,6 +271,8 @@
   var donnees = null;
   var empreinte = "";
   var filiere = "";
+  var matiere = "";
+  var echanges = { questions: [], resultats: {}, mesVotes: {} };
   try { filiere = localStorage.getItem("amphi-filiere") || ""; } catch (e) {}
   function normaliser(c) {
     if (!c.filieres || !c.filieres.length) c.filieres = [{ id: "principale", nom: c.titre || "" }];
@@ -309,6 +397,24 @@
     boite.textContent = "";
     var tous = ((donnees && donnees.documents) || []).filter(pourMoi);
     $("recherche").hidden = tous.length < 6;
+    // Bibliothèque par matière : des puces pour filtrer.
+    var matieres = [];
+    tous.forEach(function (d) { if (d.matiere && matieres.indexOf(d.matiere) < 0) matieres.push(d.matiere); });
+    matieres.sort(function (a, b) { return a.localeCompare(b, "fr"); });
+    if (matiere && matieres.indexOf(matiere) < 0) matiere = "";
+    var avecPuces = matieres.length >= 1 && tous.length >= 2;
+    var zoneM = $("matieres"); zoneM.textContent = ""; zoneM.hidden = !avecPuces;
+    var dl = $("liste-matieres"); dl.textContent = "";
+    matieres.forEach(function (m) { var o = el("option"); o.value = m; dl.appendChild(o); });
+    if (avecPuces) {
+      [""].concat(matieres).forEach(function (m) {
+        var b = el("button", m === matiere ? "choisie" : "", m || "Toutes");
+        b.type = "button";
+        b.onclick = function () { matiere = m; rendreDocuments(); };
+        zoneM.appendChild(b);
+      });
+    }
+    if (matiere) tous = tous.filter(function (d) { return d.matiere === matiere; });
     var mots = ($("recherche").value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/).filter(Boolean);
     var docs = tous.filter(function (d) {
       var t = ((d.titre || "") + " " + (d.nom || "") + " " + (d.categorie || "")).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -317,7 +423,8 @@
     if (!docs.length) { boite.appendChild(el("p", "corps vide", tous.length ? "Aucun document ne correspond à votre recherche." : "Aucun document pour l'instant.")); return; }
     var groupes = {};
     var ordre = [];
-    docs.forEach(function (d) { var g = d.categorie || "Documents"; if (!groupes[g]) { groupes[g] = []; ordre.push(g); } groupes[g].push(d); });
+    docs.forEach(function (d) { var g = (!matiere && d.matiere ? d.matiere + " · " : "") + (d.categorie || "Documents"); if (!groupes[g]) { groupes[g] = []; ordre.push(g); } groupes[g].push(d); });
+    ordre.sort(function (a, b) { return a.localeCompare(b, "fr"); });
     ordre.forEach(function (g) {
       if (ordre.length > 1) boite.appendChild(el("p", "groupe", g));
       groupes[g].forEach(function (d) {
@@ -432,7 +539,170 @@
     rendreDocuments();
     rendreAnnonces();
     rendrePubs();
+    rendreExamens();
+    rendreSondages();
   }
+
+  // ── Examens à venir ──
+  function rendreExamens() {
+    var z = $("examens"); z.textContent = "";
+    var auj = new Date(); auj.setHours(0, 0, 0, 0);
+    var liste = ((donnees && donnees.examens) || []).filter(pourMoi).map(function (e) {
+      var p = String(e.date || "").split("-"); var d = new Date(+p[0], +p[1] - 1, +p[2]);
+      return { e: e, d: d, j: Math.round((d - auj) / 86400000) };
+    }).filter(function (x) { return x.j >= 0; }).sort(function (a, b) { return a.d - b.d; });
+    z.hidden = !liste.length;
+    if (!liste.length) return;
+    var t = el("p", "etiquette", "📝 Examens à venir"); t.style.padding = "14px 16px 6px"; z.appendChild(t);
+    liste.slice(0, 6).forEach(function (x) {
+      var l = el("div", "examen");
+      var g = el("div"); g.appendChild(el("p", "ue", x.e.titre || "Examen")); g.appendChild(el("p", "lieu", dateLisible(cle(x.d)) + (x.e.heure ? " · " + x.e.heure : "")));
+      l.appendChild(g);
+      l.appendChild(el("b", "j", x.j === 0 ? "Aujourd'hui" : x.j === 1 ? "Demain" : "J-" + x.j));
+      z.appendChild(l);
+    });
+  }
+
+  // ── Sondages ──
+  function rendreSondages() {
+    var z = $("sondages"); z.textContent = "";
+    ((donnees && donnees.sondages) || []).filter(pourMoi).forEach(function (sd) {
+      var c = el("div", "carte sondage"), corps = el("div", "corps");
+      corps.appendChild(el("p", "etiquette", sd.ouvert === false ? "📊 Sondage clos" : "📊 Sondage"));
+      corps.appendChild(el("h3", null, sd.question || ""));
+      var res = (echanges.resultats || {})[sd.id] || {};
+      var total = 0; Object.keys(res).forEach(function (k) { total += res[k]; });
+      var mien = (echanges.mesVotes || {})[sd.id];
+      var voirResultats = mien != null || sd.ouvert === false;
+      (sd.options || []).forEach(function (o, i) {
+        var b = el("button", "option" + (mien === i ? " mien" : "")); b.type = "button";
+        if (voirResultats) { var n = res[i] || 0, pc = total ? Math.round(n * 100 / total) : 0; var j = el("i", "jauge"); j.style.width = pc + "%"; b.appendChild(j); b.appendChild(el("b", null, pc + " %")); }
+        b.appendChild(el("span", null, o));
+        if (sd.ouvert !== false) b.onclick = function () { voter(sd.id, i); };
+        corps.appendChild(b);
+      });
+      corps.appendChild(el("p", "aide", voirResultats ? total + " vote" + (total > 1 ? "s" : "") + (sd.ouvert !== false ? " · touchez une autre réponse pour changer d'avis" : "") : "Votez pour voir les résultats."));
+      c.appendChild(corps); z.appendChild(c);
+    });
+  }
+  function voter(id, option) {
+    fetch("/vote", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sondage: id, option: option }) })
+      .then(function () { return chargerEchanges(); });
+  }
+
+  // ── Questions et demandes ──
+  var SORTES = { question: "Question", demande: "Je cherche", info: "Info utile" };
+  function rendreQuestions() {
+    var z = $("liste-questions"); z.textContent = "";
+    var liste = (echanges.questions || []).filter(pourMoi).sort(function (a, b) { return (b.votes || 0) - (a.votes || 0) || b.date - a.date; });
+    if (!liste.length) { z.appendChild(el("p", "corps vide", "Aucune question pour l'instant. Soyez le premier !")); return; }
+    liste.slice(0, 80).forEach(function (q) {
+      var l = el("div", "question");
+      var b = el("button", "plus" + (q.moi ? " fait" : ""), "+" + (q.votes || 0)); b.type = "button";
+      b.appendChild(el("small", null, q.moi ? "moi aussi" : "+1"));
+      b.onclick = function () { if (q.moi) return; fetch("/question/" + q.id + "/plus", { method: "POST" }).then(chargerEchanges); };
+      var c = el("div");
+      c.appendChild(el("p", "sorte", SORTES[q.sorte] || "Question"));
+      c.appendChild(el("p", null, q.texte));
+      c.appendChild(el("p", "date", new Date(q.date).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })));
+      if (q.reponse) c.appendChild(el("p", "reponse", "✅ " + q.reponse));
+      l.appendChild(b); l.appendChild(c); z.appendChild(l);
+    });
+  }
+  function chargerEchanges() {
+    return fetch("/echanges.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (e) {
+      echanges = e; rendreQuestions(); if (donnees) rendreSondages();
+    }).catch(function () {});
+  }
+  $("q-publier").onclick = function () {
+    var t = $("q-texte").value.trim(); if (t.length < 3) return;
+    var b = this; b.disabled = true;
+    fetch("/question", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ texte: t, sorte: $("q-sorte").value, filiere: (donnees && donnees.filieres.length > 1) ? filiere : "" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) { if (r.ok) { $("q-texte").value = ""; chargerEchanges(); } else alert(r.erreur || "Échec."); })
+      .catch(function () { alert("Pas de connexion au Wi-Fi de l'amphi."); })
+      .then(function () { b.disabled = false; });
+  };
+
+  // ── Envois (partage, proposition) avec progression ──
+  function envoyer(url, fichier, barre) {
+    return new Promise(function (ok, ko) {
+      var x = new XMLHttpRequest();
+      x.open("POST", url);
+      x.setRequestHeader("content-type", "application/octet-stream");
+      barre.hidden = false; barre.firstChild.style.width = "0";
+      x.upload.onprogress = function (e) { if (e.lengthComputable) barre.firstChild.style.width = Math.round(e.loaded * 100 / e.total) + "%"; };
+      x.onload = function () { barre.hidden = true; try { var r = JSON.parse(x.responseText); r.ok ? ok(r) : ko(new Error(r.erreur || "Échec")); } catch (e) { ko(new Error("Échec")); } };
+      x.onerror = function () { barre.hidden = true; ko(new Error("Pas de connexion au Wi-Fi de l'amphi.")); };
+      x.send(fichier);
+    });
+  }
+  $("p-envoi").onchange = function () {
+    var f = this.files && this.files[0], input = this; if (!f) return;
+    var z = $("p-code"); z.textContent = "";
+    envoyer("/partage?nom=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(f.type || ""), f, $("p-barre")).then(function (r) {
+      z.appendChild(el("p", "aide", "Code à donner pour « " + f.name + " » :"));
+      z.appendChild(el("p", "code-partage", r.code));
+      z.appendChild(el("p", "aide", "Valable 24 heures. Votre camarade le tape dans « Recevoir un fichier »."));
+      input.value = "";
+    }).catch(function (e) { z.appendChild(el("p", "aide", "❌ " + e.message)); });
+  };
+  $("p-recevoir").onclick = function () {
+    var code = $("p-saisie").value.replace(/\D/g, ""), z = $("p-recu"); z.textContent = "";
+    if (code.length !== 4) { z.appendChild(el("p", "aide", "Le code a 4 chiffres.")); return; }
+    fetch("/partage/" + code).then(function (r) { return r.json(); }).then(function (i) {
+      if (i.erreur) { z.appendChild(el("p", "aide", "❌ " + i.erreur)); return; }
+      var l = el("div", "doc"); l.style.padding = "10px 0 0";
+      var info = el("div", "info"); info.appendChild(el("p", "nom", i.nom)); info.appendChild(el("p", "meta", taille(i.taille)));
+      var a = el("a", "bouton", "Ouvrir");
+      a.href = "/lire?code=" + code + "&nom=" + encodeURIComponent(i.nom) + "&type=" + encodeURIComponent(i.type) + "&taille=" + i.taille;
+      l.appendChild(info); l.appendChild(a); z.appendChild(l);
+    }).catch(function () { z.appendChild(el("p", "aide", "❌ Pas de connexion au Wi-Fi de l'amphi.")); });
+  };
+  $("prop-envoyer").onclick = function () {
+    var f = $("prop-fichier").files && $("prop-fichier").files[0], z = $("prop-etat");
+    if (!f) { z.textContent = "Choisissez d'abord le fichier."; return; }
+    var b = this; b.disabled = true; z.textContent = "Envoi…";
+    var q = "nom=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(f.type || "") + "&titre=" + encodeURIComponent($("prop-titre").value) + "&matiere=" + encodeURIComponent($("prop-matiere").value) + "&auteur=" + encodeURIComponent($("prop-auteur").value);
+    envoyer("/proposer?" + q, f, $("prop-barre")).then(function () {
+      z.textContent = "✅ Merci ! Le document sera publié après vérification.";
+      $("prop-fichier").value = ""; $("prop-titre").value = "";
+    }).catch(function (e) { z.textContent = "❌ " + e.message; }).then(function () { b.disabled = false; });
+  };
+
+  // ── Calculateur de moyenne (reste sur le téléphone) ──
+  var lignes = [];
+  try { lignes = JSON.parse(localStorage.getItem("amphi-moyenne") || "[]"); } catch (e) {}
+  if (!lignes.length) lignes = [{ m: "", c: "", n: "" }, { m: "", c: "", n: "" }, { m: "", c: "", n: "" }];
+  function calculer() {
+    var somme = 0, credits = 0, valides = 0;
+    lignes.forEach(function (l) {
+      var c = parseFloat(String(l.c).replace(",", ".")), n = parseFloat(String(l.n).replace(",", "."));
+      if (c > 0 && n >= 0 && n <= 20) { somme += c * n; credits += c; if (n >= 10) valides += c; }
+    });
+    try { localStorage.setItem("amphi-moyenne", JSON.stringify(lignes)); } catch (e) {}
+    var r = $("m-resultat");
+    if (!credits) { r.textContent = "Remplissez vos notes."; return; }
+    var moy = somme / credits;
+    var mention = moy >= 16 ? "Très bien" : moy >= 14 ? "Bien" : moy >= 12 ? "Assez bien" : moy >= 10 ? "Passable" : "Insuffisant";
+    r.textContent = "Moyenne : " + moy.toFixed(2).replace(".", ",") + "/20 · " + mention + " · " + valides + "/" + credits + " crédits avec 10 ou plus" + (moy >= 10 && valides < credits ? " (compensation possible selon le règlement de votre université)" : "");
+  }
+  function rendreMoyenne() {
+    var tb = $("m-lignes"); tb.textContent = "";
+    lignes.forEach(function (l) {
+      var tr = el("tr");
+      [["m", "text", "Ex. : Mécanique"], ["c", "number", "6"], ["n", "number", "12,5"]].forEach(function (d) {
+        var td = el("td", d[0] === "m" ? "" : "n"), i = el("input"); i.type = d[1] === "number" ? "text" : "text"; if (d[1] === "number") i.inputMode = "decimal";
+        i.placeholder = d[2]; i.value = l[d[0]] || "";
+        i.oninput = function () { l[d[0]] = i.value; calculer(); };
+        td.appendChild(i); tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    calculer();
+  }
+  $("m-ajouter").onclick = function () { lignes.push({ m: "", c: "", n: "" }); rendreMoyenne(); };
+  rendreMoyenne();
 
   function charger() {
     fetch("/donnees.json", { cache: "no-store" })
@@ -464,6 +734,8 @@
   setInterval(horloge, 30000);
   charger();
   setInterval(charger, 60000);
+  chargerEchanges();
+  setInterval(chargerEchanges, 30000);
 })();
 </script>
 </body>

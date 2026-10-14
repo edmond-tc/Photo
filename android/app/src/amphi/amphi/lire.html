@@ -39,7 +39,9 @@
   "use strict";
   var q = new URLSearchParams(location.search);
   var id = q.get("id") || "", nom = q.get("nom") || "document", type = q.get("type") || "application/octet-stream", taille = +q.get("taille") || 0;
-  var adresse = "/f/" + encodeURIComponent(id) + "?nom=" + encodeURIComponent(nom) + "&type=" + encodeURIComponent(type);
+  var code = (q.get("code") || "").replace(/\D/g, "");
+  // Fichier de la bibliothèque, ou fichier partagé par un camarade (code à 4 chiffres).
+  var adresse = code ? "/partage/" + code + "/f" : "/f/" + encodeURIComponent(id) + "?nom=" + encodeURIComponent(nom) + "&type=" + encodeURIComponent(type);
   var zone = document.getElementById("contenu");
   document.getElementById("titre").textContent = nom;
   document.title = nom;
@@ -51,7 +53,7 @@
   // sécurisé » de Chrome : le fichier est lu dans la page, puis remis au
   // téléphone. Au-delà de 60 Mo (vidéos), lien direct.
   document.getElementById("enregistrer").onclick = function () {
-    if (taille > 60e6) { location.href = adresse + "&dl=1"; return; }
+    if (taille > 60e6) { location.href = adresse + (adresse.indexOf("?") < 0 ? "?" : "&") + "dl=1"; return; }
     toast("Préparation…");
     fetch(adresse).then(function (r) { if (!r.ok) throw new Error(); return r.blob(); }).then(function (b) {
       var a = document.createElement("a");
@@ -61,7 +63,7 @@
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
       toast("Enregistré dans Téléchargements ✓ (si le téléphone demande, choisissez « Conserver »)");
-    }).catch(function () { location.href = adresse + "&dl=1"; });
+    }).catch(function () { location.href = adresse + (adresse.indexOf("?") < 0 ? "?" : "&") + "dl=1"; });
   };
 
   function nonLisible() {
