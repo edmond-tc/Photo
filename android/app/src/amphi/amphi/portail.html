@@ -476,6 +476,18 @@
     <p class="aide" id="prop-etat" style="margin-top:6px"></p>
   </div></div>
 
+  <div class="carte"><div class="corps">
+    <h3>📡 Devenez relais (Android)</h3>
+    <p class="aide">Ce Wi-Fi n'accueille qu'une dizaine de personnes à la fois. Avec l'application, votre téléphone recopie tous les documents et crée son propre Wi-Fi pour une dizaine de camarades de plus. Même page, même adresse.</p>
+    <ol class="aide" style="margin:8px 0 0;padding-left:18px">
+      <li>Téléchargez l'application ci-dessous et installez-la (autorisez l'installation si le téléphone le demande).</li>
+      <li>Ouvrez « Portail Amphi », puis « 📡 Relais » → « Copier tout le contenu ».</li>
+      <li>Déconnectez-vous de ce Wi-Fi, puis touchez « 📶 Créer le Wi-Fi ».</li>
+    </ol>
+    <button class="bouton" id="relais-apk" type="button" style="margin-top:10px">📥 Télécharger l'application (3 Mo)</button>
+    <p class="aide" id="relais-apk-etat" style="margin-top:6px"></p>
+  </div></div>
+
   <h2 class="titre-section" id="questions">💬 Questions et demandes</h2>
   <div class="carte"><div class="corps">
     <select class="champ" id="q-sorte">
@@ -502,6 +514,7 @@
 
   <footer>
     <p>Ce Wi-Fi n'a pas Internet : tout ce qui est ici est gratuit, sans forfait.</p>
+    <p>Vous avez vos documents ? Déconnectez-vous du Wi-Fi pour laisser la place : il n'accueille qu'une dizaine de personnes à la fois.</p>
     <p>Pour garder un document, ouvrez-le puis enregistrez-le dans votre téléphone.</p>
     <p id="pied-editeur"></p>
   </footer>
@@ -1208,6 +1221,21 @@
     liens.forEach(function (a) { a.classList.toggle("actif", a === actuel); });
   }
   window.addEventListener("scroll", suivreDefilement, { passive: true });
+
+  // ── Application pour devenir relais (lue dans la page puis remise au
+  // téléphone : pas d'alerte « téléchargement non sécurisé ») ──
+  $("relais-apk").onclick = function () {
+    var b = this, z = $("relais-apk-etat");
+    b.disabled = true; z.textContent = "Téléchargement…";
+    fetch("/application.apk").then(function (r) { if (!r.ok) throw new Error(); return r.blob(); }).then(function (blob) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([blob], { type: "application/vnd.android.package-archive" }));
+      a.download = "Portail-Amphi.apk";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+      z.textContent = "✅ Téléchargé. Ouvrez « Portail-Amphi.apk » dans vos téléchargements pour l'installer.";
+    }).catch(function () { z.textContent = "❌ Échec du téléchargement. Réessayez."; }).then(function () { b.disabled = false; });
+  };
 
   // ── Icône sur l'écran d'accueil : connecté au Wi-Fi, un geste suffit ensuite ──
   (function () {

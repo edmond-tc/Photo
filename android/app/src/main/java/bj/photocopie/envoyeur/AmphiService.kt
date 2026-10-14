@@ -12,6 +12,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pGroup
@@ -27,6 +30,7 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.Inet4Address
+import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
@@ -242,6 +246,9 @@ class AmphiService : Service() {
                     r.methode == "GET" && (r.chemin == "/lib/pdf.min.js" || r.chemin == "/lib/pdf.worker.min.js") ->
                         actif(sortie, "amphi" + r.chemin, "text/javascript; charset=utf-8", "max-age=604800")
                     r.methode == "GET" && r.chemin.startsWith("/f/") -> envoyerFichier(sortie, r, r.chemin.removePrefix("/f/"))
+                    // L'application elle-même : un étudiant l'installe pour devenir relais.
+                    r.methode == "GET" && r.chemin == "/application.apk" ->
+                        envoyerChemin(sortie, r, File(applicationInfo.sourceDir), "application/vnd.android.package-archive", "Portail-Amphi.apk", null)
                     // ── Échanges entre étudiants (lecture et dépôt, sans compte) ──
                     r.methode == "GET" && r.chemin == "/echanges.json" -> json(sortie, echangesPublics(s.inetAddress.hostAddress ?: ""))
                     r.methode == "POST" && r.chemin == "/partage" -> deposerPartage(sortie, r, s.inetAddress.hostAddress ?: "")
@@ -294,6 +301,8 @@ class AmphiService : Service() {
                         json(sortie, JSONObject().put("ok", true))
                     }
                     r.methode == "POST" && r.chemin == "/gerer/restaurer" -> restaurer(sortie, r)
+                    r.methode == "GET" && r.chemin == "/gerer/relais" -> json(sortie, JSONObject(etatRelais.get().toString()).put("derniere", prefs().getLong("relais_date", 0L)))
+                    r.methode == "POST" && r.chemin == "/gerer/relais/copier" -> json(sortie, lancerCopie())
                     else -> repondre(sortie, 404, "text/plain; charset=utf-8", "Introuvable".toByteArray())
                 }
             } catch (_: Exception) {
@@ -443,7 +452,7 @@ class AmphiService : Service() {
             }
         }
         // Un téléchargement (ou l'affichage d'une image de publicité) = un de plus.
-        if (debut == 0L && id.isNotEmpty()) compter("telechargements", id)
+        if (debut == 0L && id.isNotEmpty() && r.query["relais"] != "1") compter("telechargements", id)
         if (debut > fin || debut >= total) {
             return repondre(sortie, 416, "text/plain", ByteArray(0), mapOf("Content-Range" to "bytes */$total"))
         }
@@ -1247,6 +1256,103 @@ class AmphiService : Service() {
                 try { Thread.sleep(1000) } catch (_: InterruptedException) { return }
                 attente++
             }
+        }
+    }
+
+    // ── Relais : ce téléphone recopie le téléphone principal, puis crée son
+    // propre Wi-Fi. Un téléphone n'accueille qu'une dizaine d'étudiants : avec
+    // des relais répartis dans l'amphi, toute la promo a les documents. ────
+
+    private val etatRelais = AtomicReference(JSONObject().put("enCours", false))
+
+    /** Le Wi-Fi auquel ce téléphone est connecté (celui du téléphone principal). */
+    private fun reseauWifi(): Network? {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return null
+        @Suppress("DEPRECATION")
+        return cm.allNetworks.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
+    }
+
+    /** Adresse du téléphone principal : la passerelle de ce Wi-Fi (192.168.49.1 en Wi-Fi Direct). */
+    private fun principal(n: Network): String {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val gw = cm?.getLinkProperties(n)?.routes
+            ?.firstOrNull { it.destination.prefixLength == 0 && it.gateway is Inet4Address }
+            ?.gateway?.hostAddress
+        return gw ?: "192.168.49.1"
+    }
+
+    private fun ouvrir(n: Network, url: String): HttpURLConnection =
+        (n.openConnection(java.net.URL(url)) as HttpURLConnection).apply { connectTimeout = 8_000; readTimeout = 30_000 }
+
+    private fun lancerCopie(): JSONObject {
+        synchronized(etatRelais) {
+            if (etatRelais.get().optBoolean("enCours")) return etatRelais.get()
+            // Son propre Wi-Fi allumé, ce téléphone serait lui-même 192.168.49.1.
+            if (prefs().getBoolean("wifi", false) || adressesWifiDirect().isNotEmpty()) return JSONObject().put("erreur", "wifi_propre")
+            val n = reseauWifi() ?: return JSONObject().put("erreur", "pas_connecte")
+            etatRelais.set(JSONObject().put("enCours", true).put("fait", 0).put("total", 0).put("etape", "Lecture du contenu…"))
+            Thread({ copier(n) }, "amphi-relais").start()
+            return etatRelais.get()
+        }
+    }
+
+    private fun copier(n: Network) {
+        val avant = prefs().getLong("relais_date", 0L)
+        try {
+            val hote = principal(n)
+            val base = "http://$hote:$PORT"
+            val c = ouvrir(n, "$base/donnees.json").run {
+                try { if (responseCode != 200) throw Exception("code $responseCode"); inputStream.use { JSONObject(String(it.readBytes(), Charsets.UTF_8)) } } finally { disconnect() }
+            }
+            // Tous les fichiers dont la page a besoin : documents, images des publicités, des annonces, photo.
+            val besoins = LinkedHashMap<String, Long>()
+            fun ajouter(t: JSONArray?, cle: String, cleTaille: String?) {
+                if (t == null) return
+                for (i in 0 until t.length()) {
+                    val o = t.optJSONObject(i) ?: continue
+                    val id = o.optString(cle)
+                    if (idValide(id)) besoins[id] = if (cleTaille != null) o.optLong(cleTaille, -1L) else -1L
+                }
+            }
+            ajouter(c.optJSONArray("documents"), "id", "taille")
+            ajouter(c.optJSONArray("pubs"), "image", null)
+            ajouter(c.optJSONArray("annonces"), "image", null)
+            c.optJSONObject("accueil")?.optString("photo")?.takeIf { idValide(it) }?.let { besoins[it] = -1L }
+            var fait = 0
+            var octets = 0L
+            for ((id, taille) in besoins) {
+                etatRelais.set(JSONObject().put("enCours", true).put("fait", fait).put("total", besoins.size).put("octets", octets).put("etape", "Copie des documents…"))
+                val f = File(dossierFichiers, id)
+                if (f.isFile && (taille < 0 || f.length() == taille)) { fait++; continue }
+                if (taille > 0 && dossierFichiers.usableSpace < taille + 200_000_000L) throw Exception("place")
+                val tmp = File(dossierFichiers, "$id.part")
+                val cx = ouvrir(n, "$base/f/$id?relais=1")
+                try {
+                    if (cx.responseCode != 200) { fait++; continue }
+                    cx.inputStream.use { i -> tmp.outputStream().use { o -> octets += i.copyTo(o, 64 * 1024) } }
+                } finally { cx.disconnect() }
+                tmp.renameTo(f)
+                fait++
+            }
+            val maintenant = System.currentTimeMillis()
+            c.put("relais", JSONObject().put("date", maintenant))
+            synchronized(this) {
+                val tmp = File(dossier, "contenu.json.tmp")
+                tmp.writeText(c.toString())
+                tmp.renameTo(fichierContenu)
+            }
+            prefs().edit().putLong("relais_date", maintenant).apply()
+            dossierFichiers.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() }
+            nettoyerFichiers(c)
+            etatRelais.set(JSONObject().put("enCours", false).put("ok", true).put("fait", fait).put("total", besoins.size).put("octets", octets).put("date", maintenant))
+        } catch (e: Exception) {
+            dossierFichiers.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() }
+            val raison = when {
+                e.message == "place" -> "place"
+                e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.net.NoRouteToHostException -> "injoignable"
+                else -> "echec"
+            }
+            etatRelais.set(JSONObject().put("enCours", false).put("erreur", raison).put("date", avant))
         }
     }
 

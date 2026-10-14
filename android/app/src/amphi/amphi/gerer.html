@@ -95,6 +95,24 @@
     <p class="aide" id="w-message"></p>
   </section>
 
+  <details class="carte" id="carte-relais">
+    <summary>📡 Relais : plus de monde dans l'amphi</summary>
+    <p class="aide">Un téléphone n'accueille qu'une dizaine d'étudiants à la fois. Un relais est un autre téléphone (avec cette application) qui recopie tout le contenu du téléphone principal, puis crée son propre Wi-Fi pour une dizaine de camarades de plus. Même adresse, même page. Placez un relais tous les 4 ou 5 rangs.</p>
+    <p class="aide" style="margin-top:6px"><b>Sur le téléphone relais :</b></p>
+    <ol class="etapes">
+      <li>Connectez-le au Wi-Fi du téléphone principal (« DIRECT-AM-… », avec son mot de passe).</li>
+      <li>Touchez « Copier tout le contenu ».</li>
+      <li>Quand c'est fini, déconnectez-le de ce Wi-Fi, puis plus haut touchez « 📶 Créer le Wi-Fi » (nom : « Relais 2 », par exemple).</li>
+    </ol>
+    <div class="boutons">
+      <button class="bouton" id="b-relais-copier">📥 Copier tout le contenu</button>
+      <button class="bouton second" id="b-relais-wifi">Réglages Wi-Fi</button>
+    </div>
+    <div class="barre-envoi" id="relais-barre" hidden><i></i></div>
+    <p class="aide" id="relais-message" style="margin-top:8px"></p>
+    <p class="aide">Pour copier à nouveau (nouveaux documents), éteignez le Wi-Fi du relais, reconnectez-le au téléphone principal et recommencez. Les questions et publications envoyées sur un relais restent sur ce relais.</p>
+  </details>
+
   <details class="carte" id="carte-etat">
     <summary>Autre méthode : point d'accès mobile + QR</summary>
     <p class="etat attente" id="etat">⏳ Démarrage du portail…</p>
@@ -950,6 +968,45 @@
   fetch("/gerer/contenu", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) { contenu = normaliser(c); remplirFormulaires(); rendreEchanges(); });
   etat();
   setInterval(etat, 5000);
+
+  // ── Relais ──
+  var suiviRelais = null;
+  function heureCourte(ms) { var d = new Date(ms), m = d.getMinutes(); return d.getDate() + "/" + (d.getMonth() + 1) + " à " + d.getHours() + "h" + (m < 10 ? "0" : "") + m; }
+  function montrerRelais(r) {
+    var msg = $("relais-message"), barre = $("relais-barre");
+    var erreurs = {
+      wifi_propre: "Éteignez d'abord le Wi-Fi de ce téléphone (bouton « Éteindre le Wi-Fi » plus haut), puis connectez-le au Wi-Fi du téléphone principal.",
+      pas_connecte: "Ce téléphone n'est connecté à aucun Wi-Fi. Connectez-le au Wi-Fi du téléphone principal (« DIRECT-AM-… »), puis réessayez.",
+      injoignable: "Le téléphone principal ne répond pas. Vérifiez que ce téléphone est bien connecté à son Wi-Fi et que le portail y est allumé.",
+      place: "Plus assez de place sur ce téléphone pour tous les documents.",
+      echec: "La copie s'est arrêtée. Réessayez."
+    };
+    if (r.enCours) {
+      barre.hidden = false;
+      barre.firstChild.style.width = (r.total ? Math.round(100 * r.fait / r.total) : 5) + "%";
+      msg.textContent = (r.etape || "Copie…") + (r.total ? " " + r.fait + " / " + r.total : "");
+      return;
+    }
+    barre.hidden = true;
+    var enSuivi = !!suiviRelais;
+    clearInterval(suiviRelais); suiviRelais = null;
+    $("b-relais-copier").disabled = false;
+    if (r.erreur) { msg.textContent = "❌ " + (erreurs[r.erreur] || erreurs.echec); return; }
+    if (r.ok) { msg.textContent = "✅ Copie terminée : " + r.total + " fichier(s). Déconnectez ce téléphone du Wi-Fi principal, puis touchez « 📶 Créer le Wi-Fi »."; if (enSuivi) contenuRecharge(); return; }
+    msg.textContent = r.derniere ? "Dernière copie : " + heureCourte(r.derniere) + "." : "";
+  }
+  function contenuRecharge() { fetch("/gerer/contenu", { cache: "no-store" }).then(function (x) { return x.json(); }).then(function (c) { contenu = normaliser(c); remplirFormulaires(); }).catch(function () {}); }
+  function suivreRelais() { fetch("/gerer/relais", { cache: "no-store" }).then(function (x) { return x.json(); }).then(montrerRelais).catch(function () {}); }
+  $("b-relais-copier").onclick = function () {
+    if (!confirm("Remplacer le contenu de ce téléphone par celui du téléphone principal ?")) return;
+    $("b-relais-copier").disabled = true;
+    fetch("/gerer/relais/copier", { method: "POST" }).then(function (x) { return x.json(); }).then(function (r) {
+      montrerRelais(r);
+      if (r.enCours && !suiviRelais) suiviRelais = setInterval(suivreRelais, 1000);
+    }).catch(function () { $("b-relais-copier").disabled = false; });
+  };
+  $("b-relais-wifi").onclick = function () { if (window.Amphi) Amphi.ouvrirWifi(); };
+  suivreRelais();
 })();
 </script>
 </body>
