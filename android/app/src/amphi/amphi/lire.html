@@ -23,6 +23,11 @@
   .message p + p { margin-top: 8px; color: var(--discret); font-size: .92rem; }
   .gros { display: inline-block; margin-top: 14px; padding: 12px 18px; border-radius: 12px; background: var(--bleu); color: #fff; font-weight: 700; text-decoration: none; border: 0; font: inherit; cursor: pointer; }
   .chargement { color: var(--discret); margin-top: 30px; }
+  .chrono { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; align-items: center; gap: 10px; padding: 10px max(12px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); background: var(--nuit); color: #fff; font-weight: 700; }
+  .chrono .temps { font: 800 1.3rem "Roboto Mono", monospace; flex: 1; }
+  .chrono button, .chrono a { border: 0; border-radius: 10px; padding: 8px 12px; background: #fff; color: var(--nuit); font: inherit; text-decoration: none; cursor: pointer; }
+  .chrono.fini { background: #b42318; }
+  [hidden] { display: none !important; }
   .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #1f2430; color: #fff; padding: 10px 16px; border-radius: 999px; font-weight: 600; display: none; max-width: 92%; text-align: center; }
 </style>
 </head>
@@ -34,6 +39,7 @@
 </div>
 <div class="contenu" id="contenu"><p class="chargement">Ouverture…</p></div>
 <div class="toast" id="toast"></div>
+<div class="chrono" id="chrono" hidden><span class="temps" id="chrono-temps"></span><span id="chrono-texte"></span><button type="button" id="chrono-fin">Terminer</button></div>
 <script>
 (function () {
   "use strict";
@@ -49,6 +55,37 @@
   function el(t, c, x) { var e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; }
   function toast(t) { var b = document.getElementById("toast"); b.textContent = t; b.style.display = "block"; clearTimeout(toast.m); toast.m = setTimeout(function () { b.style.display = "none"; }, 3500); }
   var ext = nom.split(".").pop().toLowerCase();
+
+  // Épreuve blanche : chronomètre de la vraie durée, gardé même si la page se recharge.
+  var duree = Math.min(300, Math.max(10, parseInt(q.get("blanche") || "0", 10) || 0));
+  if (q.get("blanche") && id) {
+    var cle = "amphi-blanche-" + id, debut = 0;
+    try { debut = +localStorage.getItem(cle) || 0; } catch (e) {}
+    if (!debut || Date.now() - debut > (duree + 60) * 60000) { debut = Date.now(); try { localStorage.setItem(cle, String(debut)); } catch (e) {} }
+    var ch = document.getElementById("chrono"), fini = false;
+    ch.hidden = false; zone.style.paddingBottom = "80px";
+    var corriges = "/#doc-" + id;
+    var deux = function (n) { return (n < 10 ? "0" : "") + n; };
+    var arreter = function (texte) {
+      fini = true; clearInterval(tic); ch.className = "chrono fini";
+      document.getElementById("chrono-temps").textContent = texte;
+      var b = document.getElementById("chrono-fin"), a = document.createElement("a");
+      a.href = corriges; a.textContent = "📝 Voir les corrigés"; b.replaceWith(a);
+      document.getElementById("chrono-texte").textContent = "";
+      try { localStorage.removeItem(cle); } catch (e) {}
+    };
+    var tic = setInterval(function () {
+      var reste = Math.round((debut + duree * 60000 - Date.now()) / 1000);
+      if (reste <= 0) { if (navigator.vibrate) navigator.vibrate([400, 200, 400]); arreter("⏰ Temps écoulé ! Posez le stylo."); return; }
+      document.getElementById("chrono-temps").textContent = "⏱ " + Math.floor(reste / 3600) + ":" + deux(Math.floor(reste % 3600 / 60)) + ":" + deux(reste % 60);
+      document.getElementById("chrono-texte").textContent = "Épreuve blanche";
+    }, 1000);
+    document.getElementById("chrono-fin").onclick = function () {
+      if (fini || !confirm("Terminer l'épreuve blanche maintenant ?")) return;
+      var m = Math.max(1, Math.round((Date.now() - debut) / 60000));
+      arreter("✅ Terminé en " + (m >= 60 ? Math.floor(m / 60) + " h " + deux(m % 60) : m + " min"));
+    };
+  }
 
   // Enregistrer dans le téléphone sans passer par le téléchargement « non
   // sécurisé » de Chrome : le fichier est lu dans la page, puis remis au

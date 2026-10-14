@@ -176,6 +176,9 @@
     <summary>📥 Documents proposés par les étudiants <span class="pastille" id="nb-valider" hidden></span></summary>
     <p class="aide">Rien n'est publié sans votre accord. Corrigez le titre ou la matière si besoin, puis publiez.</p>
     <div id="liste-propositions"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">📝 Corrigés proposés</h3>
+    <p class="aide">Vérifiez qu'il s'agit bien d'un corrigé lisible et correct. Publié : +20 points pour son auteur.</p>
+    <div id="liste-corriges"></div>
   </details>
 
   <details class="carte">
@@ -744,8 +747,25 @@
   function rendreEchanges() {
     if (!contenu) return;
     rendrePromo();
-    var nbP = echanges.propositions.length;
+    var corriges = echanges.corriges || [];
+    var cAttente = corriges.filter(function (c) { return c.statut === "attente"; });
+    var nbP = echanges.propositions.length + cAttente.length;
     $("nb-valider").hidden = !nbP; $("nb-valider").textContent = nbP;
+    var lc = $("liste-corriges"); lc.textContent = "";
+    if (!corriges.length) lc.appendChild(el("p", "aide", "Aucun corrigé pour l'instant."));
+    corriges.slice().sort(function (a, b) { return (a.statut === "attente" ? 0 : 1) - (b.statut === "attente" ? 0 : 1) || b.date - a.date; }).forEach(function (c) {
+      var doc = (contenu.documents || []).filter(function (d) { return d.id === c.doc; })[0];
+      var l = el("div", "ligne"); l.style.flexWrap = "wrap";
+      var i = el("div", "info");
+      i.appendChild(el("p", "nom", (c.statut === "attente" ? "⏳ " : "✅ ") + (c.note || c.nom)));
+      i.appendChild(el("p", "meta", "Pour : " + (doc ? doc.titre || doc.nom : "document retiré") + (c.pseudo ? " · par " + c.pseudo : "") + " · " + (c.votes || 0) + " 👍 · " + new Date(c.date).toLocaleString("fr-FR")));
+      l.appendChild(i);
+      var act = function (a) { return function () { poster("/gerer/corrige/" + c.cid, { action: a }).then(chargerEchanges); }; };
+      l.appendChild(bouton("Voir", "second", function () { location.href = "/gerer/corrige/" + c.cid + "/f?type=" + encodeURIComponent(c.type) + "&nom=" + encodeURIComponent(c.nom); }));
+      if (c.statut === "attente") { l.appendChild(bouton("Publier", "", act("publier"))); l.appendChild(bouton("Refuser", "danger", act("refuser"))); }
+      else l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer ce corrigé ?")) act("supprimer")(); }));
+      lc.appendChild(l);
+    });
     var lp = $("liste-propositions"); lp.textContent = "";
     if (!nbP) lp.appendChild(el("p", "aide", "Rien à vérifier pour l'instant."));
     echanges.propositions.forEach(function (p) {
@@ -760,7 +780,7 @@
         poster("/gerer/proposition/" + p.id + "/accepter").then(function (r) {
           if (!r.ok) return toast(r.erreur || "Échec");
           var d = r.document;
-          (contenu.documents = contenu.documents || []).push({ id: d.id, nom: d.nom, titre: titre.value.trim() || d.nom, type: d.type, taille: d.taille, categorie: "Notes d'étudiants", matiere: mat.value.trim(), filiere: "", date: Date.now(), auteur: d.auteur || "" });
+          (contenu.documents = contenu.documents || []).push({ id: d.id, nom: d.nom, titre: titre.value.trim() || d.nom, type: d.type, taille: d.taille, categorie: "Notes d'étudiants", matiere: mat.value.trim(), filiere: "", date: Date.now(), auteur: d.auteur || "", auteurId: d.pid || "" });
           return enregistrer("Publié dans la bibliothèque ✓").then(chargerEchanges);
         });
       }));
@@ -782,6 +802,14 @@
       l.appendChild(bouton("Répondre", "second", function () { var t = prompt("Votre réponse (visible par tous)", q.reponse || ""); if (t !== null) poster("/gerer/question/" + q.id, { action: "repondre", reponse: t }).then(chargerEchanges); }));
       l.appendChild(bouton(q.masquee ? "Afficher" : "Masquer", "second", function () { poster("/gerer/question/" + q.id, { action: q.masquee ? "afficher" : "masquer" }).then(chargerEchanges); }));
       l.appendChild(bouton("Supprimer", "danger", function () { if (confirm("Supprimer ce message ?")) poster("/gerer/question/" + q.id, { action: "supprimer" }).then(chargerEchanges); }));
+      // Réponses des camarades (entraide) : publiées tout de suite, retirables ici.
+      (q.reponses || []).forEach(function (x) {
+        var rr = el("div", "ligne"); rr.style.cssText = "width:100%;padding:6px 0 0 14px;border-top:0";
+        var ri = el("div", "info"); ri.appendChild(el("p", null, "↳ " + x.texte)); ri.appendChild(el("p", "meta", (x.pseudo || "Anonyme") + " · " + (x.votes || 0) + " 👍"));
+        rr.appendChild(ri);
+        rr.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer cette réponse ?")) poster("/gerer/question/" + q.id, { action: "retirer-reponse", rid: x.rid }).then(chargerEchanges); }));
+        l.appendChild(rr);
+      });
       lq.appendChild(l);
     });
     var ls = $("liste-sondages"); ls.textContent = "";

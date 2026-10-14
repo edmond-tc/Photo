@@ -267,6 +267,13 @@ class AmphiService : Service() {
                     // ── Réviser : profil (points, niveau, série) et défi du jour ──
                     r.methode == "POST" && r.chemin == "/profil" -> profil(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/defi" -> repondreDefi(sortie, r, s.inetAddress.hostAddress ?: "")
+                    // ── Ressources : corrigés, merci, entraide ──
+                    r.methode == "POST" && r.chemin == "/corrige" -> deposerCorrige(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/corrige/[a-z0-9]{20}/utile$")) -> voterCorrige(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/merci/[a-z0-9]{8,40}$")) -> merci(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/question/[a-z0-9]{6,30}/repondre$")) -> repondreQuestion(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/question/[a-z0-9]{6,30}/reponse/[a-z0-9]{12}/utile$")) ->
+                        voterReponse(sortie, r, r.chemin.split("/")[2], r.chemin.split("/")[4], s.inetAddress.hostAddress ?: "")
                     // ── Star du jour (anniversaires) et événements ──
                     r.methode == "POST" && r.chemin == "/star" -> creerStar(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.matches(Regex("^/star/[a-z0-9]{16}/photo$")) -> photoStar(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
@@ -297,6 +304,12 @@ class AmphiService : Service() {
                     }
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/publication/[a-z0-9]{6,30}$")) -> json(sortie, modererPublication(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin == "/gerer/defi" -> json(sortie, defiPerso(lireJson(r)))
+                    r.methode == "POST" && r.chemin.matches(Regex("^/gerer/corrige/[a-z0-9]{20}$")) -> json(sortie, modererCorrige(r.chemin.split("/")[3], lireJson(r).optString("action")))
+                    r.methode == "GET" && r.chemin.matches(Regex("^/gerer/corrige/[a-z0-9]{20}/f$")) -> {
+                        val f = File(dossierFichiers, r.chemin.split("/")[3])
+                        if (f.isFile) envoyerChemin(sortie, r, f, r.query["type"], r.query["nom"], null)
+                        else repondre(sortie, 404, "text/plain", "Introuvable".toByteArray())
+                    }
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/star/[a-z0-9]{16}$")) -> json(sortie, modererStar(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/alerte/[a-z0-9]{6,30}$")) -> json(sortie, modererAlerte(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/question/[a-z0-9]{6,30}$")) -> {
@@ -402,6 +415,7 @@ class AmphiService : Service() {
         ajouter(c.optJSONArray("evenements"), "image")
         c.optJSONObject("accueil")?.optString("photo")?.takeIf { it.isNotEmpty() }?.let { utilises.add(it) }
         ajouter(lireTableau(fichierPublications), "image")
+        ajouter(lireTableau(fichierCorriges), "cid")
         val st = lireTableau(fichierStars)
         for (i in 0 until st.length()) st.optJSONObject(i)?.optJSONArray("photos")?.let { ph -> for (k in 0 until ph.length()) utilises.add(ph.optString(k)) }
         val maintenant = System.currentTimeMillis()
@@ -757,7 +771,8 @@ class AmphiService : Service() {
             t.put(JSONObject()
                 .put("id", id).put("nom", nomPropre(r.query["nom"])).put("type", typePropre(r.query["type"]))
                 .put("titre", texte(r.query["titre"], 120)).put("matiere", texte(r.query["matiere"], 60))
-                .put("auteur", texte(r.query["auteur"], 40)).put("taille", taille).put("date", System.currentTimeMillis()))
+                .put("auteur", texte(r.query["auteur"], 40)).put("taille", taille).put("date", System.currentTimeMillis())
+                .put("pid", (r.query["pid"] ?: "").takeIf { ID_PROFIL.matches(it) } ?: ""))
             ecrire(fichierPropositions, t)
         }
         json(sortie, JSONObject().put("ok", true))
@@ -776,6 +791,10 @@ class AmphiService : Service() {
         // Le fichier rejoint la bibliothèque ; la page de gestion l'ajoute au contenu.
         val nouvelId = java.util.UUID.randomUUID().toString().replace("-", "").take(20)
         if (!f.renameTo(File(dossierFichiers, nouvelId))) return JSONObject().put("erreur", "Fichier introuvable.")
+        // Document validé : 15 points et une contribution pour son auteur.
+        o.optString("pid").takeIf { ID_PROFIL.matches(it) }?.let { pid ->
+            val profils = lireObjet(fichierProfils); ajouterPoints(profils, pid, 15); ajouterContribution(profils, pid); ecrire(fichierProfils, profils)
+        }
         return JSONObject().put("ok", true).put("document", JSONObject(o.toString()).put("id", nouvelId))
       }
     }
@@ -858,7 +877,7 @@ class AmphiService : Service() {
             val jai = qui != null && (0 until qui.length()).any { qui.optString(it) == ip }
             visibles.put(JSONObject().put("id", o.optString("id")).put("texte", o.optString("texte")).put("sorte", o.optString("sorte"))
                 .put("filiere", o.optString("filiere")).put("date", o.optLong("date")).put("votes", o.optInt("votes"))
-                .put("reponse", o.optString("reponse")).put("moi", jai))
+                .put("reponse", o.optString("reponse")).put("moi", jai).put("reponses", reponsesPubliques(o)))
         }
         val v = lireObjet(fichierVotes)
         val mesVotes = JSONObject()
@@ -870,6 +889,8 @@ class AmphiService : Service() {
             .put("devinette", devinettePublique(ip))
             .put("stars", starsPubliques())
             .put("participations", participations(ip))
+            .put("corriges", corrigesPublics(false))
+            .put("mercis", mercisPublics())
     }
 
     private fun echangesGestion(): JSONObject {
@@ -880,7 +901,7 @@ class AmphiService : Service() {
         val pubsSansIp = JSONArray()
         for (i in 0 until pubs.length()) { val o = JSONObject(pubs.getJSONObject(i).toString()); o.remove("ip"); pubsSansIp.put(o) }
         return JSONObject().put("propositions", lireTableau(fichierPropositions)).put("questions", sansIp).put("resultats", resultats())
-            .put("publications", pubsSansIp).put("defi", defiGestion()).put("honneur", honneur(lireObjet(fichierProfils))).put("stars", starsGestion()).put("participations", participations("")).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
+            .put("publications", pubsSansIp).put("defi", defiGestion()).put("corriges", corrigesPublics(true)).put("honneur", honneur(lireObjet(fichierProfils))).put("stars", starsGestion()).put("participations", participations("")).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
     }
 
     private fun modererQuestion(id: String, q: JSONObject): JSONObject = synchronized(verrouEchanges) {
@@ -894,6 +915,12 @@ class AmphiService : Service() {
                     "masquer" -> o.put("masquee", true)
                     "afficher" -> o.put("masquee", false)
                     "repondre" -> o.put("reponse", texte(q.optString("reponse"), 600))
+                    "retirer-reponse" -> {
+                        val rs = o.optJSONArray("reponses") ?: JSONArray()
+                        val restantes = JSONArray()
+                        for (k in 0 until rs.length()) rs.optJSONObject(k)?.takeIf { it.optString("rid") != q.optString("rid") }?.let { restantes.put(it) }
+                        o.put("reponses", restantes)
+                    }
                 }
             }
             gardees.put(o)
@@ -1012,6 +1039,13 @@ class AmphiService : Service() {
         sem.keys().asSequence().toList().sorted().dropLast(8).forEach { sem.remove(it) }
     }
 
+    /** Une ressource validée (document, corrigé) ou une réponse jugée utile. */
+    private fun ajouterContribution(profils: JSONObject, id: String) {
+        if (!ID_PROFIL.matches(id)) return
+        val p = profils.optJSONObject(id) ?: JSONObject().put("points", 0).also { profils.put(id, it) }
+        p.put("contrib", p.optInt("contrib") + 1)
+    }
+
     private fun profil(sortie: OutputStream, r: Requete, ip: String) {
         if (!permis(ip, "profil", 90, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Attendez un peu."), 429)
         val q = lireJson(r)
@@ -1059,6 +1093,7 @@ class AmphiService : Service() {
             return t
         }
         return JSONObject().put("semaine", top { it.optJSONObject("semaines")?.optInt(k) ?: 0 }).put("total", top { it.optInt("points") })
+            .put("contributeurs", top { it.optInt("contrib") })
     }
 
     /** Le défi du jour : celui du délégué s'il en a mis un aujourd'hui, sinon la réserve. */
@@ -1131,6 +1166,186 @@ class AmphiService : Service() {
         }
         val profils = lireObjet(fichierProfils)
         json(sortie, JSONObject().put("ok", true).put("defi", defiPublic(id)).put("profil", profilPublic(profils, id)))
+    }
+
+    // ── Bataille des corrigés : sous chaque document, les corrigés des
+    // étudiants (validés par l'éditeur), votés « utile » par la promo. ─────
+
+    private val fichierCorriges get() = File(dossier, "corriges.json")
+    private val fichierMercis get() = File(dossier, "mercis.json")
+
+    private fun documentConnu(id: String): JSONObject? {
+        val d = lireContenu().optJSONArray("documents") ?: return null
+        for (i in 0 until d.length()) if (d.optJSONObject(i)?.optString("id") == id) return d.getJSONObject(i)
+        return null
+    }
+
+    private fun deposerCorrige(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "corrige", 8, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop d'envois : réessayez dans une heure."), 429)
+        val doc = r.query["doc"] ?: ""
+        if (!idValide(doc) || documentConnu(doc) == null) return json(sortie, JSONObject().put("erreur", "Document introuvable."), 404)
+        val cid = java.util.UUID.randomUUID().toString().replace("-", "").take(20)
+        val f = File(dossierFichiers, cid)
+        val taille = recevoirVers(f, r, 40_000_000L) ?: return json(sortie, JSONObject().put("erreur", "Fichier trop gros (40 Mo au plus) ou téléphone plein."), 413)
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierCorriges)
+            t.put(JSONObject().put("cid", cid).put("doc", doc).put("auteurId", (r.query["pid"] ?: "").takeIf { ID_PROFIL.matches(it) } ?: "")
+                .put("pseudo", pseudoPropre(r.query["pseudo"])).put("nom", nomPropre(r.query["nom"])).put("type", typePropre(r.query["type"]))
+                .put("note", texte(r.query["note"], 120)).put("taille", taille).put("date", System.currentTimeMillis())
+                .put("statut", "attente").put("votes", 0).put("votants", JSONArray()))
+            ecrire(fichierCorriges, t)
+        }
+        json(sortie, JSONObject().put("ok", true))
+    }
+
+    private fun voterCorrige(sortie: OutputStream, r: Requete, cid: String, ip: String) {
+        val pid = lireJson(r).optString("pid")
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierCorriges)
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("cid") != cid || o.optString("statut") != "publie") continue
+                val v = o.optJSONArray("votants") ?: JSONArray()
+                val cles = (0 until v.length()).map { v.optString(it) }
+                if (pid == o.optString("auteurId") && pid.isNotEmpty()) return json(sortie, JSONObject().put("erreur", "C'est votre corrigé 🙂"), 400)
+                if ("ip:$ip" in cles || (pid.isNotEmpty() && pid in cles)) return json(sortie, JSONObject().put("ok", true).put("deja", true))
+                v.put("ip:$ip"); if (ID_PROFIL.matches(pid)) v.put(pid)
+                o.put("votants", v).put("votes", o.optInt("votes") + 1)
+                ecrire(fichierCorriges, t)
+                val profils = lireObjet(fichierProfils); ajouterPoints(profils, o.optString("auteurId"), 2); ecrire(fichierProfils, profils)
+                return json(sortie, JSONObject().put("ok", true))
+            }
+        }
+        json(sortie, JSONObject().put("erreur", "Corrigé introuvable."), 404)
+    }
+
+    private fun corrigesPublics(gestion: Boolean): JSONArray {
+        val t = lireTableau(fichierCorriges)
+        val r = JSONArray()
+        for (i in 0 until t.length()) {
+            val o = t.getJSONObject(i)
+            if (!gestion && o.optString("statut") != "publie") continue
+            val p = JSONObject(o.toString()); p.remove("votants"); p.remove("auteurId")
+            r.put(p)
+        }
+        return r
+    }
+
+    private fun modererCorrige(cid: String, action: String): JSONObject {
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierCorriges)
+            val gardes = JSONArray()
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("cid") == cid) {
+                    when (action) {
+                        "publier" -> if (o.optString("statut") != "publie") {
+                            o.put("statut", "publie")
+                            val profils = lireObjet(fichierProfils)
+                            ajouterPoints(profils, o.optString("auteurId"), 20); ajouterContribution(profils, o.optString("auteurId"))
+                            ecrire(fichierProfils, profils)
+                        }
+                        "refuser", "supprimer" -> { File(dossierFichiers, cid).delete(); continue }
+                    }
+                }
+                gardes.put(o)
+            }
+            ecrire(fichierCorriges, gardes)
+        }
+        return JSONObject().put("ok", true)
+    }
+
+    /** « 🙏 Merci » à l'auteur d'un document : un par téléphone. */
+    private fun merci(sortie: OutputStream, r: Requete, doc: String, ip: String) {
+        val d = documentConnu(doc) ?: return json(sortie, JSONObject().put("erreur", "Document introuvable."), 404)
+        val pid = lireJson(r).optString("pid")
+        val n: Int
+        synchronized(verrouEchanges) {
+            val m = lireObjet(fichierMercis)
+            val l = m.optJSONArray(doc) ?: JSONArray()
+            val cles = (0 until l.length()).map { l.optString(it) }
+            if ("ip:$ip" !in cles && (pid.isEmpty() || pid !in cles)) {
+                l.put("ip:$ip"); if (ID_PROFIL.matches(pid)) l.put(pid)
+                m.put(doc, l); ecrire(fichierMercis, m)
+                val auteur = d.optString("auteurId")
+                if (auteur != pid) { val profils = lireObjet(fichierProfils); ajouterPoints(profils, auteur, 2); ecrire(fichierProfils, profils) }
+            }
+            n = (0 until l.length()).count { l.optString(it).startsWith("ip:") }
+        }
+        json(sortie, JSONObject().put("ok", true).put("n", n))
+    }
+
+    private fun mercisPublics(): JSONObject {
+        val m = lireObjet(fichierMercis)
+        val r = JSONObject()
+        m.keys().forEach { k -> val l = m.optJSONArray(k) ?: JSONArray(); r.put(k, (0 until l.length()).count { l.optString(it).startsWith("ip:") }) }
+        return r
+    }
+
+    // ── Entraide : les étudiants répondent aux questions, la promo vote ──
+
+    private fun reponsesPubliques(q: JSONObject): JSONArray {
+        val rs = q.optJSONArray("reponses") ?: return JSONArray()
+        val r = JSONArray()
+        for (k in 0 until rs.length()) rs.optJSONObject(k)?.let { o -> val p = JSONObject(o.toString()); p.remove("votants"); p.remove("auteurId"); p.remove("ip"); r.put(p) }
+        return r
+    }
+
+    private fun repondreQuestion(sortie: OutputStream, r: Requete, id: String, ip: String) {
+        if (!permis(ip, "repondre", 10, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop de réponses : attendez un peu."), 429)
+        val q = lireJson(r)
+        val t = texte(q.optString("texte"), 600)
+        if (t.length < 3) return json(sortie, JSONObject().put("erreur", "Réponse trop courte."), 400)
+        if (!texteCorrect(t)) return json(sortie, JSONObject().put("erreur", "Message refusé : restez correct."), 400)
+        if (NUMERO.containsMatchIn(t)) return json(sortie, JSONObject().put("erreur", "Pas de numéro de téléphone."), 400)
+        val pid = q.optString("pid").takeIf { ID_PROFIL.matches(it) } ?: ""
+        synchronized(verrouEchanges) {
+            val tout = lireTableau(fichierQuestions)
+            for (i in 0 until tout.length()) {
+                val o = tout.getJSONObject(i)
+                if (o.optString("id") != id) continue
+                val rs = o.optJSONArray("reponses") ?: JSONArray()
+                if (rs.length() >= 30) return json(sortie, JSONObject().put("erreur", "Assez de réponses ici."), 400)
+                rs.put(JSONObject().put("rid", java.util.UUID.randomUUID().toString().replace("-", "").take(12)).put("texte", t)
+                    .put("pseudo", pseudoPropre(q.optString("pseudo"))).put("auteurId", pid).put("date", System.currentTimeMillis())
+                    .put("votes", 0).put("votants", JSONArray()))
+                o.put("reponses", rs)
+                ecrire(fichierQuestions, tout)
+                // 2 points par réponse, 5 réponses récompensées par jour au plus.
+                if (pid.isNotEmpty() && permis(ip, "repondre-points", 5, 86_400_000)) { val profils = lireObjet(fichierProfils); ajouterPoints(profils, pid, 2); ecrire(fichierProfils, profils) }
+                return json(sortie, JSONObject().put("ok", true))
+            }
+        }
+        json(sortie, JSONObject().put("erreur", "Question introuvable."), 404)
+    }
+
+    private fun voterReponse(sortie: OutputStream, r: Requete, id: String, rid: String, ip: String) {
+        val pid = lireJson(r).optString("pid")
+        synchronized(verrouEchanges) {
+            val tout = lireTableau(fichierQuestions)
+            for (i in 0 until tout.length()) {
+                val o = tout.getJSONObject(i)
+                if (o.optString("id") != id) continue
+                val rs = o.optJSONArray("reponses") ?: break
+                for (k in 0 until rs.length()) {
+                    val x = rs.optJSONObject(k) ?: continue
+                    if (x.optString("rid") != rid) continue
+                    if (pid.isNotEmpty() && pid == x.optString("auteurId")) return json(sortie, JSONObject().put("erreur", "C'est votre réponse 🙂"), 400)
+                    val v = x.optJSONArray("votants") ?: JSONArray()
+                    val cles = (0 until v.length()).map { v.optString(it) }
+                    if ("ip:$ip" in cles || (pid.isNotEmpty() && pid in cles)) return json(sortie, JSONObject().put("ok", true).put("deja", true))
+                    v.put("ip:$ip"); if (ID_PROFIL.matches(pid)) v.put(pid)
+                    x.put("votants", v).put("votes", x.optInt("votes") + 1)
+                    ecrire(fichierQuestions, tout)
+                    val profils = lireObjet(fichierProfils)
+                    ajouterPoints(profils, x.optString("auteurId"), 3)
+                    if (x.optInt("votes") == 3) ajouterContribution(profils, x.optString("auteurId"))
+                    ecrire(fichierProfils, profils)
+                    return json(sortie, JSONObject().put("ok", true))
+                }
+            }
+        }
+        json(sortie, JSONObject().put("erreur", "Réponse introuvable."), 404)
     }
 
     /** Le délégué remplace le défi du jour par le sien (aujourd'hui seulement). */
