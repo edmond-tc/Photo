@@ -214,6 +214,35 @@
     <div id="liste-examens" style="margin-top:12px"></div>
   </details>
 
+  <details class="carte" id="carte-quiz">
+    <summary>🎯 Quiz en direct</summary>
+    <p class="aide">En TD ou à la pause : le quiz s'affiche tout en haut de la page de chaque étudiant, tout l'amphi répond en même temps. Plus on répond vite et juste, plus on marque. Podium : +10, +6 et +3 points.</p>
+    <div id="qz-creation">
+      <label for="qz-titre">Titre</label>
+      <input type="text" id="qz-titre" maxlength="80" placeholder="Quiz du vendredi">
+      <label for="qz-ue">Matière</label>
+      <select id="qz-ue">
+        <option value="">Toutes les UE</option><option value="PHY1520">PHY1520 · Physique quantique</option><option value="PHY1521">PHY1521 · Méthodes mathématiques</option>
+        <option value="PHY1522">PHY1522 · Matière condensée</option><option value="PHY1523">PHY1523 · Ondes et vibrations</option><option value="PHY1524">PHY1524 · Mécanique analytique</option>
+        <option value="PHY1525">PHY1525 · Milieux déformables</option><option value="INF1526">INF1526 · Physique numérique</option>
+      </select>
+      <label for="qz-nombre">Nombre de questions</label>
+      <select id="qz-nombre"><option>5</option><option selected>10</option><option>15</option></select>
+      <label for="qz-duree">Temps par question</label>
+      <select id="qz-duree"><option value="15">15 secondes</option><option value="20" selected>20 secondes</option><option value="30">30 secondes</option></select>
+      <div class="boutons"><button class="bouton" id="b-qz-creer">Préparer le quiz</button></div>
+    </div>
+    <div id="qz-pilote" hidden>
+      <p class="bilan ok" id="qz-etat"></p>
+      <div class="boutons">
+        <button class="bouton" id="b-qz-suivant">▶ Question suivante</button>
+        <button class="bouton second" id="b-qz-terminer">🏁 Terminer</button>
+        <button class="bouton danger" id="b-qz-fermer">Fermer</button>
+      </div>
+      <div id="qz-classement" style="margin-top:10px"></div>
+    </div>
+  </details>
+
   <details class="carte">
     <summary>🧠 Défi du jour et tableau d'honneur</summary>
     <p class="aide">Chaque matin, un QCM de physique de L3 change tout seul (45 défis préparés). Un défi réussi rapporte 10 points (+5 aux 3 premiers), un essai 2 points, chaque jour de visite 1 point.</p>
@@ -847,6 +876,32 @@
     $("s-question").value = ""; $("s-options").value = "";
     enregistrer("Sondage lancé ✓");
   };
+  // ── Quiz en direct ──
+  function suivreQuiz() {
+    return fetch("/gerer/quiz", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (q) {
+      $("qz-creation").hidden = !!q.actif; $("qz-pilote").hidden = !q.actif;
+      if (!q.actif) return;
+      var t;
+      if (q.phase === "attente") t = "Quiz prêt : " + q.total + " questions. Les étudiants voient « le quiz commence dans un instant ». Touchez « Question suivante » pour lancer.";
+      else if (q.phase === "question") t = "Question " + (q.index + 1) + " / " + q.total + " · " + (q.restant > 0 ? "⏱ " + q.restant + " s" : "temps écoulé") + " · " + q.nbReponses + " réponse(s) · bonne réponse : " + "ABCD"[q.bonne] + "\n" + q.question;
+      else t = "🏁 Quiz terminé : " + q.joueurs + " joueur(s). Points du podium donnés.";
+      $("qz-etat").textContent = t; $("qz-etat").style.whiteSpace = "pre-line";
+      $("b-qz-suivant").textContent = q.phase === "attente" ? "▶ Lancer la 1re question" : q.index + 1 >= q.total ? "🏁 Voir le podium" : "▶ Question suivante";
+      $("b-qz-suivant").hidden = q.phase === "fin"; $("b-qz-terminer").hidden = q.phase === "fin";
+      var z = $("qz-classement"); z.textContent = "";
+      (q.classement || []).forEach(function (x, i) { z.appendChild(el("p", null, (["🥇", "🥈", "🥉"][i] || (i + 1) + ".") + " " + x.pseudo + " · " + x.score)); });
+    }).catch(function () {});
+  }
+  setInterval(function () { if ($("carte-quiz").open) suivreQuiz(); }, 1500);
+  $("carte-quiz").addEventListener("toggle", suivreQuiz);
+  $("b-qz-creer").onclick = function () {
+    poster("/gerer/quiz/creer", { titre: $("qz-titre").value.trim(), ue: $("qz-ue").value, nombre: +$("qz-nombre").value, duree: +$("qz-duree").value })
+      .then(function (r) { if (r.erreur) toast(r.erreur); suivreQuiz(); });
+  };
+  $("b-qz-suivant").onclick = function () { poster("/gerer/quiz/suivant", {}).then(suivreQuiz); };
+  $("b-qz-terminer").onclick = function () { if (confirm("Terminer le quiz et donner les points du podium ?")) poster("/gerer/quiz/terminer", {}).then(suivreQuiz); };
+  $("b-qz-fermer").onclick = function () { poster("/gerer/quiz/fermer", {}).then(suivreQuiz); };
+
   // ── Défi du jour ──
   (function () {
     var z = $("df-choix");

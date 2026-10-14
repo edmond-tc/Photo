@@ -267,6 +267,9 @@ class AmphiService : Service() {
                     // ── Réviser : profil (points, niveau, série) et défi du jour ──
                     r.methode == "POST" && r.chemin == "/profil" -> profil(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/defi" -> repondreDefi(sortie, r, s.inetAddress.hostAddress ?: "")
+                    // ── Quiz en direct ──
+                    r.methode == "GET" && r.chemin == "/quiz.json" -> json(sortie, quizPublic(r.query["pid"] ?: ""))
+                    r.methode == "POST" && r.chemin == "/quiz/repondre" -> repondreQuiz(sortie, r, s.inetAddress.hostAddress ?: "")
                     // ── Travailler ensemble : salle d'étude, fiches flash ──
                     r.methode == "POST" && r.chemin == "/etude" -> etude(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/etude/fini" -> etudeFinie(sortie, r, s.inetAddress.hostAddress ?: "")
@@ -308,6 +311,8 @@ class AmphiService : Service() {
                     }
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/publication/[a-z0-9]{6,30}$")) -> json(sortie, modererPublication(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin == "/gerer/defi" -> json(sortie, defiPerso(lireJson(r)))
+                    r.methode == "GET" && r.chemin == "/gerer/quiz" -> json(sortie, quizGestion())
+                    r.methode == "POST" && r.chemin.matches(Regex("^/gerer/quiz/(creer|suivant|terminer|fermer)$")) -> json(sortie, piloterQuiz(r.chemin.substringAfterLast("/"), lireJson(r)))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/corrige/[a-z0-9]{20}$")) -> json(sortie, modererCorrige(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "GET" && r.chemin.matches(Regex("^/gerer/corrige/[a-z0-9]{20}/f$")) -> {
                         val f = File(dossierFichiers, r.chemin.split("/")[3])
@@ -1172,6 +1177,117 @@ class AmphiService : Service() {
         }
         val profils = lireObjet(fichierProfils)
         json(sortie, JSONObject().put("ok", true).put("defi", defiPublic(id)).put("profil", profilPublic(profils, id)))
+    }
+
+    // ── Quiz en direct : le délégué lance les questions, tout l'amphi répond
+    // en même temps ; plus on répond vite et juste, plus on marque. ───────
+
+    private val verrouQuiz = Any()
+    private var quiz: JSONObject? = null
+
+    private fun piloterQuiz(action: String, q: JSONObject): JSONObject { synchronized(verrouQuiz) {
+        val maintenant = System.currentTimeMillis()
+        when (action) {
+            "creer" -> {
+                val ue = texte(q.optString("ue"), 20)
+                val banque = reserve("defis.json")
+                val choisies = (0 until banque.length()).map { banque.getJSONObject(it) }.filter { ue.isEmpty() || it.optString("ue") == ue }.shuffled()
+                    .take(q.optInt("nombre", 10).coerceIn(3, 20))
+                if (choisies.isEmpty()) return JSONObject().put("erreur", "Aucune question pour cette UE.")
+                quiz = JSONObject().put("id", java.util.UUID.randomUUID().toString().take(8)).put("titre", texte(q.optString("titre"), 80).ifEmpty { "Quiz de la promo" })
+                    .put("questions", JSONArray(choisies)).put("index", -1).put("phase", "attente")
+                    .put("duree", q.optInt("duree", 20).coerceIn(10, 60)).put("debut", 0L)
+                    .put("reponses", JSONObject()).put("scores", JSONObject())
+            }
+            "suivant" -> {
+                val z = quiz ?: return JSONObject().put("erreur", "Pas de quiz.")
+                val n = z.optJSONArray("questions")?.length() ?: 0
+                val i = z.optInt("index") + 1
+                if (i >= n) return piloterQuiz("terminer", q)
+                z.put("index", i).put("phase", "question").put("debut", maintenant)
+            }
+            "terminer" -> {
+                val z = quiz ?: return JSONObject().put("erreur", "Pas de quiz.")
+                if (z.optString("phase") != "fin") {
+                    z.put("phase", "fin")
+                    // Podium : +10, +6, +3 points.
+                    val profils = lireObjet(fichierProfils)
+                    classement(z).take(3).forEachIndexed { k, (pid, _) -> ajouterPoints(profils, pid, intArrayOf(10, 6, 3)[k]) }
+                    synchronized(verrouEchanges) { ecrire(fichierProfils, profils) }
+                }
+            }
+            "fermer" -> quiz = null
+        }
+        return JSONObject().put("ok", true)
+    } }
+
+    private fun classement(z: JSONObject): List<Pair<String, JSONObject>> {
+        val sc = z.optJSONObject("scores") ?: return emptyList()
+        return sc.keys().asSequence().mapNotNull { k -> sc.optJSONObject(k)?.let { k to it } }.sortedByDescending { it.second.optInt("score") }.toList()
+    }
+
+    private fun tempsRestant(z: JSONObject): Int {
+        if (z.optString("phase") != "question") return 0
+        return maxOf(0, (z.optLong("debut") + z.optInt("duree") * 1000L - System.currentTimeMillis()).toInt() / 1000)
+    }
+
+    private fun quizPublic(pid: String): JSONObject { synchronized(verrouQuiz) {
+        val z = quiz ?: return JSONObject().put("actif", false)
+        val o = JSONObject().put("actif", true).put("id", z.optString("id")).put("titre", z.optString("titre")).put("phase", z.optString("phase"))
+            .put("index", z.optInt("index")).put("total", z.optJSONArray("questions")?.length() ?: 0).put("duree", z.optInt("duree"))
+        val i = z.optInt("index")
+        val restant = tempsRestant(z)
+        o.put("restant", restant)
+        if (i >= 0 && z.optString("phase") != "attente") {
+            val qu = z.getJSONArray("questions").getJSONObject(i)
+            o.put("question", qu.optString("question")).put("choix", qu.optJSONArray("choix")).put("ue", qu.optString("ue"))
+            val reps = z.optJSONObject("reponses")?.optJSONObject(i.toString())
+            o.put("nbReponses", reps?.length() ?: 0)
+            // La bonne réponse n'est montrée qu'une fois le temps écoulé.
+            if (restant == 0) o.put("bonne", qu.optInt("bonne")).put("explication", qu.optString("explication"))
+            reps?.optJSONObject(pid)?.let { o.put("monChoix", it.optInt("choix")) }
+        }
+        val top = JSONArray()
+        val cl = classement(z)
+        cl.take(10).forEach { (_, v) -> top.put(JSONObject().put("pseudo", v.optString("pseudo").ifEmpty { "Anonyme" }).put("score", v.optInt("score"))) }
+        o.put("classement", top).put("joueurs", cl.size)
+        z.optJSONObject("scores")?.optJSONObject(pid)?.let { me -> o.put("monScore", me.optInt("score")).put("monRang", cl.indexOfFirst { it.first == pid } + 1) }
+        return o
+    } }
+
+    private fun quizGestion(): JSONObject { synchronized(verrouQuiz) {
+        val z = quiz ?: return JSONObject().put("actif", false)
+        val o = quizPublic("")
+        val i = z.optInt("index")
+        if (i >= 0) o.put("bonne", z.getJSONArray("questions").getJSONObject(i).optInt("bonne"))
+        return o
+    } }
+
+    private fun repondreQuiz(sortie: OutputStream, r: Requete, ip: String) {
+        val q = lireJson(r)
+        val pid = q.optString("pid")
+        if (!ID_PROFIL.matches(pid)) return json(sortie, JSONObject().put("erreur", "Identifiant invalide."), 400)
+        val juste: Boolean
+        val gain: Int
+        synchronized(verrouQuiz) {
+            val z = quiz ?: return json(sortie, JSONObject().put("erreur", "Pas de quiz en cours."), 404)
+            val i = z.optInt("index")
+            if (z.optString("phase") != "question" || q.optInt("index", -2) != i || tempsRestant(z) <= 0) return json(sortie, JSONObject().put("erreur", "Trop tard pour cette question."), 409)
+            val reps = z.optJSONObject("reponses")!!
+            val ici = reps.optJSONObject(i.toString()) ?: JSONObject().also { reps.put(i.toString(), it) }
+            if (ici.has(pid) || ici.has("ip:$ip")) return json(sortie, JSONObject().put("erreur", "Déjà répondu."), 409)
+            val choix = q.optInt("choix", -1)
+            val qu = z.getJSONArray("questions").getJSONObject(i)
+            juste = choix == qu.optInt("bonne")
+            // 100 points si juste, plus jusqu'à 100 de bonus de rapidité.
+            gain = if (juste) 100 + 100 * tempsRestant(z) / maxOf(1, z.optInt("duree")) else 0
+            ici.put(pid, JSONObject().put("choix", choix)).put("ip:$ip", true)
+            val sc = z.optJSONObject("scores")!!
+            val me = sc.optJSONObject(pid) ?: JSONObject().put("score", 0).also { sc.put(pid, it) }
+            me.put("score", me.optInt("score") + gain).put("pseudo", pseudoPropre(q.optString("pseudo")))
+        }
+        if (juste) synchronized(verrouEchanges) { val profils = lireObjet(fichierProfils); ajouterPoints(profils, pid, 1); ecrire(fichierProfils, profils) }
+        json(sortie, JSONObject().put("ok", true).put("gain", gain))
     }
 
     // ── Salle d'étude : qui révise en ce moment (en mémoire seulement) ──

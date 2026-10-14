@@ -370,6 +370,25 @@
   .fiche-ue { font: 700 .7rem var(--mono); color: var(--bleu); }
   .fiche-recto { font-weight: 800; font-size: 1.1rem; color: var(--nuit); }
   .fiche-verso { font-family: "Cambria Math", "STIX Two Math", "Noto Serif", Georgia, serif; font-size: 1.15rem; color: var(--nuit); overflow-wrap: anywhere; }
+  .quiz-haut { background: linear-gradient(160deg, #16306f, #2b579a); color: #fff; }
+  .quiz-haut .corps { max-width: 600px; margin: 0 auto; padding: calc(14px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 8px; }
+  .quiz-haut .etiquette, .quiz-haut .aide { color: #dbe6ff; }
+  .quiz-haut h3 { font-size: 1.2rem; }
+  .quiz-haut .defi-choix button { color: var(--texte); }
+  .quiz-haut .defi-choix button.choisi { border-color: #ffd76a; background: #fff7d6; }
+  .quiz-haut .defi-explication { color: var(--texte); }
+  .quiz-temps { height: 8px; border-radius: 6px; background: rgba(255, 255, 255, .2); overflow: hidden; }
+  .quiz-temps i { display: block; height: 100%; background: #ffd76a; transition: width 1.2s linear; }
+  .quiz-classement { background: rgba(255, 255, 255, .1); border-radius: 10px; padding: 8px 12px; font-weight: 600; }
+  #sim-toile { display: block; width: 100%; height: auto; margin-top: 10px; border-radius: 10px; border: 1px solid var(--bordure); }
+  .sim-curseur { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; font-size: .85rem; font-weight: 600; color: var(--nuit); }
+  .sim-curseur input { width: 100%; }
+  #sim-reglages .bouton { margin-top: 10px; }
+  .plan-jour { margin-top: 10px; }
+  .plan-date { font: 700 .78rem var(--mono); color: var(--bleu); text-transform: capitalize; }
+  .plan-tache { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px dashed var(--bordure); font-size: .9rem; }
+  .plan-tache input { margin-top: 3px; flex: none; }
+  .plan-tache.fait span { text-decoration: line-through; color: var(--discret); }
   .et-salle { margin-top: 6px; font-weight: 600; }
   .et-salle b { font: 800 1.6rem var(--mono); color: var(--vert); }
   .et-chrono { text-align: center; margin: 10px 0 6px; }
@@ -429,6 +448,7 @@
 <body>
 <div class="hors-ligne" id="hors-ligne">Connexion au Wi-Fi de l'amphi perdue. La page se remet à jour dès votre retour.</div>
 <div id="stars" class="stars-haut"></div>
+<div id="quiz-direct" class="quiz-haut" hidden></div>
 <header class="hero">
   <canvas id="oscillo" aria-hidden="true"></canvas>
   <span class="mesure" id="mesure" aria-hidden="true">X:Y = 1:2 · φ = 0</span>
@@ -547,6 +567,11 @@
     <div class="honneur-tete"><h3>🏆 Tableau d'honneur</h3><div class="puces" id="hn-choix"></div></div>
     <div id="hn-liste"></div>
   </div></div>
+  <div class="carte" id="carte-plan"><div class="corps">
+    <h3 class="titre-carte">📅 Mon plan de révision</h3>
+    <p class="aide" id="plan-progres"></p>
+    <div id="plan-zone"></div>
+  </div></div>
   <div class="carte" id="carte-fiches"><div class="corps">
     <h3 class="titre-carte">🗂️ Fiches flash</h3>
     <div class="puces" id="fi-ue" style="margin-top:8px"></div>
@@ -571,6 +596,14 @@
     <button class="bouton" type="button" id="bi-envoyer" style="margin-top:8px">Publier</button>
     <p class="aide" id="bi-etat" style="margin-top:6px"></p>
   </div><div id="liste-binomes"></div></div>
+  <div class="carte" id="carte-sim"><div class="corps">
+    <h3 class="titre-carte">🔬 Simulations</h3>
+    <div class="puces" id="sim-choix" style="margin-top:8px"></div>
+    <canvas id="sim-toile" aria-label="Simulation"></canvas>
+    <p class="aide" id="sim-info"></p>
+    <div id="sim-reglages"></div>
+    <p class="defi-verdict ok" id="sim-resultat"></p>
+  </div></div>
   <div class="carte" id="carte-formulaire"><div class="corps">
     <h3>📐 Formulaire de la L3</h3>
     <input type="search" class="champ" id="fm-recherche" placeholder="🔎 Chercher (Bragg, Hamilton, Reynolds, ħ…)">
@@ -1131,6 +1164,7 @@
     if (acc.photo) photo.src = lienFichier(acc.photo, "photo", "image/jpeg");
     rendreProgramme();
     rendreMaquette();
+    rendrePlan();
     rendreDocuments();
     rendreAnnonces();
     rendrePubs();
@@ -2297,6 +2331,226 @@
       .then(function (ok) { if (ok) { $("bi-texte").value = ""; } });
   };
 
+  // ── Quiz en direct : tout l'amphi répond en même temps ──
+  var quizEtat = null, minuteurQuiz = null;
+  function pollQuiz() {
+    fetch("/quiz.json?pid=" + encodeURIComponent(MON_ID), { cache: "no-store" })
+      .then(function (r) { return r.json(); }).then(rendreQuiz).catch(function () {})
+      .then(function () {
+        clearTimeout(minuteurQuiz);
+        var vite = quizEtat && quizEtat.actif;
+        minuteurQuiz = setTimeout(pollQuiz, vite ? (quizEtat.phase === "question" ? 1200 : 2500) : 8000);
+      });
+  }
+  function rendreQuiz(q) {
+    var z = $("quiz-direct"), avant = quizEtat; quizEtat = q;
+    if (!q || !q.actif) { z.hidden = true; return; }
+    if (avant && !avant.actif && window.amphiFete) z.scrollIntoView({ behavior: "smooth" });
+    z.hidden = false; z.textContent = "";
+    var c = el("div", "corps");
+    c.appendChild(el("p", "etiquette", "🎯 Quiz en direct · " + q.titre));
+    if (q.phase === "attente") {
+      c.appendChild(el("h3", null, "Le quiz commence dans un instant…"));
+      c.appendChild(el("p", "aide", q.total + " questions · " + q.duree + " s par question. Mettez votre pseudo dans « Réviser » pour apparaître au classement."));
+    } else if (q.phase === "question") {
+      var fini = q.restant === 0;
+      c.appendChild(el("p", "aide", "Question " + (q.index + 1) + " / " + q.total + (q.ue ? " · " + q.ue : "")));
+      c.appendChild(el("p", "defi-question", q.question));
+      var barre = el("div", "quiz-temps"), i = el("i"); i.style.width = Math.round(100 * q.restant / q.duree) + "%"; barre.appendChild(i); c.appendChild(barre);
+      var ch = el("div", "defi-choix");
+      (q.choix || []).forEach(function (t, k) {
+        var b = el("button"); b.type = "button"; b.appendChild(el("b", null, "ABCD"[k])); b.appendChild(el("span", null, t));
+        if (q.monChoix != null || fini) {
+          b.disabled = true;
+          if (fini && k === q.bonne) b.className = "bonne"; else if (k === q.monChoix) b.className = fini ? "fausse" : "choisi";
+        } else b.onclick = function () { repondreQuiz(k); };
+        ch.appendChild(b);
+      });
+      c.appendChild(ch);
+      if (fini) {
+        c.appendChild(el("p", "defi-verdict " + (q.monChoix === q.bonne ? "ok" : "non"), q.monChoix == null ? "⏰ Temps écoulé" : q.monChoix === q.bonne ? "✅ Bonne réponse !" : "❌ Raté"));
+        if (q.explication) c.appendChild(el("p", "defi-explication", "💡 " + q.explication));
+      } else c.appendChild(el("p", "aide", (q.monChoix != null ? "Réponse enregistrée ✓" : "⏱ " + q.restant + " s") + " · " + q.nbReponses + " réponse(s)"));
+    } else c.appendChild(el("h3", null, "🏁 Quiz terminé ! Bravo à tous."));
+    if (q.classement && q.classement.length) {
+      var t = el("div", "quiz-classement");
+      q.classement.slice(0, q.phase === "fin" ? 10 : 5).forEach(function (x, k) { t.appendChild(el("p", null, (["🥇", "🥈", "🥉"][k] || (k + 1) + ".") + " " + x.pseudo + " · " + x.score)); });
+      c.appendChild(t);
+    }
+    if (q.monScore != null) c.appendChild(el("p", "aide", "Votre score : " + q.monScore + " · " + rang(q.monRang) + " sur " + q.joueurs));
+    z.appendChild(c);
+    if (q.phase === "fin" && avant && avant.phase !== "fin" && q.monRang && q.monRang <= 3 && window.amphiFete) window.amphiFete();
+  }
+  function repondreQuiz(k) {
+    if (!MON_ID || !quizEtat) return;
+    quizEtat.monChoix = k; rendreQuiz(quizEtat);
+    fetch("/quiz/repondre", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pid: MON_ID, pseudo: $("pr-pseudo").value.trim() || lire("amphi-pseudo"), index: quizEtat.index, choix: k }) })
+      .then(function (r) { return r.json(); }).then(function () { pollQuiz(); }).catch(function () {});
+  }
+
+  // ── Simulations : changer les paramètres et voir la physique bouger ──
+  var sim = { type: "oscillateur", t0: performance.now(), p: { q: 3, x: 0.8, n: 1, carre: false, mode: 2, angle: 45, v0: 15 }, tir: null, cible: 0, serie: 0 };
+  var SIMS = [["oscillateur", "Oscillateur forcé"], ["puits", "Puits quantique"], ["corde", "Corde vibrante"], ["projectile", "Projectile"]];
+  var toileSim = $("sim-toile"), gc = toileSim.getContext("2d");
+  function tailleSim() { var k = Math.min(window.devicePixelRatio || 1, 2), w = toileSim.clientWidth || 320; toileSim.width = w * k; toileSim.height = w * 0.62 * k; gc.setTransform(k, 0, 0, k, 0, 0); return { w: w, h: w * 0.62 }; }
+  function curseur(id, nom, min, max, pas, val, suffixe, change) {
+    var l = el("label", "sim-curseur"); var t = el("span", null, nom + " : " + val + (suffixe || ""));
+    var i = el("input"); i.type = "range"; i.min = min; i.max = max; i.step = pas; i.value = val; i.id = id;
+    i.oninput = function () { t.textContent = nom + " : " + i.value + (suffixe || ""); change(+i.value); };
+    l.appendChild(t); l.appendChild(i); return l;
+  }
+  function cibleAuHasard() { sim.cible = 8 + Math.round(Math.random() * 24 * 2) / 2; }
+  function rendreSim() {
+    var ch = $("sim-choix"); ch.textContent = "";
+    SIMS.forEach(function (x) { var b = el("button", sim.type === x[0] ? "choisie" : "", x[1]); b.type = "button"; b.onclick = function () { sim.type = x[0]; sim.tir = null; rendreSim(); }; ch.appendChild(b); });
+    var r = $("sim-reglages"); r.textContent = "";
+    var p = sim.p;
+    if (sim.type === "oscillateur") {
+      r.appendChild(curseur("s-q", "Facteur de qualité Q", 0.5, 20, 0.5, p.q, "", function (v) { p.q = v; }));
+      r.appendChild(curseur("s-x", "Pulsation ω/ω₀", 0.1, 3, 0.05, p.x, "", function (v) { p.x = v; }));
+    } else if (sim.type === "puits") {
+      r.appendChild(curseur("s-n", "Niveau n", 1, 6, 1, p.n, "", function (v) { p.n = v; }));
+      var b = el("button", "bouton second", p.carre ? "Voir ψ(x)" : "Voir |ψ(x)|² (probabilité)"); b.type = "button";
+      b.onclick = function () { p.carre = !p.carre; rendreSim(); }; r.appendChild(b);
+    } else if (sim.type === "corde") {
+      r.appendChild(curseur("s-m", "Mode n", 1, 8, 1, p.mode, "", function (v) { p.mode = v; }));
+    } else {
+      if (!sim.cible) cibleAuHasard();
+      r.appendChild(curseur("s-a", "Angle θ", 5, 85, 1, p.angle, "°", function (v) { p.angle = v; }));
+      r.appendChild(curseur("s-v", "Vitesse v₀", 5, 25, 0.5, p.v0, " m/s", function (v) { p.v0 = v; }));
+      var l = el("button", "bouton", "🚀 Lancer"); l.type = "button";
+      l.onclick = function () { sim.tir = { t0: performance.now(), angle: p.angle, v0: p.v0 }; }; r.appendChild(l);
+    }
+  }
+  function ecrireSim(t, x, y, c, taille, align) { gc.fillStyle = c || "#16306f"; gc.font = "600 " + (taille || 12) + "px Roboto, Arial, sans-serif"; gc.textAlign = align || "left"; gc.fillText(t, x, y); }
+  function dessinerSim(maintenant) {
+    if (!$("carte-sim") || $("carte-sim").getBoundingClientRect().top > innerHeight + 200) return requestAnimationFrame(dessinerSim);
+    var d = tailleSim(), W = d.w, H = d.h, t = (maintenant - sim.t0) / 1000, p = sim.p;
+    gc.clearRect(0, 0, W, H); gc.fillStyle = "#f7f9fd"; gc.fillRect(0, 0, W, H);
+    var info = $("sim-info");
+    if (sim.type === "oscillateur") {
+      var A = function (x) { return 1 / Math.sqrt(Math.pow(1 - x * x, 2) + Math.pow(x / p.q, 2)); };
+      var amax = Math.max(A(Math.sqrt(Math.max(0, 1 - 1 / (2 * p.q * p.q)))), A(p.x), 1.2), x0 = 30, y0 = H - 24, lx = W * 0.62 - 40, ly = H - 50;
+      gc.strokeStyle = "#c7d0e0"; gc.beginPath(); gc.moveTo(x0, 14); gc.lineTo(x0, y0); gc.lineTo(x0 + lx, y0); gc.stroke();
+      gc.strokeStyle = "#2b579a"; gc.lineWidth = 2; gc.beginPath();
+      for (var k = 0; k <= 120; k++) { var xx = 3 * k / 120, yy = y0 - ly * A(xx) / amax; if (k) gc.lineTo(x0 + lx * xx / 3, yy); else gc.moveTo(x0, yy); }
+      gc.stroke(); gc.lineWidth = 1;
+      var mx = x0 + lx * p.x / 3, my = y0 - ly * A(p.x) / amax;
+      gc.fillStyle = "#c0261b"; gc.beginPath(); gc.arc(mx, my, 5, 0, 7); gc.fill();
+      ecrireSim("A(ω)", x0 + 4, 18, "#5d6475", 11); ecrireSim("ω/ω₀", x0 + lx, y0 + 16, "#5d6475", 11, "right"); ecrireSim("1", x0 + lx / 3, y0 + 14, "#5d6475", 10, "center");
+      var phi = Math.atan2(p.x / p.q, 1 - p.x * p.x), ampl = A(p.x) / amax, cx = W * 0.82, cy = H / 2, xpos = Math.cos(2 * Math.PI * 0.7 * t * p.x - phi) * ampl * (W * 0.12);
+      gc.strokeStyle = "#5d6475"; gc.beginPath(); gc.moveTo(cx + xpos, 18);
+      for (var s = 0; s <= 12; s++) gc.lineTo(cx + xpos + (s % 2 ? 6 : -6), 18 + (cy - 30) * s / 12);
+      gc.stroke(); gc.fillStyle = "#2b579a"; gc.fillRect(cx + xpos - 14, cy - 12, 28, 24);
+      info.textContent = "A = " + A(p.x).toFixed(2).replace(".", ",") + " × A₀ · déphasage φ = " + (phi * 180 / Math.PI).toFixed(0) + "° · à la résonance (ω ≈ ω₀), A ≈ Q × A₀.";
+    } else if (sim.type === "puits") {
+      var g = 40, L = W - 2 * g, base = H - 16, E1 = (H - 50) / 38;
+      gc.fillStyle = "#16306f"; gc.fillRect(g - 6, 10, 6, base - 10); gc.fillRect(g + L, 10, 6, base - 10); gc.fillRect(g - 6, base, L + 12, 4);
+      for (var n = 1; n <= 6; n++) { var yN = base - 12 - E1 * n * n; if (yN < 12) break; gc.strokeStyle = n === p.n ? "#2b579a" : "#d5dbe7"; gc.setLineDash(n === p.n ? [] : [4, 4]); gc.beginPath(); gc.moveTo(g, yN); gc.lineTo(g + L, yN); gc.stroke(); gc.setLineDash([]); ecrireSim("n=" + n, 4, yN + 4, "#5d6475", 10); }
+      var yE = Math.max(30, base - 12 - E1 * p.n * p.n), amp = Math.min(26, (H - 40) / 5);
+      gc.strokeStyle = p.carre ? "#0e746f" : "#c0261b"; gc.lineWidth = 2; gc.beginPath();
+      for (var k2 = 0; k2 <= 200; k2++) { var u = k2 / 200, psi = Math.sin(p.n * Math.PI * u) * (0.55 + 0.45 * Math.cos(t * 2)), v = p.carre ? Math.pow(Math.sin(p.n * Math.PI * u), 2) : psi; var X = g + L * u, Y = yE - amp * v; if (k2) gc.lineTo(X, Y); else gc.moveTo(X, Y); }
+      gc.stroke(); gc.lineWidth = 1;
+      info.textContent = "Eₙ = n² E₁ → E" + p.n + " = " + (p.n * p.n) + " E₁ · " + (p.n - 1) + " nœud(s) à l'intérieur · " + (p.carre ? "|ψ|² : là où l'on a le plus de chances de trouver la particule." : "ψ oscille dans le temps (phase e^(−iEt/ħ)).");
+    } else if (sim.type === "corde") {
+      var g2 = 20, L2 = W - 2 * g2, yc = H / 2, a = H * 0.32, w = 2 * Math.PI * 0.6 * p.mode;
+      gc.fillStyle = "#16306f"; gc.fillRect(g2 - 4, yc - 20, 4, 40); gc.fillRect(g2 + L2, yc - 20, 4, 40);
+      gc.strokeStyle = "#d5dbe7"; gc.beginPath();
+      for (var k3 = 0; k3 <= 200; k3++) { var u3 = k3 / 200, e3 = a * Math.sin(p.mode * Math.PI * u3); if (k3) gc.lineTo(g2 + L2 * u3, yc - e3); else gc.moveTo(g2, yc); }
+      for (var k4 = 200; k4 >= 0; k4--) { var u4 = k4 / 200; gc.lineTo(g2 + L2 * u4, yc + a * Math.sin(p.mode * Math.PI * u4)); }
+      gc.stroke();
+      gc.strokeStyle = "#c0261b"; gc.lineWidth = 2.5; gc.beginPath();
+      for (var k5 = 0; k5 <= 200; k5++) { var u5 = k5 / 200, y5 = a * Math.sin(p.mode * Math.PI * u5) * Math.cos(w * t * 0.25); if (k5) gc.lineTo(g2 + L2 * u5, yc - y5); else gc.moveTo(g2, yc - y5); }
+      gc.stroke(); gc.lineWidth = 1;
+      for (var nn = 1; nn < p.mode; nn++) { gc.fillStyle = "#0e746f"; gc.beginPath(); gc.arc(g2 + L2 * nn / p.mode, yc, 3, 0, 7); gc.fill(); }
+      info.textContent = "λ = 2L/" + p.mode + " · f" + p.mode + " = " + p.mode + " × f₁ · " + (p.mode - 1) + " nœud(s) (points verts) et " + p.mode + " ventre(s).";
+    } else {
+      var gg = 9.81, sol = H - 18, ech = (W - 30) / 40;
+      gc.fillStyle = "#e3eedf"; gc.fillRect(0, sol, W, H - sol);
+      var cxp = 14 + sim.cible * ech;
+      gc.fillStyle = "#c0261b"; gc.fillRect(cxp - 0.5 * ech, sol - 3, ech, 6);
+      ecrireSim("🎯 " + sim.cible.toString().replace(".", ",") + " m", cxp, sol - 8, "#c0261b", 11, "center");
+      var th = p.angle * Math.PI / 180, R = p.v0 * p.v0 * Math.sin(2 * th) / gg;
+      gc.strokeStyle = "rgba(43,87,154,.35)"; gc.setLineDash([3, 4]); gc.beginPath();
+      for (var k6 = 0; k6 <= 60; k6++) { var tt = (2 * p.v0 * Math.sin(th) / gg) * k6 / 60, X6 = 14 + p.v0 * Math.cos(th) * tt * ech, Y6 = sol - (p.v0 * Math.sin(th) * tt - gg * tt * tt / 2) * ech; if (k6) gc.lineTo(X6, Y6); else gc.moveTo(X6, Y6); }
+      if (!sim.tir) gc.stroke();
+      gc.setLineDash([]);
+      if (sim.tir) {
+        var T = 2 * sim.tir.v0 * Math.sin(sim.tir.angle * Math.PI / 180) / gg, te = Math.min(T, (maintenant - sim.tir.t0) / 1000 * 1.5);
+        var th2 = sim.tir.angle * Math.PI / 180, X7 = 14 + sim.tir.v0 * Math.cos(th2) * te * ech, Y7 = sol - (sim.tir.v0 * Math.sin(th2) * te - gg * te * te / 2) * ech;
+        gc.fillStyle = "#16306f"; gc.beginPath(); gc.arc(X7, Y7, 5, 0, 7); gc.fill();
+        if (te >= T && !sim.tir.fini) {
+          sim.tir.fini = true;
+          var Rt = sim.tir.v0 * sim.tir.v0 * Math.sin(2 * th2) / gg, ecart = Math.abs(Rt - sim.cible);
+          if (ecart <= 0.5) {
+            sim.serie++; var rec = +lire("amphi-projectile") || 0; if (sim.serie > rec) garder("amphi-projectile", String(sim.serie));
+            $("sim-resultat").textContent = "🎯 Touché ! (portée " + Rt.toFixed(1).replace(".", ",") + " m) · série " + sim.serie + " · record " + Math.max(rec, sim.serie);
+            if (window.amphiFete) window.amphiFete();
+            setTimeout(function () { cibleAuHasard(); sim.tir = null; }, 1500);
+          } else { $("sim-resultat").textContent = "Raté de " + ecart.toFixed(1).replace(".", ",") + " m (portée " + Rt.toFixed(1).replace(".", ",") + " m). Série remise à 0."; sim.serie = 0; setTimeout(function () { sim.tir = null; }, 1200); }
+        }
+      }
+      info.textContent = "Portée R = v₀² sin(2θ) / g = " + R.toFixed(1).replace(".", ",") + " m · la portée est maximale à 45°.";
+    }
+    requestAnimationFrame(dessinerSim);
+  }
+  rendreSim();
+  requestAnimationFrame(dessinerSim);
+
+  // ── Plan de révision : à partir des dates d'examen et des crédits ──
+  function ueDeExamen(titre, m) {
+    var t = sansAccent(titre), trouve = null;
+    m.semestres.forEach(function (s) { (s.ues || []).forEach(function (u) {
+      var noms = [u.code, u.nom].concat((u.ecue || []).map(function (e) { return e.nom; }));
+      if (noms.some(function (n) { return n && t.indexOf(sansAccent(n)) >= 0; })) trouve = trouve || u;
+    }); });
+    return trouve;
+  }
+  function rendrePlan() {
+    var z = $("plan-zone"); if (!z) return; z.textContent = "";
+    var m = maquetteActuelle();
+    if (!m) { z.appendChild(el("p", "vide", "Le plan apparaîtra quand les UE de votre filière seront connues.")); return; }
+    var auj = new Date(); auj.setHours(0, 0, 0, 0);
+    var exams = ((donnees && donnees.examens) || []).filter(pourMoi).map(function (e) {
+      var p = String(e.date || "").split("-"), d = new Date(+p[0], +p[1] - 1, +p[2]);
+      return { u: ueDeExamen(e.titre || "", m), d: d, j: Math.round((d - auj) / 864e5), titre: e.titre };
+    }).filter(function (x) { return x.u && x.j >= 0 && x.j <= 45; });
+    var coches = {}; try { coches = JSON.parse(lire("amphi-plan") || "{}") || {}; } catch (e) {}
+    var ues = [];
+    exams.forEach(function (x) { if (!ues.some(function (y) { return y.u === x.u; })) ues.push(x); });
+    // Les UE sans date d'examen connue restent au programme, moins souvent.
+    m.semestres.forEach(function (s) { if (/5/.test(s.titre || "")) (s.ues || []).forEach(function (u) { if (!ues.some(function (y) { return y.u === u; })) ues.push({ u: u, j: 30, sansDate: true }); }); });
+    if (!ues.length) m.semestres.forEach(function (s) { (s.ues || []).forEach(function (u) { if (u.credits <= 8) ues.push({ u: u, j: 30 }); }); });
+    z.appendChild(el("p", "aide", exams.length ? "D'après les dates d'examen publiées : plus une UE a de crédits et plus son examen approche, plus elle revient souvent." : "Pas encore de dates d'examen publiées : plan équilibré selon les crédits. Il s'adaptera dès que le délégué publiera les dates."));
+    var fait = 0, total = 0, deja = {};
+    for (var k = 0; k < 7; k++) {
+      var jour = new Date(auj.getTime() + k * 864e5), cleJ = cle(jour);
+      var cand = ues.filter(function (x) { return x.sansDate || x.j - k > 0; }).map(function (x) {
+        var reste = Math.max(1, x.j - k);
+        // Les UE déjà placées cette semaine reculent : tout le monde passe.
+        return { x: x, poids: (+x.u.credits || 1) / reste + (reste === 1 && !x.sansDate ? 100 : 0) - 0.08 * (deja[x.u.code] || 0) };
+      }).sort(function (a, b) { return b.poids - a.poids; });
+      var nb = jour.getDay() === 0 || jour.getDay() === 6 ? 3 : 2;
+      var bloc = el("div", "plan-jour");
+      bloc.appendChild(el("p", "plan-date", (k === 0 ? "Aujourd'hui · " : k === 1 ? "Demain · " : "") + dateLisible(cleJ)));
+      cand.slice(0, nb).forEach(function (c, i) {
+        var u = c.x.u, ecue = (u.ecue || [])[(k + i) % Math.max(1, (u.ecue || []).length)];
+        deja[u.code] = (deja[u.code] || 0) + 1;
+        var veille = !c.x.sansDate && c.x.j - k === 1;
+        var cleT = cleJ + "|" + u.code; total++; if (coches[cleT]) fait++;
+        var l = el("label", "plan-tache" + (coches[cleT] ? " fait" : ""));
+        var cb = el("input"); cb.type = "checkbox"; cb.checked = !!coches[cleT];
+        cb.onchange = function () { if (cb.checked) coches[cleT] = 1; else delete coches[cleT]; garder("amphi-plan", JSON.stringify(coches)); rendrePlan(); };
+        l.appendChild(cb);
+        l.appendChild(el("span", null, (veille ? "🔥 Veille d'examen · " : "") + u.code + " " + u.nom + (ecue ? " — " + ecue.nom : "") + " · " + (veille ? "1 h 30 : épreuve blanche + fiches" : "45 min : cours + fiches flash")));
+        bloc.appendChild(l);
+      });
+      if (!cand.length) bloc.appendChild(el("p", "aide", "Repos mérité."));
+      z.appendChild(bloc);
+    }
+    $("plan-progres").textContent = total ? fait + " / " + total + " séances faites cette semaine" : "";
+  }
+
   // ── « Quelle note me faut-il ? » : à partir du calculateur de moyenne ──
   function objectif() {
     var cible = +$("ob-cible").value, connu = 0, cConnu = 0, cReste = 0;
@@ -2418,6 +2672,7 @@
   setInterval(chargerEchanges, 30000);
   synchroniser();
   setInterval(synchroniser, 120000);
+  pollQuiz();
 })();
 </script>
 <canvas id="confettis" aria-hidden="true"></canvas>
