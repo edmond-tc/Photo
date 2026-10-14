@@ -144,6 +144,32 @@
   table.moyenne input { width: 100%; font: inherit; padding: 7px 8px; border: 1px solid var(--bordure); border-radius: 8px; }
   table.moyenne td.n { width: 22%; }
   .resultat { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--ciel); color: var(--nuit); font-weight: 700; }
+  .bandeau { background: #fff7d6; border-bottom: 1px solid #f0dc8c; overflow: hidden; white-space: nowrap; }
+  .bandeau div { display: inline-block; padding: 7px 0 7px 100%; animation: defiler 28s linear infinite; font-weight: 600; color: #6b4b00; font-size: .92rem; }
+  .bandeau span { margin-right: 46px; }
+  @keyframes defiler { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+  .alerte { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-left: 5px solid var(--rouge); }
+  .alerte + .alerte { border-top: 1px solid var(--bordure); }
+  .alerte.present { border-left-color: var(--vert); }
+  .alerte .icone { font-size: 1.6rem; }
+  .alerte .quoi { font-weight: 800; }
+  .alerte .meta { font-size: .8rem; color: var(--discret); }
+  .alerte .officiel { display: inline-block; background: var(--vert-fond); color: var(--vert); font-size: .7rem; font-weight: 800; padding: 1px 7px; border-radius: 999px; margin-left: 4px; }
+  .signaler { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 14px; border-top: 1px dashed var(--bordure); }
+  .signaler button { border: 1px solid var(--bordure); background: #fff; border-radius: 999px; padding: 6px 10px; font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; }
+  .citation { font-size: 1.05rem; font-style: italic; line-height: 1.45; color: var(--nuit); }
+  .citation-auteur { margin-top: 6px; font-size: .85rem; color: var(--discret); text-align: right; }
+  .gagnants { margin-top: 8px; font-size: .88rem; color: var(--discret); }
+  .gagnants b { color: var(--nuit); }
+  .pub-promo { padding: 12px 16px; display: flex; gap: 12px; }
+  .pub-promo + .pub-promo { border-top: 1px solid var(--bordure); }
+  .pub-promo img { width: 72px; height: 72px; border-radius: 10px; object-fit: cover; flex: none; }
+  .pub-promo .prix { font-weight: 800; color: var(--vert); }
+  .pub-promo .etiquette-sorte { font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 1px 7px; border-radius: 999px; background: var(--ciel); color: var(--nuit); }
+  .pub-promo .etiquette-sorte.perdu { background: #fdecea; color: var(--rouge); }
+  .pub-promo .etiquette-sorte.trouve { background: var(--vert-fond); color: var(--vert); }
+  .pub-promo.clos { opacity: .55; }
+  .sous-titre { font-size: 1rem; color: var(--nuit); margin: 6px 2px 0; }
   .hors-ligne { display: none; background: var(--or-fond); color: var(--or); text-align: center; padding: 8px; font-size: .9rem; font-weight: 600; }
   .hors-ligne.on { display: block; }
   @media (prefers-reduced-motion: reduce) { .pilule i { animation: none; } html { scroll-behavior: auto; } }
@@ -159,11 +185,13 @@
     <p class="heure" id="heure"></p>
   </div>
 </header>
+<div class="bandeau" id="bandeau" hidden><div id="bandeau-texte"></div></div>
 <div class="onglets"><nav id="onglets">
   <a href="#accueil" class="actif">Accueil</a>
   <a href="#programme">Programme</a>
   <a href="#documents">Documents</a>
   <a href="#annonces">Annonces</a>
+  <a href="#promo">Promo</a>
   <a href="#partager">Partager</a>
   <a href="#questions">Questions</a>
   <a href="#outils">Outils</a>
@@ -172,6 +200,16 @@
 <div class="filieres" id="filieres" hidden></div>
 <main>
   <section id="accueil" style="display:flex;flex-direction:column;gap:16px">
+    <div class="carte" id="carte-alertes">
+      <div id="liste-alertes"></div>
+      <div class="signaler">
+        <span class="aide" style="width:100%">Signaler à toute la promo :</span>
+        <button type="button" data-alerte="present">✅ Le prof est là</button>
+        <button type="button" data-alerte="annule">❌ Cours annulé</button>
+        <button type="button" data-alerte="salle">🔄 Salle changée</button>
+        <button type="button" data-alerte="retard">⏳ Prof en retard</button>
+      </div>
+    </div>
     <div class="carte" id="carte-prochain" hidden>
       <div class="prochain">
         <div class="icone" aria-hidden="true">⏰</div>
@@ -184,6 +222,22 @@
     </div>
     <div class="carte" id="une" hidden></div>
     <div class="carte" id="examens" hidden></div>
+    <div class="carte" id="carte-mot" hidden><div class="corps">
+      <p class="etiquette">💬 Le mot du jour</p>
+      <p class="citation" id="mot-texte"></p>
+      <p class="citation-auteur" id="mot-auteur"></p>
+    </div></div>
+    <div class="carte" id="carte-devinette" hidden><div class="corps">
+      <p class="etiquette">🧩 La devinette du jour</p>
+      <h3 id="dev-question" style="margin-top:4px"></h3>
+      <div id="dev-jeu">
+        <input class="champ" id="dev-pseudo" maxlength="20" placeholder="Votre pseudo (pour le classement)">
+        <div class="ligne-champs"><input class="champ" id="dev-reponse" maxlength="80" placeholder="Votre réponse"><button class="bouton" type="button" id="dev-verifier">Vérifier</button></div>
+      </div>
+      <p class="aide" id="dev-message" style="margin-top:6px"></p>
+      <p class="gagnants" id="dev-gagnants"></p>
+      <p class="gagnants" id="dev-hier"></p>
+    </div></div>
     <div id="sondages" style="display:flex;flex-direction:column;gap:16px"></div>
     <div class="carte bienvenue"><div class="corps">
       <h2 id="accueil-titre"></h2>
@@ -205,6 +259,44 @@
 
   <h2 class="titre-section" id="annonces">📢 Annonces</h2>
   <div class="carte" id="liste-annonces"></div>
+
+  <h2 class="titre-section" id="promo">🎉 La vie de la promo</h2>
+  <p class="aide" style="margin:0 2px">Tout est vérifié avant d'apparaître. Pas de nom complet, pas d'insulte.</p>
+
+  <h3 class="sous-titre">💌 Dédicaces</h3>
+  <div class="carte"><div class="corps">
+    <textarea class="champ" id="ded-texte" maxlength="300" placeholder="Ex. : Joyeux anniversaire Koffi 🎂 / Courage à toute la L3 pour l'exam 💪"></textarea>
+    <button class="bouton" type="button" id="ded-envoyer" style="margin-top:8px">Envoyer la dédicace</button>
+    <p class="aide" id="ded-etat" style="margin-top:6px"></p>
+  </div><div id="liste-dedicaces"></div></div>
+
+  <h3 class="sous-titre">🔎 Objets perdus et trouvés</h3>
+  <div class="carte"><div class="corps">
+    <select class="champ" id="obj-sorte"><option value="perdu">J'ai perdu</option><option value="trouve">J'ai trouvé</option></select>
+    <textarea class="champ" id="obj-texte" maxlength="300" placeholder="Ex. : Clé USB noire 32 Go, rang 6, mardi matin"></textarea>
+    <input class="champ" id="obj-contact" maxlength="60" placeholder="Comment vous retrouver (ex. : rang 6 après le cours)">
+    <input type="file" class="champ" id="obj-photo" accept="image/*">
+    <button class="bouton" type="button" id="obj-envoyer" style="margin-top:8px">Publier</button>
+    <p class="aide" id="obj-etat" style="margin-top:6px"></p>
+  </div><div id="liste-objets"></div></div>
+
+  <h3 class="sous-titre">🛒 Petit marché</h3>
+  <div class="carte"><div class="corps">
+    <select class="champ" id="mar-sorte"><option value="vente">Je vends</option><option value="achat">Je cherche à acheter</option></select>
+    <textarea class="champ" id="mar-texte" maxlength="300" placeholder="Ex. : Calculatrice Casio fx-991, très bon état"></textarea>
+    <input class="champ" id="mar-prix" maxlength="30" placeholder="Prix (ex. : 5 000 F)">
+    <input class="champ" id="mar-contact" maxlength="60" placeholder="Comment vous joindre (numéro ou rang dans l'amphi)">
+    <input type="file" class="champ" id="mar-photo" accept="image/*">
+    <button class="bouton" type="button" id="mar-envoyer" style="margin-top:8px">Publier l'annonce</button>
+    <p class="aide" id="mar-etat" style="margin-top:6px"></p>
+  </div><div id="liste-marche"></div></div>
+
+  <h3 class="sous-titre">💡 Boîte à idées de la promo</h3>
+  <div class="carte"><div class="corps">
+    <textarea class="champ" id="idee-texte" maxlength="400" placeholder="Ex. : Un ventilateur au rang 10 / Un TD de révision avant l'exam"></textarea>
+    <button class="bouton" type="button" id="idee-envoyer" style="margin-top:8px">Proposer</button>
+    <p class="aide" style="margin-top:6px">Soutenez les idées des autres avec « +1 » : les plus soutenues remontent au délégué.</p>
+  </div><div id="liste-idees"></div></div>
 
   <h2 class="titre-section" id="partager">🔁 Partager sans forfait</h2>
   <div class="carte"><div class="corps">
@@ -591,12 +683,18 @@
   }
 
   // ── Questions et demandes ──
-  var SORTES = { question: "Question", demande: "Je cherche", info: "Info utile" };
+  var SORTES = { question: "Question", demande: "Je cherche", info: "Info utile", idee: "Idée" };
   function rendreQuestions() {
     var z = $("liste-questions"); z.textContent = "";
-    var liste = (echanges.questions || []).filter(pourMoi).sort(function (a, b) { return (b.votes || 0) - (a.votes || 0) || b.date - a.date; });
-    if (!liste.length) { z.appendChild(el("p", "corps vide", "Aucune question pour l'instant. Soyez le premier !")); return; }
-    liste.slice(0, 80).forEach(function (q) {
+    var liste = (echanges.questions || []).filter(function (q) { return pourMoi(q) && q.sorte !== "idee"; }).sort(function (a, b) { return (b.votes || 0) - (a.votes || 0) || b.date - a.date; });
+    rendreMur($("liste-idees"), (echanges.questions || []).filter(function (q) { return q.sorte === "idee"; }), "Aucune idée pour l'instant.");
+    if (!liste.length) { z.textContent = ""; z.appendChild(el("p", "corps vide", "Aucune question pour l'instant. Soyez le premier !")); return; }
+    rendreMur(z, liste, "");
+  }
+  function rendreMur(z, liste, vide) {
+    z.textContent = "";
+    if (!liste.length) { if (vide) z.appendChild(el("p", "corps vide", vide)); return; }
+    liste.sort(function (a, b) { return (b.votes || 0) - (a.votes || 0) || b.date - a.date; }).slice(0, 80).forEach(function (q) {
       var l = el("div", "question");
       var b = el("button", "plus" + (q.moi ? " fait" : ""), "+" + (q.votes || 0)); b.type = "button";
       b.appendChild(el("small", null, q.moi ? "moi aussi" : "+1"));
@@ -611,7 +709,7 @@
   }
   function chargerEchanges() {
     return fetch("/echanges.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (e) {
-      echanges = e; rendreQuestions(); if (donnees) rendreSondages();
+      echanges = e; rendreQuestions(); rendrePromo(); if (donnees) rendreSondages();
     }).catch(function () {});
   }
   $("q-publier").onclick = function () {
@@ -622,6 +720,125 @@
       .then(function (r) { if (r.ok) { $("q-texte").value = ""; chargerEchanges(); } else alert(r.erreur || "Échec."); })
       .catch(function () { alert("Pas de connexion au Wi-Fi de l'amphi."); })
       .then(function () { b.disabled = false; });
+  };
+
+  // ── Vie de la promo ──
+  var ALERTES = { present: ["✅", "Le prof est là"], annule: ["❌", "Cours annulé"], salle: ["🔄", "Salle changée"], retard: ["⏳", "Le prof sera en retard"] };
+  function ilYa(ms) { var m = Math.max(0, Math.round((Date.now() - ms) / 60000)); return m < 1 ? "à l'instant" : m < 60 ? "il y a " + m + " min" : "il y a " + Math.round(m / 60) + " h"; }
+  function rendrePromo() {
+    // Alertes
+    var za = $("liste-alertes"); za.textContent = "";
+    (echanges.alertes || []).filter(pourMoi).sort(function (a, b) { return b.date - a.date; }).forEach(function (a) {
+      var l = el("div", "alerte" + (a.sorte === "present" ? " present" : ""));
+      l.appendChild(el("div", "icone", (ALERTES[a.sorte] || ["📢"])[0]));
+      var c = el("div"); c.style.flex = "1";
+      var q = el("p", "quoi", (ALERTES[a.sorte] || ["", "Alerte"])[1] + (a.texte ? " : " + a.texte : ""));
+      if (a.officielle) q.appendChild(el("span", "officiel", "CONFIRMÉ"));
+      c.appendChild(q);
+      c.appendChild(el("p", "meta", "Signalé par " + a.confirmations + " étudiant" + (a.confirmations > 1 ? "s" : "") + " · " + ilYa(a.date) + (a.officielle ? "" : " · non officiel")));
+      l.appendChild(c);
+      if (!a.moi) { var b = el("button", "bouton second", "Je confirme"); b.type = "button"; b.style.padding = "6px 10px"; b.onclick = function () { fetch("/alerte/" + a.id + "/plus", { method: "POST" }).then(chargerEchanges); }; l.appendChild(b); }
+      za.appendChild(l);
+    });
+    // Mot du jour
+    var m = echanges.motDuJour || {};
+    $("carte-mot").hidden = !m.texte;
+    $("mot-texte").textContent = m.texte ? "« " + m.texte + " »" : "";
+    $("mot-auteur").textContent = m.auteur ? "— " + m.auteur : "";
+    // Devinette
+    var d = echanges.devinette || {};
+    $("carte-devinette").hidden = !d.question;
+    $("dev-question").textContent = d.question || "";
+    $("dev-jeu").hidden = !!d.trouve;
+    if (d.trouve && !$("dev-message").textContent) $("dev-message").textContent = "✅ Vous avez trouvé ! Revenez demain pour la suivante.";
+    var g = d.gagnants || [];
+    $("dev-gagnants").textContent = "";
+    if (g.length) {
+      $("dev-gagnants").appendChild(el("span", null, "🏆 Ont trouvé : "));
+      g.slice(0, 10).forEach(function (x, i) { var b = el("b", null, (i + 1) + ". " + x.pseudo); $("dev-gagnants").appendChild(b); $("dev-gagnants").appendChild(document.createTextNode(" (" + new Date(x.heure).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) + ")" + (i < Math.min(g.length, 10) - 1 ? " · " : ""))); });
+    } else $("dev-gagnants").textContent = "Personne n'a encore trouvé. Soyez le premier !";
+    $("dev-hier").textContent = d.hier && d.hier.question ? "Hier : « " + d.hier.question + " » Réponse : " + d.hier.reponse + "." : "";
+    // Publications
+    var pubs = (echanges.publications || []).filter(pourMoi).sort(function (a, b) { return b.date - a.date; });
+    var ded = pubs.filter(function (p) { return p.sorte === "dedicace" && p.statut === "publie"; });
+    var bandeau = $("bandeau");
+    bandeau.hidden = !ded.length;
+    $("bandeau-texte").textContent = "";
+    ded.slice(0, 12).forEach(function (p) { $("bandeau-texte").appendChild(el("span", null, "💌 " + p.texte)); });
+    var zd = $("liste-dedicaces"); zd.textContent = "";
+    ded.forEach(function (p) { var l = el("div", "pub-promo"); var c = el("div"); c.appendChild(el("p", null, "💌 " + p.texte)); c.appendChild(el("p", "date", ilYa(p.date))); l.appendChild(c); zd.appendChild(l); });
+    function liste(z, sortes) {
+      z.textContent = "";
+      pubs.filter(function (p) { return sortes.indexOf(p.sorte) >= 0; }).forEach(function (p) {
+        var l = el("div", "pub-promo" + (p.statut === "clos" ? " clos" : ""));
+        if (p.image) { var i = el("img"); i.src = "/f/" + p.image + "?type=image/jpeg"; i.alt = ""; i.loading = "lazy"; l.appendChild(i); }
+        var c = el("div");
+        var noms = { perdu: "Perdu", trouve: "Trouvé", vente: "À vendre", achat: "Recherché" };
+        var t = el("p"); t.appendChild(el("span", "etiquette-sorte " + p.sorte, noms[p.sorte] || ""));
+        if (p.statut === "clos") t.appendChild(el("span", "etiquette-sorte", p.sorte === "vente" || p.sorte === "achat" ? "Terminé" : "Rendu ✓"));
+        c.appendChild(t);
+        c.appendChild(el("p", null, p.texte));
+        if (p.prix) c.appendChild(el("p", "prix", p.prix));
+        if (p.contact) c.appendChild(el("p", "meta", "👉 " + p.contact));
+        c.appendChild(el("p", "date", ilYa(p.date)));
+        l.appendChild(c); z.appendChild(l);
+      });
+    }
+    liste($("liste-objets"), ["perdu", "trouve"]);
+    liste($("liste-marche"), ["vente", "achat"]);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-alerte]"), function (b) {
+    b.onclick = function () {
+      var sorte = b.getAttribute("data-alerte"), texte = "";
+      if (sorte === "salle") { texte = prompt("Quelle nouvelle salle ?") || ""; if (!texte) return; }
+      if (!confirm("Prévenir toute la promo : « " + ALERTES[sorte][1] + (texte ? " : " + texte : "") + " » ?")) return;
+      fetch("/alerte", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sorte: sorte, texte: texte, filiere: (donnees && donnees.filieres.length > 1) ? filiere : "" }) })
+        .then(function (r) { return r.json(); }).then(function (r) { if (!r.ok) alert(r.erreur || "Échec."); chargerEchanges(); });
+    };
+  });
+  try { $("dev-pseudo").value = localStorage.getItem("amphi-pseudo") || ""; } catch (e) {}
+  $("dev-verifier").onclick = function () {
+    var rep = $("dev-reponse").value.trim(), pseudo = $("dev-pseudo").value.trim();
+    if (!rep) return;
+    try { localStorage.setItem("amphi-pseudo", pseudo); } catch (e) {}
+    fetch("/devinette", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reponse: rep, pseudo: pseudo }) })
+      .then(function (r) { return r.json(); }).then(function (r) {
+        if (r.erreur) { $("dev-message").textContent = r.erreur; return; }
+        $("dev-message").textContent = r.juste ? (r.rang ? "🎉 Bravo ! Vous êtes " + (r.rang === 1 ? "le 1er" : "le " + r.rang + "e") + " à trouver aujourd'hui." : "✅ Déjà trouvé !") : "❌ Ce n'est pas ça. Encore " + r.essaisRestants + " essai(s) aujourd'hui.";
+        if (r.juste) chargerEchanges();
+      });
+  };
+  /** Envoi d'une publication (avec photo réduite facultative). */
+  function publierPromo(sorte, texte, extra, photoInput, etat, bouton) {
+    if (texte.trim().length < 3) { etat.textContent = "Écrivez un message."; return Promise.resolve(false); }
+    bouton.disabled = true; etat.textContent = "Envoi…";
+    var q = "sorte=" + sorte + "&texte=" + encodeURIComponent(texte.trim()) + "&filiere=" + encodeURIComponent((donnees && donnees.filieres.length > 1) ? filiere : "");
+    Object.keys(extra || {}).forEach(function (k) { q += "&" + k + "=" + encodeURIComponent(extra[k] || ""); });
+    var f = photoInput && photoInput.files && photoInput.files[0];
+    return reduire(f).then(function (corps) {
+      return fetch("/publier?" + q, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: corps || new Blob([]) });
+    }).then(function (r) { return r.json(); }).then(function (r) {
+      etat.textContent = r.ok ? "✅ Envoyé ! Visible après vérification." : "❌ " + (r.erreur || "Échec.");
+      if (r.ok && photoInput) photoInput.value = "";
+      return r.ok;
+    }).catch(function () { etat.textContent = "❌ Pas de connexion au Wi-Fi de l'amphi."; return false; }).then(function (ok) { bouton.disabled = false; return ok; });
+  }
+  function reduire(f) {
+    return new Promise(function (ok) {
+      if (!f || !/^image\//.test(f.type)) return ok(null);
+      var img = new Image();
+      img.onload = function () { var k = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight)); var c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); c.toBlob(function (b) { ok(b); }, "image/jpeg", 0.8); };
+      img.onerror = function () { ok(null); };
+      img.src = URL.createObjectURL(f);
+    });
+  }
+  $("ded-envoyer").onclick = function () { var b = this; publierPromo("dedicace", $("ded-texte").value, {}, null, $("ded-etat"), b).then(function (ok) { if (ok) $("ded-texte").value = ""; }); };
+  $("obj-envoyer").onclick = function () { var b = this; publierPromo($("obj-sorte").value, $("obj-texte").value, { contact: $("obj-contact").value }, $("obj-photo"), $("obj-etat"), b).then(function (ok) { if (ok) $("obj-texte").value = ""; }); };
+  $("mar-envoyer").onclick = function () { var b = this; publierPromo($("mar-sorte").value, $("mar-texte").value, { prix: $("mar-prix").value, contact: $("mar-contact").value }, $("mar-photo"), $("mar-etat"), b).then(function (ok) { if (ok) { $("mar-texte").value = ""; $("mar-prix").value = ""; } }); };
+  $("idee-envoyer").onclick = function () {
+    var t = $("idee-texte").value.trim(); if (t.length < 3) return;
+    fetch("/question", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ texte: t, sorte: "idee" }) })
+      .then(function (r) { return r.json(); }).then(function (r) { if (r.ok) { $("idee-texte").value = ""; chargerEchanges(); } else alert(r.erreur || "Échec."); });
   };
 
   // ── Envois (partage, proposition) avec progression ──

@@ -245,6 +245,11 @@ class AmphiService : Service() {
                     r.methode == "POST" && r.chemin == "/question" -> poserQuestion(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.matches(Regex("^/question/[a-z0-9]{6,30}/plus$")) -> plusUn(sortie, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/vote" -> voter(sortie, r, s.inetAddress.hostAddress ?: "")
+                    // ── Vie de la promo ──
+                    r.methode == "POST" && r.chemin == "/publier" -> publier(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/alerte" -> alerter(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/alerte/[a-z0-9]{6,30}/plus$")) -> confirmerAlerte(sortie, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/devinette" -> repondreDevinette(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.startsWith("/c/") -> {
                         // Clic sur une publicité (appel, WhatsApp) : la preuve pour l'annonceur.
                         r.chemin.removePrefix("/c/").takeIf { it.matches(Regex("^[a-z0-9]{4,40}$")) }?.let { compter("clics", it) }
@@ -268,6 +273,8 @@ class AmphiService : Service() {
                         val morceaux = r.chemin.split("/")
                         json(sortie, deciderProposition(morceaux[3], morceaux[4] == "accepter"))
                     }
+                    r.methode == "POST" && r.chemin.matches(Regex("^/gerer/publication/[a-z0-9]{6,30}$")) -> json(sortie, modererPublication(r.chemin.split("/")[3], lireJson(r).optString("action")))
+                    r.methode == "POST" && r.chemin.matches(Regex("^/gerer/alerte/[a-z0-9]{6,30}$")) -> json(sortie, modererAlerte(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/question/[a-z0-9]{6,30}$")) -> {
                         json(sortie, modererQuestion(r.chemin.split("/")[3], lireJson(r)))
                     }
@@ -367,6 +374,7 @@ class AmphiService : Service() {
         ajouter(c.optJSONArray("pubs"), "image")
         ajouter(c.optJSONArray("annonces"), "image")
         c.optJSONObject("accueil")?.optString("photo")?.takeIf { it.isNotEmpty() }?.let { utilises.add(it) }
+        ajouter(lireTableau(fichierPublications), "image")
         val maintenant = System.currentTimeMillis()
         dossierFichiers.listFiles()?.forEach { f ->
             // Un fichier tout juste reçu (pas encore enregistré dans le contenu) est gardé une heure.
@@ -718,7 +726,7 @@ class AmphiService : Service() {
         val t = texte(q.optString("texte"), 400)
         if (t.length < 3) return json(sortie, JSONObject().put("erreur", "Message trop court."), 400)
         if (!texteCorrect(t)) return json(sortie, JSONObject().put("erreur", "Message refusé : restez correct."), 400)
-        val sorte = q.optString("sorte").takeIf { it in setOf("question", "demande", "info") } ?: "question"
+        val sorte = q.optString("sorte").takeIf { it in setOf("question", "demande", "info", "idee") } ?: "question"
         val id = java.util.UUID.randomUUID().toString().replace("-", "").take(12)
         synchronized(verrouEchanges) {
             val tout = lireTableau(fichierQuestions)
@@ -795,13 +803,21 @@ class AmphiService : Service() {
         val mesVotes = JSONObject()
         v.keys().forEach { k -> v.optJSONObject(k)?.let { if (it.has(ip)) mesVotes.put(k, it.optInt(ip)) } }
         return JSONObject().put("questions", visibles).put("resultats", resultats()).put("mesVotes", mesVotes)
+            .put("publications", publicationsPubliques())
+            .put("alertes", alertesActives(ip))
+            .put("motDuJour", motDuJour())
+            .put("devinette", devinettePublique(ip))
     }
 
     private fun echangesGestion(): JSONObject {
         val q = lireTableau(fichierQuestions)
         val sansIp = JSONArray()
         for (i in 0 until q.length()) { val o = JSONObject(q.getJSONObject(i).toString()); o.remove("ip"); o.remove("qui"); sansIp.put(o) }
+        val pubs = lireTableau(fichierPublications)
+        val pubsSansIp = JSONArray()
+        for (i in 0 until pubs.length()) { val o = JSONObject(pubs.getJSONObject(i).toString()); o.remove("ip"); pubsSansIp.put(o) }
         return JSONObject().put("propositions", lireTableau(fichierPropositions)).put("questions", sansIp).put("resultats", resultats())
+            .put("publications", pubsSansIp).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
     }
 
     private fun modererQuestion(id: String, q: JSONObject): JSONObject = synchronized(verrouEchanges) {
@@ -821,6 +837,259 @@ class AmphiService : Service() {
         }
         ecrire(fichierQuestions, gardees)
         JSONObject().put("ok", true)
+    }
+
+    // ── Vie de la promo : dédicaces, objets perdus, petit marché ──────────
+    //
+    // Tout ce qu'écrivent les étudiants attend la validation de l'éditeur
+    // (« attente »), puis s'affiche (« publie ») ; un objet rendu ou vendu
+    // passe à « clos ». Pas de numéro de téléphone dans une dédicace.
+
+    private val fichierPublications get() = File(dossier, "publications.json")
+    private val fichierAlertes get() = File(dossier, "alertes.json")
+    private val fichierDevinette get() = File(dossier, "devinette.json")
+    private val SORTES_PUBLICATION = setOf("dedicace", "perdu", "trouve", "vente", "achat")
+    private val NUMERO = Regex("(\\+?\\d[\\s.-]?){8,}")
+
+    private fun publier(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "publier", 6, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop de messages : réessayez dans une heure."), 429)
+        val sorte = r.query["sorte"]?.takeIf { it in SORTES_PUBLICATION } ?: return json(sortie, JSONObject().put("erreur", "Type inconnu."), 400)
+        val texteMsg = texte(r.query["texte"], 300)
+        if (texteMsg.length < 3) return json(sortie, JSONObject().put("erreur", "Message trop court."), 400)
+        if (!texteCorrect(texteMsg)) return json(sortie, JSONObject().put("erreur", "Message refusé : restez correct."), 400)
+        if (sorte == "dedicace" && NUMERO.containsMatchIn(texteMsg)) return json(sortie, JSONObject().put("erreur", "Pas de numéro de téléphone dans une dédicace."), 400)
+        val id = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+        var image = ""
+        val taille = r.entetes["content-length"]?.toLongOrNull() ?: 0
+        if (taille > 0) {
+            if (taille > 6_000_000) return json(sortie, JSONObject().put("erreur", "Photo trop lourde."), 413)
+            val f = File(dossierFichiers, id + "p")
+            if (recevoirVers(f, r, 6_000_000L) == null) return json(sortie, JSONObject().put("erreur", "Photo non reçue."), 400)
+            image = f.name
+        }
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierPublications)
+            t.put(JSONObject().put("id", id).put("sorte", sorte).put("texte", texteMsg)
+                .put("prix", texte(r.query["prix"], 30)).put("contact", texte(r.query["contact"], 60))
+                .put("filiere", texte(r.query["filiere"], 40)).put("image", image)
+                .put("statut", "attente").put("date", System.currentTimeMillis()).put("ip", ip))
+            while (t.length() > 400) t.remove(0)
+            ecrire(fichierPublications, t)
+        }
+        json(sortie, JSONObject().put("ok", true))
+    }
+
+    private fun publicationsPubliques(): JSONArray {
+        val t = lireTableau(fichierPublications)
+        val maintenant = System.currentTimeMillis()
+        val r = JSONArray()
+        for (i in 0 until t.length()) {
+            val o = t.getJSONObject(i)
+            val statut = o.optString("statut")
+            if (statut != "publie" && statut != "clos") continue
+            val age = maintenant - o.optLong("date")
+            // Dédicaces : 7 jours ; objets et annonces du marché : 30 jours ; clos : 3 jours.
+            val duree = if (statut == "clos") 3L else if (o.optString("sorte") == "dedicace") 7L else 30L
+            if (age > duree * 86_400_000L) continue
+            val p = JSONObject(o.toString()); p.remove("ip")
+            r.put(p)
+        }
+        return r
+    }
+
+    private fun modererPublication(id: String, action: String): JSONObject {
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierPublications)
+            val gardees = JSONArray()
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("id") == id) {
+                    when (action) {
+                        "publier" -> o.put("statut", "publie")
+                        "clore" -> o.put("statut", "clos").put("date", System.currentTimeMillis())
+                        "refuser", "supprimer" -> {
+                            o.optString("image").takeIf { it.isNotEmpty() }?.let { File(dossierFichiers, it).delete() }
+                            continue
+                        }
+                    }
+                }
+                gardees.put(o)
+            }
+            ecrire(fichierPublications, gardees)
+        }
+        return JSONObject().put("ok", true)
+    }
+
+    // ── Alerte cours : signalée par les étudiants, confirmée par les +1 ──
+
+    private val SORTES_ALERTE = setOf("present", "annule", "salle", "retard")
+
+    private fun alerter(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "alerte", 4, 600_000)) return json(sortie, JSONObject().put("erreur", "Attendez quelques minutes."), 429)
+        val q = lireJson(r)
+        val sorte = q.optString("sorte").takeIf { it in SORTES_ALERTE } ?: return json(sortie, JSONObject().put("erreur", "Alerte inconnue."), 400)
+        val precision = texte(q.optString("texte"), 120)
+        if (precision.isNotEmpty() && !texteCorrect(precision)) return json(sortie, JSONObject().put("erreur", "Message refusé : restez correct."), 400)
+        val filiere = texte(q.optString("filiere"), 40)
+        synchronized(verrouEchanges) {
+            val t = alertesValides()
+            // Même alerte déjà signalée : on la confirme au lieu d'en créer une autre.
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("sorte") == sorte && o.optString("filiere") == filiere) {
+                    val ips = o.optJSONArray("ips") ?: JSONArray()
+                    if ((0 until ips.length()).none { ips.optString(it) == ip }) ips.put(ip)
+                    o.put("ips", ips)
+                    if (precision.isNotEmpty()) o.put("texte", precision)
+                    ecrire(fichierAlertes, t)
+                    return json(sortie, JSONObject().put("ok", true))
+                }
+            }
+            t.put(JSONObject().put("id", java.util.UUID.randomUUID().toString().replace("-", "").take(12)).put("sorte", sorte)
+                .put("texte", precision).put("filiere", filiere).put("date", System.currentTimeMillis()).put("ips", JSONArray().put(ip)))
+            ecrire(fichierAlertes, t)
+        }
+        json(sortie, JSONObject().put("ok", true))
+    }
+
+    /** Alertes de moins de 3 heures. */
+    private fun alertesValides(): JSONArray {
+        val t = lireTableau(fichierAlertes)
+        val limite = System.currentTimeMillis() - 3 * 3_600_000L
+        val r = JSONArray()
+        for (i in 0 until t.length()) t.optJSONObject(i)?.let { if (it.optLong("date") > limite) r.put(it) }
+        return r
+    }
+
+    private fun confirmerAlerte(sortie: OutputStream, id: String, ip: String) {
+        synchronized(verrouEchanges) {
+            val t = alertesValides()
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("id") != id) continue
+                val ips = o.optJSONArray("ips") ?: JSONArray()
+                if ((0 until ips.length()).none { ips.optString(it) == ip }) { ips.put(ip); o.put("ips", ips); ecrire(fichierAlertes, t) }
+            }
+        }
+        json(sortie, JSONObject().put("ok", true))
+    }
+
+    private fun alertesActives(ip: String): JSONArray {
+        val t = alertesValides()
+        val r = JSONArray()
+        for (i in 0 until t.length()) {
+            val o = t.getJSONObject(i)
+            val ips = o.optJSONArray("ips") ?: JSONArray()
+            r.put(JSONObject().put("id", o.optString("id")).put("sorte", o.optString("sorte")).put("texte", o.optString("texte"))
+                .put("filiere", o.optString("filiere")).put("date", o.optLong("date")).put("confirmations", ips.length())
+                .put("officielle", o.optBoolean("officielle")).put("moi", ip.isNotEmpty() && (0 until ips.length()).any { ips.optString(it) == ip }))
+        }
+        return r
+    }
+
+    private fun modererAlerte(id: String, action: String): JSONObject {
+        synchronized(verrouEchanges) {
+            val t = alertesValides()
+            val gardees = JSONArray()
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("id") == id) {
+                    if (action == "supprimer") continue
+                    if (action == "officielle") o.put("officielle", true)
+                }
+                gardees.put(o)
+            }
+            ecrire(fichierAlertes, gardees)
+        }
+        return JSONObject().put("ok", true)
+    }
+
+    // ── Mot du jour et devinette du jour : réserve fournie, choix automatique ──
+
+    private fun numeroDuJour(decalage: Int = 0): Int {
+        val maintenant = java.util.Calendar.getInstance()
+        val jours = (maintenant.timeInMillis + maintenant.get(java.util.Calendar.ZONE_OFFSET) + maintenant.get(java.util.Calendar.DST_OFFSET)) / 86_400_000L
+        return (jours + decalage).toInt()
+    }
+
+    private fun reserve(nom: String): JSONArray = try { JSONArray(assets.open("amphi/$nom").use { String(it.readBytes(), Charsets.UTF_8) }) } catch (_: Exception) { JSONArray() }
+
+    /** L'éditeur peut écrire le sien pour aujourd'hui ; sinon la réserve. */
+    private fun motDuJour(): JSONObject {
+        val perso = lireContenu().optJSONObject("motDuJour")
+        if (perso != null && perso.optString("date") == aujourdhui() && perso.optString("texte").isNotEmpty()) return perso
+        val r = reserve("mots.json")
+        return if (r.length() == 0) JSONObject() else r.getJSONObject(numeroDuJour().mod(r.length()))
+    }
+
+    private fun devinetteDuJour(decalage: Int = 0): JSONObject {
+        if (decalage == 0) {
+            val perso = lireContenu().optJSONObject("devinette")
+            if (perso != null && perso.optString("date") == aujourdhui() && perso.optString("question").isNotEmpty()) return perso
+        }
+        val r = reserve("devinettes.json")
+        return if (r.length() == 0) JSONObject() else r.getJSONObject(numeroDuJour(decalage).mod(r.length()))
+    }
+
+    private fun normaliser(t: String): String = java.text.Normalizer.normalize(t.lowercase(Locale.FRANCE), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "").replace(Regex("[^a-z0-9]+"), " ").trim()
+
+    private val ARTICLES = setOf("le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "c", "est", "ce", "mon", "ma", "ton", "ta", "son", "sa")
+
+    /** Juste si tous les mots d'une réponse acceptée sont dans la réponse donnée. */
+    private fun bonneReponse(donnee: String, acceptees: JSONArray?): Boolean {
+        val mots = normaliser(donnee).split(" ").filter { it.isNotEmpty() && it !in ARTICLES }.toSet()
+        if (mots.isEmpty() || acceptees == null) return false
+        for (i in 0 until acceptees.length()) {
+            val attendus = normaliser(acceptees.optString(i)).split(" ").filter { it.isNotEmpty() && it !in ARTICLES }
+            if (attendus.isNotEmpty() && attendus.all { it in mots }) return true
+        }
+        return false
+    }
+
+    private fun etatDevinette(): JSONObject {
+        val e = lireObjet(fichierDevinette)
+        return if (e.optString("jour") == aujourdhui()) e else JSONObject().put("jour", aujourdhui()).put("gagnants", JSONArray()).put("trouve", JSONArray()).put("essais", JSONObject())
+    }
+
+    private fun devinettePublique(ip: String): JSONObject {
+        val d = devinetteDuJour()
+        val e = etatDevinette()
+        val trouve = e.optJSONArray("trouve") ?: JSONArray()
+        val hier = devinetteDuJour(-1)
+        return JSONObject().put("question", d.optString("question"))
+            .put("gagnants", e.optJSONArray("gagnants") ?: JSONArray())
+            .put("trouve", ip.isNotEmpty() && (0 until trouve.length()).any { trouve.optString(it) == ip })
+            .put("hier", JSONObject().put("question", hier.optString("question")).put("reponse", hier.optJSONArray("reponses")?.optString(0) ?: ""))
+    }
+
+    private fun repondreDevinette(sortie: OutputStream, r: Requete, ip: String) {
+        val q = lireJson(r)
+        val reponse = texte(q.optString("reponse"), 80)
+        val pseudo = texte(q.optString("pseudo"), 20).ifEmpty { "Anonyme" }
+        if (!texteCorrect(pseudo)) return json(sortie, JSONObject().put("erreur", "Choisissez un autre pseudo."), 400)
+        synchronized(verrouEchanges) {
+            val e = etatDevinette()
+            val trouve = e.optJSONArray("trouve") ?: JSONArray()
+            if ((0 until trouve.length()).any { trouve.optString(it) == ip }) return json(sortie, JSONObject().put("juste", true).put("deja", true))
+            val essais = e.optJSONObject("essais") ?: JSONObject()
+            val n = essais.optInt(ip)
+            if (n >= 15) return json(sortie, JSONObject().put("erreur", "Plus d'essais aujourd'hui : revenez demain !"), 429)
+            essais.put(ip, n + 1)
+            e.put("essais", essais)
+            val juste = bonneReponse(reponse, devinetteDuJour().optJSONArray("reponses"))
+            var rang = 0
+            if (juste) {
+                trouve.put(ip)
+                e.put("trouve", trouve)
+                val gagnants = e.optJSONArray("gagnants") ?: JSONArray()
+                rang = gagnants.length() + 1
+                if (gagnants.length() < 20) gagnants.put(JSONObject().put("pseudo", pseudo).put("heure", System.currentTimeMillis()))
+                e.put("gagnants", gagnants)
+            }
+            ecrire(fichierDevinette, e)
+            return json(sortie, JSONObject().put("juste", juste).put("rang", rang).put("essaisRestants", 15 - n - 1))
+        }
     }
 
     // ── Le Wi-Fi de l'amphi, créé par le téléphone (Wi-Fi Direct) ─────────

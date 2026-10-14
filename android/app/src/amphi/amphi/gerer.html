@@ -126,6 +126,29 @@
     <p class="aide">Montrez ces chiffres aux commerçants qui veulent une publicité sur le portail.</p>
   </section>
 
+  <details class="carte" id="carte-promo">
+    <summary>🎉 Vie de la promo <span class="pastille" id="nb-promo" hidden></span></summary>
+    <p class="aide">Dédicaces, objets perdus et trouvés, petit marché : rien n'apparaît sans votre accord.</p>
+    <div id="liste-promo-attente"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">Publiés</h3>
+    <div id="liste-promo-publies"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">📢 Alertes cours en cours</h3>
+    <p class="aide">Signalées par les étudiants ; effacées toutes seules après 3 heures.</p>
+    <div id="liste-alertes"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">💬 Mot du jour</h3>
+    <p class="aide" id="mot-actuel"></p>
+    <label for="mot-perso">Mettre le vôtre pour aujourd'hui (facultatif)</label>
+    <input type="text" id="mot-perso" maxlength="200" placeholder="Votre citation ou proverbe">
+    <input type="text" id="mot-auteur" maxlength="60" placeholder="Auteur (facultatif)" style="margin-top:6px">
+    <div class="boutons"><button class="bouton second" id="b-mot">Publier pour aujourd'hui</button></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">🧩 Devinette du jour</h3>
+    <p class="aide" id="dev-actuelle"></p>
+    <label for="dev-question">Mettre la vôtre pour aujourd'hui (facultatif)</label>
+    <input type="text" id="dev-question" maxlength="200" placeholder="Question">
+    <input type="text" id="dev-reponses" maxlength="200" placeholder="Réponses acceptées, séparées par des virgules" style="margin-top:6px">
+    <div class="boutons"><button class="bouton second" id="b-dev">Publier pour aujourd'hui</button></div>
+  </details>
+
   <details class="carte" id="carte-valider">
     <summary>📥 Documents proposés par les étudiants <span class="pastille" id="nb-valider" hidden></span></summary>
     <p class="aide">Rien n'est publié sans votre accord. Corrigez le titre ou la matière si besoin, puis publiez.</p>
@@ -470,8 +493,64 @@
     return fetch("/gerer/echanges", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (e) { echanges = e; rendreEchanges(); }).catch(function () {});
   }
   function poster(url, corps) { return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corps || {}) }).then(function (r) { return r.json(); }); }
+  function aujourdhuiIso() { var d = new Date(), m = d.getMonth() + 1, j = d.getDate(); return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (j < 10 ? "0" : "") + j; }
+  var NOMS_PROMO = { dedicace: "💌 Dédicace", perdu: "🔎 Perdu", trouve: "🔎 Trouvé", vente: "🛒 À vendre", achat: "🛒 Recherché" };
+  var NOMS_ALERTE = { present: "✅ Le prof est là", annule: "❌ Cours annulé", salle: "🔄 Salle changée", retard: "⏳ Prof en retard" };
+  function rendrePromo() {
+    var pubs = (echanges.publications || []).slice().sort(function (a, b) { return b.date - a.date; });
+    var attente = pubs.filter(function (p) { return p.statut === "attente"; });
+    $("nb-promo").hidden = !attente.length; $("nb-promo").textContent = attente.length;
+    function ligne(p, enAttente) {
+      var l = el("div", "ligne"); l.style.flexWrap = "wrap";
+      if (p.image) { var v = el("img", "vignette"); v.src = "/f/" + p.image + "?type=image/jpeg"; l.appendChild(v); }
+      var i = el("div", "info");
+      i.appendChild(el("p", "nom", NOMS_PROMO[p.sorte] + (p.statut === "clos" ? " (clos)" : "")));
+      i.appendChild(el("p", null, p.texte));
+      i.appendChild(el("p", "meta", [p.prix, p.contact, new Date(p.date).toLocaleString("fr-FR")].filter(Boolean).join(" · ")));
+      l.appendChild(i);
+      var act = function (a) { return function () { poster("/gerer/publication/" + p.id, { action: a }).then(chargerEchanges); }; };
+      if (enAttente) { l.appendChild(bouton("Publier", "", act("publier"))); l.appendChild(bouton("Refuser", "danger", act("refuser"))); }
+      else {
+        if (p.sorte !== "dedicace" && p.statut !== "clos") l.appendChild(bouton(p.sorte === "vente" || p.sorte === "achat" ? "Vendu / fini" : "Rendu", "second", act("clore")));
+        l.appendChild(bouton("Retirer", "danger", act("supprimer")));
+      }
+      return l;
+    }
+    var za = $("liste-promo-attente"); za.textContent = "";
+    if (!attente.length) za.appendChild(el("p", "aide", "Rien à vérifier pour l'instant."));
+    attente.forEach(function (p) { za.appendChild(ligne(p, true)); });
+    var zp = $("liste-promo-publies"); zp.textContent = "";
+    pubs.filter(function (p) { return p.statut !== "attente"; }).slice(0, 40).forEach(function (p) { zp.appendChild(ligne(p, false)); });
+    var zl = $("liste-alertes"); zl.textContent = "";
+    if (!(echanges.alertes || []).length) zl.appendChild(el("p", "aide", "Aucune alerte en ce moment."));
+    (echanges.alertes || []).forEach(function (a) {
+      var l = el("div", "ligne"), i = el("div", "info");
+      i.appendChild(el("p", "nom", (NOMS_ALERTE[a.sorte] || "Alerte") + (a.texte ? " : " + a.texte : "") + (a.officielle ? " · confirmée" : "")));
+      i.appendChild(el("p", "meta", a.confirmations + " étudiant(s) · " + new Date(a.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })));
+      l.appendChild(i);
+      if (!a.officielle) l.appendChild(bouton("C'est vrai", "", function () { poster("/gerer/alerte/" + a.id, { action: "officielle" }).then(chargerEchanges); }));
+      l.appendChild(bouton("Faux, retirer", "danger", function () { poster("/gerer/alerte/" + a.id, { action: "supprimer" }).then(chargerEchanges); }));
+      zl.appendChild(l);
+    });
+    var m = echanges.motDuJour || {};
+    $("mot-actuel").textContent = m.texte ? "Aujourd'hui : « " + m.texte + " »" + (m.auteur ? " — " + m.auteur : "") + " (choisi tout seul chaque matin)" : "";
+    var d = echanges.devinette || {};
+    $("dev-actuelle").textContent = d.question ? "Aujourd'hui : « " + d.question + " » Réponse : " + ((d.reponses || [])[0] || "?") + " · " + (d.gagnants || []).length + " ont trouvé (choisie toute seule chaque matin)" : "";
+  }
+  $("b-mot").onclick = function () {
+    var t = $("mot-perso").value.trim(); if (!t) return toast("Écrivez la citation.");
+    contenu.motDuJour = { date: aujourdhuiIso(), texte: t, auteur: $("mot-auteur").value.trim() };
+    enregistrer("Mot du jour publié ✓").then(chargerEchanges);
+  };
+  $("b-dev").onclick = function () {
+    var q = $("dev-question").value.trim(), r = $("dev-reponses").value.split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+    if (!q || !r.length) return toast("Une question et au moins une réponse.");
+    contenu.devinette = { date: aujourdhuiIso(), question: q, reponses: r };
+    enregistrer("Devinette publiée ✓").then(chargerEchanges);
+  };
   function rendreEchanges() {
     if (!contenu) return;
+    rendrePromo();
     var nbP = echanges.propositions.length;
     $("nb-valider").hidden = !nbP; $("nb-valider").textContent = nbP;
     var lp = $("liste-propositions"); lp.textContent = "";
