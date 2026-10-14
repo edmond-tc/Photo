@@ -171,6 +171,8 @@ class MainActivity : Activity() {
         web.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
+            // Taille de texte fixe : la police agrandie du téléphone grossissait trop l'écran.
+            textZoom = 90
             mediaPlaybackRequiresUserGesture = false
             allowFileAccess = false
             allowContentAccess = true

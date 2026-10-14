@@ -45,6 +45,8 @@ class AmphiActivity : Activity() {
         setContentView(vue)
         vue.settings.javaScriptEnabled = true
         vue.settings.domStorageEnabled = true
+        // Taille de texte fixe : la police agrandie du téléphone grossissait trop la page.
+        vue.settings.textZoom = 90
         vue.addJavascriptInterface(Pont(), "Amphi")
         vue.webViewClient = object : WebViewClient() {
             override fun onReceivedError(v: WebView, demande: WebResourceRequest, erreur: WebResourceError) {
