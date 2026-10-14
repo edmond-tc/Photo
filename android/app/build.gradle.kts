@@ -14,15 +14,16 @@ android {
         // choisis, sans fenêtre de confirmation.
         minSdk = 29
         targetSdk = 35
-        versionCode = 32
-        versionName = "0.3.16"
+        versionCode = 33
+        versionName = "0.3.17"
     }
 
     // L'écran de l'application est l'interface web du client, la même que
     // celle que le PC sert aux iPhone : un seul fichier pour les deux.
     sourceSets {
         getByName("main") {
-            assets.srcDirs("../../client-web")
+            // Portail Amphi : ses pages sont sous « amphi/ ».
+            assets.srcDirs("../../client-web", "src/amphi")
         }
     }
 

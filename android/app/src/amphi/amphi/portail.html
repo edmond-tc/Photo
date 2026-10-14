@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f3f8f">
+<title>Wi-Fi de l'amphi</title>
+<style>
+  :root {
+    --bleu: #2b579a; --nuit: #16306f; --ciel: #e8eef8; --fond: #f4f6fb;
+    --texte: #1f2430; --discret: #5d6475; --bordure: #dde2ec;
+    --vert: #0e7a34; --vert-fond: #dcf5e4; --or: #8a5a00; --or-fond: #fff1cc;
+    --rouge: #b42318;
+    --police: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 64px; }
+  body { margin: 0; background: var(--fond); color: var(--texte); font: 16px/1.5 var(--police); -webkit-text-size-adjust: 100%; }
+  h1, h2, h3, p { margin: 0; }
+  a { color: var(--bleu); }
+  button { font: inherit; }
+
+  .hero { background: linear-gradient(150deg, #16306f 0%, #2b579a 55%, #3f7bd1 100%); color: #fff; padding: calc(22px + env(safe-area-inset-top)) 18px 26px; position: relative; overflow: hidden; }
+  .hero::after { content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.18), transparent 70%); }
+  .hero-in { max-width: 600px; margin: 0 auto; position: relative; z-index: 1; }
+  .pilule { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); padding: 4px 12px; border-radius: 999px; font-size: .82rem; font-weight: 600; }
+  .pilule i { width: 8px; height: 8px; border-radius: 50%; background: #5cf08b; box-shadow: 0 0 0 0 rgba(92,240,139,.7); animation: pouls 2s infinite; }
+  @keyframes pouls { 70% { box-shadow: 0 0 0 8px rgba(92,240,139,0); } 100% { box-shadow: 0 0 0 0 rgba(92,240,139,0); } }
+  .hero h1 { font-size: 1.75rem; line-height: 1.15; margin: 14px 0 6px; text-wrap: balance; }
+  .hero .sous { opacity: .92; }
+  .heure { font-variant-numeric: tabular-nums; font-size: .9rem; opacity: .85; margin-top: 10px; }
+
+  .onglets { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.96); backdrop-filter: blur(6px); border-bottom: 1px solid var(--bordure); }
+  .onglets nav { max-width: 600px; margin: 0 auto; display: flex; overflow-x: auto; scrollbar-width: none; }
+  .onglets a { flex: 1 0 auto; text-align: center; padding: 12px 14px; color: var(--discret); text-decoration: none; font-weight: 600; font-size: .92rem; border-bottom: 3px solid transparent; white-space: nowrap; }
+  .onglets a.actif { color: var(--nuit); border-bottom-color: var(--bleu); }
+  .onglets b { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--rouge); color: #fff; font-size: .72rem; line-height: 20px; }
+
+  main { max-width: 600px; margin: 14px auto 0; padding: 0 14px 40px; position: relative; z-index: 2; display: flex; flex-direction: column; gap: 16px; }
+  .carte { background: #fff; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 6px 18px rgba(16,24,40,.06); overflow: hidden; }
+  .carte .corps { padding: 16px; }
+  .titre-section { display: flex; align-items: center; gap: 8px; font-size: 1.15rem; color: var(--nuit); margin: 10px 2px 0; }
+  .vide { color: var(--discret); font-style: italic; padding: 4px 2px; }
+
+  .prochain { display: flex; gap: 14px; align-items: center; padding: 16px; }
+  .prochain .icone { flex: none; width: 52px; height: 52px; border-radius: 12px; background: var(--ciel); display: grid; place-items: center; font-size: 1.6rem; }
+  .prochain .quoi { font-weight: 700; font-size: 1.08rem; line-height: 1.3; }
+  .prochain .quand { color: var(--discret); font-size: .92rem; }
+  .etiquette { font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--bleu); }
+  .etiquette.vert { color: var(--vert); }
+
+  .bienvenue h2 { font-size: 1.25rem; color: var(--nuit); margin-bottom: 6px; }
+  .editeur { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--bordure); font-size: .9rem; color: var(--discret); }
+  .editeur img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
+  .editeur strong { color: var(--texte); }
+
+  .pub { position: relative; display: block; text-decoration: none; color: inherit; }
+  .pub img { display: block; width: 100%; max-height: 260px; object-fit: cover; }
+  .pub .corps { padding: 12px 16px 16px; }
+  .pub .spon { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: .04em; }
+  .pub .corps .spon { position: static; display: inline-block; margin-bottom: 6px; background: var(--or-fond); color: var(--or); }
+  .pub h3 { font-size: 1.08rem; }
+  .pub p { color: var(--discret); font-size: .95rem; }
+  .pub .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .bouton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 14px; border-radius: 10px; background: var(--bleu); color: #fff; font-weight: 700; font-size: .92rem; text-decoration: none; border: 0; cursor: pointer; }
+  .bouton.second { background: var(--ciel); color: var(--nuit); }
+  .points { display: flex; justify-content: center; gap: 6px; padding: 0 0 12px; }
+  .points span { width: 7px; height: 7px; border-radius: 50%; background: var(--bordure); }
+  .points span.on { background: var(--bleu); }
+
+  .annonce { padding: 14px 16px; border-left: 4px solid var(--bleu); }
+  .annonce + .annonce { border-top: 1px solid var(--bordure); }
+  .annonce.epingle { border-left-color: var(--rouge); background: #fff7f6; }
+  .annonce h3 { font-size: 1.02rem; }
+  .annonce .date { font-size: .8rem; color: var(--discret); }
+  .annonce p { margin-top: 4px; white-space: pre-line; }
+  .annonce img { width: 100%; border-radius: 10px; margin-top: 8px; }
+  .nouveau { display: inline-block; font-size: .7rem; font-weight: 700; background: var(--rouge); color: #fff; padding: 1px 7px; border-radius: 999px; margin-left: 6px; vertical-align: 2px; }
+
+  .semaine-tete { padding: 14px 16px; background: var(--ciel); }
+  .semaine-tete h3 { color: var(--nuit); }
+  .semaine-tete p { color: var(--discret); font-size: .9rem; }
+  .jour { border-top: 1px solid var(--bordure); }
+  .jour-tete { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; font-weight: 700; color: var(--nuit); text-transform: uppercase; letter-spacing: .03em; font-size: .92rem; }
+  .jour-tete span { font-weight: 400; text-transform: none; color: var(--discret); letter-spacing: 0; }
+  .jour.aujourdhui .jour-tete { background: var(--bleu); color: #fff; }
+  .jour.aujourdhui .jour-tete div span { color: #e8eef8; }
+  .jour.aujourdhui .jour-tete .badge { background: #fff; color: var(--vert); }
+  .badge { font-size: .72rem; padding: 2px 8px; border-radius: 999px; background: var(--vert-fond); color: var(--vert); text-transform: none; letter-spacing: 0; }
+  .creneau { display: grid; grid-template-columns: 5.6rem 1fr; gap: 12px; align-items: center; padding: 10px 16px 12px; }
+  .horaire { text-align: center; background: var(--fond); border-radius: 10px; padding: 6px 4px; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--nuit); line-height: 1.2; font-size: .95rem; }
+  .horaire small { display: block; font-weight: 400; color: var(--discret); font-size: .72rem; }
+  .ue { font-weight: 700; line-height: 1.3; }
+  .lieu { font-size: .85rem; color: var(--discret); }
+  .creneau.fini { opacity: .5; }
+  .etat { display: inline-block; margin-top: 4px; font-size: .72rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--vert-fond); color: var(--vert); }
+
+  .doc { display: flex; gap: 12px; align-items: center; padding: 12px 16px; }
+  .doc + .doc { border-top: 1px solid var(--bordure); }
+  .doc .type { flex: none; width: 46px; height: 46px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; font-size: .72rem; color: #fff; }
+  .doc .info { flex: 1; min-width: 0; }
+  .doc .nom { font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+  .doc .meta { font-size: .8rem; color: var(--discret); }
+  .doc .bouton { flex: none; padding: 8px 12px; }
+  .groupe { padding: 10px 16px 0; font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--discret); }
+
+  footer { text-align: center; color: var(--discret); font-size: .85rem; padding: 6px 10px 0; }
+  footer p + p { margin-top: 6px; }
+  .hors-ligne { display: none; background: var(--or-fond); color: var(--or); text-align: center; padding: 8px; font-size: .9rem; font-weight: 600; }
+  .hors-ligne.on { display: block; }
+  @media (prefers-reduced-motion: reduce) { .pilule i { animation: none; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="hors-ligne" id="hors-ligne">Connexion au Wi-Fi de l'amphi perdue. La page se remet à jour dès votre retour.</div>
+<header class="hero">
+  <div class="hero-in">
+    <span class="pilule"><i></i>Wi-Fi de l'amphi · gratuit, sans forfait</span>
+    <h1 id="titre">Wi-Fi de l'amphi</h1>
+    <p class="sous" id="sous-titre">Programme, annonces et documents des cours, au même endroit.</p>
+    <p class="heure" id="heure"></p>
+  </div>
+</header>
+<div class="onglets"><nav id="onglets">
+  <a href="#accueil" class="actif">Accueil</a>
+  <a href="#programme">Programme</a>
+  <a href="#documents">Documents</a>
+  <a href="#annonces">Annonces</a>
+</nav></div>
+
+<main>
+  <section id="accueil" style="display:flex;flex-direction:column;gap:16px">
+    <div class="carte" id="carte-prochain" hidden>
+      <div class="prochain">
+        <div class="icone" aria-hidden="true">⏰</div>
+        <div>
+          <p class="etiquette" id="prochain-etiquette">Prochain cours</p>
+          <p class="quoi" id="prochain-quoi"></p>
+          <p class="quand" id="prochain-quand"></p>
+        </div>
+      </div>
+    </div>
+    <div class="carte" id="une" hidden></div>
+    <div class="carte bienvenue"><div class="corps">
+      <h2 id="accueil-titre"></h2>
+      <p id="accueil-texte"></p>
+      <div class="editeur" id="editeur" hidden><img id="editeur-photo" alt="" hidden><span>Page publiée par <strong id="editeur-nom"></strong></span></div>
+    </div></div>
+    <div id="pub-haut"></div>
+  </section>
+
+  <h2 class="titre-section" id="programme">📅 Programme de la semaine</h2>
+  <div class="carte" id="semaine"></div>
+
+  <div id="pub-milieu"></div>
+
+  <h2 class="titre-section" id="documents">📚 Documents</h2>
+  <div class="carte" id="liste-docs"></div>
+
+  <h2 class="titre-section" id="annonces">📢 Annonces</h2>
+  <div class="carte" id="liste-annonces"></div>
+
+  <div id="pub-bas"></div>
+
+  <footer>
+    <p>Ce Wi-Fi n'a pas Internet : tout ce qui est ici est gratuit, sans forfait.</p>
+    <p>Pour garder un document, ouvrez-le puis enregistrez-le dans votre téléphone.</p>
+    <p id="pied-editeur"></p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+  var MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+  var donnees = null;
+  var empreinte = "";
+
+  function el(tag, classe, texte) {
+    var e = document.createElement(tag);
+    if (classe) e.className = classe;
+    if (texte != null) e.textContent = texte;
+    return e;
+  }
+  function $(id) { return document.getElementById(id); }
+  function cle(d) { var m = d.getMonth() + 1, j = d.getDate(); return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (j < 10 ? "0" : "") + j; }
+  function minutes(h) { var p = String(h || "0:0").split(":"); return (+p[0]) * 60 + (+p[1] || 0); }
+  function libelle(h) { var p = String(h || "").split(":"); return p[0] + "h" + (p[1] && p[1] !== "00" ? p[1] : ""); }
+  function dateLisible(iso) {
+    var p = String(iso || "").split("-");
+    if (p.length < 3) return "";
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);
+    return JOURS[d.getDay()] + " " + d.getDate() + " " + MOIS[d.getMonth()];
+  }
+  function taille(o) {
+    o = +o || 0;
+    if (o >= 1e9) return (o / 1e9).toFixed(1).replace(".", ",") + " Go";
+    if (o >= 1e6) return (o / 1e6).toFixed(1).replace(".", ",") + " Mo";
+    return Math.max(1, Math.round(o / 1e3)) + " Ko";
+  }
+  function recent(ms) { return ms && Date.now() - ms < 3 * 86400000; }
+  function lienFichier(id, nom, type, telecharger) {
+    return "/f/" + encodeURIComponent(id) + "?nom=" + encodeURIComponent(nom || "document") + "&type=" + encodeURIComponent(type || "application/octet-stream") + (telecharger ? "&dl=1" : "");
+  }
+
+  function horloge() {
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes();
+    $("heure").textContent = JOURS[d.getDay()].replace(/^./, function (c) { return c.toUpperCase(); }) + " " + d.getDate() + " " + MOIS[d.getMonth()] + " · " + (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+  }
+
+  // ── Programme ──
+  function rendreProgramme() {
+    var p = (donnees && donnees.programme) || {};
+    var boite = $("semaine");
+    boite.textContent = "";
+    var jours = p.jours || [];
+    if (!jours.length) {
+      boite.appendChild(el("p", "corps vide", "Le programme de la semaine sera publié ici."));
+      $("carte-prochain").hidden = true;
+      return;
+    }
+    var tete = el("div", "semaine-tete");
+    tete.appendChild(el("h3", null, p.titre || "Programme de la semaine"));
+    if (p.periode) tete.appendChild(el("p", null, p.periode));
+    if (p.source) tete.appendChild(el("p", null, p.source));
+    boite.appendChild(tete);
+
+    var maintenant = new Date(), aujourdhui = cle(maintenant), mn = maintenant.getHours() * 60 + maintenant.getMinutes();
+    var prochain = null, enCours = null;
+    jours.forEach(function (j) {
+      var sec = el("div", "jour");
+      var cetteJournee = j.date === aujourdhui, passee = j.date && j.date < aujourdhui;
+      if (cetteJournee) sec.classList.add("aujourdhui");
+      var t = el("div", "jour-tete");
+      var gauche = el("div", null, j.nom || dateLisible(j.date));
+      if (j.date) { var dd = j.date.split("-"); gauche.appendChild(el("span", null, "  " + dd[2] + "/" + dd[1])); }
+      t.appendChild(gauche);
+      if (cetteJournee) t.appendChild(el("span", "badge", "Aujourd'hui"));
+      sec.appendChild(t);
+      (j.creneaux || []).forEach(function (c) {
+        var ligne = el("div", "creneau");
+        var hor = el("div", "horaire", libelle(c.debut));
+        hor.appendChild(el("small", null, "à " + libelle(c.fin)));
+        var info = el("div");
+        info.appendChild(el("p", "ue", c.ue || ""));
+        var lieu = c.lieu || p.lieu;
+        if (lieu) info.appendChild(el("p", "lieu", lieu));
+        var fini = passee || (cetteJournee && mn >= minutes(c.fin));
+        var dedans = cetteJournee && mn >= minutes(c.debut) && mn < minutes(c.fin);
+        if (fini) ligne.classList.add("fini");
+        if (dedans) { info.appendChild(el("span", "etat", "En cours")); if (!enCours) enCours = { c: c, j: j }; }
+        else if (!fini && !prochain) prochain = { c: c, j: j };
+        ligne.appendChild(hor); ligne.appendChild(info);
+        sec.appendChild(ligne);
+      });
+      boite.appendChild(sec);
+    });
+    var choix = enCours || prochain;
+    $("carte-prochain").hidden = !choix;
+    if (choix) {
+      $("prochain-etiquette").textContent = enCours ? "En ce moment" : "Prochain cours";
+      $("prochain-etiquette").className = "etiquette" + (enCours ? " vert" : "");
+      $("prochain-quoi").textContent = choix.c.ue || "";
+      var quand = choix.j.date === aujourdhui ? "Aujourd'hui" : dateLisible(choix.j.date);
+      $("prochain-quand").textContent = quand.replace(/^./, function (c) { return c.toUpperCase(); }) + ", de " + libelle(choix.c.debut) + " à " + libelle(choix.c.fin) + ((choix.c.lieu || p.lieu) ? " · " + (choix.c.lieu || p.lieu) : "");
+    }
+  }
+
+  // ── Documents ──
+  var COULEURS = { pdf: "#c4320a", doc: "#2b579a", docx: "#2b579a", xls: "#107c41", xlsx: "#107c41", ppt: "#c43e1c", pptx: "#c43e1c", mp4: "#7a2bb5", mp3: "#0e7a6b", jpg: "#b5762b", jpeg: "#b5762b", png: "#b5762b", apk: "#3a7d00", zip: "#5d6475" };
+  function rendreDocuments() {
+    var boite = $("liste-docs");
+    boite.textContent = "";
+    var docs = ((donnees && donnees.documents) || []).slice().sort(function (a, b) { return (b.date || 0) - (a.date || 0); });
+    if (!docs.length) { boite.appendChild(el("p", "corps vide", "Aucun document pour l'instant.")); return; }
+    var groupes = {};
+    var ordre = [];
+    docs.forEach(function (d) { var g = d.categorie || "Documents"; if (!groupes[g]) { groupes[g] = []; ordre.push(g); } groupes[g].push(d); });
+    ordre.forEach(function (g) {
+      if (ordre.length > 1) boite.appendChild(el("p", "groupe", g));
+      groupes[g].forEach(function (d) {
+        var ext = String(d.nom || "").split(".").pop().toLowerCase();
+        var ligne = el("div", "doc");
+        var type = el("div", "type", ext.slice(0, 4).toUpperCase() || "FICH");
+        type.style.background = COULEURS[ext] || "#5d6475";
+        var info = el("div", "info");
+        var nom = el("p", "nom", d.titre || d.nom);
+        if (recent(d.date)) nom.appendChild(el("span", "nouveau", "Nouveau"));
+        info.appendChild(nom);
+        info.appendChild(el("p", "meta", taille(d.taille) + (d.date ? " · " + new Date(d.date).toLocaleDateString("fr-FR") : "")));
+        var lecture = /^(video|audio)\//.test(d.type || "") || /^image\//.test(d.type || "") || ext === "pdf";
+        var a = el("a", "bouton", lecture ? "Ouvrir" : "Télécharger");
+        a.href = lienFichier(d.id, d.nom, d.type, !lecture);
+        ligne.appendChild(type); ligne.appendChild(info); ligne.appendChild(a);
+        boite.appendChild(ligne);
+      });
+    });
+  }
+
+  // ── Annonces ──
+  function blocAnnonce(a) {
+    var b = el("div", "annonce" + (a.epingle ? " epingle" : ""));
+    var t = el("h3", null, (a.epingle ? "📌 " : "") + (a.titre || "Annonce"));
+    if (recent(a.date)) t.appendChild(el("span", "nouveau", "Nouveau"));
+    b.appendChild(t);
+    if (a.date) b.appendChild(el("p", "date", new Date(a.date).toLocaleString("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })));
+    if (a.texte) b.appendChild(el("p", null, a.texte));
+    if (a.image) { var i = el("img"); i.src = lienFichier(a.image, "image", "image/jpeg"); i.alt = ""; i.loading = "lazy"; b.appendChild(i); }
+    return b;
+  }
+  function rendreAnnonces() {
+    var boite = $("liste-annonces");
+    boite.textContent = "";
+    var liste = ((donnees && donnees.annonces) || []).slice().sort(function (a, b) { return (b.epingle ? 1 : 0) - (a.epingle ? 1 : 0) || (b.date || 0) - (a.date || 0); });
+    if (!liste.length) boite.appendChild(el("p", "corps vide", "Aucune annonce pour l'instant."));
+    liste.forEach(function (a) { boite.appendChild(blocAnnonce(a)); });
+    // « À la une » : l'annonce épinglée, sinon la plus récente de moins de 3 jours.
+    var une = $("une");
+    une.textContent = "";
+    var choix = liste.filter(function (a) { return a.epingle || recent(a.date); })[0];
+    une.hidden = !choix;
+    if (choix) { var e = el("p", "etiquette", "À la une"); e.style.padding = "14px 16px 0"; une.appendChild(e); une.appendChild(blocAnnonce(choix)); }
+    var nb = liste.filter(function (a) { return recent(a.date); }).length;
+    var lien = document.querySelector('#onglets a[href="#annonces"]');
+    lien.textContent = "Annonces";
+    if (nb) lien.appendChild(el("b", null, String(nb)));
+  }
+
+  // ── Publicités ──
+  function carteDePub(p) {
+    var c = el("div", "carte pub");
+    if (p.image) { var i = el("img"); i.src = lienFichier(p.image, "pub", "image/jpeg"); i.alt = ""; i.loading = "lazy"; c.appendChild(i); }
+    var corps = el("div", "corps");
+    corps.appendChild(el("span", "spon", "Sponsorisé"));
+    corps.appendChild(el("h3", null, p.titre || ""));
+    if (p.texte) corps.appendChild(el("p", null, p.texte));
+    var num = String(p.contact || "").replace(/[^0-9+]/g, "");
+    if (num) {
+      var actions = el("div", "actions");
+      var appel = el("a", "bouton", "📞 Appeler"); appel.href = "tel:" + num; actions.appendChild(appel);
+      var wa = el("a", "bouton second", "WhatsApp"); wa.href = "https://wa.me/" + num.replace(/^\+/, ""); actions.appendChild(wa);
+      corps.appendChild(actions);
+    }
+    c.appendChild(corps);
+    return c;
+  }
+  var tourner = null;
+  function rendrePubs() {
+    var pubs = ((donnees && donnees.pubs) || []).filter(function (p) { return p.titre || p.image; });
+    ["pub-haut", "pub-milieu", "pub-bas"].forEach(function (id) { $(id).textContent = ""; });
+    if (tourner) { clearInterval(tourner); tourner = null; }
+    if (!pubs.length) return;
+    // En haut : un carrousel qui passe d'une publicité à l'autre ; plus bas : une à la fois.
+    var haut = $("pub-haut");
+    var indice = 0;
+    var cadre = el("div");
+    var points = el("div", "points");
+    function montrer() {
+      cadre.textContent = "";
+      cadre.appendChild(carteDePub(pubs[indice % pubs.length]));
+      Array.prototype.forEach.call(points.children, function (s, k) { s.className = k === indice % pubs.length ? "on" : ""; });
+    }
+    pubs.forEach(function () { points.appendChild(el("span")); });
+    haut.appendChild(cadre);
+    if (pubs.length > 1) { haut.appendChild(points); tourner = setInterval(function () { indice++; montrer(); }, 7000); }
+    montrer();
+    if (pubs.length > 1) $("pub-milieu").appendChild(carteDePub(pubs[1 % pubs.length]));
+    if (pubs.length > 2) $("pub-bas").appendChild(carteDePub(pubs[2 % pubs.length]));
+  }
+
+  function rendre() {
+    document.title = donnees.titre || "Wi-Fi de l'amphi";
+    $("titre").textContent = donnees.titre || "Wi-Fi de l'amphi";
+    var acc = donnees.accueil || {};
+    if (acc.sousTitre) $("sous-titre").textContent = acc.sousTitre;
+    $("accueil-titre").textContent = acc.titre || "Bienvenue";
+    $("accueil-texte").textContent = acc.texte || "";
+    $("editeur").hidden = !acc.editeur;
+    $("editeur-nom").textContent = acc.editeur || "";
+    $("pied-editeur").textContent = acc.editeur ? "Page publiée par " + acc.editeur : "";
+    var photo = $("editeur-photo");
+    photo.hidden = !acc.photo;
+    if (acc.photo) photo.src = lienFichier(acc.photo, "photo", "image/jpeg");
+    rendreProgramme();
+    rendreDocuments();
+    rendreAnnonces();
+    rendrePubs();
+  }
+
+  function charger() {
+    fetch("/donnees.json", { cache: "no-store" })
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        $("hors-ligne").className = "hors-ligne";
+        if (t === empreinte) { rendreProgramme(); return; }
+        empreinte = t;
+        donnees = JSON.parse(t);
+        rendre();
+      })
+      .catch(function () { $("hors-ligne").className = "hors-ligne on"; });
+  }
+
+  // Onglet actif selon la partie visible.
+  var liens = Array.prototype.slice.call(document.querySelectorAll("#onglets a"));
+  function suivreDefilement() {
+    var actuel = liens[0];
+    liens.forEach(function (a) {
+      var cible = document.querySelector(a.getAttribute("href"));
+      if (cible && cible.getBoundingClientRect().top < 120) actuel = a;
+    });
+    liens.forEach(function (a) { a.classList.toggle("actif", a === actuel); });
+  }
+  window.addEventListener("scroll", suivreDefilement, { passive: true });
+
+  horloge();
+  setInterval(horloge, 30000);
+  charger();
+  setInterval(charger, 60000);
+})();
+</script>
+</body>
+</html>

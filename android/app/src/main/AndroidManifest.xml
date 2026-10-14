@@ -46,6 +46,7 @@
         tools:targetApi="31" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -86,6 +87,28 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- Portail Amphi : une deuxième icône, « Portail Amphi », dans la même application. -->
+        <activity
+            android:name=".AmphiActivity"
+            android:exported="true"
+            android:label="Portail Amphi"
+            android:taskAffinity="bj.photocopie.envoyeur.amphi"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".AmphiService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Serveur local du portail Wi-Fi de l'amphi (page servie aux téléphones connectés au point d'accès, sans Internet)" />
+        </service>
 
         <service
             android:name=".MamService"

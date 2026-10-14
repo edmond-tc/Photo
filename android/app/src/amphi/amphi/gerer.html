@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portail Amphi</title>
+<style>
+  :root { --bleu: #2b579a; --nuit: #16306f; --ciel: #e8eef8; --fond: #f4f6fb; --texte: #1f2430; --discret: #5d6475; --bordure: #dde2ec; --vert: #0e7a34; --vert-fond: #dcf5e4; --rouge: #b42318; --rouge-fond: #fdecea; --police: "Segoe UI", Roboto, Arial, sans-serif; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--fond); color: var(--texte); font: 16px/1.45 var(--police); }
+  h1, h2, h3, p { margin: 0; }
+  .barre { background: var(--nuit); color: #fff; padding: 14px 16px; font-weight: 700; font-size: 1.1rem; }
+  main { max-width: 640px; margin: 0 auto; padding: 14px 12px 80px; display: flex; flex-direction: column; gap: 14px; }
+  .carte { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 4px 12px rgba(16,24,40,.05); }
+  .carte h2 { font-size: 1.1rem; color: var(--nuit); margin-bottom: 10px; }
+  details.carte > summary { list-style: none; cursor: pointer; font-weight: 700; color: var(--nuit); font-size: 1.08rem; display: flex; justify-content: space-between; align-items: center; }
+  details.carte > summary::after { content: "▾"; color: var(--discret); }
+  details[open].carte > summary { margin-bottom: 12px; }
+  details[open].carte > summary::after { content: "▴"; }
+  label { display: block; font-size: .9rem; font-weight: 600; color: var(--discret); margin: 10px 0 4px; }
+  input[type=text], input[type=tel], textarea, select { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--bordure); border-radius: 10px; background: #fff; color: var(--texte); }
+  textarea { min-height: 90px; resize: vertical; }
+  .bouton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-weight: 700; padding: 11px 16px; border-radius: 10px; border: 0; background: var(--bleu); color: #fff; cursor: pointer; margin-top: 12px; }
+  .bouton.second { background: var(--ciel); color: var(--nuit); }
+  .bouton.danger { background: var(--rouge-fond); color: var(--rouge); }
+  .bouton.petit { padding: 6px 10px; font-size: .85rem; margin-top: 0; }
+  .boutons { display: flex; flex-wrap: wrap; gap: 8px; }
+  .aide { font-size: .88rem; color: var(--discret); margin-top: 6px; }
+  .etat { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .etat.ok { color: var(--vert); }
+  .etat.attente { color: #8a5a00; }
+  .qr { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 14px 0 4px; }
+  .qr canvas, .qr img { width: 230px; height: 230px; image-rendering: pixelated; background: #fff; padding: 10px; border-radius: 12px; border: 1px solid var(--bordure); }
+  .adresse { font-size: 1.35rem; font-weight: 800; color: var(--nuit); font-variant-numeric: tabular-nums; letter-spacing: .02em; user-select: all; }
+  .etapes { margin: 12px 0 0; padding-left: 20px; font-size: .95rem; }
+  .etapes li + li { margin-top: 4px; }
+  .chiffres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+  .chiffres div { background: var(--fond); border-radius: 10px; padding: 10px 4px; }
+  .chiffres b { display: block; font-size: 1.5rem; color: var(--nuit); font-variant-numeric: tabular-nums; }
+  .chiffres span { font-size: .78rem; color: var(--discret); }
+  .ligne { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--bordure); }
+  .ligne:first-child { border-top: 0; }
+  .ligne .info { flex: 1; min-width: 0; }
+  .ligne .nom { font-weight: 700; overflow-wrap: anywhere; }
+  .ligne .meta { font-size: .8rem; color: var(--discret); }
+  .apercu-jour { margin-top: 10px; border: 1px solid var(--bordure); border-radius: 10px; overflow: hidden; }
+  .apercu-jour p.t { background: var(--ciel); padding: 6px 10px; font-weight: 700; color: var(--nuit); }
+  .apercu-jour p.c { padding: 6px 10px; border-top: 1px solid var(--bordure); font-size: .92rem; }
+  .bilan { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-weight: 600; }
+  .bilan.ok { background: var(--vert-fond); color: var(--vert); }
+  .bilan.non { background: var(--rouge-fond); color: var(--rouge); }
+  .barre-envoi { height: 8px; border-radius: 4px; background: var(--ciel); overflow: hidden; margin-top: 8px; }
+  .barre-envoi i { display: block; height: 100%; width: 0; background: var(--bleu); transition: width .2s; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(120px); background: var(--texte); color: #fff; padding: 10px 18px; border-radius: 999px; font-weight: 600; transition: transform .25s; z-index: 50; }
+  .toast.on { transform: translateX(-50%) translateY(0); }
+  .case { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-weight: 600; color: var(--texte); }
+  .case input { width: 20px; height: 20px; }
+  .vignette { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; flex: none; background: var(--fond); }
+</style>
+</head>
+<body>
+<div class="barre">📡 Portail Amphi</div>
+<main>
+  <section class="carte" id="carte-etat">
+    <p class="etat attente" id="etat">⏳ Démarrage du portail…</p>
+    <div class="qr" id="zone-qr" hidden>
+      <div id="qr"></div>
+      <p class="adresse" id="adresse"></p>
+      <p class="aide">Les étudiants scannent ce code avec l'appareil photo, ou tapent l'adresse dans leur navigateur.</p>
+    </div>
+    <ol class="etapes" id="etapes">
+      <li><b>Coupez vos données mobiles</b> (sinon tout l'amphi consomme votre forfait).</li>
+      <li><b>Allumez le point d'accès mobile</b>, nommé par exemple « Physique Fondamentale L3 ».</li>
+      <li>Montrez le QR : les étudiants se connectent au Wi-Fi puis scannent.</li>
+    </ol>
+    <div class="boutons">
+      <button class="bouton" id="b-point">📶 Point d'accès mobile</button>
+      <button class="bouton second" id="b-partager">Partager l'adresse</button>
+      <button class="bouton second" id="b-voir">Voir la page des étudiants</button>
+    </div>
+    <p class="aide">Conseil aux étudiants Android : couper les données mobiles le temps d'ouvrir la page, sinon le téléphone peut chercher l'adresse sur Internet.</p>
+  </section>
+
+  <section class="carte">
+    <h2>👀 Audience</h2>
+    <div class="chiffres">
+      <div><b id="v-jour">0</b><span>visiteurs aujourd'hui</span></div>
+      <div><b id="v-semaine">0</b><span>visiteurs sur 7 jours</span></div>
+      <div><b id="vues-semaine">0</b><span>pages vues sur 7 jours</span></div>
+    </div>
+    <p class="aide">Montrez ces chiffres aux commerçants qui veulent une publicité sur le portail.</p>
+  </section>
+
+  <details class="carte" open>
+    <summary>📅 Programme de la semaine</summary>
+    <p class="aide">Copiez le message du programme reçu sur WhatsApp, collez-le ici : les cartes se font toutes seules.</p>
+    <textarea id="p-brut" placeholder="Collez ici le message du programme (LUNDI 28/09/2026, 07h à 09h50, Mécanique quantique…)" style="min-height:160px"></textarea>
+    <div class="boutons"><button class="bouton second" id="b-lire">Lire le message</button></div>
+    <div id="p-apercu"></div>
+    <label for="p-titre">Titre du programme</label>
+    <input type="text" id="p-titre" placeholder="Programme de la semaine">
+    <label for="p-lieu">Lieu par défaut</label>
+    <input type="text" id="p-lieu" placeholder="Amphi Téléthon">
+    <div class="boutons"><button class="bouton" id="b-publier-programme">Publier le programme</button></div>
+  </details>
+
+  <details class="carte">
+    <summary>📢 Annonces</summary>
+    <label for="a-titre">Titre</label>
+    <input type="text" id="a-titre" placeholder="Ex. : Cours de lundi reporté">
+    <label for="a-texte">Texte</label>
+    <textarea id="a-texte"></textarea>
+    <label for="a-image">Image (facultative)</label>
+    <input type="file" id="a-image" accept="image/*">
+    <label class="case"><input type="checkbox" id="a-epingle"> Épingler en haut de la page</label>
+    <div class="boutons"><button class="bouton" id="b-annonce">Publier l'annonce</button></div>
+    <div id="liste-annonces" style="margin-top:12px"></div>
+  </details>
+
+  <details class="carte">
+    <summary>📚 Documents (cours, TD, épreuves, vidéos)</summary>
+    <label for="d-categorie">Rubrique</label>
+    <select id="d-categorie"><option>Cours</option><option>TD et TP</option><option>Épreuves et corrigés</option><option>Vidéos</option><option>Applications</option><option>Autres</option></select>
+    <label for="d-fichiers">Fichiers</label>
+    <input type="file" id="d-fichiers" multiple>
+    <div class="barre-envoi" id="d-barre" hidden><i></i></div>
+    <p class="aide" id="d-etat"></p>
+    <p class="aide" id="place"></p>
+    <div id="liste-docs" style="margin-top:8px"></div>
+  </details>
+
+  <details class="carte">
+    <summary>💼 Publicités</summary>
+    <p class="aide">Une boutique, un répétiteur, un événement… La publicité défile en haut de la page des étudiants.</p>
+    <label for="pub-titre">Nom ou titre</label>
+    <input type="text" id="pub-titre" placeholder="Ex. : Copie Express, photocopies à 15 F">
+    <label for="pub-texte">Texte</label>
+    <textarea id="pub-texte"></textarea>
+    <label for="pub-contact">Numéro à appeler (facultatif)</label>
+    <input type="tel" id="pub-contact" placeholder="+229 01 00 00 00 00">
+    <label for="pub-image">Image (facultative)</label>
+    <input type="file" id="pub-image" accept="image/*">
+    <div class="boutons"><button class="bouton" id="b-pub">Ajouter la publicité</button></div>
+    <div id="liste-pubs" style="margin-top:12px"></div>
+  </details>
+
+  <details class="carte">
+    <summary>🏠 Page d'accueil</summary>
+    <label for="c-titre">Titre en haut de la page</label>
+    <input type="text" id="c-titre">
+    <label for="c-sous">Phrase sous le titre</label>
+    <input type="text" id="c-sous">
+    <label for="c-accueil">Titre du message d'accueil</label>
+    <input type="text" id="c-accueil">
+    <label for="c-texte">Message d'accueil</label>
+    <textarea id="c-texte"></textarea>
+    <label for="c-editeur">Publiée par</label>
+    <input type="text" id="c-editeur">
+    <label for="c-photo">Votre photo (facultative)</label>
+    <input type="file" id="c-photo" accept="image/*">
+    <div class="boutons"><button class="bouton" id="b-accueil">Enregistrer</button><button class="bouton danger" id="b-sans-photo">Retirer la photo</button></div>
+  </details>
+</main>
+<div class="toast" id="toast"></div>
+<script src="/gerer/qrcode.js"></script>
+<script>
+(function () {
+  "use strict";
+  var contenu = null;
+  var adresseActuelle = "";
+  function $(id) { return document.getElementById(id); }
+  function el(tag, classe, texte) { var e = document.createElement(tag); if (classe) e.className = classe; if (texte != null) e.textContent = texte; return e; }
+  function toast(t) { var b = $("toast"); b.textContent = t; b.className = "toast on"; clearTimeout(toast.m); toast.m = setTimeout(function () { b.className = "toast"; }, 2200); }
+  function nouvelId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function taille(o) { o = +o || 0; return o >= 1e9 ? (o / 1e9).toFixed(1) + " Go" : o >= 1e6 ? (o / 1e6).toFixed(1) + " Mo" : Math.max(1, Math.round(o / 1e3)) + " Ko"; }
+
+  // ── Lecture du message WhatsApp du programme ──
+  var NOMS_JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+  function nettoyer(l) {
+    return String(l)
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{23FF}\u{2460}-\u{27BF}\u{2900}-\u{297F}\u{2B00}-\u{2BFF}\u{3030}\u{303D}\u{FE0F}\u{200D}\u{20E3}]/gu, " ")
+      .replace(/[\u{1D400}-\u{1D7FF}]/gu, function (c) { return c.normalize("NFKC"); })
+      .replace(/[*_~`]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  var RE_HEURE = /(\d{1,2})\s*h\s*(\d{2})?\s*(?:à|a|-|–|jusqu'à)\s*(\d{1,2})\s*h\s*(\d{2})?/i;
+  function hh(h, m) { return (h.length < 2 ? "0" : "") + h + ":" + (m || "00"); }
+  function lireProgramme(texte) {
+    var lignes = String(texte || "").split(/\r?\n/).map(nettoyer).filter(function (l) { return l && !/^[-–—_=.]+$/.test(l); });
+    var p = { jours: [], lieu: "", periode: "" };
+    var jour = null, attente = null;
+    lignes.forEach(function (l) {
+      var bas = l.toLowerCase();
+      var mj = bas.match(/^(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b[^0-9]*(\d{1,2})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{2,4})/);
+      if (mj && !/\bau\b/.test(bas)) {
+        var an = mj[4].length === 2 ? "20" + mj[4] : mj[4];
+        jour = { nom: mj[1].charAt(0).toUpperCase() + mj[1].slice(1), date: an + "-" + (mj[3].length < 2 ? "0" : "") + mj[3] + "-" + (mj[2].length < 2 ? "0" : "") + mj[2], creneaux: [] };
+        p.jours.push(jour);
+        attente = null;
+        return;
+      }
+      var mp = l.match(/(\d{1,2}\/\d{1,2}\/\d{2,4}).*?\bau\b.*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (mp) { p.periode = "Du " + mp[1] + " au " + mp[2]; return; }
+      var mh = l.match(RE_HEURE);
+      if (mh && !/matin|soir|apr[eè]s-midi/i.test(bas)) {
+        attente = { debut: hh(mh[1], mh[2]), fin: hh(mh[3], mh[4]) };
+        var reste = l.replace(RE_HEURE, "").replace(/^[\s:,-]+|[\s:,-]+$/g, "");
+        if (reste.length > 2 && jour) { jour.creneaux.push({ debut: attente.debut, fin: attente.fin, ue: reste }); attente = null; }
+        return;
+      }
+      if (/^amphi\b|\bamphi\s/i.test(l) && !attente) { if (!jour) p.lieu = l; else if (jour.creneaux.length) jour.creneaux[jour.creneaux.length - 1].lieu = l; return; }
+      if (attente && jour) { jour.creneaux.push({ debut: attente.debut, fin: attente.fin, ue: l }); attente = null; return; }
+      if (jour && /pas de cours|libre|f[ée]ri[ée]|repos/i.test(bas)) { jour.creneaux.push({ debut: "07:00", fin: "19:00", ue: l }); }
+    });
+    p.jours = p.jours.filter(function (j) { return j.creneaux.length; });
+    return p;
+  }
+  window.lireProgramme = lireProgramme; // pour les essais
+
+  var programmeLu = null;
+  function montrerApercu(p) {
+    var z = $("p-apercu");
+    z.textContent = "";
+    var nb = p.jours.reduce(function (s, j) { return s + j.creneaux.length; }, 0);
+    var bilan = el("p", "bilan " + (nb ? "ok" : "non"), nb ? "✓ " + p.jours.length + " jour(s) et " + nb + " cours trouvés. Vérifiez puis publiez." : "Aucun cours trouvé. Vérifiez que le message contient les jours (LUNDI 28/09/2026) et les heures (07h à 09h50).");
+    z.appendChild(bilan);
+    p.jours.forEach(function (j) {
+      var b = el("div", "apercu-jour");
+      b.appendChild(el("p", "t", j.nom + " " + j.date.split("-").reverse().join("/")));
+      j.creneaux.forEach(function (c) { b.appendChild(el("p", "c", c.debut.replace(":", "h") + " – " + c.fin.replace(":", "h") + " · " + c.ue + (c.lieu ? " (" + c.lieu + ")" : ""))); });
+      z.appendChild(b);
+    });
+  }
+
+  // ── Enregistrement ──
+  function enregistrer(message) {
+    return fetch("/gerer/contenu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(contenu) })
+      .then(function (r) { if (!r.ok) throw new Error(); toast(message || "Publié ✓"); rendreListes(); })
+      .catch(function () { toast("Échec de l'enregistrement. Réessayez."); });
+  }
+
+  function envoyerFichier(fichier, progression) {
+    return new Promise(function (ok, ko) {
+      var x = new XMLHttpRequest();
+      x.open("POST", "/gerer/fichier");
+      x.setRequestHeader("content-type", "application/octet-stream");
+      x.upload.onprogress = function (e) { if (e.lengthComputable && progression) progression(e.loaded / e.total); };
+      x.onload = function () {
+        try { var r = JSON.parse(x.responseText); if (x.status === 200 && r.id) ok(r); else ko(new Error(r.erreur || "échec")); } catch (e) { ko(e); }
+      };
+      x.onerror = function () { ko(new Error("échec")); };
+      x.send(fichier);
+    });
+  }
+
+  /** Image réduite (1280 px, JPEG) : moins de place, chargement rapide pour les étudiants. */
+  function reduireImage(fichier) {
+    return new Promise(function (ok) {
+      if (!fichier || !/^image\//.test(fichier.type) || /gif$/.test(fichier.type)) return ok(fichier);
+      var img = new Image();
+      img.onload = function () {
+        var max = 1280, l = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, max / Math.max(l, h));
+        var c = document.createElement("canvas"); c.width = Math.round(l * k); c.height = Math.round(h * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(function (b) { ok(b || fichier); }, "image/jpeg", 0.82);
+      };
+      img.onerror = function () { ok(fichier); };
+      img.src = URL.createObjectURL(fichier);
+    });
+  }
+  function envoyerImage(input) {
+    var f = input.files && input.files[0];
+    if (!f) return Promise.resolve("");
+    return reduireImage(f).then(envoyerFichier).then(function (r) { input.value = ""; return r.id; });
+  }
+
+  // ── Listes ──
+  function bouton(texte, classe, action) { var b = el("button", "bouton petit " + (classe || ""), texte); b.type = "button"; b.onclick = action; return b; }
+  function rendreListes() {
+    var la = $("liste-annonces"); la.textContent = "";
+    (contenu.annonces || []).slice().sort(function (a, b) { return (b.date || 0) - (a.date || 0); }).forEach(function (a) {
+      var l = el("div", "ligne");
+      var i = el("div", "info"); i.appendChild(el("p", "nom", (a.epingle ? "📌 " : "") + (a.titre || "Annonce"))); i.appendChild(el("p", "meta", new Date(a.date).toLocaleString("fr-FR")));
+      l.appendChild(i);
+      l.appendChild(bouton(a.epingle ? "Désépingler" : "Épingler", "second", function () { a.epingle = !a.epingle; enregistrer(); }));
+      l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer cette annonce ?")) { contenu.annonces = contenu.annonces.filter(function (x) { return x !== a; }); enregistrer("Annonce retirée"); } }));
+      la.appendChild(l);
+    });
+    var ld = $("liste-docs"); ld.textContent = "";
+    (contenu.documents || []).slice().sort(function (a, b) { return (b.date || 0) - (a.date || 0); }).forEach(function (d) {
+      var l = el("div", "ligne");
+      var i = el("div", "info"); i.appendChild(el("p", "nom", d.titre || d.nom)); i.appendChild(el("p", "meta", (d.categorie || "") + " · " + taille(d.taille)));
+      l.appendChild(i);
+      l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer « " + (d.titre || d.nom) + " » ?")) { contenu.documents = contenu.documents.filter(function (x) { return x !== d; }); enregistrer("Document retiré"); } }));
+      ld.appendChild(l);
+    });
+    var lp = $("liste-pubs"); lp.textContent = "";
+    (contenu.pubs || []).forEach(function (p) {
+      var l = el("div", "ligne");
+      if (p.image) { var v = el("img", "vignette"); v.src = "/f/" + p.image + "?type=image/jpeg"; l.appendChild(v); }
+      var i = el("div", "info"); i.appendChild(el("p", "nom", p.titre || "Publicité")); if (p.contact) i.appendChild(el("p", "meta", p.contact));
+      l.appendChild(i);
+      l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer cette publicité ?")) { contenu.pubs = contenu.pubs.filter(function (x) { return x !== p; }); enregistrer("Publicité retirée"); } }));
+      lp.appendChild(l);
+    });
+  }
+
+  function remplirFormulaires() {
+    var a = contenu.accueil || (contenu.accueil = {});
+    $("c-titre").value = contenu.titre || "";
+    $("c-sous").value = a.sousTitre || "";
+    $("c-accueil").value = a.titre || "";
+    $("c-texte").value = a.texte || "";
+    $("c-editeur").value = a.editeur || "";
+    var p = contenu.programme || {};
+    $("p-titre").value = p.titre || "";
+    $("p-lieu").value = p.lieu || "";
+    $("p-brut").value = p.brut || "";
+    if (p.jours && p.jours.length) montrerApercu(p);
+    rendreListes();
+  }
+
+  // ── Actions ──
+  $("b-lire").onclick = function () { programmeLu = lireProgramme($("p-brut").value); montrerApercu(programmeLu); if (programmeLu.lieu && !$("p-lieu").value) $("p-lieu").value = programmeLu.lieu; };
+  $("b-publier-programme").onclick = function () {
+    var p = lireProgramme($("p-brut").value);
+    if (!p.jours.length) { montrerApercu(p); return toast("Aucun cours trouvé dans le message."); }
+    contenu.programme = { titre: $("p-titre").value.trim(), lieu: $("p-lieu").value.trim() || p.lieu, periode: p.periode, jours: p.jours, brut: $("p-brut").value };
+    montrerApercu(p);
+    enregistrer("Programme publié ✓");
+  };
+  $("b-annonce").onclick = function () {
+    var titre = $("a-titre").value.trim(), texte = $("a-texte").value.trim();
+    if (!titre && !texte) return toast("Écrivez un titre ou un texte.");
+    var b = this; b.disabled = true;
+    envoyerImage($("a-image")).then(function (image) {
+      (contenu.annonces = contenu.annonces || []).push({ id: nouvelId(), titre: titre, texte: texte, image: image, epingle: $("a-epingle").checked, date: Date.now() });
+      $("a-titre").value = ""; $("a-texte").value = ""; $("a-epingle").checked = false;
+      return enregistrer("Annonce publiée ✓");
+    }).catch(function () { toast("L'image n'a pas pu être envoyée."); }).then(function () { b.disabled = false; });
+  };
+  $("d-fichiers").onchange = function () {
+    var fichiers = Array.prototype.slice.call(this.files || []);
+    var input = this;
+    if (!fichiers.length) return;
+    var barre = $("d-barre"), i = 0;
+    barre.hidden = false;
+    function suivant() {
+      if (i >= fichiers.length) { barre.hidden = true; input.value = ""; $("d-etat").textContent = ""; return enregistrer(fichiers.length > 1 ? fichiers.length + " documents publiés ✓" : "Document publié ✓").then(etat); }
+      var f = fichiers[i];
+      $("d-etat").textContent = "Envoi de « " + f.name + " » (" + (i + 1) + "/" + fichiers.length + ")…";
+      return envoyerFichier(f, function (x) { barre.firstChild.style.width = Math.round(x * 100) + "%"; }).then(function (r) {
+        (contenu.documents = contenu.documents || []).push({ id: r.id, nom: f.name, titre: f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "), type: f.type || "application/octet-stream", taille: r.taille, categorie: $("d-categorie").value, date: Date.now() });
+        i++; return suivant();
+      }).catch(function (e) { barre.hidden = true; $("d-etat").textContent = "Échec pour « " + f.name + " » : " + (e.message || "erreur") + "."; i++; return suivant(); });
+    }
+    suivant();
+  };
+  $("b-pub").onclick = function () {
+    var titre = $("pub-titre").value.trim();
+    if (!titre && !($("pub-image").files || []).length) return toast("Donnez au moins un titre ou une image.");
+    var b = this; b.disabled = true;
+    envoyerImage($("pub-image")).then(function (image) {
+      (contenu.pubs = contenu.pubs || []).push({ id: nouvelId(), titre: titre, texte: $("pub-texte").value.trim(), contact: $("pub-contact").value.trim(), image: image, date: Date.now() });
+      $("pub-titre").value = ""; $("pub-texte").value = ""; $("pub-contact").value = "";
+      return enregistrer("Publicité ajoutée ✓");
+    }).catch(function () { toast("L'image n'a pas pu être envoyée."); }).then(function () { b.disabled = false; });
+  };
+  $("b-accueil").onclick = function () {
+    var a = contenu.accueil || (contenu.accueil = {});
+    contenu.titre = $("c-titre").value.trim();
+    a.sousTitre = $("c-sous").value.trim();
+    a.titre = $("c-accueil").value.trim();
+    a.texte = $("c-texte").value.trim();
+    a.editeur = $("c-editeur").value.trim();
+    envoyerImage($("c-photo")).then(function (photo) { if (photo) a.photo = photo; return enregistrer("Page d'accueil enregistrée ✓"); })
+      .catch(function () { toast("La photo n'a pas pu être envoyée."); });
+  };
+  $("b-sans-photo").onclick = function () { if (contenu.accueil) { contenu.accueil.photo = ""; enregistrer("Photo retirée"); } };
+
+  // ── État, QR, audience ──
+  function dessinerQr(texte) {
+    var z = $("qr");
+    z.textContent = "";
+    if (typeof qrcode !== "function") return;
+    var q = qrcode(0, "M");
+    q.addData(texte);
+    q.make();
+    var n = q.getModuleCount(), marge = 2, k = 8;
+    var c = document.createElement("canvas");
+    c.width = c.height = (n + marge * 2) * k;
+    var g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = "#111";
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (q.isDark(y, x)) g.fillRect((x + marge) * k, (y + marge) * k, k, k);
+    z.appendChild(c);
+  }
+  function etat() {
+    return fetch("/gerer/etat", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (e) {
+      var a = (e.adresses || [])[0];
+      var zone = $("zone-qr");
+      if (a) {
+        var url = "http://" + a + ":" + e.port + "/";
+        $("etat").className = "etat ok";
+        $("etat").textContent = "✅ Portail en marche";
+        zone.hidden = false;
+        if (url !== adresseActuelle) { adresseActuelle = url; $("adresse").textContent = a + ":" + e.port; dessinerQr(url); }
+      } else {
+        $("etat").className = "etat attente";
+        $("etat").textContent = "📶 Allumez le point d'accès mobile : le QR apparaîtra ici.";
+        zone.hidden = true; adresseActuelle = "";
+      }
+      $("v-jour").textContent = e.visiteursAujourdhui || 0;
+      $("v-semaine").textContent = e.visiteurs7jours || 0;
+      $("vues-semaine").textContent = e.vues7jours || 0;
+      $("place").textContent = "Place libre sur le téléphone : " + taille(e.placeLibre) + ".";
+    }).catch(function () { $("etat").className = "etat attente"; $("etat").textContent = "⏳ Démarrage du portail…"; });
+  }
+  $("b-point").onclick = function () { if (window.Amphi) Amphi.ouvrirPointAcces(); };
+  $("b-partager").onclick = function () {
+    if (!adresseActuelle) return toast("Allumez d'abord le point d'accès mobile.");
+    var t = "Wi-Fi de l'amphi : connectez-vous au point d'accès, puis ouvrez " + adresseActuelle + " (gratuit, sans forfait).";
+    if (window.Amphi) Amphi.partager(t); else toast(t);
+  };
+  $("b-voir").onclick = function () { location.href = adresseActuelle || ("http://127.0.0.1:" + location.port + "/"); };
+
+  fetch("/gerer/contenu", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) { contenu = c; remplirFormulaires(); });
+  etat();
+  setInterval(etat, 5000);
+})();
+</script>
+</body>
+</html>
