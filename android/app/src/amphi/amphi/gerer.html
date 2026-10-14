@@ -148,7 +148,7 @@
 
   <details class="carte" id="carte-promo">
     <summary>🎉 Vie de la promo <span class="pastille" id="nb-promo" hidden></span></summary>
-    <p class="aide">Dédicaces, objets perdus et trouvés, petit marché : rien n'apparaît sans votre accord.</p>
+    <p class="aide">Dédicaces, objets perdus et trouvés, petit marché, recherches de binôme : rien n'apparaît sans votre accord.</p>
     <div id="liste-stars-attente"></div>
     <div id="liste-promo-attente"></div>
     <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">🎂 Stars du jour publiées</h3>
@@ -663,7 +663,7 @@
   }
   function poster(url, corps) { return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corps || {}) }).then(function (r) { return r.json(); }); }
   function aujourdhuiIso() { var d = new Date(), m = d.getMonth() + 1, j = d.getDate(); return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (j < 10 ? "0" : "") + j; }
-  var NOMS_PROMO = { dedicace: "💌 Dédicace", perdu: "🔎 Perdu", trouve: "🔎 Trouvé", vente: "🛒 À vendre", achat: "🛒 Recherché" };
+  var NOMS_PROMO = { dedicace: "💌 Dédicace", perdu: "🔎 Perdu", trouve: "🔎 Trouvé", vente: "🛒 À vendre", achat: "🛒 Recherché", binome: "👥 Cherche binôme" };
   var NOMS_ALERTE = { present: "✅ Le prof est là", annule: "❌ Cours annulé", salle: "🔄 Salle changée", retard: "⏳ Prof en retard" };
   function rendrePromo() {
     var pubs = (echanges.publications || []).slice().sort(function (a, b) { return b.date - a.date; });
@@ -675,12 +675,12 @@
       var i = el("div", "info");
       i.appendChild(el("p", "nom", NOMS_PROMO[p.sorte] + (p.statut === "clos" ? " (clos)" : "")));
       i.appendChild(el("p", null, p.texte));
-      i.appendChild(el("p", "meta", [p.prix, p.contact, new Date(p.date).toLocaleString("fr-FR")].filter(Boolean).join(" · ")));
+      i.appendChild(el("p", "meta", [p.ue, p.quartier, p.prix, p.contact, new Date(p.date).toLocaleString("fr-FR")].filter(Boolean).join(" · ")));
       l.appendChild(i);
       var act = function (a) { return function () { poster("/gerer/publication/" + p.id, { action: a }).then(chargerEchanges); }; };
       if (enAttente) { l.appendChild(bouton("Publier", "", act("publier"))); l.appendChild(bouton("Refuser", "danger", act("refuser"))); }
       else {
-        if (p.sorte !== "dedicace" && p.statut !== "clos") l.appendChild(bouton(p.sorte === "vente" || p.sorte === "achat" ? "Vendu / fini" : "Rendu", "second", act("clore")));
+        if (p.sorte !== "dedicace" && p.statut !== "clos") l.appendChild(bouton(p.sorte === "vente" || p.sorte === "achat" ? "Vendu / fini" : p.sorte === "binome" ? "Trouvé" : "Rendu", "second", act("clore")));
         l.appendChild(bouton("Retirer", "danger", act("supprimer")));
       }
       return l;

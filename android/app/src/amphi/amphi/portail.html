@@ -364,7 +364,18 @@
   .defi-verdict.ok { color: var(--vert); } .defi-verdict.non { color: var(--rouge); }
   .defi-explication { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--fond); font-size: .92rem; }
   .honneur-tete { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-  .honneur-tete h3, #carte-formulaire h3 { color: var(--nuit); font-size: 1.05rem; }
+  .honneur-tete h3, #carte-formulaire h3, .titre-carte { color: var(--nuit); font-size: 1.05rem; }
+  .fiche { border: 1px solid var(--bordure); border-radius: 14px; padding: 18px 16px; text-align: center; background: linear-gradient(180deg, #fff, var(--fond)); min-height: 150px; display: flex; flex-direction: column; justify-content: center; gap: 8px; animation: arriver .35s ease both; }
+  .fiche.retournee { background: linear-gradient(180deg, var(--vert-fond), #fff); border-color: var(--vert); }
+  .fiche-ue { font: 700 .7rem var(--mono); color: var(--bleu); }
+  .fiche-recto { font-weight: 800; font-size: 1.1rem; color: var(--nuit); }
+  .fiche-verso { font-family: "Cambria Math", "STIX Two Math", "Noto Serif", Georgia, serif; font-size: 1.15rem; color: var(--nuit); overflow-wrap: anywhere; }
+  .et-salle { margin-top: 6px; font-weight: 600; }
+  .et-salle b { font: 800 1.6rem var(--mono); color: var(--vert); }
+  .et-chrono { text-align: center; margin: 10px 0 6px; }
+  .et-temps { font: 800 2.6rem var(--mono); color: var(--discret); letter-spacing: .04em; }
+  .et-temps.travail { color: var(--nuit); }
+  .et-temps.pause { color: var(--vert); }
   .rang-ligne { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-top: 1px solid var(--bordure); }
   .rang-ligne .r { width: 28px; text-align: center; font-weight: 800; }
   .rang-ligne .p { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
@@ -536,6 +547,30 @@
     <div class="honneur-tete"><h3>🏆 Tableau d'honneur</h3><div class="puces" id="hn-choix"></div></div>
     <div id="hn-liste"></div>
   </div></div>
+  <div class="carte" id="carte-fiches"><div class="corps">
+    <h3 class="titre-carte">🗂️ Fiches flash</h3>
+    <div class="puces" id="fi-ue" style="margin-top:8px"></div>
+    <div id="fi-zone" style="margin-top:8px"></div>
+  </div></div>
+  <div class="carte" id="carte-etude"><div class="corps">
+    <h3 class="titre-carte">🕯️ Salle d'étude</h3>
+    <p class="et-salle"><b id="et-nombre">0</b> <span id="et-texte">personne ne révise : lancez-vous !</span></p>
+    <p class="aide" id="et-detail"></p>
+    <div class="et-chrono"><p class="et-temps" id="et-temps">25:00</p><p class="aide" id="et-phase"></p></div>
+    <select class="champ" id="et-ue"></select>
+    <button class="bouton" id="et-bouton" type="button" style="margin-top:8px;width:100%">▶ Commencer 25 minutes</button>
+    <p class="aide" style="margin-top:6px">25 minutes de travail puis 5 de pause. Chaque session complète : +3 points.</p>
+  </div></div>
+  <div class="carte" id="carte-binomes"><div class="corps">
+    <h3 class="titre-carte">👥 Trouve ton binôme</h3>
+    <p class="aide">Pour réviser à deux ou en petit groupe. Visible après vérification.</p>
+    <select class="champ" id="bi-ue"></select>
+    <input class="champ" id="bi-quartier" maxlength="40" placeholder="Quartier (ex. : Calavi, Godomey, Akpakpa)">
+    <textarea class="champ" id="bi-texte" maxlength="300" placeholder="Ex. : Je cherche 2 personnes pour réviser la quantique le samedi matin à la BU"></textarea>
+    <input class="champ" id="bi-contact" maxlength="60" placeholder="Comment vous retrouver (rang, numéro…)">
+    <button class="bouton" type="button" id="bi-envoyer" style="margin-top:8px">Publier</button>
+    <p class="aide" id="bi-etat" style="margin-top:6px"></p>
+  </div><div id="liste-binomes"></div></div>
   <div class="carte" id="carte-formulaire"><div class="corps">
     <h3>📐 Formulaire de la L3</h3>
     <input type="search" class="champ" id="fm-recherche" placeholder="🔎 Chercher (Bragg, Hamilton, Reynolds, ħ…)">
@@ -1384,9 +1419,10 @@
         var l = el("div", "pub-promo" + (p.statut === "clos" ? " clos" : ""));
         if (p.image) { var i = el("img"); i.src = "/f/" + p.image + "?type=image/jpeg"; i.alt = ""; i.loading = "lazy"; l.appendChild(i); }
         var c = el("div");
-        var noms = { perdu: "Perdu", trouve: "Trouvé", vente: "À vendre", achat: "Recherché" };
+        var noms = { perdu: "Perdu", trouve: "Trouvé", vente: "À vendre", achat: "Recherché", binome: "Cherche binôme" };
         var t = el("p"); t.appendChild(el("span", "etiquette-sorte " + p.sorte, noms[p.sorte] || ""));
-        if (p.statut === "clos") t.appendChild(el("span", "etiquette-sorte", p.sorte === "vente" || p.sorte === "achat" ? "Terminé" : "Rendu ✓"));
+        if (p.statut === "clos") t.appendChild(el("span", "etiquette-sorte", p.sorte === "vente" || p.sorte === "achat" ? "Terminé" : p.sorte === "binome" ? "Trouvé ✓" : "Rendu ✓"));
+        if (p.ue || p.quartier) t.appendChild(el("span", "etiquette-sorte", [p.ue, p.quartier].filter(Boolean).join(" · ")));
         c.appendChild(t);
         c.appendChild(el("p", null, p.texte));
         if (p.prix) c.appendChild(el("p", "prix", p.prix));
@@ -1397,6 +1433,8 @@
     }
     liste($("liste-objets"), ["perdu", "trouve"]);
     liste($("liste-marche"), ["vente", "achat"]);
+    liste($("liste-binomes"), ["binome"]);
+    if (echanges.salle) rendreSalle(echanges.salle);
   }
   Array.prototype.forEach.call(document.querySelectorAll("[data-alerte]"), function (b) {
     b.onclick = function () {
@@ -2116,7 +2154,148 @@
     return boite;
   }
   $("fm-recherche").addEventListener("input", rendreFormulaire);
-  fetch("/formulaire.json").then(function (r) { return r.json(); }).then(function (f) { formulaire = f; rendreFormulaire(); }).catch(function () { $("carte-formulaire").hidden = true; });
+  fetch("/formulaire.json").then(function (r) { return r.json(); }).then(function (f) { formulaire = f; rendreFormulaire(); rendreFiches(); }).catch(function () { $("carte-formulaire").hidden = true; });
+
+  // ── Fiches flash : les formules de la L3, répétition espacée (boîtes de Leitner) ──
+  var INTERVALLES = [0, 0, 1, 2, 4, 8];
+  var session = null, ficheUe = "PHY1520";
+  function etatFiches() { try { return JSON.parse(lire("amphi-fiches") || "{}") || {}; } catch (e) { return {}; } }
+  function cartesUe(ue) {
+    var sec = ((formulaire && formulaire.sections) || []).filter(function (x) { return x.ue === ue; })[0];
+    return sec ? sec.formules.map(function (f) { return { cle: ue + "|" + f.nom, ue: ue, recto: f.nom, verso: f.f, note: f.note }; }) : [];
+  }
+  function maitrise(ue) {
+    var c = cartesUe(ue), e = etatFiches();
+    if (!c.length) return 0;
+    return Math.round(100 * c.filter(function (x) { return e[x.cle] && e[x.cle].b >= 4; }).length / c.length);
+  }
+  function rendreFiches() {
+    if (!formulaire) return;
+    var ch = $("fi-ue"); ch.textContent = "";
+    formulaire.sections.forEach(function (sec) {
+      var b = el("button", ficheUe === sec.ue ? "choisie" : "", (NOMS_UE_COURTS[sec.ue] || sec.ue) + " · " + maitrise(sec.ue) + " %"); b.type = "button";
+      b.onclick = function () { ficheUe = sec.ue; session = null; rendreFiches(); };
+      ch.appendChild(b);
+    });
+    var z = $("fi-zone"); z.textContent = "";
+    if (!session) {
+      var m = maitrise(ficheUe);
+      var j = el("div", "jauge-niveau"), i = el("i"); i.style.width = m + "%"; j.appendChild(i); z.appendChild(j);
+      z.appendChild(el("p", "aide", m + " % des fiches de " + (NOMS_UE_COURTS[ficheUe] || ficheUe) + " sont maîtrisées. Les fiches ratées reviennent plus souvent."));
+      var b = el("button", "bouton", "▶ Réviser 10 fiches"); b.type = "button"; b.style.marginTop = "8px";
+      b.onclick = commencerFiches;
+      z.appendChild(b);
+      return;
+    }
+    if (session.i >= session.paquet.length) {
+      z.appendChild(el("p", "defi-verdict ok", "✅ Session terminée : " + session.sues + " / " + session.paquet.length + " fiches sues."));
+      if (session.points) z.appendChild(el("p", "aide", "+" + session.points + " points pour votre régularité."));
+      var r = el("button", "bouton second", "Encore une session"); r.type = "button"; r.style.marginTop = "8px";
+      r.onclick = commencerFiches; z.appendChild(r);
+      return;
+    }
+    var c = session.paquet[session.i];
+    z.appendChild(el("p", "aide", "Fiche " + (session.i + 1) + " / " + session.paquet.length));
+    var carte = el("div", "fiche" + (session.vu ? " retournee" : ""));
+    carte.appendChild(el("p", "fiche-ue", c.ue));
+    carte.appendChild(el("p", "fiche-recto", c.recto));
+    if (session.vu) { carte.appendChild(el("p", "fiche-verso", c.verso)); if (c.note) carte.appendChild(el("p", "note", c.note)); }
+    else carte.appendChild(el("p", "aide", "Récitez la formule dans votre tête, puis retournez la fiche."));
+    z.appendChild(carte);
+    var bs = el("div", "ue-actions"); bs.style.padding = "10px 0 0";
+    if (!session.vu) {
+      var v = el("button", "bouton", "🔄 Voir la réponse"); v.type = "button";
+      v.onclick = function () { session.vu = true; rendreFiches(); };
+      bs.appendChild(v);
+    } else {
+      var ok = el("button", "bouton", "✅ Je savais"); ok.type = "button"; ok.onclick = function () { noterFiche(true); };
+      var ko = el("button", "bouton second", "↺ À revoir"); ko.type = "button"; ko.onclick = function () { noterFiche(false); };
+      bs.appendChild(ok); bs.appendChild(ko);
+    }
+    z.appendChild(bs);
+  }
+  function commencerFiches() {
+    var e = etatFiches(), maintenant = Date.now();
+    var dues = cartesUe(ficheUe).filter(function (c) { var x = e[c.cle]; return !x || maintenant - x.t >= INTERVALLES[x.b] * 864e5; })
+      .sort(function (a, b) { return ((e[a.cle] || {}).b || 0) - ((e[b.cle] || {}).b || 0) || Math.random() - 0.5; });
+    if (!dues.length) { $("fi-zone").textContent = ""; $("fi-zone").appendChild(el("p", "defi-verdict ok", "✅ Tout est à jour pour cette UE. Revenez demain ou choisissez une autre UE.")); return; }
+    session = { paquet: dues.slice(0, 10), i: 0, vu: false, sues: 0, points: 0 };
+    rendreFiches();
+  }
+  function noterFiche(sue) {
+    var e = etatFiches(), c = session.paquet[session.i], x = e[c.cle] || { b: 1 };
+    x.b = sue ? Math.min(5, x.b + 1) : 1; x.t = Date.now(); e[c.cle] = x;
+    garder("amphi-fiches", JSON.stringify(e));
+    if (sue) session.sues++;
+    session.i++; session.vu = false;
+    if (session.i >= session.paquet.length && MON_ID) {
+      fetch("/profil/fiches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: MON_ID }) })
+        .then(function (r) { return r.json(); }).then(function (r) { session.points = r.points || 0; rendreFiches(); synchroniser(); }).catch(function () {});
+    }
+    rendreFiches();
+  }
+
+  // ── Salle d'étude : 25 minutes de travail, 5 de pause, ensemble ──
+  var TRAVAIL = 25 * 60, PAUSE = 5 * 60, etude = null, ticEtude = null, coeurEtude = null;
+  function signeDeVie() {
+    if (!etude || !MON_ID) return;
+    fetch("/etude", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: MON_ID, pseudo: $("pr-pseudo").value.trim(), ue: etude.ue }) })
+      .then(function (r) { return r.json(); }).then(function (r) { if (r.salle) rendreSalle(r.salle); }).catch(function () {});
+  }
+  function deux(n) { return (n < 10 ? "0" : "") + n; }
+  function majEtude() {
+    var z = $("et-temps"), b = $("et-bouton");
+    if (!etude) { z.textContent = "25:00"; z.className = "et-temps"; b.textContent = "▶ Commencer 25 minutes"; $("et-phase").textContent = "Téléphone posé, notifications coupées : on s'y met."; return; }
+    var ecoule = Math.floor((Date.now() - etude.debut) / 1000);
+    if (ecoule < TRAVAIL) {
+      var r = TRAVAIL - ecoule; z.textContent = deux(Math.floor(r / 60)) + ":" + deux(r % 60); z.className = "et-temps travail";
+      $("et-phase").textContent = "🔥 Concentration" + (etude.ue ? " · " + etude.ue : "");
+    } else if (ecoule < TRAVAIL + PAUSE) {
+      if (!etude.fini) {
+        etude.fini = true;
+        if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+        if (window.amphiFete) window.amphiFete();
+        fetch("/etude/fini", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: MON_ID }) })
+          .then(function (x) { return x.json(); }).then(function (x) { etude.points = x.points || 0; synchroniser(); }).catch(function () {});
+      }
+      var p = TRAVAIL + PAUSE - ecoule; z.textContent = deux(Math.floor(p / 60)) + ":" + deux(p % 60); z.className = "et-temps pause";
+      $("et-phase").textContent = "☕ Pause méritée" + (etude.points ? " · +" + etude.points + " points" : "");
+    } else { arreterEtude(); $("et-phase").textContent = "✅ Session terminée. Bravo ! Une autre ?"; return; }
+    b.textContent = "⏹ Arrêter";
+  }
+  function arreterEtude() { etude = null; garder("amphi-etude", ""); clearInterval(ticEtude); clearInterval(coeurEtude); majEtude(); }
+  function lancerEtude(reprise) {
+    etude = reprise || { debut: Date.now(), ue: $("et-ue").value };
+    garder("amphi-etude", JSON.stringify(etude));
+    clearInterval(ticEtude); clearInterval(coeurEtude);
+    ticEtude = setInterval(majEtude, 1000); coeurEtude = setInterval(signeDeVie, 60000);
+    signeDeVie(); majEtude();
+  }
+  $("et-bouton").onclick = function () { if (etude) arreterEtude(); else lancerEtude(); };
+  function rendreSalle(s) {
+    if (!s) return;
+    $("et-nombre").textContent = s.n;
+    $("et-texte").textContent = s.n > 1 ? "étudiants révisent en ce moment" : s.n === 1 ? "étudiant révise en ce moment" : "personne ne révise : lancez-vous !";
+    var d = []; Object.keys(s.ues || {}).forEach(function (k) { d.push(k + " × " + s.ues[k]); });
+    $("et-detail").textContent = (d.length ? d.join(" · ") : "") + (s.noms && s.noms.length ? (d.length ? " — " : "") + s.noms.join(", ") : "");
+  }
+  (function () {
+    var sel = $("et-ue"); sel.textContent = "";
+    var o = el("option", null, "Toutes matières"); o.value = ""; sel.appendChild(o);
+    ["PHY1520", "PHY1521", "PHY1522", "PHY1523", "PHY1524", "PHY1525", "INF1526"].forEach(function (u) { var x = el("option", null, u + " · " + (NOMS_UE_COURTS[u] || u)); x.value = u; sel.appendChild(x); });
+    try { var r = JSON.parse(lire("amphi-etude") || "null"); if (r && r.debut && Date.now() - r.debut < (TRAVAIL + PAUSE) * 1000) lancerEtude(r); } catch (e) {}
+    majEtude();
+  })();
+
+  // ── Trouve ton binôme ──
+  (function () {
+    var sel = $("bi-ue");
+    ["Toutes les UE", "PHY1520 · Physique quantique", "PHY1521 · Méthodes mathématiques", "PHY1522 · Matière condensée", "PHY1523 · Ondes et vibrations", "PHY1524 · Mécanique analytique", "PHY1525 · Milieux déformables", "INF1526 · Physique numérique", "Stage et mémoire"].forEach(function (t) { var o = el("option", null, t); o.value = t; sel.appendChild(o); });
+  })();
+  $("bi-envoyer").onclick = function () {
+    publierPromo("binome", $("bi-texte").value, { ue: $("bi-ue").value, quartier: $("bi-quartier").value.trim(), contact: $("bi-contact").value.trim() }, null, $("bi-etat"), this)
+      .then(function (ok) { if (ok) { $("bi-texte").value = ""; } });
+  };
 
   // ── « Quelle note me faut-il ? » : à partir du calculateur de moyenne ──
   function objectif() {

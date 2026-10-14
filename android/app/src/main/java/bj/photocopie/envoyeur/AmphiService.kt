@@ -267,6 +267,10 @@ class AmphiService : Service() {
                     // ── Réviser : profil (points, niveau, série) et défi du jour ──
                     r.methode == "POST" && r.chemin == "/profil" -> profil(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/defi" -> repondreDefi(sortie, r, s.inetAddress.hostAddress ?: "")
+                    // ── Travailler ensemble : salle d'étude, fiches flash ──
+                    r.methode == "POST" && r.chemin == "/etude" -> etude(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/etude/fini" -> etudeFinie(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/profil/fiches" -> pointsFiches(sortie, r, s.inetAddress.hostAddress ?: "")
                     // ── Ressources : corrigés, merci, entraide ──
                     r.methode == "POST" && r.chemin == "/corrige" -> deposerCorrige(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.matches(Regex("^/corrige/[a-z0-9]{20}/utile$")) -> voterCorrige(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
@@ -890,6 +894,7 @@ class AmphiService : Service() {
             .put("stars", starsPubliques())
             .put("participations", participations(ip))
             .put("corriges", corrigesPublics(false))
+            .put("salle", salle())
             .put("mercis", mercisPublics())
     }
 
@@ -938,7 +943,7 @@ class AmphiService : Service() {
     private val fichierPublications get() = File(dossier, "publications.json")
     private val fichierAlertes get() = File(dossier, "alertes.json")
     private val fichierDevinette get() = File(dossier, "devinette.json")
-    private val SORTES_PUBLICATION = setOf("dedicace", "perdu", "trouve", "vente", "achat")
+    private val SORTES_PUBLICATION = setOf("dedicace", "perdu", "trouve", "vente", "achat", "binome")
     private val NUMERO = Regex("(\\+?\\d[\\s.-]?){8,}")
 
     private fun publier(sortie: OutputStream, r: Requete, ip: String) {
@@ -962,6 +967,7 @@ class AmphiService : Service() {
             t.put(JSONObject().put("id", id).put("sorte", sorte).put("texte", texteMsg)
                 .put("prix", texte(r.query["prix"], 30)).put("contact", texte(r.query["contact"], 60))
                 .put("filiere", texte(r.query["filiere"], 40)).put("image", image)
+                .put("ue", texte(r.query["ue"], 60)).put("quartier", texte(r.query["quartier"], 40))
                 .put("statut", "attente").put("date", System.currentTimeMillis()).put("ip", ip))
             while (t.length() > 400) t.remove(0)
             ecrire(fichierPublications, t)
@@ -1166,6 +1172,63 @@ class AmphiService : Service() {
         }
         val profils = lireObjet(fichierProfils)
         json(sortie, JSONObject().put("ok", true).put("defi", defiPublic(id)).put("profil", profilPublic(profils, id)))
+    }
+
+    // ── Salle d'étude : qui révise en ce moment (en mémoire seulement) ──
+
+    private val etudiants = HashMap<String, JSONObject>()
+
+    private fun etude(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "etude", 40, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Attendez un peu."), 429)
+        val q = lireJson(r)
+        val id = q.optString("id")
+        if (!ID_PROFIL.matches(id)) return json(sortie, JSONObject().put("erreur", "Identifiant invalide."), 400)
+        val maintenant = System.currentTimeMillis()
+        synchronized(etudiants) {
+            val e = etudiants[id]
+            // Une session continue tant que le téléphone donne signe de vie (moins de 5 min d'écart).
+            val debut = if (e == null || maintenant - e.optLong("vu") > 300_000) maintenant else e.optLong("debut")
+            etudiants[id] = JSONObject().put("pseudo", pseudoPropre(q.optString("pseudo"))).put("ue", texte(q.optString("ue"), 40))
+                .put("vu", maintenant).put("debut", debut)
+        }
+        json(sortie, JSONObject().put("ok", true).put("salle", salle()))
+    }
+
+    /** 25 minutes de travail terminées : 3 points (4 sessions récompensées par jour au plus). */
+    private fun etudeFinie(sortie: OutputStream, r: Requete, ip: String) {
+        val id = lireJson(r).optString("id")
+        val maintenant = System.currentTimeMillis()
+        val e = synchronized(etudiants) { etudiants[id] }
+        if (e == null || maintenant - e.optLong("debut") < 20 * 60_000L) return json(sortie, JSONObject().put("ok", true).put("points", 0))
+        synchronized(etudiants) { e.put("debut", maintenant) }
+        if (!permis(ip, "etude-fini", 4, 86_400_000)) return json(sortie, JSONObject().put("ok", true).put("points", 0))
+        synchronized(verrouEchanges) { val profils = lireObjet(fichierProfils); ajouterPoints(profils, id, 3); ecrire(fichierProfils, profils) }
+        json(sortie, JSONObject().put("ok", true).put("points", 3))
+    }
+
+    private fun salle(): JSONObject {
+        val limite = System.currentTimeMillis() - 150_000
+        val ues = JSONObject()
+        val noms = JSONArray()
+        var n = 0
+        synchronized(etudiants) {
+            etudiants.entries.removeAll { it.value.optLong("vu") < limite }
+            etudiants.values.forEach { e ->
+                n++
+                e.optString("ue").takeIf { it.isNotEmpty() }?.let { ues.put(it, ues.optInt(it) + 1) }
+                e.optString("pseudo").takeIf { it.isNotEmpty() && noms.length() < 15 }?.let { noms.put(it) }
+            }
+        }
+        return JSONObject().put("n", n).put("ues", ues).put("noms", noms)
+    }
+
+    /** Une session de fiches flash : 2 points, 3 fois par jour au plus. */
+    private fun pointsFiches(sortie: OutputStream, r: Requete, ip: String) {
+        val id = lireJson(r).optString("id")
+        if (!ID_PROFIL.matches(id)) return json(sortie, JSONObject().put("erreur", "Identifiant invalide."), 400)
+        if (!permis(ip, "fiches", 3, 86_400_000)) return json(sortie, JSONObject().put("ok", true).put("points", 0))
+        synchronized(verrouEchanges) { val profils = lireObjet(fichierProfils); ajouterPoints(profils, id, 2); ecrire(fichierProfils, profils) }
+        json(sortie, JSONObject().put("ok", true).put("points", 2))
     }
 
     // ── Bataille des corrigés : sous chaque document, les corrigés des
