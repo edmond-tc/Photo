@@ -1,5 +1,7 @@
 package bj.photocopie.envoyeur
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,8 +10,12 @@ import android.app.Service
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
+import android.net.wifi.p2p.WifiP2pConfig
+import android.net.wifi.p2p.WifiP2pGroup
+import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -29,7 +35,10 @@ import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -76,7 +85,8 @@ class AmphiService : Service() {
                 .filter { it.isUp && !it.isLoopback }
                 // Le point d'accès d'abord (swlan, ap, wlan), les données mobiles exclues.
                 .filterNot { it.name.startsWith("rmnet") || it.name.startsWith("ccmni") || it.name.startsWith("dummy") || it.name.startsWith("tun") }
-                .sortedBy { if (it.name.startsWith("swlan") || it.name.startsWith("ap")) 0 else 1 }
+                // Le Wi-Fi de l'amphi (Wi-Fi Direct, adresse fixe) d'abord, puis le point d'accès.
+                .sortedBy { if (it.name.startsWith("p2p")) 0 else if (it.name.startsWith("swlan") || it.name.startsWith("ap")) 1 else 2 }
                 .flatMap { i -> i.inetAddresses.toList().filterIsInstance<Inet4Address>().map { it.hostAddress ?: "" } }
                 .filter { it.isNotEmpty() && (it.startsWith("192.168.") || it.startsWith("10.") || it.matches(Regex("^172\\.(1[6-9]|2\\d|3[01])\\..*"))) }
                 .distinct()
@@ -130,12 +140,17 @@ class AmphiService : Service() {
         getSharedPreferences(PREFS, 0).edit().putBoolean("actif", true).apply()
         chargerStats()
         Thread({ ecouter() }, "amphi-serveur").start()
+        // Le Wi-Fi de l'amphi était allumé (redémarrage, mise à jour) : on le
+        // recrée, puis on veille à ce qu'il reste allumé.
+        Thread({ veillerWifi() }, "amphi-wifi").start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
         enMarche = false
+        veille = false
+        supprimerGroupe()
         try { serveur?.close() } catch (_: Exception) {}
         ouvriers.shutdownNow()
         try { verrou?.release() } catch (_: Exception) {}
@@ -234,6 +249,15 @@ class AmphiService : Service() {
                     r.methode == "POST" && r.chemin == "/gerer/contenu" -> enregistrerContenu(sortie, r)
                     r.methode == "POST" && r.chemin == "/gerer/fichier" -> recevoirFichier(sortie, r)
                     r.methode == "POST" && r.chemin == "/gerer/sauvegarder" -> json(sortie, sauvegarder())
+                    r.methode == "POST" && r.chemin == "/gerer/wifi" -> {
+                        val q = lireJson(r)
+                        json(sortie, creerWifi(q.optString("nom"), q.optString("motDePasse")))
+                    }
+                    r.methode == "POST" && r.chemin == "/gerer/wifi/arreter" -> {
+                        prefs().edit().putBoolean("wifi", false).apply()
+                        supprimerGroupe()
+                        json(sortie, JSONObject().put("ok", true))
+                    }
                     r.methode == "POST" && r.chemin == "/gerer/restaurer" -> restaurer(sortie, r)
                     else -> repondre(sortie, 404, "text/plain; charset=utf-8", "Introuvable".toByteArray())
                 }
@@ -527,6 +551,149 @@ class AmphiService : Service() {
         json(sortie, JSONObject().put("ok", true).put("fichiers", fichiers))
     }
 
+    // ── Le Wi-Fi de l'amphi, créé par le téléphone (Wi-Fi Direct) ─────────
+    //
+    // Adresse toujours la même (192.168.49.1) : elle s'écrit une fois pour
+    // toutes au tableau ou sur une affiche. Le téléphone garde ses données
+    // mobiles pour lui ; les étudiants n'ont que la page.
+
+    private fun prefs() = getSharedPreferences(PREFS, 0)
+    private var p2p: WifiP2pManager? = null
+    private var canalP2p: WifiP2pManager.Channel? = null
+    @Volatile private var veille = true
+
+    private fun lireJson(r: Requete): JSONObject {
+        val taille = (r.entetes["content-length"]?.toLongOrNull() ?: 0).coerceIn(0, 10_000).toInt()
+        val octets = ByteArray(taille)
+        var lus = 0
+        while (lus < taille) { val n = r.corps.read(octets, lus, taille - lus); if (n < 0) break; lus += n }
+        return try { JSONObject(String(octets, 0, lus, Charsets.UTF_8)) } catch (_: Exception) { JSONObject() }
+    }
+
+    /** « DIRECT-AM-Physique L3 » : préfixe exigé par Android, 32 octets au plus. */
+    private fun nomDuReseau(nom: String): String {
+        val simple = java.text.Normalizer.normalize(nom, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .replace(Regex("[^A-Za-z0-9 ._-]"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .ifEmpty { "Amphi" }
+        return ("DIRECT-AM-$simple").take(32).trim()
+    }
+
+    private fun autorise(): Boolean =
+        if (Build.VERSION.SDK_INT >= 33) checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED
+        else checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun gestionnaire(): WifiP2pManager? {
+        if (p2p == null) {
+            p2p = getSystemService(WifiP2pManager::class.java)
+            canalP2p = p2p?.initialize(this, mainLooper, null)
+        }
+        return p2p
+    }
+
+    private fun attendre(lancer: (WifiP2pManager.ActionListener) -> Unit): Int? {
+        val resultat = AtomicReference<Int?>(null)
+        val fini = CountDownLatch(1)
+        try {
+            lancer(object : WifiP2pManager.ActionListener {
+                override fun onSuccess() { resultat.set(-1); fini.countDown() }
+                override fun onFailure(raison: Int) { resultat.set(raison); fini.countDown() }
+            })
+            fini.await(10, TimeUnit.SECONDS)
+        } catch (_: Exception) {}
+        return resultat.get()
+    }
+
+    private fun supprimerGroupe() {
+        val m = p2p ?: return
+        try { attendre { m.removeGroup(canalP2p, it) } } catch (_: Exception) {}
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun groupeActuel(): WifiP2pGroup? {
+        val m = gestionnaire() ?: return null
+        val g = AtomicReference<WifiP2pGroup?>(null)
+        val fini = CountDownLatch(1)
+        try {
+            m.requestGroupInfo(canalP2p) { groupe -> g.set(groupe); fini.countDown() }
+            fini.await(5, TimeUnit.SECONDS)
+        } catch (_: Exception) {}
+        return g.get()
+    }
+
+    private val verrouWifi = Any()
+
+    /** Un seul essai à la fois ; la page des étudiants n'attend jamais après. */
+    private fun creerWifi(nomVoulu: String, mdpVoulu: String): JSONObject = synchronized(verrouWifi) { creerWifiMaintenant(nomVoulu, mdpVoulu) }
+
+    @SuppressLint("MissingPermission")
+    private fun creerWifiMaintenant(nomVoulu: String, mdpVoulu: String): JSONObject {
+        val wifi = applicationContext.getSystemService(WifiManager::class.java)
+        if (wifi != null && !wifi.isWifiEnabled) return JSONObject().put("erreur", "wifi_eteint")
+        if (!autorise()) return JSONObject().put("erreur", "autorisation")
+        val m = gestionnaire() ?: return JSONObject().put("erreur", "Ce téléphone ne sait pas créer de Wi-Fi Direct.")
+        val nomRetenu = nomVoulu.ifBlank { prefs().getString("wifi_nom", "") ?: "" }
+        val nom = nomDuReseau(nomRetenu)
+        val mdp = mdpVoulu.ifBlank { prefs().getString("wifi_mdp", "") ?: "" }.trim()
+        if (mdp.length < 8 || mdp.length > 63) return JSONObject().put("erreur", "Le mot de passe doit avoir au moins 8 caractères.")
+        supprimerGroupe()
+        val config = WifiP2pConfig.Builder()
+            .setNetworkName(nom)
+            .setPassphrase(mdp)
+            .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_2GHZ)
+            .build()
+        var raison: Int? = null
+        for (essai in 0..1) {
+            raison = attendre { m.createGroup(canalP2p, config, it) }
+            if (raison == -1) break
+            supprimerGroupe()
+            Thread.sleep(2000)
+        }
+        if (raison != -1) {
+            val pourquoi = when (raison) {
+                WifiP2pManager.BUSY -> "Le Wi-Fi est occupé : éteignez le point d'accès mobile, puis réessayez."
+                WifiP2pManager.P2P_UNSUPPORTED -> "Ce téléphone ne sait pas créer de Wi-Fi Direct."
+                else -> "Le téléphone a refusé de créer le Wi-Fi. Éteignez puis rallumez le Wi-Fi, et réessayez."
+            }
+            return JSONObject().put("erreur", pourquoi)
+        }
+        prefs().edit().putBoolean("wifi", true).putString("wifi_nom", nomRetenu).putString("wifi_mdp", mdp).apply()
+        // L'adresse arrive une ou deux secondes après la création.
+        var adresse = ""
+        for (i in 0 until 10) {
+            adresse = adressesWifiDirect().firstOrNull() ?: ""
+            if (adresse.isNotEmpty()) break
+            Thread.sleep(500)
+        }
+        return JSONObject().put("ok", true).put("ssid", nom).put("motDePasse", mdp).put("adresse", adresse.ifEmpty { "192.168.49.1" } + ":" + PORT)
+    }
+
+    private fun adressesWifiDirect(): List<String> = try {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && it.name.startsWith("p2p") }
+            .flatMap { i -> i.inetAddresses.toList().filterIsInstance<Inet4Address>().mapNotNull { it.hostAddress } }
+    } catch (_: Exception) { emptyList() }
+
+    /** Recrée le Wi-Fi s'il devait être allumé et ne l'est plus. */
+    private fun veillerWifi() {
+        try { Thread.sleep(3000) } catch (_: InterruptedException) { return }
+        while (veille) {
+            try {
+                if (prefs().getBoolean("wifi", false) && autorise()) {
+                    val g = groupeActuel()
+                    if (g == null || !g.isGroupOwner) creerWifi("", "")
+                }
+            } catch (_: Exception) {}
+            var attente = 0
+            while (veille && attente < 60) {
+                try { Thread.sleep(1000) } catch (_: InterruptedException) { return }
+                attente++
+            }
+        }
+    }
+
     private fun etat(): JSONObject {
         val st = stats()
         val jour = aujourdhui()
@@ -550,5 +717,12 @@ class AmphiService : Service() {
             .put("vues7jours", vues7)
             .put("placeLibre", dossierFichiers.usableSpace)
             .put("compteurs", compteurs())
+            .put("wifi", JSONObject()
+                .put("actif", prefs().getBoolean("wifi", false) && adressesWifiDirect().isNotEmpty())
+                .put("voulu", prefs().getBoolean("wifi", false))
+                .put("ssid", nomDuReseau(prefs().getString("wifi_nom", "") ?: ""))
+                .put("nom", prefs().getString("wifi_nom", "") ?: "")
+                .put("motDePasse", prefs().getString("wifi_mdp", "") ?: "")
+                .put("adresse", (adressesWifiDirect().firstOrNull() ?: "192.168.49.1") + ":" + PORT))
     }
 }

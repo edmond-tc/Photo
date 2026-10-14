@@ -34,6 +34,10 @@
   .adresse { font-size: 1.35rem; font-weight: 800; color: var(--nuit); font-variant-numeric: tabular-nums; letter-spacing: .02em; user-select: all; }
   .etapes { margin: 12px 0 0; padding-left: 20px; font-size: .95rem; }
   .etapes li + li { margin-top: 4px; }
+  .tableau { background: #1f3b2c; color: #f4f1e6; border-radius: 12px; padding: 14px 16px; margin-top: 12px; font-size: 1.05rem; line-height: 1.6; font-family: "Comic Sans MS", "Segoe Print", var(--police); }
+  .tableau b { color: #fff6a8; overflow-wrap: anywhere; }
+  #w-adr { white-space: nowrap; font-size: 1.15rem; }
+  .etiquette-tableau { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; opacity: .75; font-family: var(--police); }
   .chiffres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
   .chiffres div { background: var(--fond); border-radius: 10px; padding: 10px 4px; }
   .chiffres b { display: block; font-size: 1.5rem; color: var(--nuit); font-variant-numeric: tabular-nums; }
@@ -61,7 +65,34 @@
 <body>
 <div class="barre">📡 Portail Amphi</div>
 <main>
-  <section class="carte" id="carte-etat">
+  <section class="carte" id="carte-wifi">
+    <h2>📶 Le Wi-Fi de l'amphi</h2>
+    <div id="wifi-actif" hidden>
+      <p class="etat ok">✅ Wi-Fi allumé, page en ligne</p>
+      <div class="tableau">
+        <p class="etiquette-tableau">À écrire au tableau (ça ne change pas)</p>
+        <p>1. Wi-Fi : <b id="w-ssid"></b></p>
+        <p>2. Mot de passe : <b id="w-mdp"></b></p>
+        <p>3. Dans Chrome, tapez : <b id="w-adr"></b></p>
+      </div>
+      <div class="boutons">
+        <button class="bouton second" id="b-w-partager">Partager ces consignes</button>
+        <button class="bouton danger" id="b-w-arreter">Éteindre le Wi-Fi</button>
+      </div>
+    </div>
+    <div id="wifi-form">
+      <p class="aide">Le téléphone crée lui-même le Wi-Fi des étudiants. L'adresse de la page ne change jamais : écrivez-la une fois pour toutes au tableau ou sur une affiche. Vos données mobiles restent pour vous seul.</p>
+      <label for="w-nom">Nom du Wi-Fi</label>
+      <input type="text" id="w-nom" maxlength="22" placeholder="Physique L3">
+      <label for="w-motdepasse">Mot de passe (8 caractères au moins, facile à dicter)</label>
+      <input type="text" id="w-motdepasse" maxlength="30" placeholder="amphi2026">
+      <div class="boutons"><button class="bouton" id="b-w-creer">📶 Créer le Wi-Fi</button></div>
+    </div>
+    <p class="aide" id="w-message"></p>
+  </section>
+
+  <details class="carte" id="carte-etat">
+    <summary>Autre méthode : point d'accès mobile + QR</summary>
     <p class="etat attente" id="etat">⏳ Démarrage du portail…</p>
     <div class="qr" id="zone-qr" hidden>
       <div id="qr"></div>
@@ -80,7 +111,7 @@
       <button class="bouton danger" id="b-arreter">⏹ Arrêter le portail</button>
     </div>
     <p class="aide">Conseil aux étudiants Android : couper les données mobiles le temps d'ouvrir la page, sinon le téléphone peut chercher l'adresse sur Internet.</p>
-  </section>
+  </details>
 
   <section class="carte">
     <h2>👀 Audience</h2>
@@ -522,6 +553,7 @@
         $("etat").textContent = "📶 Allumez le point d'accès mobile : le QR apparaîtra ici.";
         zone.hidden = true; adresseActuelle = "";
       }
+      if (e.wifi) montrerWifi(e.wifi);
       $("v-jour").textContent = e.visiteursAujourdhui || 0;
       $("v-semaine").textContent = e.visiteurs7jours || 0;
       $("vues-semaine").textContent = e.vues7jours || 0;
@@ -532,6 +564,56 @@
       if (change && contenu) rendreListes();
     }).catch(function () { $("etat").className = "etat attente"; $("etat").textContent = "⏳ Démarrage du portail…"; });
   }
+  // ── Wi-Fi de l'amphi (créé par le téléphone, adresse fixe) ──
+  var wifiConnu = null;
+  function montrerWifi(w) {
+    wifiConnu = w;
+    var actif = w && w.actif;
+    $("wifi-actif").hidden = !actif;
+    $("wifi-form").hidden = !!actif;
+    if (w) {
+      if (!$("w-nom").value && w.nom) $("w-nom").value = w.nom;
+      if (!$("w-motdepasse").value && w.motDePasse) $("w-motdepasse").value = w.motDePasse;
+      $("w-ssid").textContent = w.ssid || "";
+      $("w-mdp").textContent = w.motDePasse || "";
+      $("w-adr").textContent = w.adresse || "";
+    }
+    if (w && w.voulu && !w.actif) $("w-message").textContent = "⏳ Le Wi-Fi redémarre…";
+    else if (actif) $("w-message").textContent = "";
+  }
+  function creerWifi() {
+    var nom = $("w-nom").value.trim() || (contenu && contenu.titre) || "Amphi";
+    var mdp = $("w-motdepasse").value.trim();
+    if (mdp.length < 8) { $("w-message").textContent = "Le mot de passe doit avoir au moins 8 caractères (ex. : amphi2026)."; return; }
+    if (window.Amphi) {
+      if (Amphi.localisationEteinte()) { $("w-message").textContent = "Allumez la localisation (exigée par Android pour créer le Wi-Fi), puis revenez."; Amphi.ouvrirLocalisation(); return; }
+      if (!Amphi.autorisationWifi()) { $("w-message").textContent = "Autorisez « Appareils à proximité » dans la fenêtre qui s'ouvre."; return; }
+    }
+    var b = $("b-w-creer"); b.disabled = true;
+    $("w-message").textContent = "Création du Wi-Fi… (quelques secondes)";
+    fetch("/gerer/wifi", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nom: nom, motDePasse: mdp }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r.ok) { $("w-message").textContent = ""; montrerWifi({ actif: true, voulu: true, ssid: r.ssid, motDePasse: r.motDePasse, adresse: r.adresse, nom: nom }); toast("Wi-Fi créé ✓"); return; }
+        if (r.erreur === "wifi_eteint") { $("w-message").textContent = "Allumez le Wi-Fi du téléphone (sans vous connecter à un réseau), puis touchez à nouveau « Créer le Wi-Fi »."; if (window.Amphi) Amphi.ouvrirWifi(); return; }
+        if (r.erreur === "autorisation") { $("w-message").textContent = "Autorisez « Appareils à proximité », puis réessayez."; if (window.Amphi) Amphi.autorisationWifi(); return; }
+        $("w-message").textContent = "❌ " + r.erreur;
+      })
+      .catch(function () { $("w-message").textContent = "❌ Pas de réponse du portail. Réessayez."; })
+      .then(function () { b.disabled = false; });
+  }
+  window.apresAutorisationWifi = function (ok) { if (ok) creerWifi(); else $("w-message").textContent = "Sans l'autorisation « Appareils à proximité », le téléphone ne peut pas créer le Wi-Fi."; };
+  $("b-w-creer").onclick = creerWifi;
+  $("b-w-arreter").onclick = function () {
+    if (!confirm("Éteindre le Wi-Fi de l'amphi ?")) return;
+    fetch("/gerer/wifi/arreter", { method: "POST" }).then(function () { montrerWifi({ actif: false, voulu: false, nom: wifiConnu && wifiConnu.nom, motDePasse: wifiConnu && wifiConnu.motDePasse }); toast("Wi-Fi éteint"); });
+  };
+  $("b-w-partager").onclick = function () {
+    var w = wifiConnu || {};
+    var t = "Wi-Fi de l'amphi (gratuit, sans forfait)\n1. Connectez-vous au Wi-Fi « " + w.ssid + " », mot de passe : " + w.motDePasse + "\n2. Dans Chrome, tapez : " + w.adresse;
+    if (window.Amphi) Amphi.partager(t); else toast(t);
+  };
+
   $("b-point").onclick = function () { if (window.Amphi) Amphi.ouvrirPointAcces(); };
   $("b-partager").onclick = function () {
     if (!adresseActuelle) return toast("Allumez d'abord le point d'accès mobile.");

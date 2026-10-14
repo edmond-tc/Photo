@@ -1,9 +1,13 @@
 package bj.photocopie.envoyeur
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.os.Build
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -24,6 +28,7 @@ import android.webkit.WebViewClient
 class AmphiActivity : Activity() {
     companion object {
         private const val DEMANDE_FICHIERS = 7302
+        private const val DEMANDE_WIFI = 7303
         private const val ADRESSE = "http://127.0.0.1:${AmphiService.PORT}/gerer"
     }
 
@@ -90,6 +95,14 @@ class AmphiActivity : Activity() {
         rappelFichiers = null
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == DEMANDE_WIFI) {
+            val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            vue.evaluateJavascript("window.apresAutorisationWifi && window.apresAutorisationWifi($ok)", null)
+        }
+    }
+
     @Deprecated("API Activity")
     override fun onBackPressed() {
         if (vue.canGoBack()) vue.goBack() else {
@@ -122,6 +135,37 @@ class AmphiActivity : Activity() {
                     try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return@post } catch (_: Exception) {}
                 }
             }
+        }
+
+        /** Autorisation de créer le Wi-Fi (« Appareils à proximité », ou localisation avant Android 13). */
+        @JavascriptInterface
+        fun autorisationWifi(): Boolean {
+            val p = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.NEARBY_WIFI_DEVICES else Manifest.permission.ACCESS_FINE_LOCATION
+            if (checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED) return true
+            principal.post { requestPermissions(arrayOf(p), DEMANDE_WIFI) }
+            return false
+        }
+
+        /** Avant Android 13, Wi-Fi Direct exige la localisation allumée. */
+        @JavascriptInterface
+        fun localisationEteinte(): Boolean {
+            if (Build.VERSION.SDK_INT >= 33) return false
+            val lm = getSystemService(LocationManager::class.java) ?: return false
+            return !lm.isLocationEnabled
+        }
+
+        @JavascriptInterface
+        fun ouvrirWifi() {
+            principal.post {
+                try { startActivity(Intent(Settings.Panel.ACTION_WIFI)) } catch (_: Exception) {
+                    try { startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) } catch (_: Exception) {}
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun ouvrirLocalisation() {
+            principal.post { try { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } catch (_: Exception) {} }
         }
 
         @JavascriptInterface
