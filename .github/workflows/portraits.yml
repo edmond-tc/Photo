@@ -1,0 +1,38 @@
+name: Portraits (Portail Amphi)
+
+# Récupère sur Wikimedia Commons les portraits libres des auteurs et des
+# figures de la physique, et les publie en pièce jointe d'une version
+# GitHub (« portraits »), pour être rangés ensuite dans l'application.
+on:
+  push:
+    branches: [main]
+    paths: ["scripts/portraits/**", ".github/workflows/portraits.yml"]
+  workflow_dispatch: {}
+
+jobs:
+  portraits:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Récupérer les portraits
+        working-directory: scripts/portraits
+        run: |
+          pip install pillow
+          python recuperer.py
+          tar czf portraits.tar.gz -C sortie .
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view portraits >/dev/null 2>&1; then
+            gh release upload portraits scripts/portraits/portraits.tar.gz --clobber
+          else
+            gh release create portraits scripts/portraits/portraits.tar.gz --title "Portraits (Portail Amphi)" \
+              --notes "Portraits libres (Wikimedia Commons) des auteurs et des figures de la physique. Licences et auteurs : credits.json." \
+              --prerelease --latest=false
+          fi
