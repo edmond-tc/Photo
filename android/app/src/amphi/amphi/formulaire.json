@@ -1,0 +1,563 @@
+{
+ "sections": [
+  {
+   "ue": "PHY1520",
+   "titre": "Physique quantique et statistique",
+   "formules": [
+    {
+     "nom": "Équation de Schrödinger",
+     "f": "iħ ∂ψ/∂t = Ĥψ",
+     "note": ""
+    },
+    {
+     "nom": "Schrödinger stationnaire",
+     "f": "Ĥψ = Eψ,  Ĥ = −(ħ²/2m)∇² + V",
+     "note": ""
+    },
+    {
+     "nom": "Normalisation",
+     "f": "∫ |ψ|² dτ = 1",
+     "note": ""
+    },
+    {
+     "nom": "Commutateur canonique",
+     "f": "[x̂, p̂] = iħ",
+     "note": ""
+    },
+    {
+     "nom": "Incertitude de Heisenberg",
+     "f": "Δx · Δp ≥ ħ/2",
+     "note": ""
+    },
+    {
+     "nom": "Puits infini (largeur L)",
+     "f": "Eₙ = n²π²ħ²/(2mL²),  ψₙ = √(2/L) sin(nπx/L)",
+     "note": "n = 1, 2, 3…"
+    },
+    {
+     "nom": "Oscillateur harmonique",
+     "f": "Eₙ = ħω (n + ½)",
+     "note": "n = 0, 1, 2…"
+    },
+    {
+     "nom": "Atome d'hydrogène",
+     "f": "Eₙ = −13,6 eV / n²",
+     "note": ""
+    },
+    {
+     "nom": "Moment cinétique",
+     "f": "L̂² → ħ² l(l+1),  L̂z → m ħ",
+     "note": "−l ≤ m ≤ l"
+    },
+    {
+     "nom": "Valeur moyenne",
+     "f": "⟨A⟩ = ⟨ψ|Â|ψ⟩",
+     "note": ""
+    },
+    {
+     "nom": "Théorème d'Ehrenfest",
+     "f": "d⟨A⟩/dt = (i/ħ) ⟨[Ĥ, Â]⟩ + ⟨∂Â/∂t⟩",
+     "note": ""
+    },
+    {
+     "nom": "Fonction de partition",
+     "f": "Z = Σ e^(−βEᵢ),  β = 1/(k_B T)",
+     "note": ""
+    },
+    {
+     "nom": "Énergie moyenne",
+     "f": "⟨E⟩ = −∂ ln Z / ∂β",
+     "note": ""
+    },
+    {
+     "nom": "Énergie libre",
+     "f": "F = −k_B T ln Z",
+     "note": ""
+    },
+    {
+     "nom": "Entropie de Boltzmann",
+     "f": "S = k_B ln Ω",
+     "note": "Ω : nombre de micro-états"
+    },
+    {
+     "nom": "Fermi-Dirac",
+     "f": "f(E) = 1 / (e^((E−μ)/k_BT) + 1)",
+     "note": "fermions"
+    },
+    {
+     "nom": "Bose-Einstein",
+     "f": "f(E) = 1 / (e^((E−μ)/k_BT) − 1)",
+     "note": "bosons"
+    },
+    {
+     "nom": "Équipartition",
+     "f": "½ k_B T par terme quadratique",
+     "note": ""
+    }
+   ]
+  },
+  {
+   "ue": "PHY1521",
+   "titre": "Méthodes mathématiques pour la physique",
+   "formules": [
+    {
+     "nom": "Équation de la chaleur",
+     "f": "∂u/∂t = D ∂²u/∂x²",
+     "note": "parabolique"
+    },
+    {
+     "nom": "Équation d'onde",
+     "f": "∂²u/∂t² = c² ∂²u/∂x²",
+     "note": "hyperbolique"
+    },
+    {
+     "nom": "Laplace et Poisson",
+     "f": "Δu = 0  ;  ΔV = −ρ/ε₀",
+     "note": "elliptique"
+    },
+    {
+     "nom": "Laplacien cylindrique",
+     "f": "Δf = (1/r) ∂r(r ∂r f) + (1/r²) ∂²θ f + ∂²z f",
+     "note": ""
+    },
+    {
+     "nom": "Laplacien sphérique",
+     "f": "Δf = (1/r²) ∂r(r² ∂r f) + (1/(r² sin θ)) ∂θ(sin θ ∂θ f) + (1/(r² sin²θ)) ∂²φ f",
+     "note": ""
+    },
+    {
+     "nom": "Séparation des variables",
+     "f": "u(x, t) = X(x) T(t)",
+     "note": ""
+    },
+    {
+     "nom": "Fonction Gamma",
+     "f": "Γ(z) = ∫₀^∞ t^(z−1) e^(−t) dt,  Γ(n+1) = n!,  Γ(½) = √π",
+     "note": ""
+    },
+    {
+     "nom": "Équation de Legendre",
+     "f": "(1−x²) y'' − 2x y' + l(l+1) y = 0",
+     "note": "P₀ = 1, P₁ = x, P₂ = (3x² − 1)/2"
+    },
+    {
+     "nom": "Équation de Bessel",
+     "f": "x² y'' + x y' + (x² − ν²) y = 0",
+     "note": ""
+    },
+    {
+     "nom": "Série de Fourier",
+     "f": "f(x) = a₀/2 + Σ [aₙ cos(nωx) + bₙ sin(nωx)]",
+     "note": ""
+    },
+    {
+     "nom": "Transformée de Fourier",
+     "f": "F(k) = ∫ f(x) e^(−ikx) dx",
+     "note": ""
+    }
+   ]
+  },
+  {
+   "ue": "PHY1522",
+   "titre": "Physique de la matière condensée",
+   "formules": [
+    {
+     "nom": "Loi de Bragg",
+     "f": "2d sin θ = nλ",
+     "note": ""
+    },
+    {
+     "nom": "Atomes par maille",
+     "f": "CS : 1   CC : 2   CFC : 4",
+     "note": ""
+    },
+    {
+     "nom": "Distance interréticulaire (cubique)",
+     "f": "d_hkl = a / √(h² + k² + l²)",
+     "note": ""
+    },
+    {
+     "nom": "Réseau réciproque",
+     "f": "a* = 2π (b × c) / (a · (b × c))",
+     "note": ""
+    },
+    {
+     "nom": "Énergie de Fermi (électrons libres)",
+     "f": "E_F = ħ² (3π² n)^(2/3) / (2m)",
+     "note": ""
+    },
+    {
+     "nom": "Chaîne linéaire monoatomique",
+     "f": "ω(k) = 2 √(K/m) |sin(ka/2)|",
+     "note": ""
+    },
+    {
+     "nom": "Capacité de Debye (basse T)",
+     "f": "C_V ∝ T³",
+     "note": ""
+    },
+    {
+     "nom": "Semi-conducteur intrinsèque",
+     "f": "nᵢ ∝ T^(3/2) e^(−E_g/(2k_BT))",
+     "note": ""
+    },
+    {
+     "nom": "Conductivité",
+     "f": "σ = n e μ = n e² τ / m",
+     "note": ""
+    }
+   ]
+  },
+  {
+   "ue": "PHY1523",
+   "titre": "Ondes et vibrations",
+   "formules": [
+    {
+     "nom": "Équation de d'Alembert",
+     "f": "∂²y/∂t² = v² ∂²y/∂x²",
+     "note": ""
+    },
+    {
+     "nom": "Corde vibrante",
+     "f": "v = √(T/μ)",
+     "note": "T : tension, μ : masse linéique"
+    },
+    {
+     "nom": "Modes propres (2 bouts fixes)",
+     "f": "λₙ = 2L/n,  fₙ = n v/(2L)",
+     "note": ""
+    },
+    {
+     "nom": "Onde plane progressive",
+     "f": "y = A cos(ωt − kx),  k = 2π/λ,  ω = 2πf",
+     "note": ""
+    },
+    {
+     "nom": "Vitesses de phase et de groupe",
+     "f": "v_φ = ω/k,  v_g = dω/dk",
+     "note": ""
+    },
+    {
+     "nom": "Oscillateur amorti",
+     "f": "ẍ + (ω₀/Q) ẋ + ω₀² x = 0",
+     "note": ""
+    },
+    {
+     "nom": "Facteur de qualité",
+     "f": "Q = ω₀ / Δω",
+     "note": ""
+    },
+    {
+     "nom": "Battements",
+     "f": "f_batt = |f₁ − f₂|",
+     "note": ""
+    },
+    {
+     "nom": "Effet Doppler (source mobile)",
+     "f": "f' = f · v / (v − v_s)",
+     "note": "v_s > 0 si la source approche"
+    }
+   ]
+  },
+  {
+   "ue": "PHY1524",
+   "titre": "Mécanique analytique",
+   "formules": [
+    {
+     "nom": "Lagrangien",
+     "f": "L = T − V",
+     "note": ""
+    },
+    {
+     "nom": "Équation de Lagrange",
+     "f": "d/dt (∂L/∂q̇) − ∂L/∂q = 0",
+     "note": ""
+    },
+    {
+     "nom": "Moment conjugué",
+     "f": "p = ∂L/∂q̇",
+     "note": ""
+    },
+    {
+     "nom": "Hamiltonien",
+     "f": "H = Σ p q̇ − L",
+     "note": ""
+    },
+    {
+     "nom": "Équations de Hamilton",
+     "f": "q̇ = ∂H/∂p,  ṗ = −∂H/∂q",
+     "note": ""
+    },
+    {
+     "nom": "Principe de moindre action",
+     "f": "S = ∫ L dt,  δS = 0",
+     "note": ""
+    },
+    {
+     "nom": "Crochet de Poisson",
+     "f": "{f, g} = Σ (∂f/∂q ∂g/∂p − ∂f/∂p ∂g/∂q)",
+     "note": ""
+    },
+    {
+     "nom": "Évolution d'une grandeur",
+     "f": "df/dt = {f, H} + ∂f/∂t",
+     "note": ""
+    },
+    {
+     "nom": "Théorème de Noether",
+     "f": "temps → énergie ; translation → impulsion ; rotation → moment cinétique",
+     "note": "symétrie ↔ conservation"
+    }
+   ]
+  },
+  {
+   "ue": "PHY1525",
+   "titre": "Mécanique des milieux déformables",
+   "formules": [
+    {
+     "nom": "Loi de Hooke",
+     "f": "σ = E ε",
+     "note": ""
+    },
+    {
+     "nom": "Coefficient de Poisson",
+     "f": "ν = −ε_transversale / ε_longitudinale",
+     "note": ""
+    },
+    {
+     "nom": "Module de cisaillement",
+     "f": "G = E / (2(1 + ν))",
+     "note": ""
+    },
+    {
+     "nom": "Hydrostatique",
+     "f": "dP/dz = −ρ g",
+     "note": ""
+    },
+    {
+     "nom": "Continuité",
+     "f": "∂ρ/∂t + div(ρv) = 0  ;  incompressible : div v = 0",
+     "note": ""
+    },
+    {
+     "nom": "Navier-Stokes",
+     "f": "ρ (∂v/∂t + (v·∇)v) = −∇P + η Δv + ρ g",
+     "note": ""
+    },
+    {
+     "nom": "Euler (fluide parfait)",
+     "f": "ρ Dv/Dt = −∇P + ρ g",
+     "note": ""
+    },
+    {
+     "nom": "Bernoulli",
+     "f": "P + ½ ρ v² + ρ g z = constante",
+     "note": ""
+    },
+    {
+     "nom": "Nombre de Reynolds",
+     "f": "Re = ρ v L / η",
+     "note": ""
+    },
+    {
+     "nom": "Poiseuille",
+     "f": "Q = π R⁴ ΔP / (8 η L)",
+     "note": ""
+    }
+   ]
+  },
+  {
+   "ue": "INF1526",
+   "titre": "Physique numérique",
+   "formules": [
+    {
+     "nom": "Euler explicite",
+     "f": "yₙ₊₁ = yₙ + h f(tₙ, yₙ)",
+     "note": "ordre 1"
+    },
+    {
+     "nom": "Runge-Kutta 4",
+     "f": "yₙ₊₁ = yₙ + h (k₁ + 2k₂ + 2k₃ + k₄)/6",
+     "note": "ordre 4"
+    },
+    {
+     "nom": "Dérivée centrée",
+     "f": "f'(x) ≈ [f(x+h) − f(x−h)] / (2h)",
+     "note": "erreur O(h²)"
+    },
+    {
+     "nom": "Dérivée seconde",
+     "f": "f''(x) ≈ [f(x+h) − 2f(x) + f(x−h)] / h²",
+     "note": ""
+    },
+    {
+     "nom": "Trapèzes",
+     "f": "∫ ≈ h [f₀/2 + f₁ + … + fₙ₋₁ + fₙ/2]",
+     "note": "erreur O(h²)"
+    },
+    {
+     "nom": "Simpson",
+     "f": "∫ ≈ (h/3) [f₀ + 4f₁ + 2f₂ + … + 4fₙ₋₁ + fₙ]",
+     "note": "erreur O(h⁴)"
+    },
+    {
+     "nom": "Newton",
+     "f": "xₙ₊₁ = xₙ − f(xₙ) / f'(xₙ)",
+     "note": "convergence quadratique"
+    },
+    {
+     "nom": "Dichotomie",
+     "f": "erreur divisée par 2 à chaque itération",
+     "note": ""
+    },
+    {
+     "nom": "Stabilité (chaleur, schéma explicite)",
+     "f": "D Δt / Δx² ≤ ½",
+     "note": ""
+    }
+   ]
+  }
+ ],
+ "constantes": [
+  {
+   "nom": "Vitesse de la lumière",
+   "symbole": "c",
+   "valeur": "299 792 458",
+   "unite": "m/s",
+   "note": "exacte"
+  },
+  {
+   "nom": "Constante de Planck",
+   "symbole": "h",
+   "valeur": "6,626 070 15 × 10⁻³⁴",
+   "unite": "J·s",
+   "note": "exacte"
+  },
+  {
+   "nom": "Constante de Planck réduite",
+   "symbole": "ħ",
+   "valeur": "1,054 571 817 × 10⁻³⁴",
+   "unite": "J·s",
+   "note": ""
+  },
+  {
+   "nom": "Charge élémentaire",
+   "symbole": "e",
+   "valeur": "1,602 176 634 × 10⁻¹⁹",
+   "unite": "C",
+   "note": "exacte"
+  },
+  {
+   "nom": "Constante de Boltzmann",
+   "symbole": "k_B",
+   "valeur": "1,380 649 × 10⁻²³",
+   "unite": "J/K",
+   "note": "exacte"
+  },
+  {
+   "nom": "Nombre d'Avogadro",
+   "symbole": "N_A",
+   "valeur": "6,022 140 76 × 10²³",
+   "unite": "mol⁻¹",
+   "note": "exacte"
+  },
+  {
+   "nom": "Constante des gaz parfaits",
+   "symbole": "R",
+   "valeur": "8,314 462 618",
+   "unite": "J/(mol·K)",
+   "note": ""
+  },
+  {
+   "nom": "Masse de l'électron",
+   "symbole": "mₑ",
+   "valeur": "9,109 383 70 × 10⁻³¹",
+   "unite": "kg",
+   "note": ""
+  },
+  {
+   "nom": "Masse du proton",
+   "symbole": "m_p",
+   "valeur": "1,672 621 924 × 10⁻²⁷",
+   "unite": "kg",
+   "note": ""
+  },
+  {
+   "nom": "Unité de masse atomique",
+   "symbole": "u",
+   "valeur": "1,660 539 067 × 10⁻²⁷",
+   "unite": "kg",
+   "note": ""
+  },
+  {
+   "nom": "Permittivité du vide",
+   "symbole": "ε₀",
+   "valeur": "8,854 187 813 × 10⁻¹²",
+   "unite": "F/m",
+   "note": ""
+  },
+  {
+   "nom": "Perméabilité du vide",
+   "symbole": "μ₀",
+   "valeur": "1,256 637 062 × 10⁻⁶",
+   "unite": "N/A²",
+   "note": ""
+  },
+  {
+   "nom": "Constante gravitationnelle",
+   "symbole": "G",
+   "valeur": "6,674 30 × 10⁻¹¹",
+   "unite": "m³/(kg·s²)",
+   "note": ""
+  },
+  {
+   "nom": "Constante de Stefan-Boltzmann",
+   "symbole": "σ",
+   "valeur": "5,670 374 419 × 10⁻⁸",
+   "unite": "W/(m²·K⁴)",
+   "note": ""
+  },
+  {
+   "nom": "Rayon de Bohr",
+   "symbole": "a₀",
+   "valeur": "5,291 772 109 × 10⁻¹¹",
+   "unite": "m",
+   "note": ""
+  },
+  {
+   "nom": "Énergie de Rydberg",
+   "symbole": "Ry",
+   "valeur": "13,605 693",
+   "unite": "eV",
+   "note": ""
+  },
+  {
+   "nom": "Constante de structure fine",
+   "symbole": "α",
+   "valeur": "1 / 137,036",
+   "unite": "",
+   "note": ""
+  },
+  {
+   "nom": "Pesanteur (standard)",
+   "symbole": "g",
+   "valeur": "9,806 65",
+   "unite": "m/s²",
+   "note": ""
+  },
+  {
+   "nom": "k_B T à 300 K",
+   "symbole": "k_B T",
+   "valeur": "25,85",
+   "unite": "meV",
+   "note": "agitation thermique"
+  },
+  {
+   "nom": "ħc",
+   "symbole": "ħc",
+   "valeur": "197,327",
+   "unite": "MeV·fm",
+   "note": ""
+  }
+ ]
+}

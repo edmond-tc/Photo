@@ -281,6 +281,10 @@
   #pub-haut .carte { animation: pub .6s cubic-bezier(.2, .8, .2, 1) both; }
   /* Star du jour : carte de fête */
   .star { position: relative; background: linear-gradient(160deg, #2a0f3d, #6a1b4d 55%, #c2185b); color: #fff; }
+  /* Tout en haut de la page : la première chose qu'on voit. */
+  .stars-haut { display: flex; flex-direction: column; }
+  .stars-haut .star { border-radius: 0; box-shadow: none; animation: none; }
+  .stars-haut .star .corps { padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
   .star .corps { position: relative; z-index: 1; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .star .etiquette { color: #ffd76a; }
   .star h3 { font-family: var(--titre); font-size: 1.45rem; line-height: 1.15; text-wrap: balance; color: #fff; text-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
@@ -306,7 +310,10 @@
   .visionneuse img { max-width: 100%; max-height: 78vh; border-radius: 8px; object-fit: contain; }
   .visionneuse .barre-vis { display: flex; gap: 10px; align-items: center; color: #fff; font-weight: 700; }
   .visionneuse button, .visionneuse a { background: rgba(255, 255, 255, .15); color: #fff; border: 0; border-radius: 999px; padding: 9px 14px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-  #st-toile { display: block; width: 100%; max-width: 330px; height: auto; margin: 10px auto; border-radius: 12px; box-shadow: 0 6px 24px rgba(16, 24, 40, .25); touch-action: none; cursor: grab; }
+  /* Aperçu limité en hauteur : la page défile toujours en passant le doigt dessus. */
+  #st-toile { display: block; height: min(58vh, 480px); width: auto; max-width: 100%; margin: 10px auto; border-radius: 12px; box-shadow: 0 6px 24px rgba(16, 24, 40, .25); touch-action: pan-y pinch-zoom; }
+  #st-toile.cadrage { touch-action: none; cursor: grab; outline: 3px dashed var(--bleu); outline-offset: 3px; }
+  .studio-outils { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .studio-zoom { display: flex; align-items: center; gap: 10px; font-size: .85rem; color: var(--discret); }
   .studio-zoom input { flex: 1; }
   .puces img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 4px; }
@@ -317,6 +324,45 @@
   .ev-tete { display: flex; justify-content: space-between; align-items: center; width: 100%; }
   .ev-tete b.j { font: 800 .85rem var(--mono); background: var(--or-fond); color: var(--or); padding: 3px 9px; border-radius: 999px; }
   @media (prefers-reduced-motion: reduce) { .star-anneau::before, .ballon { animation: none; } .ballon { display: none; } }
+
+  /* Réviser : profil, défi, tableau d'honneur, formulaire */
+  .profil-tete { display: flex; align-items: center; gap: 12px; }
+  .niveau-icone { flex: none; width: 56px; height: 56px; border-radius: 16px; background: var(--ciel); display: grid; place-items: center; font-size: 1.9rem; }
+  .profil-nom { flex: 1; min-width: 0; }
+  .profil-nom h3 { font-size: 1.2rem; color: var(--nuit); }
+  .serie { flex: none; font: 800 1.05rem var(--mono); color: #c2410c; background: #fff1e6; padding: 6px 10px; border-radius: 12px; }
+  .serie.zero { color: var(--discret); background: var(--fond); }
+  .jauge-niveau { height: 10px; border-radius: 6px; background: var(--ciel); overflow: hidden; margin: 12px 0; }
+  .jauge-niveau i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--bleu), #3dffa2); transition: width 1s cubic-bezier(.2, .8, .2, 1); }
+  .profil-chiffres { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; text-align: center; margin-bottom: 10px; }
+  .profil-chiffres b { display: block; font: 800 1.15rem var(--mono); color: var(--nuit); }
+  .profil-chiffres span { font-size: .7rem; color: var(--discret); }
+  .defi-question { font-weight: 650; margin: 6px 0 10px; line-height: 1.4; }
+  .defi-choix { display: flex; flex-direction: column; gap: 8px; }
+  .defi-choix button { display: flex; gap: 10px; align-items: flex-start; text-align: left; border: 1px solid var(--bordure); background: #fff; color: var(--texte); border-radius: 12px; padding: 10px 12px; font: inherit; cursor: pointer; }
+  .defi-choix button b { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--ciel); color: var(--nuit); display: grid; place-items: center; font-size: .8rem; }
+  .defi-choix button:disabled { cursor: default; }
+  .defi-choix button.bonne { border-color: var(--vert); background: var(--vert-fond); }
+  .defi-choix button.fausse { border-color: var(--rouge); background: #fdecea; }
+  .defi-verdict { margin-top: 10px; font-weight: 700; }
+  .defi-verdict.ok { color: var(--vert); } .defi-verdict.non { color: var(--rouge); }
+  .defi-explication { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--fond); font-size: .92rem; }
+  .honneur-tete { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .honneur-tete h3, #carte-formulaire h3 { color: var(--nuit); font-size: 1.05rem; }
+  .rang-ligne { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-top: 1px solid var(--bordure); }
+  .rang-ligne .r { width: 28px; text-align: center; font-weight: 800; }
+  .rang-ligne .p { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .rang-ligne .pts { font: 700 .9rem var(--mono); color: var(--nuit); }
+  .rang-ligne.moi { background: var(--ciel); border-radius: 8px; }
+  .formule { padding: 9px 0; border-top: 1px solid var(--bordure); }
+  .formule .n { font-weight: 700; font-size: .88rem; }
+  .formule .f { font-family: "Cambria Math", "STIX Two Math", "Noto Serif", Georgia, serif; font-size: 1.02rem; color: var(--nuit); margin-top: 2px; overflow-wrap: anywhere; }
+  .formule .note { font-size: .78rem; color: var(--discret); }
+  .formule .ue { font: 600 .68rem var(--mono); color: var(--bleu); }
+  #fm-liste .groupe { margin-top: 12px; font: 700 .78rem var(--mono); color: var(--bleu); letter-spacing: .03em; }
+  .convert { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .convert-resultat { padding: 6px 0; border-top: 1px solid var(--bordure); font: 700 1rem var(--mono); color: var(--nuit); overflow-wrap: anywhere; }
+  .convert-resultat small { font: 600 .8rem var(--police); color: var(--discret); }
 
   /* UE et crédits : fiche permanente de la filière */
   .ue-tete { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--bordure); }
@@ -355,6 +401,7 @@
 </head>
 <body>
 <div class="hors-ligne" id="hors-ligne">Connexion au Wi-Fi de l'amphi perdue. La page se remet à jour dès votre retour.</div>
+<div id="stars" class="stars-haut"></div>
 <header class="hero">
   <canvas id="oscillo" aria-hidden="true"></canvas>
   <span class="mesure" id="mesure" aria-hidden="true">X:Y = 1:2 · φ = 0</span>
@@ -370,6 +417,7 @@
   <a href="#accueil" class="actif">Accueil</a>
   <a href="#programme">Programme</a>
   <a href="#ue">UE</a>
+  <a href="#reviser">Réviser</a>
   <a href="#documents">Documents</a>
   <a href="#annonces">Annonces</a>
   <a href="#promo">Promo</a>
@@ -391,7 +439,6 @@
         <button type="button" data-alerte="retard">⏳ Prof en retard</button>
       </div>
     </div>
-    <div id="stars" style="display:flex;flex-direction:column;gap:16px"></div>
     <div class="carte" id="carte-prochain" hidden>
       <div class="prochain">
         <div class="icone" aria-hidden="true">⏰</div>
@@ -432,7 +479,7 @@
       <p class="aide" id="icone-consigne" style="margin-top:4px"></p>
       <div class="ue-actions" style="padding:10px 0 0">
         <button class="bouton" id="icone-installer" type="button" hidden>📲 Mettre l'icône « Amphi »</button>
-        <a class="bouton" id="icone-whatsapp" href="#">📤 Envoyer le lien à la promo</a>
+        <a class="bouton" id="icone-whatsapp" href="#">📤 Envoyer l'adresse à la promo</a>
         <button class="bouton second" id="icone-fermer" type="button">C'est fait</button>
       </div>
     </div></div>
@@ -444,6 +491,41 @@
 
   <h2 class="titre-section" id="ue">📘 UE et crédits</h2>
   <div class="carte" id="maquette"></div>
+
+  <h2 class="titre-section" id="reviser">🎓 Réviser et progresser</h2>
+  <div class="carte" id="carte-profil"><div class="corps">
+    <div class="profil-tete">
+      <div class="niveau-icone" id="pr-icone">⚛️</div>
+      <div class="profil-nom"><p class="etiquette">Mon niveau</p><h3 id="pr-niveau">Électron</h3><p class="aide" id="pr-prochain"></p></div>
+      <div class="serie zero" id="pr-serie">🔥 0</div>
+    </div>
+    <div class="jauge-niveau"><i id="pr-jauge"></i></div>
+    <div class="profil-chiffres">
+      <div><b id="pr-points">0</b><span>points</span></div>
+      <div><b id="pr-semaine">0</b><span>cette semaine</span></div>
+      <div><b id="pr-rang">–</b><span>rang semaine</span></div>
+      <div><b id="pr-meilleure">0</b><span>record 🔥</span></div>
+    </div>
+    <input class="champ" id="pr-pseudo" maxlength="20" placeholder="Votre pseudo pour le tableau d'honneur">
+    <p class="aide" id="pr-etat" style="margin-top:6px">1 point par jour de visite (+10 tous les 7 jours d'affilée), 10 par défi réussi (+5 aux 3 premiers), 2 par défi tenté.</p>
+  </div></div>
+  <div class="carte" id="carte-defi" hidden><div class="corps">
+    <p class="etiquette" id="df-ue">🧠 Défi du jour</p>
+    <p class="defi-question" id="df-question"></p>
+    <div class="defi-choix" id="df-choix"></div>
+    <div id="df-resultat"></div>
+    <p class="aide" id="df-gagnants" style="margin-top:8px"></p>
+  </div></div>
+  <div class="carte" id="carte-honneur"><div class="corps">
+    <div class="honneur-tete"><h3>🏆 Tableau d'honneur</h3><div class="puces" id="hn-choix"></div></div>
+    <div id="hn-liste"></div>
+  </div></div>
+  <div class="carte" id="carte-formulaire"><div class="corps">
+    <h3>📐 Formulaire de la L3</h3>
+    <input type="search" class="champ" id="fm-recherche" placeholder="🔎 Chercher (Bragg, Hamilton, Reynolds, ħ…)">
+    <div class="puces" id="fm-ue" style="margin-top:8px"></div>
+    <div id="fm-liste"></div>
+  </div></div>
 
   <div id="pub-milieu"></div>
 
@@ -471,7 +553,7 @@
 
   <h3 class="sous-titre" id="studio">🎨 Studio anniversaire</h3>
   <div class="carte"><div class="corps">
-    <p class="aide">Une belle image pour le statut WhatsApp : une photo, un décor, puis « Enregistrer ». Faites glisser la photo pour la cadrer, et réglez le zoom.</p>
+    <p class="aide">Une belle image pour le statut WhatsApp : une photo, un décor, puis « Enregistrer ». Pour cadrer, touchez « ✋ Cadrer la photo » puis faites-la glisser ; réglez le zoom.</p>
     <input type="file" class="champ" id="st-photo" accept="image/*">
     <div class="puces" id="st-stars" hidden style="margin-top:8px"></div>
     <input class="champ" id="st-nom" maxlength="30" placeholder="Prénom (ex. : Koffi)">
@@ -479,6 +561,7 @@
     <div class="puces" id="st-decors" style="margin-top:8px"></div>
     <div class="puces" id="st-formats" style="margin-top:6px"></div>
     <canvas id="st-toile" width="1080" height="1920" aria-label="Aperçu de l'image d'anniversaire"></canvas>
+    <div class="studio-outils"><button class="bouton second" id="st-cadrer" type="button">✋ Cadrer la photo</button></div>
     <label class="studio-zoom">🔍 Zoom <input type="range" id="st-zoom" min="1" max="3" step="0.01" value="1"></label>
     <button class="bouton" id="st-enregistrer" type="button" style="margin-top:8px">💾 Enregistrer l'image</button>
     <p class="aide" id="st-etat" style="margin-top:6px"></p>
@@ -577,6 +660,12 @@
     <table class="moyenne"><thead><tr><th>Matière (UE)</th><th>Crédits</th><th>Note /20</th></tr></thead><tbody id="m-lignes"></tbody></table>
     <div class="ue-actions" style="padding:8px 0 0"><button class="bouton second" id="m-ajouter" type="button">+ Ajouter une matière</button><button class="bouton second" id="m-ue" type="button" hidden>📘 Remplir avec mes UE</button></div>
     <div class="resultat" id="m-resultat">Remplissez vos notes.</div>
+    <h3 style="margin-top:16px">🎯 Quelle note me faut-il ?</h3>
+    <p class="aide">Laissez vide la note des UE pas encore passées : on calcule la moyenne à viser sur celles qui restent.</p>
+    <label class="studio-zoom" style="margin-top:6px">Moyenne visée
+      <select class="champ" id="ob-cible" style="width:auto;margin:0"><option value="10">10 · valider</option><option value="12">12 · Assez bien</option><option value="14">14 · Bien</option><option value="16">16 · Très bien</option></select>
+    </label>
+    <div class="resultat" id="ob-resultat"></div>
   </div></div>
 
   <div id="pub-bas"></div>
@@ -1564,8 +1653,18 @@
   $("st-photo").onchange = function () { var f = this.files && this.files[0]; if (f) chargerPhotoStudio(URL.createObjectURL(f), true); };
   $("st-zoom").oninput = function () { studio.zoom = +this.value; dessiner(); };
   $("st-nom").oninput = dessiner; $("st-message").oninput = dessiner;
-  var tirage = null;
-  toile.addEventListener("pointerdown", function (e) { tirage = { x: e.clientX, y: e.clientY, dx: studio.dx, dy: studio.dy }; try { toile.setPointerCapture(e.pointerId); } catch (x) {} });
+  var tirage = null, cadrage = false;
+  function modeCadrage(oui) {
+    cadrage = oui; toile.classList.toggle("cadrage", oui);
+    $("st-cadrer").textContent = oui ? "✓ Terminé" : "✋ Cadrer la photo";
+    $("st-cadrer").className = "bouton" + (oui ? "" : " second");
+  }
+  $("st-cadrer").onclick = function () { modeCadrage(!cadrage); };
+  toile.addEventListener("pointerdown", function (e) {
+    if (!cadrage) return;
+    tirage = { x: e.clientX, y: e.clientY, dx: studio.dx, dy: studio.dy };
+    try { toile.setPointerCapture(e.pointerId); } catch (x) {}
+  });
   toile.addEventListener("pointermove", function (e) {
     if (!tirage) return;
     var k = toile.width / toile.clientWidth;
@@ -1575,6 +1674,7 @@
   ["pointerup", "pointercancel"].forEach(function (t) { toile.addEventListener(t, function () { tirage = null; }); });
   $("st-enregistrer").onclick = function () {
     var nom = $("st-nom").value.trim() || "star";
+    modeCadrage(false);
     toile.toBlob(function (b) {
       if (!b) { $("st-etat").textContent = "❌ L'image n'a pas pu être créée."; return; }
       var a = document.createElement("a");
@@ -1641,6 +1741,228 @@
     });
   }
 
+  // ── Réviser : profil (points, niveau, série), défi du jour, tableau d'honneur ──
+  // Chaque téléphone reçoit un identifiant tiré au hasard : pas de compte, pas de nom réel.
+  var NIVEAUX = [[0, "⚛️", "Électron"], [30, "🔬", "Atome"], [80, "🧪", "Molécule"], [160, "💎", "Cristal"], [300, "🔭", "Chercheur"], [500, "🎓", "Docteur"], [800, "📚", "Professeur"], [1200, "🏆", "Prix Nobel"]];
+  function monId() {
+    var id = lire("amphi-id");
+    if (/^[a-z0-9]{12,32}$/.test(id)) return id;
+    var a = "abcdefghijklmnopqrstuvwxyz0123456789", r;
+    try { r = crypto.getRandomValues(new Uint8Array(20)); } catch (e) { r = []; for (var k = 0; k < 20; k++) r.push(Math.floor(Math.random() * 256)); }
+    id = ""; for (var i = 0; i < 20; i++) id += a[r[i] % 36];
+    garder("amphi-id", id);
+    return lire("amphi-id") === id ? id : "";
+  }
+  var MON_ID = monId();
+  var profilActuel = null, honneurActuel = { semaine: [], total: [] }, vueHonneur = "semaine";
+  function niveauDe(pts) {
+    var n = NIVEAUX[0], suivant = NIVEAUX[1];
+    NIVEAUX.forEach(function (x, i) { if (pts >= x[0]) { n = x; suivant = NIVEAUX[i + 1] || null; } });
+    return { n: n, suivant: suivant };
+  }
+  function rang(n) { return n === 1 ? "1er" : n + "e"; }
+  function rendreProfil(p) {
+    if (!p) return;
+    var ancien = profilActuel; profilActuel = p;
+    var nv = niveauDe(p.points);
+    $("pr-icone").textContent = nv.n[1]; $("pr-niveau").textContent = nv.n[2];
+    $("pr-prochain").textContent = nv.suivant ? "Encore " + (nv.suivant[0] - p.points) + " points pour devenir " + nv.suivant[2] + " " + nv.suivant[1] : "Niveau maximal : bravo !";
+    $("pr-jauge").style.width = (nv.suivant ? Math.round(100 * (p.points - nv.n[0]) / (nv.suivant[0] - nv.n[0])) : 100) + "%";
+    $("pr-points").textContent = p.points; $("pr-semaine").textContent = p.semaine;
+    $("pr-rang").textContent = p.rang ? rang(p.rang) : "–"; $("pr-meilleure").textContent = p.meilleure;
+    var se = $("pr-serie"); se.textContent = "🔥 " + p.serie; se.className = "serie" + (p.serie ? "" : " zero");
+    se.title = p.serie > 1 ? p.serie + " jours d'affilée" : "Revenez demain pour lancer votre série";
+    if (!$("pr-pseudo").value && p.pseudo) $("pr-pseudo").value = p.pseudo;
+    if (ancien && niveauDe(ancien.points).n !== nv.n) {
+      $("pr-etat").textContent = "🎉 Nouveau niveau : " + nv.n[2] + " " + nv.n[1] + " !";
+      if (window.amphiFete) window.amphiFete();
+    }
+  }
+  function synchroniser() {
+    if (!MON_ID) { $("pr-etat").textContent = "Ce navigateur ne garde rien en mémoire (mode privé ?) : les points ne peuvent pas être comptés."; return Promise.resolve(); }
+    return fetch("/profil", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: MON_ID, pseudo: $("pr-pseudo").value.trim() }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r.profil) rendreProfil(r.profil);
+        if (r.honneur) { honneurActuel = r.honneur; rendreHonneur(); }
+        if (r.defi) rendreDefi(r.defi);
+      }).catch(function () {});
+  }
+  $("pr-pseudo").value = lire("amphi-pseudo");
+  $("pr-pseudo").onchange = function () { garder("amphi-pseudo", this.value.trim()); if ($("dev-pseudo") && !$("dev-pseudo").value) $("dev-pseudo").value = this.value.trim(); synchroniser(); };
+
+  function rendreDefi(d) {
+    var carte = $("carte-defi");
+    carte.hidden = !d || !d.question;
+    if (carte.hidden) return;
+    $("df-ue").textContent = "🧠 Défi du jour" + (d.ue ? " · " + d.ue : "");
+    $("df-question").textContent = d.question;
+    var z = $("df-choix"); z.textContent = "";
+    var rep = d.reponse;
+    (d.choix || []).forEach(function (c, i) {
+      var b = el("button"); b.type = "button";
+      b.appendChild(el("b", null, "ABCD"[i])); b.appendChild(el("span", null, c));
+      if (rep) { b.disabled = true; if (i === rep.bonne) b.className = "bonne"; else if (i === rep.choix) b.className = "fausse"; }
+      else b.onclick = function () { repondreDefi(i); };
+      z.appendChild(b);
+    });
+    var res = $("df-resultat"); res.textContent = "";
+    if (rep) {
+      var gain = rep.juste ? 10 + (rep.rang && rep.rang <= 3 ? 5 : 0) : 2;
+      res.appendChild(el("p", "defi-verdict " + (rep.juste ? "ok" : "non"), rep.juste
+        ? "✅ Bravo !" + (rep.rang ? " Vous êtes " + rang(rep.rang) + " à trouver." : "") + " +" + gain + " points"
+        : "❌ Raté : la bonne réponse est " + "ABCD"[rep.bonne] + ". +2 points pour l'effort, revenez demain !"));
+      if (rep.explication) res.appendChild(el("p", "defi-explication", "💡 " + rep.explication));
+    }
+    var g = d.gagnants || [];
+    $("df-gagnants").textContent = d.participants + " participant(s) · " + d.trouve + " ont trouvé" +
+      (g.length ? " · Premiers : " + g.slice(0, 5).map(function (x, i) { return (["🥇 ", "🥈 ", "🥉 "][i] || "") + x.pseudo; }).join(", ") : "");
+  }
+  function repondreDefi(i) {
+    if (!MON_ID) { $("df-resultat").textContent = "Ce navigateur ne garde rien en mémoire : impossible de compter votre réponse."; return; }
+    Array.prototype.forEach.call($("df-choix").children, function (b) { b.disabled = true; });
+    fetch("/defi", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: MON_ID, choix: i, pseudo: $("pr-pseudo").value.trim() }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r.erreur) { $("df-resultat").textContent = "❌ " + r.erreur; return; }
+        rendreDefi(r.defi);
+        if (r.profil) rendreProfil(r.profil);
+        if (r.defi && r.defi.reponse && r.defi.reponse.juste) { if (window.amphiFete) window.amphiFete(); }
+        else { var c = $("carte-defi"); c.classList.add("faux"); setTimeout(function () { c.classList.remove("faux"); }, 600); }
+        synchroniser();
+      })
+      .catch(function () {
+        $("df-resultat").textContent = "❌ Pas de connexion au Wi-Fi de l'amphi.";
+        Array.prototype.forEach.call($("df-choix").children, function (b) { b.disabled = false; });
+      });
+  }
+
+  function rendreHonneur() {
+    var ch = $("hn-choix"); ch.textContent = "";
+    [["semaine", "Cette semaine"], ["total", "Depuis le début"]].forEach(function (x) {
+      var b = el("button", vueHonneur === x[0] ? "choisie" : "", x[1]); b.type = "button";
+      b.onclick = function () { vueHonneur = x[0]; rendreHonneur(); };
+      ch.appendChild(b);
+    });
+    var z = $("hn-liste"); z.textContent = "";
+    var l = honneurActuel[vueHonneur] || [];
+    if (!l.length) { z.appendChild(el("p", "vide", "Personne encore : soyez le premier !")); return; }
+    l.forEach(function (x, i) {
+      var moi = profilActuel && profilActuel.pseudo && x.pseudo === profilActuel.pseudo;
+      var r = el("div", "rang-ligne" + (moi ? " moi" : ""));
+      r.appendChild(el("span", "r", ["🥇", "🥈", "🥉"][i] || String(i + 1)));
+      r.appendChild(el("span", "p", x.pseudo + (x.serie > 2 ? " · 🔥 " + x.serie : "")));
+      r.appendChild(el("span", "pts", x.points + " pts"));
+      z.appendChild(r);
+    });
+  }
+
+  // ── Formulaire de la L3 : formules, constantes, conversions ──
+  var formulaire = null, fmVue = "PHY1520";
+  var NOMS_UE_COURTS = { PHY1520: "Quantique", PHY1521: "Maths", PHY1522: "Mat. condensée", PHY1523: "Ondes", PHY1524: "Méca. analytique", PHY1525: "Milieux déformables", INF1526: "Numérique" };
+  var UNITES = {
+    "Énergie": [["J", 1], ["eV", 1.602176634e-19], ["keV", 1.602176634e-16], ["MeV", 1.602176634e-13], ["cal", 4.184], ["kWh", 3.6e6], ["K (k_B·T)", 1.380649e-23], ["Hz (h·ν)", 6.62607015e-34], ["cm⁻¹ (h·c·σ)", 1.98644586e-23]],
+    "Longueur": [["m", 1], ["cm", 1e-2], ["mm", 1e-3], ["µm", 1e-6], ["nm", 1e-9], ["Å", 1e-10], ["fm", 1e-15], ["km", 1e3]],
+    "Pression": [["Pa", 1], ["hPa", 100], ["bar", 1e5], ["atm", 101325], ["mmHg", 133.322368]],
+    "Angle": [["rad", 1], ["degré", Math.PI / 180], ["tour", 2 * Math.PI]],
+    "Température": [["K", 0], ["°C", 0], ["°F", 0]]
+  };
+  function exposant(n) { return String(n).replace(/[-0-9]/g, function (c) { return "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"["-0123456789".indexOf(c)]; }); }
+  function joli(x) {
+    if (!isFinite(x)) return "—";
+    if (x === 0) return "0";
+    var a = Math.abs(x);
+    if (a >= 1e-3 && a < 1e6) return x.toLocaleString("fr-FR", { maximumSignificantDigits: 6 });
+    var e = Math.floor(Math.log10(a)), m = x / Math.pow(10, e);
+    return m.toLocaleString("fr-FR", { maximumSignificantDigits: 5 }) + " × 10" + exposant(e);
+  }
+  function versK(v, u) { return u === "°C" ? v + 273.15 : u === "°F" ? (v - 32) * 5 / 9 + 273.15 : v; }
+  function depuisK(k, u) { return u === "°C" ? k - 273.15 : u === "°F" ? (k - 273.15) * 9 / 5 + 32 : k; }
+  function rendreFormulaire() {
+    if (!formulaire) return;
+    var puc = $("fm-ue"); puc.textContent = "";
+    formulaire.sections.map(function (s) { return [s.ue, NOMS_UE_COURTS[s.ue] || s.ue]; }).concat([["constantes", "Constantes"], ["conversion", "Conversions"]]).forEach(function (x) {
+      var b = el("button", fmVue === x[0] ? "choisie" : "", x[1]); b.type = "button";
+      b.onclick = function () { fmVue = x[0]; $("fm-recherche").value = ""; rendreFormulaire(); };
+      puc.appendChild(b);
+    });
+    var z = $("fm-liste"); z.textContent = "";
+    var q = sansAccent($("fm-recherche").value.trim());
+    function formule(f, ue) {
+      var d = el("div", "formule");
+      var t = el("p", "n", f.nom); if (ue) { t.appendChild(document.createTextNode(" ")); t.appendChild(el("span", "ue", ue)); }
+      d.appendChild(t); d.appendChild(el("p", "f", f.f));
+      if (f.note) d.appendChild(el("p", "note", f.note));
+      return d;
+    }
+    function constante(c) {
+      var d = el("div", "formule");
+      d.appendChild(el("p", "n", c.nom + " (" + c.symbole + ")"));
+      d.appendChild(el("p", "f", c.valeur + (c.unite ? " " + c.unite : "")));
+      if (c.note) d.appendChild(el("p", "note", c.note));
+      return d;
+    }
+    if (q) {
+      var n = 0;
+      formulaire.sections.forEach(function (s) { s.formules.forEach(function (f) { if (n < 40 && sansAccent(f.nom + " " + f.f + " " + f.note + " " + s.titre).indexOf(q) >= 0) { z.appendChild(formule(f, s.ue)); n++; } }); });
+      formulaire.constantes.forEach(function (c) { if (n < 40 && sansAccent(c.nom + " " + c.symbole).indexOf(q) >= 0) { z.appendChild(constante(c)); n++; } });
+      if (!n) z.appendChild(el("p", "vide", "Rien trouvé. Essayez un autre mot (ex. : Fermi, Poisson, Bragg)."));
+      return;
+    }
+    if (fmVue === "constantes") { formulaire.constantes.forEach(function (c) { z.appendChild(constante(c)); }); return; }
+    if (fmVue === "conversion") { z.appendChild(convertisseur()); return; }
+    formulaire.sections.forEach(function (s) {
+      if (fmVue && s.ue !== fmVue) return;
+      z.appendChild(el("p", "groupe", s.ue + " · " + s.titre));
+      s.formules.forEach(function (f) { z.appendChild(formule(f)); });
+    });
+  }
+  function convertisseur() {
+    var boite = el("div", "convert");
+    var g = el("select", "champ"); Object.keys(UNITES).forEach(function (k) { var o = el("option", null, k); o.value = k; g.appendChild(o); });
+    var ligne = el("div", "ligne-champs");
+    var v = el("input", "champ"); v.inputMode = "decimal"; v.value = "1"; v.placeholder = "Valeur";
+    var u = el("select", "champ");
+    ligne.appendChild(v); ligne.appendChild(u);
+    var res = el("div", "convert-liste");
+    function unites() { u.textContent = ""; UNITES[g.value].forEach(function (x, i) { var o = el("option", null, x[0]); o.value = i; u.appendChild(o); }); if (g.value === "Énergie") u.value = "1"; calcul(); }
+    function calcul() {
+      res.textContent = "";
+      var val = parseFloat(String(v.value).replace(",", ".").replace(/\s/g, ""));
+      if (isNaN(val)) { res.appendChild(el("p", "aide", "Tapez un nombre.")); return; }
+      var liste = UNITES[g.value], de = liste[+u.value];
+      liste.forEach(function (x, i) {
+        if (i === +u.value) return;
+        var r = g.value === "Température" ? depuisK(versK(val, de[0]), x[0]) : val * de[1] / x[1];
+        var p = el("p", "convert-resultat"); p.appendChild(el("span", null, joli(r) + " ")); p.appendChild(el("small", null, x[0]));
+        res.appendChild(p);
+      });
+    }
+    g.onchange = unites; u.onchange = calcul; v.oninput = calcul;
+    boite.appendChild(g); boite.appendChild(ligne); boite.appendChild(res);
+    unites();
+    return boite;
+  }
+  $("fm-recherche").addEventListener("input", rendreFormulaire);
+  fetch("/formulaire.json").then(function (r) { return r.json(); }).then(function (f) { formulaire = f; rendreFormulaire(); }).catch(function () { $("carte-formulaire").hidden = true; });
+
+  // ── « Quelle note me faut-il ? » : à partir du calculateur de moyenne ──
+  function objectif() {
+    var cible = +$("ob-cible").value, connu = 0, cConnu = 0, cReste = 0;
+    lignes.forEach(function (l) {
+      var c = parseFloat(String(l.c).replace(",", ".")), n = parseFloat(String(l.n).replace(",", "."));
+      if (!(c > 0)) return;
+      if (String(l.n).trim() !== "" && n >= 0 && n <= 20) { connu += c * n; cConnu += c; } else cReste += c;
+    });
+    var z = $("ob-resultat");
+    if (!cReste) { z.textContent = cConnu ? "Toutes les notes sont remplies : votre moyenne est calculée au-dessus." : "Remplissez les crédits (et les notes déjà connues)."; return; }
+    var besoin = (cible * (cConnu + cReste) - connu) / cReste, b = besoin.toFixed(2).replace(".", ",");
+    if (besoin <= 0) z.textContent = "✅ C'est déjà acquis : même avec 0 dans les UE restantes, vous avez " + cible + " de moyenne.";
+    else if (besoin > 20) z.textContent = "⚠️ " + cible + " n'est plus atteignable : il faudrait " + b + "/20 sur les " + cReste + " crédits restants. Visez un objectif plus bas, ou préparez les rattrapages.";
+    else z.textContent = "🎯 Il vous faut en moyenne " + b + "/20 sur les " + cReste + " crédits restants pour obtenir " + cible + " de moyenne.";
+  }
+  $("ob-cible").onchange = objectif;
+
   // ── Calculateur de moyenne (reste sur le téléphone) ──
   var lignes = [];
   try { lignes = JSON.parse(localStorage.getItem("amphi-moyenne") || "[]"); } catch (e) {}
@@ -1652,6 +1974,7 @@
       if (c > 0 && n >= 0 && n <= 20) { somme += c * n; credits += c; if (n >= 10) valides += c; }
     });
     try { localStorage.setItem("amphi-moyenne", JSON.stringify(lignes)); } catch (e) {}
+    objectif();
     var r = $("m-resultat");
     if (!credits) { r.textContent = "Remplissez vos notes."; return; }
     var moy = somme / credits;
@@ -1724,7 +2047,9 @@
     $("icone-consigne").textContent = iphone
       ? "Touchez le bouton Partager (le carré avec une flèche), puis « Sur l'écran d'accueil ». L'icône « Amphi » apparaît : les autres jours, connectez-vous au Wi-Fi de l'amphi et touchez-la."
       : "Dans Chrome, touchez ⋮ en haut à droite, puis « Ajouter à l'écran d'accueil ». L'icône « Amphi » apparaît : les autres jours, connectez-vous au Wi-Fi de l'amphi et touchez-la.";
-    var texte = "📶 Page de l'amphi (gratuite, sans forfait) : connectez-vous au Wi-Fi de l'amphi, coupez vos données mobiles, puis touchez ce lien : " + location.origin + "/";
+    // WhatsApp ne rend jamais cliquable une adresse en chiffres (192.168…) :
+    // on donne des consignes courtes, puis l'icône évite de retaper.
+    var texte = "📶 Page de l'amphi (gratuite, sans forfait)\n1. Connectez-vous au Wi-Fi de l'amphi\n2. Coupez vos données mobiles\n3. Dans Chrome, tapez : " + location.host + "\n4. Menu ⋮ → « Ajouter à l'écran d'accueil » : ensuite l'icône « Amphi » suffit.";
     $("icone-whatsapp").href = "whatsapp://send?text=" + encodeURIComponent(texte);
     $("carte-icone").hidden = installe || fait;
     $("icone-fermer").onclick = function () { $("carte-icone").hidden = true; try { localStorage.setItem("amphi-icone", "1"); } catch (e) {} };
@@ -1740,6 +2065,8 @@
   setInterval(charger, 60000);
   chargerEchanges();
   setInterval(chargerEchanges, 30000);
+  synchroniser();
+  setInterval(synchroniser, 120000);
 })();
 </script>
 <canvas id="confettis" aria-hidden="true"></canvas>

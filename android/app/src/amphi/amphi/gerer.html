@@ -212,6 +212,23 @@
   </details>
 
   <details class="carte">
+    <summary>🧠 Défi du jour et tableau d'honneur</summary>
+    <p class="aide">Chaque matin, un QCM de physique de L3 change tout seul (45 défis préparés). Un défi réussi rapporte 10 points (+5 aux 3 premiers), un essai 2 points, chaque jour de visite 1 point.</p>
+    <div id="defi-actuel" class="bilan ok" style="font-weight:500"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">Mettre votre propre défi aujourd'hui</h3>
+    <label for="df-question">Question</label>
+    <textarea id="df-question" maxlength="400" placeholder="Ex. : Que vaut l'énergie du fondamental d'un puits infini de largeur L ?"></textarea>
+    <label>Réponses (cochez la bonne)</label>
+    <div id="df-choix"></div>
+    <label for="df-explication">Explication (montrée après la réponse)</label>
+    <textarea id="df-explication" maxlength="600"></textarea>
+    <div class="boutons"><button class="bouton" id="b-defi">Publier ce défi pour aujourd'hui</button></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">🏆 Tableau d'honneur de la semaine</h3>
+    <p class="aide">À annoncer le lundi devant l'amphi.</p>
+    <div id="liste-honneur"></div>
+  </details>
+
+  <details class="carte">
     <summary>🎉 Événements de la promo</summary>
     <p class="aide">Soirée, sortie, match, anniversaire collectif, réunion… Affichés en haut de la page avec un compte à rebours ; les étudiants touchent « J'y serai » et vous voyez combien viennent.</p>
     <label for="ev-titre">Événement</label>
@@ -691,6 +708,7 @@
     sp.forEach(function (x) { zsp.appendChild(ligneStar(x, false)); });
     if (sa.length) { $("nb-promo").hidden = false; $("nb-promo").textContent = attente.length + sa.length; }
     rendreEvenements();
+    rendreDefi();
     var za = $("liste-promo-attente"); za.textContent = "";
     if (!attente.length && !sa.length) za.appendChild(el("p", "aide", "Rien à vérifier pour l'instant."));
     attente.forEach(function (p) { za.appendChild(ligne(p, true)); });
@@ -800,6 +818,43 @@
     (contenu.sondages = contenu.sondages || []).unshift({ id: nouvelId(), question: q, options: opts.slice(0, 10), filiere: $("s-filiere").value, ouvert: true, date: Date.now() });
     $("s-question").value = ""; $("s-options").value = "";
     enregistrer("Sondage lancé ✓");
+  };
+  // ── Défi du jour ──
+  (function () {
+    var z = $("df-choix");
+    ["A", "B", "C", "D"].forEach(function (l, i) {
+      var r = el("div"); r.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:6px";
+      var c = el("input"); c.type = "radio"; c.name = "df-bonne"; c.value = i; c.id = "df-b" + i; c.style.width = "auto";
+      var t = el("input"); t.type = "text"; t.id = "df-c" + i; t.maxLength = 160; t.placeholder = "Réponse " + l + (i > 1 ? " (facultative)" : "");
+      r.appendChild(c); r.appendChild(t); z.appendChild(r);
+    });
+  })();
+  function rendreDefi() {
+    var d = echanges.defi || {}, z = $("defi-actuel");
+    z.textContent = "";
+    if (!d.question) { z.textContent = "Pas de défi aujourd'hui."; return; }
+    z.appendChild(el("p", null, (d.perso ? "Votre défi" : "Défi automatique") + (d.ue ? " · " + d.ue : "") + " : " + d.question));
+    (d.choix || []).forEach(function (c, i) { z.appendChild(el("p", null, (i === d.bonne ? "✅ " : "▫️ ") + "ABCD"[i] + ". " + c)); });
+    z.appendChild(el("p", "meta", d.participants + " réponse(s), " + d.trouve + " juste(s)."));
+    var lh = $("liste-honneur"); lh.textContent = "";
+    var h = (echanges.honneur || {}).semaine || [];
+    if (!h.length) lh.appendChild(el("p", "aide", "Personne pour l'instant."));
+    h.forEach(function (x, i) { lh.appendChild(el("p", null, (["🥇", "🥈", "🥉"][i] || (i + 1) + ".") + " " + x.pseudo + " · " + x.points + " pts" + (x.serie > 1 ? " · 🔥 " + x.serie : ""))); });
+  }
+  $("b-defi").onclick = function () {
+    var choix = [0, 1, 2, 3].map(function (i) { return $("df-c" + i).value.trim(); });
+    var coche = document.querySelector("input[name=df-bonne]:checked");
+    var bonne = coche ? +coche.value : -1;
+    var gardes = [], nouvelle = -1;
+    choix.forEach(function (c, i) { if (c) { if (i === bonne) nouvelle = gardes.length; gardes.push(c); } });
+    if ($("df-question").value.trim().length < 5 || gardes.length < 2 || nouvelle < 0) return toast("Une question, au moins 2 réponses, et cochez la bonne.");
+    if (!confirm("Remplacer le défi d'aujourd'hui ? Les réponses déjà données seront effacées.")) return;
+    poster("/gerer/defi", { question: $("df-question").value.trim(), choix: gardes, bonne: nouvelle, explication: $("df-explication").value.trim() }).then(function (r) {
+      if (!r.ok) return toast(r.erreur || "Échec");
+      toast("Défi publié ✓"); $("df-question").value = ""; $("df-explication").value = "";
+      [0, 1, 2, 3].forEach(function (i) { $("df-c" + i).value = ""; });
+      chargerEchanges();
+    });
   };
   function rendreEvenements() {
     var z = $("liste-evenements"); if (!z) return; z.textContent = "";

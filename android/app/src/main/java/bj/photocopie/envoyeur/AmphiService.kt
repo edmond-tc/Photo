@@ -239,6 +239,7 @@ class AmphiService : Service() {
                     r.methode == "GET" && r.chemin == "/lire" -> actif(sortie, "amphi/lire.html", "text/html; charset=utf-8")
                     // UE et crédits officiels : intégrés à l'application, ils ne disparaissent jamais.
                     r.methode == "GET" && r.chemin == "/maquettes.json" -> actif(sortie, "amphi/maquettes.json", "application/json; charset=utf-8")
+                    r.methode == "GET" && r.chemin == "/formulaire.json" -> actif(sortie, "amphi/formulaire.json", "application/json; charset=utf-8", "max-age=86400")
                     // Icône « Amphi » sur l'écran d'accueil des étudiants.
                     r.methode == "GET" && r.chemin == "/manifest.json" -> actif(sortie, "amphi/manifest.json", "application/manifest+json; charset=utf-8", "max-age=86400")
                     r.methode == "GET" && (r.chemin == "/icone-192.png" || r.chemin == "/icone-512.png") ->
@@ -263,6 +264,9 @@ class AmphiService : Service() {
                     r.methode == "POST" && r.chemin == "/alerte" -> alerter(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.matches(Regex("^/alerte/[a-z0-9]{6,30}/plus$")) -> confirmerAlerte(sortie, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/devinette" -> repondreDevinette(sortie, r, s.inetAddress.hostAddress ?: "")
+                    // ── Réviser : profil (points, niveau, série) et défi du jour ──
+                    r.methode == "POST" && r.chemin == "/profil" -> profil(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/defi" -> repondreDefi(sortie, r, s.inetAddress.hostAddress ?: "")
                     // ── Star du jour (anniversaires) et événements ──
                     r.methode == "POST" && r.chemin == "/star" -> creerStar(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.matches(Regex("^/star/[a-z0-9]{16}/photo$")) -> photoStar(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
@@ -292,6 +296,7 @@ class AmphiService : Service() {
                         json(sortie, deciderProposition(morceaux[3], morceaux[4] == "accepter"))
                     }
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/publication/[a-z0-9]{6,30}$")) -> json(sortie, modererPublication(r.chemin.split("/")[3], lireJson(r).optString("action")))
+                    r.methode == "POST" && r.chemin == "/gerer/defi" -> json(sortie, defiPerso(lireJson(r)))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/star/[a-z0-9]{16}$")) -> json(sortie, modererStar(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/alerte/[a-z0-9]{6,30}$")) -> json(sortie, modererAlerte(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/question/[a-z0-9]{6,30}$")) -> {
@@ -875,7 +880,7 @@ class AmphiService : Service() {
         val pubsSansIp = JSONArray()
         for (i in 0 until pubs.length()) { val o = JSONObject(pubs.getJSONObject(i).toString()); o.remove("ip"); pubsSansIp.put(o) }
         return JSONObject().put("propositions", lireTableau(fichierPropositions)).put("questions", sansIp).put("resultats", resultats())
-            .put("publications", pubsSansIp).put("stars", starsGestion()).put("participations", participations("")).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
+            .put("publications", pubsSansIp).put("defi", defiGestion()).put("honneur", honneur(lireObjet(fichierProfils))).put("stars", starsGestion()).put("participations", participations("")).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
     }
 
     private fun modererQuestion(id: String, q: JSONObject): JSONObject = synchronized(verrouEchanges) {
@@ -976,6 +981,181 @@ class AmphiService : Service() {
             ecrire(fichierPublications, gardees)
         }
         return JSONObject().put("ok", true)
+    }
+
+    // ── Réviser : chaque téléphone a un identifiant tiré au hasard (pas de
+    // compte, pas de nom réel) ; les points récompensent l'effort. ─────────
+
+    private val fichierProfils get() = File(dossier, "profils.json")
+    private val fichierDefiJour get() = File(dossier, "defi-jour.json")
+    private val fichierDefiPerso get() = File(dossier, "defi-perso.json")
+    private val ID_PROFIL = Regex("^[a-z0-9]{12,32}$")
+
+    private fun jourIso(decalage: Int = 0) = SimpleDateFormat("yyyy-MM-dd", Locale.FRANCE).format(Date(System.currentTimeMillis() + decalage * 86_400_000L))
+    private fun semaine(): String {
+        val c = java.util.Calendar.getInstance(Locale.FRANCE)
+        return String.format(Locale.ROOT, "%d-%02d", c.weekYear, c.get(java.util.Calendar.WEEK_OF_YEAR))
+    }
+    private fun pseudoPropre(v: String?): String {
+        val p = texte(v, 20)
+        return if (p.isEmpty() || !texteCorrect(p) || NUMERO.containsMatchIn(p)) "" else p
+    }
+
+    /** Ajoute des points (total et semaine en cours). À appeler sous verrouEchanges. */
+    private fun ajouterPoints(profils: JSONObject, id: String, n: Int) {
+        if (!ID_PROFIL.matches(id) || n == 0) return
+        val p = profils.optJSONObject(id) ?: JSONObject().put("points", 0).also { profils.put(id, it) }
+        p.put("points", p.optInt("points") + n)
+        val sem = p.optJSONObject("semaines") ?: JSONObject().also { p.put("semaines", it) }
+        val k = semaine()
+        sem.put(k, sem.optInt(k) + n)
+        sem.keys().asSequence().toList().sorted().dropLast(8).forEach { sem.remove(it) }
+    }
+
+    private fun profil(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "profil", 90, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Attendez un peu."), 429)
+        val q = lireJson(r)
+        val id = q.optString("id")
+        if (!ID_PROFIL.matches(id)) return json(sortie, JSONObject().put("erreur", "Identifiant invalide."), 400)
+        val pseudo = pseudoPropre(q.optString("pseudo"))
+        val reponse = JSONObject()
+        synchronized(verrouEchanges) {
+            val profils = lireObjet(fichierProfils)
+            if (!profils.has(id) && profils.length() >= 5000) return json(sortie, JSONObject().put("erreur", "Trop de profils."), 507)
+            val p = profils.optJSONObject(id) ?: JSONObject().put("points", 0).also { profils.put(id, it) }
+            if (pseudo.isNotEmpty()) p.put("pseudo", pseudo)
+            val auj = jourIso()
+            if (p.optString("dernier") != auj) {
+                // Série : jours d'affilée ; +1 point par jour, +10 tous les 7 jours.
+                val serie = if (p.optString("dernier") == jourIso(-1)) p.optInt("serie") + 1 else 1
+                p.put("serie", serie).put("meilleure", maxOf(serie, p.optInt("meilleure"))).put("dernier", auj)
+                ajouterPoints(profils, id, 1 + if (serie % 7 == 0) 10 else 0)
+            }
+            ecrire(fichierProfils, profils)
+            reponse.put("profil", profilPublic(profils, id)).put("honneur", honneur(profils))
+        }
+        json(sortie, reponse.put("defi", defiPublic(id)))
+    }
+
+    private fun profilPublic(profils: JSONObject, id: String): JSONObject {
+        val p = profils.optJSONObject(id) ?: JSONObject()
+        val k = semaine()
+        val moi = p.optJSONObject("semaines")?.optInt(k) ?: 0
+        var devant = 0
+        profils.keys().forEach { x -> if ((profils.optJSONObject(x)?.optJSONObject("semaines")?.optInt(k) ?: 0) > moi) devant++ }
+        val serie = if (p.optString("dernier") == jourIso() || p.optString("dernier") == jourIso(-1)) p.optInt("serie") else 0
+        return JSONObject().put("pseudo", p.optString("pseudo")).put("points", p.optInt("points")).put("serie", serie)
+            .put("meilleure", p.optInt("meilleure")).put("semaine", moi).put("rang", if (moi > 0) devant + 1 else 0)
+    }
+
+    /** Tableau d'honneur : les 10 meilleurs de la semaine et de tous les temps. */
+    private fun honneur(profils: JSONObject): JSONObject {
+        val k = semaine()
+        val tous = profils.keys().asSequence().mapNotNull { profils.optJSONObject(it) }.toList()
+        fun top(valeur: (JSONObject) -> Int): JSONArray {
+            val t = JSONArray()
+            tous.map { it to valeur(it) }.filter { it.second > 0 }.sortedByDescending { it.second }.take(10)
+                .forEach { (p, v) -> t.put(JSONObject().put("pseudo", p.optString("pseudo").ifEmpty { "Anonyme" }).put("points", v).put("serie", p.optInt("serie"))) }
+            return t
+        }
+        return JSONObject().put("semaine", top { it.optJSONObject("semaines")?.optInt(k) ?: 0 }).put("total", top { it.optInt("points") })
+    }
+
+    /** Le défi du jour : celui du délégué s'il en a mis un aujourd'hui, sinon la réserve. */
+    private fun defiDuJour(): JSONObject {
+        val perso = lireObjet(fichierDefiPerso)
+        if (perso.optString("date") == jourIso() && perso.optString("question").isNotEmpty()) return perso
+        val r = reserve("defis.json")
+        if (r.length() == 0) return JSONObject()
+        // Pas de 7 : les UE alternent d'un jour à l'autre.
+        val i = Math.floorMod(numeroDuJour() * 7, r.length())
+        return r.getJSONObject(i)
+    }
+
+    private fun etatDefi(): JSONObject {
+        val e = lireObjet(fichierDefiJour)
+        return if (e.optString("date") == jourIso()) e
+        else JSONObject().put("date", jourIso()).put("reponses", JSONObject()).put("ips", JSONObject()).put("gagnants", JSONArray())
+    }
+
+    private fun defiPublic(id: String): JSONObject {
+        val d = defiDuJour()
+        if (d.optString("question").isEmpty()) return JSONObject()
+        val e = etatDefi()
+        val g = e.optJSONArray("gagnants") ?: JSONArray()
+        val premiers = JSONArray()
+        for (i in 0 until minOf(10, g.length())) premiers.put(g.get(i))
+        val o = JSONObject().put("question", d.optString("question")).put("choix", d.optJSONArray("choix") ?: JSONArray())
+            .put("ue", d.optString("ue")).put("gagnants", premiers).put("trouve", g.length())
+            .put("participants", e.optJSONObject("reponses")?.length() ?: 0)
+        e.optJSONObject("reponses")?.optJSONObject(id)?.let { rep ->
+            o.put("reponse", JSONObject(rep.toString()).put("bonne", d.optInt("bonne")).put("explication", d.optString("explication")))
+        }
+        return o
+    }
+
+    private fun repondreDefi(sortie: OutputStream, r: Requete, ip: String) {
+        val q = lireJson(r)
+        val id = q.optString("id")
+        if (!ID_PROFIL.matches(id)) return json(sortie, JSONObject().put("erreur", "Identifiant invalide."), 400)
+        val d = defiDuJour()
+        val choix = q.optInt("choix", -1)
+        if (d.optString("question").isEmpty()) return json(sortie, JSONObject().put("erreur", "Pas de défi aujourd'hui."), 404)
+        if (choix !in 0 until (d.optJSONArray("choix")?.length() ?: 0)) return json(sortie, JSONObject().put("erreur", "Choix invalide."), 400)
+        val pseudo = pseudoPropre(q.optString("pseudo"))
+        synchronized(verrouEchanges) {
+            val e = etatDefi()
+            val reps = e.optJSONObject("reponses") ?: JSONObject()
+            val ips = e.optJSONObject("ips") ?: JSONObject()
+            if (!reps.has(id)) {
+                // Une réponse par téléphone et par jour (pas de seconde chance avec un autre identifiant).
+                if (ips.optInt(ip) >= 1) return json(sortie, JSONObject().put("erreur", "Ce téléphone a déjà répondu aujourd'hui."), 429)
+                val juste = choix == d.optInt("bonne")
+                var rang = 0
+                if (juste) {
+                    val g = e.optJSONArray("gagnants") ?: JSONArray()
+                    g.put(JSONObject().put("pseudo", pseudo.ifEmpty { "Anonyme" }).put("heure", System.currentTimeMillis()))
+                    e.put("gagnants", g)
+                    rang = g.length()
+                }
+                reps.put(id, JSONObject().put("choix", choix).put("juste", juste).put("rang", rang))
+                ips.put(ip, ips.optInt(ip) + 1)
+                e.put("reponses", reps).put("ips", ips)
+                ecrire(fichierDefiJour, e)
+                val profils = lireObjet(fichierProfils)
+                // 10 points si juste (+5 pour les 3 premiers), 2 pour avoir essayé.
+                ajouterPoints(profils, id, if (juste) 10 + (if (rang in 1..3) 5 else 0) else 2)
+                if (pseudo.isNotEmpty()) profils.optJSONObject(id)?.put("pseudo", pseudo)
+                ecrire(fichierProfils, profils)
+            }
+        }
+        val profils = lireObjet(fichierProfils)
+        json(sortie, JSONObject().put("ok", true).put("defi", defiPublic(id)).put("profil", profilPublic(profils, id)))
+    }
+
+    /** Le délégué remplace le défi du jour par le sien (aujourd'hui seulement). */
+    private fun defiPerso(q: JSONObject): JSONObject {
+        val question = texte(q.optString("question"), 400)
+        val choix = q.optJSONArray("choix") ?: JSONArray()
+        val propres = JSONArray()
+        for (i in 0 until minOf(4, choix.length())) texte(choix.optString(i), 160).takeIf { it.isNotEmpty() }?.let { propres.put(it) }
+        val bonne = q.optInt("bonne", -1)
+        if (question.length < 5 || propres.length() < 2 || bonne !in 0 until propres.length()) return JSONObject().put("erreur", "Une question, au moins deux réponses et la bonne réponse.")
+        synchronized(verrouEchanges) {
+            ecrire(fichierDefiPerso, JSONObject().put("date", jourIso()).put("question", question).put("choix", propres).put("bonne", bonne)
+                .put("explication", texte(q.optString("explication"), 600)).put("ue", texte(q.optString("ue"), 20)))
+            // Les réponses déjà données portaient sur l'autre défi : on repart de zéro.
+            fichierDefiJour.delete()
+        }
+        return JSONObject().put("ok", true)
+    }
+
+    private fun defiGestion(): JSONObject {
+        val d = defiDuJour()
+        val e = etatDefi()
+        return JSONObject(d.toString()).put("participants", e.optJSONObject("reponses")?.length() ?: 0)
+            .put("trouve", e.optJSONArray("gagnants")?.length() ?: 0)
+            .put("perso", lireObjet(fichierDefiPerso).optString("date") == jourIso())
     }
 
     // ── Star du jour : celui qui fête son anniversaire publie ses photos ;

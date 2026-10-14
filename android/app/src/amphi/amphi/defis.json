@@ -1,0 +1,542 @@
+[
+ {
+  "ue": "PHY1520",
+  "question": "Particule dans un puits infini de largeur L : les énergies Eₙ sont proportionnelles à…",
+  "choix": [
+   "n",
+   "n²",
+   "√n",
+   "1/n²"
+  ],
+  "bonne": 1,
+  "explication": "Eₙ = n²π²ħ²/(2mL²) : elles croissent comme n²."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Le commutateur [x̂, p̂] vaut…",
+  "choix": [
+   "0",
+   "iħ",
+   "−iħ",
+   "ħ"
+  ],
+  "bonne": 1,
+  "explication": "Relation canonique : [x̂, p̂] = iħ. C'est l'origine de l'incertitude de Heisenberg."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Énergie de l'état fondamental de l'oscillateur harmonique quantique :",
+  "choix": [
+   "0",
+   "ħω",
+   "ħω/2",
+   "2ħω"
+  ],
+  "bonne": 2,
+  "explication": "Eₙ = ħω(n + ½) : même au repos (n = 0), il reste ħω/2, l'énergie de point zéro."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Relation d'incertitude position-impulsion :",
+  "choix": [
+   "Δx·Δp ≥ ħ/2",
+   "Δx·Δp ≤ ħ",
+   "Δx·Δp = 0",
+   "Δx/Δp ≥ ħ"
+  ],
+  "bonne": 0,
+  "explication": "Δx·Δp ≥ ħ/2 : on ne peut pas connaître les deux à la fois avec une précision infinie."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Énergie du niveau n de l'atome d'hydrogène :",
+  "choix": [
+   "−13,6 eV × n²",
+   "−13,6 eV / n²",
+   "−13,6 eV / n",
+   "+13,6 eV / n²"
+  ],
+  "bonne": 1,
+  "explication": "Eₙ = −13,6 eV / n² : l'énergie d'ionisation depuis n = 1 vaut 13,6 eV."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Un opérateur hermitien (observable) a des valeurs propres…",
+  "choix": [
+   "complexes",
+   "imaginaires pures",
+   "réelles",
+   "toujours nulles"
+  ],
+  "bonne": 2,
+  "explication": "Les observables sont hermitiennes : leurs valeurs propres, résultats de mesure, sont réelles."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "La probabilité de trouver la particule entre x et x + dx vaut…",
+  "choix": [
+   "ψ(x)dx",
+   "|ψ(x)|²dx",
+   "ψ²(x)",
+   "|ψ(x)|dx"
+  ],
+  "bonne": 1,
+  "explication": "Interprétation de Born : la densité de probabilité est |ψ(x)|²."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Les valeurs propres de L̂² sont…",
+  "choix": [
+   "ħ²l²",
+   "ħ²l(l+1)",
+   "ħl",
+   "ħ²(l+1)"
+  ],
+  "bonne": 1,
+  "explication": "L̂² a pour valeurs propres ħ²l(l+1), et L̂z a pour valeurs propres mħ avec −l ≤ m ≤ l."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Fonction de partition canonique :",
+  "choix": [
+   "Z = Σ e^(−βEᵢ)",
+   "Z = Σ e^(βEᵢ)",
+   "Z = Σ Eᵢ e^(−βEᵢ)",
+   "Z = Π e^(−βEᵢ)"
+  ],
+  "bonne": 0,
+  "explication": "Z = Σ e^(−βEᵢ) avec β = 1/(k_B T). Toute la thermodynamique s'en déduit."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Énergie libre F à partir de Z :",
+  "choix": [
+   "F = k_B T ln Z",
+   "F = −k_B T ln Z",
+   "F = −ln Z / (k_B T)",
+   "F = Z / (k_B T)"
+  ],
+  "bonne": 1,
+  "explication": "F = −k_B T ln Z."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Entropie de Boltzmann :",
+  "choix": [
+   "S = k_B ln Ω",
+   "S = Ω ln k_B",
+   "S = −k_B / Ω",
+   "S = k_B Ω"
+  ],
+  "bonne": 0,
+  "explication": "S = k_B ln Ω, où Ω est le nombre de micro-états accessibles."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Équipartition : énergie moyenne par terme quadratique de l'énergie :",
+  "choix": [
+   "k_B T",
+   "k_B T / 2",
+   "3k_B T / 2",
+   "2k_B T"
+  ],
+  "bonne": 1,
+  "explication": "½ k_B T par terme quadratique : un gaz parfait monoatomique a donc 3/2 k_B T par atome."
+ },
+ {
+  "ue": "PHY1520",
+  "question": "Les électrons (fermions) obéissent à la statistique de…",
+  "choix": [
+   "Maxwell-Boltzmann",
+   "Bose-Einstein",
+   "Fermi-Dirac",
+   "Planck"
+  ],
+  "bonne": 2,
+  "explication": "Fermions : Fermi-Dirac, f(E) = 1/(e^((E−μ)/k_BT) + 1). Deux fermions ne peuvent pas occuper le même état (Pauli)."
+ },
+ {
+  "ue": "PHY1521",
+  "question": "L'équation ∂u/∂t = D ∂²u/∂x² est l'équation…",
+  "choix": [
+   "d'onde",
+   "de la chaleur (diffusion)",
+   "de Laplace",
+   "de Schrödinger stationnaire"
+  ],
+  "bonne": 1,
+  "explication": "Dérivée première en temps, seconde en espace : c'est la diffusion (chaleur)."
+ },
+ {
+  "ue": "PHY1521",
+  "question": "L'équation de Laplace Δu = 0 est de type…",
+  "choix": [
+   "hyperbolique",
+   "parabolique",
+   "elliptique",
+   "du premier ordre"
+  ],
+  "bonne": 2,
+  "explication": "Laplace est elliptique, la chaleur parabolique, l'équation d'onde hyperbolique."
+ },
+ {
+  "ue": "PHY1521",
+  "question": "Pour n entier, Γ(n + 1) vaut…",
+  "choix": [
+   "n",
+   "n!",
+   "(n + 1)!",
+   "2ⁿ"
+  ],
+  "bonne": 1,
+  "explication": "Γ(n + 1) = n! : la fonction Gamma prolonge la factorielle."
+ },
+ {
+  "ue": "PHY1521",
+  "question": "Γ(1/2) vaut…",
+  "choix": [
+   "1",
+   "π",
+   "√π",
+   "1/2"
+  ],
+  "bonne": 2,
+  "explication": "Γ(½) = √π, lié à l'intégrale de Gauss ∫ e^(−x²) dx = √π."
+ },
+ {
+  "ue": "PHY1521",
+  "question": "Les polynômes de Legendre apparaissent en résolvant Laplace en coordonnées…",
+  "choix": [
+   "cartésiennes",
+   "cylindriques",
+   "sphériques",
+   "polaires 2D uniquement"
+  ],
+  "bonne": 2,
+  "explication": "En sphériques, la partie en θ donne l'équation de Legendre."
+ },
+ {
+  "ue": "PHY1521",
+  "question": "Les fonctions de Bessel apparaissent naturellement en coordonnées…",
+  "choix": [
+   "cylindriques",
+   "sphériques uniquement",
+   "cartésiennes",
+   "dans aucun système"
+  ],
+  "bonne": 0,
+  "explication": "En cylindriques, la partie radiale donne l'équation de Bessel x²y'' + xy' + (x² − ν²)y = 0."
+ },
+ {
+  "ue": "PHY1522",
+  "question": "Nombre d'atomes par maille conventionnelle cubique à faces centrées (CFC) :",
+  "choix": [
+   "1",
+   "2",
+   "4",
+   "8"
+  ],
+  "bonne": 2,
+  "explication": "8 sommets × 1/8 + 6 faces × 1/2 = 4."
+ },
+ {
+  "ue": "PHY1522",
+  "question": "Nombre d'atomes par maille cubique centrée (CC) :",
+  "choix": [
+   "1",
+   "2",
+   "4",
+   "9"
+  ],
+  "bonne": 1,
+  "explication": "8 sommets × 1/8 + 1 au centre = 2."
+ },
+ {
+  "ue": "PHY1522",
+  "question": "Dans un semi-conducteur intrinsèque, quand la température augmente, la conductivité…",
+  "choix": [
+   "diminue",
+   "augmente",
+   "reste constante",
+   "s'annule"
+  ],
+  "bonne": 1,
+  "explication": "Plus d'électrons franchissent le gap : nᵢ ∝ T^(3/2) e^(−E_g/2k_BT) augmente, donc la conductivité aussi."
+ },
+ {
+  "ue": "PHY1522",
+  "question": "Les quanta de vibration du réseau cristallin s'appellent…",
+  "choix": [
+   "photons",
+   "phonons",
+   "magnons",
+   "excitons"
+  ],
+  "bonne": 1,
+  "explication": "Les phonons sont les quanta des vibrations du réseau."
+ },
+ {
+  "ue": "PHY1522",
+  "question": "Loi de Bragg :",
+  "choix": [
+   "2d sin θ = nλ",
+   "d cos θ = nλ",
+   "2d = nλ sin θ",
+   "d sin θ = 2nλ"
+  ],
+  "bonne": 0,
+  "explication": "2d sin θ = nλ : interférences constructives sur les plans réticulaires."
+ },
+ {
+  "ue": "PHY1522",
+  "question": "À T = 0, le niveau de Fermi sépare…",
+  "choix": [
+   "les états occupés des états vides",
+   "la bande de valence du noyau",
+   "les protons des neutrons",
+   "les phonons des photons"
+  ],
+  "bonne": 0,
+  "explication": "À 0 K, tous les états sous E_F sont occupés et tous ceux au-dessus sont vides."
+ },
+ {
+  "ue": "PHY1523",
+  "question": "Vitesse d'une onde sur une corde de tension T et de masse linéique μ :",
+  "choix": [
+   "√(T/μ)",
+   "T/μ",
+   "√(μ/T)",
+   "Tμ"
+  ],
+  "bonne": 0,
+  "explication": "v = √(T/μ) : corde plus tendue → plus rapide ; plus lourde → plus lente."
+ },
+ {
+  "ue": "PHY1523",
+  "question": "Un oscillateur faiblement amorti et forcé résonne près de…",
+  "choix": [
+   "ω = 0",
+   "sa pulsation propre ω₀",
+   "2ω₀",
+   "ω₀/2"
+  ],
+  "bonne": 1,
+  "explication": "À faible amortissement, la résonance en amplitude est très proche de ω₀."
+ },
+ {
+  "ue": "PHY1523",
+  "question": "La vitesse de groupe s'écrit…",
+  "choix": [
+   "v_g = ω/k",
+   "v_g = dω/dk",
+   "v_g = k/ω",
+   "v_g = d²ω/dk²"
+  ],
+  "bonne": 1,
+  "explication": "v_g = dω/dk transporte l'énergie ; v_φ = ω/k est la vitesse de phase."
+ },
+ {
+  "ue": "PHY1523",
+  "question": "Corde fixée aux deux bouts, de longueur L : longueurs d'onde possibles :",
+  "choix": [
+   "λ = L/n",
+   "λ = 2L/n",
+   "λ = nL",
+   "λ = 4L/n"
+  ],
+  "bonne": 1,
+  "explication": "Il faut un nombre entier de demi-longueurs d'onde : L = nλ/2."
+ },
+ {
+  "ue": "PHY1523",
+  "question": "Un facteur de qualité Q élevé signifie…",
+  "choix": [
+   "un amortissement fort",
+   "un amortissement faible et une résonance aiguë",
+   "aucune oscillation",
+   "une fréquence nulle"
+  ],
+  "bonne": 1,
+  "explication": "Q = ω₀/Δω : grand Q → pic de résonance étroit, peu de pertes."
+ },
+ {
+  "ue": "PHY1524",
+  "question": "Le lagrangien s'écrit…",
+  "choix": [
+   "L = T + V",
+   "L = T − V",
+   "L = V − T",
+   "L = T·V"
+  ],
+  "bonne": 1,
+  "explication": "L = T − V (énergie cinétique moins énergie potentielle)."
+ },
+ {
+  "ue": "PHY1524",
+  "question": "Équation de Lagrange :",
+  "choix": [
+   "d/dt(∂L/∂q̇) − ∂L/∂q = 0",
+   "∂L/∂q̇ + ∂L/∂q = 0",
+   "d/dt(∂L/∂q) = ∂L/∂q̇",
+   "∂²L/∂q² = 0"
+  ],
+  "bonne": 0,
+  "explication": "d/dt(∂L/∂q̇) − ∂L/∂q = 0, pour chaque coordonnée généralisée q."
+ },
+ {
+  "ue": "PHY1524",
+  "question": "Si L ne dépend pas d'une coordonnée q (coordonnée cyclique), alors…",
+  "choix": [
+   "q reste constante",
+   "son moment conjugué p = ∂L/∂q̇ se conserve",
+   "l'énergie est nulle",
+   "q̇ = 0"
+  ],
+  "bonne": 1,
+  "explication": "Coordonnée cyclique → moment conjugué conservé (cas simple du théorème de Noether)."
+ },
+ {
+  "ue": "PHY1524",
+  "question": "Équations de Hamilton :",
+  "choix": [
+   "q̇ = ∂H/∂p et ṗ = −∂H/∂q",
+   "q̇ = −∂H/∂p et ṗ = ∂H/∂q",
+   "q̇ = ∂H/∂q et ṗ = ∂H/∂p",
+   "q̇ = p et ṗ = q"
+  ],
+  "bonne": 0,
+  "explication": "q̇ = ∂H/∂p, ṗ = −∂H/∂q."
+ },
+ {
+  "ue": "PHY1524",
+  "question": "Le crochet de Poisson {q, p} vaut…",
+  "choix": [
+   "0",
+   "1",
+   "−1",
+   "ħ"
+  ],
+  "bonne": 1,
+  "explication": "{q, p} = 1 : c'est l'analogue classique de [x̂, p̂] = iħ."
+ },
+ {
+  "ue": "PHY1525",
+  "question": "Loi de Hooke en traction :",
+  "choix": [
+   "σ = E·ε",
+   "σ = ε/E",
+   "σ = E/ε",
+   "σ = ν·ε"
+  ],
+  "bonne": 0,
+  "explication": "σ = Eε, E étant le module d'Young."
+ },
+ {
+  "ue": "PHY1525",
+  "question": "Pour un matériau isotrope stable, le coefficient de Poisson ν est compris entre…",
+  "choix": [
+   "−1 et 0,5",
+   "0 et 1",
+   "1 et 2",
+   "−2 et −1"
+  ],
+  "bonne": 0,
+  "explication": "Thermodynamiquement −1 < ν < 0,5 ; ν = 0,5 correspond à un matériau incompressible."
+ },
+ {
+  "ue": "PHY1525",
+  "question": "Nombre de Reynolds :",
+  "choix": [
+   "Re = ρvL/η",
+   "Re = η/(ρvL)",
+   "Re = ρη/(vL)",
+   "Re = vL/ρ"
+  ],
+  "bonne": 0,
+  "explication": "Re = ρvL/η compare inertie et viscosité : grand Re → écoulement turbulent."
+ },
+ {
+  "ue": "PHY1525",
+  "question": "Pour un fluide incompressible, l'équation de continuité devient…",
+  "choix": [
+   "div v = 0",
+   "rot v = 0",
+   "∂ρ/∂t = 1",
+   "v = 0"
+  ],
+  "bonne": 0,
+  "explication": "ρ constant : ∂ρ/∂t + div(ρv) = 0 se réduit à div v = 0."
+ },
+ {
+  "ue": "PHY1525",
+  "question": "Bernoulli (fluide parfait, incompressible, stationnaire, sur une ligne de courant) :",
+  "choix": [
+   "P + ½ρv² + ρgz = constante",
+   "P − ½ρv² = constante",
+   "P + ρv + gz = constante",
+   "P·v = constante"
+  ],
+  "bonne": 0,
+  "explication": "P + ½ρv² + ρgz se conserve le long d'une ligne de courant."
+ },
+ {
+  "ue": "INF1526",
+  "question": "Méthode d'Euler explicite pour y' = f(t, y) :",
+  "choix": [
+   "yₙ₊₁ = yₙ + h f(tₙ, yₙ)",
+   "yₙ₊₁ = yₙ − h f(tₙ, yₙ)",
+   "yₙ₊₁ = h yₙ",
+   "yₙ₊₁ = f(tₙ)/h"
+  ],
+  "bonne": 0,
+  "explication": "On suit la tangente sur un pas h."
+ },
+ {
+  "ue": "INF1526",
+  "question": "L'erreur globale de la méthode d'Euler est d'ordre…",
+  "choix": [
+   "0",
+   "1 (proportionnelle à h)",
+   "2 (proportionnelle à h²)",
+   "4"
+  ],
+  "bonne": 1,
+  "explication": "Euler est d'ordre 1 : diviser h par 2 divise l'erreur par 2 environ."
+ },
+ {
+  "ue": "INF1526",
+  "question": "La méthode des trapèzes a une erreur globale d'ordre…",
+  "choix": [
+   "h",
+   "h²",
+   "h³",
+   "h⁴"
+  ],
+  "bonne": 1,
+  "explication": "Trapèzes : O(h²) ; Simpson : O(h⁴)."
+ },
+ {
+  "ue": "INF1526",
+  "question": "Méthode de Newton pour résoudre f(x) = 0 :",
+  "choix": [
+   "xₙ₊₁ = xₙ − f(xₙ)/f'(xₙ)",
+   "xₙ₊₁ = xₙ + f'(xₙ)/f(xₙ)",
+   "xₙ₊₁ = xₙ − f'(xₙ)",
+   "xₙ₊₁ = f(xₙ)/xₙ"
+  ],
+  "bonne": 0,
+  "explication": "On prend le zéro de la tangente ; la convergence est quadratique près de la solution."
+ },
+ {
+  "ue": "INF1526",
+  "question": "La méthode de Runge-Kutta classique (RK4) est d'ordre…",
+  "choix": [
+   "1",
+   "2",
+   "3",
+   "4"
+  ],
+  "bonne": 3,
+  "explication": "RK4 est d'ordre 4 : erreur globale en O(h⁴)."
+ }
+]
