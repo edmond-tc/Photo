@@ -584,6 +584,22 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun mamArreter() = MainAMain.arreter()
 
+        /** Rapport à envoyer (WhatsApp…) quand un transfert échoue : téléphone, autorisations, journal. */
+        @JavascriptInterface
+        fun mamRapport() {
+            val version = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" }
+            val texte = "Rapport Main à main — Envoyeur Kiosque $version\n" +
+                "Téléphone : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n" +
+                "Radios : ${etatRadios()}\n" +
+                "Capacités : ${try { MainAMain.capacites(this@MainActivity) } catch (e: Exception) { e.message }}\n\n" +
+                MainAMain.journal().ifEmpty { "(journal vide)" }
+            runOnUiThread {
+                try {
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, texte), "Envoyer le rapport"))
+                } catch (_: Exception) {}
+            }
+        }
+
         /** Ouvre un fichier reçu (ou l'installe, pour un .apk : Android demande confirmation). */
         @JavascriptInterface
         fun mamOuvrir(n: Int) {

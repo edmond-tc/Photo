@@ -150,8 +150,20 @@ object MainAMain {
     fun signaler(etat: String, remplir: JSONObject.() -> Unit = {}) {
         val e = JSONObject().put("type", "mam").put("etat", etat)
         e.remplir()
+        noter(e.toString())
         ecouteur?.invoke(e)
     }
+
+    // Journal des derniers événements : envoyé en un geste (« Envoyer le
+    // rapport ») quand un transfert échoue sur le téléphone de quelqu'un.
+    private val journal = java.util.ArrayDeque<String>()
+
+    fun noter(texte: String) = synchronized(journal) {
+        journal.addLast(java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.FRANCE).format(java.util.Date()) + " " + texte.take(400))
+        while (journal.size > 150) journal.removeFirst()
+    }
+
+    fun journal(): String = synchronized(journal) { journal.joinToString("\n") }
 
     // ───────────────────────────── Outils ─────────────────────────────
 

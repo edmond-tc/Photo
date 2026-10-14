@@ -376,6 +376,7 @@ p { margin: 0; }
       </div>
       <p class="aide">Astuce : au lieu de toucher, cognez doucement les deux téléphones l'un contre l'autre : <strong>« Tchin ! »</strong></p>
       <p class="aide" id="mam-message" hidden></p>
+      <button type="button" class="btn second" data-mam-rapport hidden>📤 Envoyer le rapport du problème</button>
       <button type="button" class="btn second" id="mam-donner" style="margin-top:auto">🎁 Donner l'application à un ami</button>
     </div>
   </section>
@@ -402,6 +403,7 @@ p { margin: 0; }
       </div>
       <div class="mam-fichiers" id="mam-pairs"></div>
       <div class="mam-fichiers" id="mam-recus"></div>
+      <button type="button" class="btn second" data-mam-rapport hidden>📤 Envoyer le rapport du problème</button>
     </div>
     <div class="bas"><button class="btn second" id="mam-arreter">Arrêter</button></div>
   </section>
@@ -1801,7 +1803,8 @@ setTimeout(function () {
           break;
         }
         etatMam(e.message || "La liaison a échoué. Réessayez.", "erreur");
-        $("#mam-conseil").textContent = "";
+        $("#mam-conseil").textContent = "Le problème continue ? Touchez « Envoyer le rapport du problème » et envoyez-le à l'équipe sur WhatsApp.";
+        montrerRapport();
         signal("echec", e.message || "La liaison a échoué.", [200, 100, 200]);
         finSession();
         if (courant !== "mam-session") messageMam(e.message);
@@ -1810,9 +1813,15 @@ setTimeout(function () {
         finSession();
         if (courant === "mam-session") aller(mam.role === "envoi" ? "mam-envoi" : "mam");
         break;
-      case "ouverture": messageMam(e.message); etatMam(e.message || "", "erreur"); break;
+      case "ouverture": messageMam(e.message); etatMam(e.message || "", "erreur"); montrerRapport(); break;
     }
   }
+  // Après un échec : le rapport (téléphone, autorisations, journal) part en un geste.
+  function montrerRapport() {
+    if (!app || typeof app.mamRapport !== "function") return;
+    document.querySelectorAll("[data-mam-rapport]").forEach((b) => { b.hidden = false; });
+  }
+  document.querySelectorAll("[data-mam-rapport]").forEach((b) => b.addEventListener("click", () => { try { app.mamRapport(); } catch (_) {} }));
   $("#mam-btn-recevoir").addEventListener("click", recevoirMam);
   $("#mam-envoyer").addEventListener("click", envoyerMam);
   $("#mam-choisir").addEventListener("click", () => { try { app.mamChoisir(); } catch (_) {} });

@@ -13,6 +13,8 @@
 "Français"
 ],
 "textes": {
+"📤 Envoyer le rapport du problème": "📤 Send the problem report",
+"Le problème continue ? Touchez « Envoyer le rapport du problème » et envoyez-le à l'équipe sur WhatsApp.": "Still not working? Tap “Send the problem report” and send it to the team on WhatsApp.",
 "(WhatsApp a besoin de vos données mobiles).": "(WhatsApp needs your mobile data).",
 "(si elles sont allumées) : tirez le haut de l'écran vers le bas, touchez": "(if it is on): pull down from the top of the screen, tap",
 "(vidéos, musique, applications, documents) au téléphone d'à côté. Sans internet, sans forfait, sans rien scanner.": "(videos, music, apps, documents) to the phone next to you. No internet, no data plan, nothing to scan.",
