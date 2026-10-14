@@ -275,6 +275,7 @@ class AmphiService : Service() {
                     r.methode == "POST" && r.chemin == "/etude" -> etude(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/etude/fini" -> etudeFinie(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/profil/fiches" -> pointsFiches(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/signaler" -> signaler(sortie, r, s.inetAddress.hostAddress ?: "")
                     // ── Ressources : corrigés, merci, entraide ──
                     r.methode == "POST" && r.chemin == "/corrige" -> deposerCorrige(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.matches(Regex("^/corrige/[a-z0-9]{20}/utile$")) -> voterCorrige(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
@@ -312,6 +313,7 @@ class AmphiService : Service() {
                     }
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/publication/[a-z0-9]{6,30}$")) -> json(sortie, modererPublication(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin == "/gerer/defi" -> json(sortie, defiPerso(lireJson(r)))
+                    r.methode == "POST" && r.chemin.matches(Regex("^/gerer/doclibre/[a-z0-9]{8,40}$")) -> json(sortie, modererDocLibre(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "GET" && r.chemin == "/gerer/quiz" -> json(sortie, quizGestion())
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/quiz/(creer|suivant|terminer|fermer)$")) -> json(sortie, piloterQuiz(r.chemin.substringAfterLast("/"), lireJson(r)))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/corrige/[a-z0-9]{20}$")) -> json(sortie, modererCorrige(r.chemin.split("/")[3], lireJson(r).optString("action")))
@@ -374,6 +376,12 @@ class AmphiService : Service() {
      * sans les annonces ni les publicités arrivées à leur date de fin. */
     private fun contenuPublic(): JSONObject {
         val c = lireContenu()
+        val masques = lireTableau(fichierMasques).let { m -> (0 until m.length()).map { m.optString(it) }.toSet() }
+        val docs = JSONArray()
+        listOf(c.optJSONArray("documents") ?: JSONArray(), lireTableau(fichierDocsLibres)).forEach { t ->
+            for (i in 0 until t.length()) t.optJSONObject(i)?.takeIf { it.optString("id") !in masques }?.let { docs.put(it) }
+        }
+        c.put("documents", docs)
         c.optJSONObject("programme")?.remove("brut")
         c.optJSONObject("programmes")?.let { ps -> ps.keys().asSequence().toList().forEach { k -> ps.optJSONObject(k)?.remove("brut") } }
         val maintenant = System.currentTimeMillis()
@@ -426,6 +434,7 @@ class AmphiService : Service() {
         c.optJSONObject("accueil")?.optString("photo")?.takeIf { it.isNotEmpty() }?.let { utilises.add(it) }
         ajouter(lireTableau(fichierPublications), "image")
         ajouter(lireTableau(fichierCorriges), "cid")
+        ajouter(lireTableau(fichierDocsLibres), "id")
         val st = lireTableau(fichierStars)
         for (i in 0 until st.length()) st.optJSONObject(i)?.optJSONArray("photos")?.let { ph -> for (k in 0 until ph.length()) utilises.add(ph.optString(k)) }
         val maintenant = System.currentTimeMillis()
@@ -776,6 +785,24 @@ class AmphiService : Service() {
         val f = File(dossierPropositions, id)
         val taille = recevoirVers(f, r, 200_000_000L)
             ?: return json(sortie, JSONObject().put("erreur", "Fichier trop gros (200 Mo au plus) ou téléphone plein."), 413)
+        val pid = (r.query["pid"] ?: "").takeIf { ID_PROFIL.matches(it) } ?: ""
+        if (publicationLibre()) {
+            // Publication libre : le document rejoint tout de suite la bibliothèque
+            // (liste à part, pour ne jamais être écrasé par l'enregistrement de l'éditeur).
+            val docId = java.util.UUID.randomUUID().toString().replace("-", "").take(20)
+            if (!f.renameTo(File(dossierFichiers, docId))) return json(sortie, JSONObject().put("erreur", "Échec de l'enregistrement."), 500)
+            val nom = nomPropre(r.query["nom"])
+            synchronized(verrouEchanges) {
+                val t = lireTableau(fichierDocsLibres)
+                t.put(JSONObject().put("id", docId).put("nom", nom).put("titre", texte(r.query["titre"], 120).ifEmpty { nom })
+                    .put("type", typePropre(r.query["type"])).put("taille", taille).put("categorie", "Notes d'étudiants")
+                    .put("matiere", texte(r.query["matiere"], 60)).put("filiere", "").put("date", System.currentTimeMillis())
+                    .put("auteur", texte(r.query["auteur"], 40)).put("auteurId", pid).put("libre", true))
+                ecrire(fichierDocsLibres, t)
+                if (pid.isNotEmpty()) { val profils = lireObjet(fichierProfils); ajouterPoints(profils, pid, 3); ecrire(fichierProfils, profils) }
+            }
+            return json(sortie, JSONObject().put("ok", true).put("statut", "publie"))
+        }
         synchronized(verrouEchanges) {
             val t = lireTableau(fichierPropositions)
             t.put(JSONObject()
@@ -912,7 +939,8 @@ class AmphiService : Service() {
         val pubsSansIp = JSONArray()
         for (i in 0 until pubs.length()) { val o = JSONObject(pubs.getJSONObject(i).toString()); o.remove("ip"); pubsSansIp.put(o) }
         return JSONObject().put("propositions", lireTableau(fichierPropositions)).put("questions", sansIp).put("resultats", resultats())
-            .put("publications", pubsSansIp).put("defi", defiGestion()).put("corriges", corrigesPublics(true)).put("honneur", honneur(lireObjet(fichierProfils))).put("stars", starsGestion()).put("participations", participations("")).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
+            .put("publications", pubsSansIp).put("defi", defiGestion()).put("corriges", corrigesPublics(true))
+            .put("docsLibres", lireTableau(fichierDocsLibres)).put("masques", lireTableau(fichierMasques)).put("honneur", honneur(lireObjet(fichierProfils))).put("stars", starsGestion()).put("participations", participations("")).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
     }
 
     private fun modererQuestion(id: String, q: JSONObject): JSONObject = synchronized(verrouEchanges) {
@@ -960,6 +988,7 @@ class AmphiService : Service() {
         if (!texteCorrect(texteMsg)) return json(sortie, JSONObject().put("erreur", "Message refusé : restez correct."), 400)
         if (sorte == "dedicace" && NUMERO.containsMatchIn(texteMsg)) return json(sortie, JSONObject().put("erreur", "Pas de numéro de téléphone dans une dédicace."), 400)
         val id = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+        val libre = publicationLibre()
         var image = ""
         val taille = r.entetes["content-length"]?.toLongOrNull() ?: 0
         if (taille > 0) {
@@ -974,11 +1003,11 @@ class AmphiService : Service() {
                 .put("prix", texte(r.query["prix"], 30)).put("contact", texte(r.query["contact"], 60))
                 .put("filiere", texte(r.query["filiere"], 40)).put("image", image)
                 .put("ue", texte(r.query["ue"], 60)).put("quartier", texte(r.query["quartier"], 40))
-                .put("statut", "attente").put("date", System.currentTimeMillis()).put("ip", ip))
+                .put("statut", if (libre) "publie" else "attente").put("date", System.currentTimeMillis()).put("ip", ip))
             while (t.length() > 400) t.remove(0)
             ecrire(fichierPublications, t)
         }
-        json(sortie, JSONObject().put("ok", true))
+        json(sortie, JSONObject().put("ok", true).put("statut", if (libre) "publie" else "attente"))
     }
 
     private fun publicationsPubliques(): JSONArray {
@@ -1008,7 +1037,7 @@ class AmphiService : Service() {
                 val o = t.getJSONObject(i)
                 if (o.optString("id") == id) {
                     when (action) {
-                        "publier" -> o.put("statut", "publie")
+                        "publier" -> { o.put("statut", "publie"); oublierSignalement("publication:$id") }
                         "clore" -> o.put("statut", "clos").put("date", System.currentTimeMillis())
                         "refuser", "supprimer" -> {
                             o.optString("image").takeIf { it.isNotEmpty() }?.let { File(dossierFichiers, it).delete() }
@@ -1349,6 +1378,82 @@ class AmphiService : Service() {
         json(sortie, JSONObject().put("ok", true).put("points", 2))
     }
 
+    // ── Publication libre : chacun publie directement ; la promo signale,
+    // et au 3e signalement le contenu est masqué en attendant l'éditeur. ──
+
+    private val fichierDocsLibres get() = File(dossier, "documents-libres.json")
+    private val fichierMasques get() = File(dossier, "masques.json")
+    private val fichierSignalements get() = File(dossier, "signalements.json")
+
+    private fun publicationLibre(): Boolean = lireContenu().optJSONObject("reglages")?.optBoolean("publicationLibre", true) ?: true
+
+    private fun signaler(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "signaler", 20, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Attendez un peu."), 429)
+        val q = lireJson(r)
+        val type = q.optString("type")
+        val id = q.optString("id")
+        if (type !in setOf("publication", "star", "corrige", "document", "reponse") || !id.matches(Regex("^[a-z0-9]{6,40}$")))
+            return json(sortie, JSONObject().put("erreur", "Signalement invalide."), 400)
+        val n: Int
+        synchronized(verrouEchanges) {
+            val sg = lireObjet(fichierSignalements)
+            val cle = "$type:$id"
+            val l = sg.optJSONArray(cle) ?: JSONArray()
+            if ((0 until l.length()).none { l.optString(it) == ip }) l.put(ip)
+            sg.put(cle, l); ecrire(fichierSignalements, sg)
+            n = l.length()
+            if (n >= 3) masquer(type, id)
+        }
+        json(sortie, JSONObject().put("ok", true).put("n", n))
+    }
+
+    /** Masque un contenu signalé 3 fois (à appeler sous verrouEchanges). */
+    private fun masquer(type: String, id: String) {
+        fun statut(f: File, cle: String) {
+            val t = lireTableau(f)
+            for (i in 0 until t.length()) t.optJSONObject(i)?.takeIf { it.optString(cle) == id }?.put("statut", "signale")
+            ecrire(f, t)
+        }
+        when (type) {
+            "publication" -> statut(fichierPublications, "id")
+            "star" -> statut(fichierStars, "id")
+            "corrige" -> statut(fichierCorriges, "cid")
+            "document" -> { val m = lireTableau(fichierMasques); if ((0 until m.length()).none { m.optString(it) == id }) { m.put(id); ecrire(fichierMasques, m) } }
+            "reponse" -> {
+                val t = lireTableau(fichierQuestions)
+                for (i in 0 until t.length()) t.optJSONObject(i)?.optJSONArray("reponses")?.let { rs -> for (k in 0 until rs.length()) rs.optJSONObject(k)?.takeIf { it.optString("rid") == id }?.put("masquee", true) }
+                ecrire(fichierQuestions, t)
+            }
+        }
+    }
+
+    private fun oublierSignalement(cle: String) {
+        val sg = lireObjet(fichierSignalements)
+        if (sg.has(cle)) { sg.remove(cle); ecrire(fichierSignalements, sg) }
+    }
+
+    /** Documents publiés directement : retirer, ou rétablir un document masqué. */
+    private fun modererDocLibre(id: String, action: String): JSONObject {
+        synchronized(verrouEchanges) {
+            when (action) {
+                "retablir" -> {
+                    val m = lireTableau(fichierMasques); val g = JSONArray()
+                    for (i in 0 until m.length()) if (m.optString(i) != id) g.put(m.optString(i))
+                    ecrire(fichierMasques, g); oublierSignalement("document:$id")
+                }
+                "supprimer" -> {
+                    val t = lireTableau(fichierDocsLibres); val g = JSONArray()
+                    for (i in 0 until t.length()) t.optJSONObject(i)?.let { if (it.optString("id") == id) File(dossierFichiers, id).delete() else g.put(it) }
+                    ecrire(fichierDocsLibres, g)
+                    val m = lireTableau(fichierMasques); val g2 = JSONArray()
+                    for (i in 0 until m.length()) if (m.optString(i) != id) g2.put(m.optString(i))
+                    ecrire(fichierMasques, g2)
+                }
+            }
+        }
+        return JSONObject().put("ok", true)
+    }
+
     // ── Bataille des corrigés : sous chaque document, les corrigés des
     // étudiants (validés par l'éditeur), votés « utile » par la promo. ─────
 
@@ -1356,8 +1461,9 @@ class AmphiService : Service() {
     private val fichierMercis get() = File(dossier, "mercis.json")
 
     private fun documentConnu(id: String): JSONObject? {
-        val d = lireContenu().optJSONArray("documents") ?: return null
-        for (i in 0 until d.length()) if (d.optJSONObject(i)?.optString("id") == id) return d.getJSONObject(i)
+        listOf(lireContenu().optJSONArray("documents") ?: JSONArray(), lireTableau(fichierDocsLibres)).forEach { d ->
+            for (i in 0 until d.length()) if (d.optJSONObject(i)?.optString("id") == id) return d.getJSONObject(i)
+        }
         return null
     }
 
@@ -1366,6 +1472,7 @@ class AmphiService : Service() {
         val doc = r.query["doc"] ?: ""
         if (!idValide(doc) || documentConnu(doc) == null) return json(sortie, JSONObject().put("erreur", "Document introuvable."), 404)
         val cid = java.util.UUID.randomUUID().toString().replace("-", "").take(20)
+        val libre = publicationLibre()
         val f = File(dossierFichiers, cid)
         val taille = recevoirVers(f, r, 40_000_000L) ?: return json(sortie, JSONObject().put("erreur", "Fichier trop gros (40 Mo au plus) ou téléphone plein."), 413)
         synchronized(verrouEchanges) {
@@ -1373,10 +1480,10 @@ class AmphiService : Service() {
             t.put(JSONObject().put("cid", cid).put("doc", doc).put("auteurId", (r.query["pid"] ?: "").takeIf { ID_PROFIL.matches(it) } ?: "")
                 .put("pseudo", pseudoPropre(r.query["pseudo"])).put("nom", nomPropre(r.query["nom"])).put("type", typePropre(r.query["type"]))
                 .put("note", texte(r.query["note"], 120)).put("taille", taille).put("date", System.currentTimeMillis())
-                .put("statut", "attente").put("votes", 0).put("votants", JSONArray()))
+                .put("statut", if (libre) "publie" else "attente").put("votes", 0).put("votants", JSONArray()))
             ecrire(fichierCorriges, t)
         }
-        json(sortie, JSONObject().put("ok", true))
+        json(sortie, JSONObject().put("ok", true).put("statut", if (libre) "publie" else "attente"))
     }
 
     private fun voterCorrige(sortie: OutputStream, r: Requete, cid: String, ip: String) {
@@ -1421,10 +1528,15 @@ class AmphiService : Service() {
                 if (o.optString("cid") == cid) {
                     when (action) {
                         "publier" -> if (o.optString("statut") != "publie") {
+                            val etaitSignale = o.optString("statut") == "signale"
                             o.put("statut", "publie")
-                            val profils = lireObjet(fichierProfils)
-                            ajouterPoints(profils, o.optString("auteurId"), 20); ajouterContribution(profils, o.optString("auteurId"))
-                            ecrire(fichierProfils, profils)
+                            oublierSignalement("corrige:$cid")
+                            // +20 points quand l'éditeur valide (pas en publication libre).
+                            if (!etaitSignale && !publicationLibre()) {
+                                val profils = lireObjet(fichierProfils)
+                                ajouterPoints(profils, o.optString("auteurId"), 20); ajouterContribution(profils, o.optString("auteurId"))
+                                ecrire(fichierProfils, profils)
+                            }
                         }
                         "refuser", "supprimer" -> { File(dossierFichiers, cid).delete(); continue }
                     }
@@ -1468,7 +1580,7 @@ class AmphiService : Service() {
     private fun reponsesPubliques(q: JSONObject): JSONArray {
         val rs = q.optJSONArray("reponses") ?: return JSONArray()
         val r = JSONArray()
-        for (k in 0 until rs.length()) rs.optJSONObject(k)?.let { o -> val p = JSONObject(o.toString()); p.remove("votants"); p.remove("auteurId"); p.remove("ip"); r.put(p) }
+        for (k in 0 until rs.length()) rs.optJSONObject(k)?.takeIf { !it.optBoolean("masquee") }?.let { o -> val p = JSONObject(o.toString()); p.remove("votants"); p.remove("auteurId"); p.remove("ip"); r.put(p) }
         return r
     }
 
@@ -1584,11 +1696,11 @@ class AmphiService : Service() {
             }
             gardees.put(JSONObject().put("id", id).put("nom", nom).put("message", message)
                 .put("filiere", texte(q.optString("filiere"), 40)).put("date", System.currentTimeMillis())
-                .put("statut", "attente").put("photos", JSONArray()).put("voeux", JSONArray()).put("nbVoeux", 0)
+                .put("statut", if (publicationLibre()) "publie" else "attente").put("photos", JSONArray()).put("voeux", JSONArray()).put("nbVoeux", 0)
                 .put("jeton", jeton).put("ip", ip))
             ecrire(fichierStars, gardees)
         }
-        json(sortie, JSONObject().put("ok", true).put("id", id).put("jeton", jeton))
+        json(sortie, JSONObject().put("ok", true).put("id", id).put("jeton", jeton).put("statut", if (publicationLibre()) "publie" else "attente"))
     }
 
     private fun supprimerPhotos(o: JSONObject) {
@@ -1679,7 +1791,7 @@ class AmphiService : Service() {
                 val o = t.getJSONObject(i)
                 if (o.optString("id") == id) {
                     when (action) {
-                        "publier" -> o.put("statut", "publie")
+                        "publier" -> { o.put("statut", "publie"); oublierSignalement("star:$id") }
                         "refuser", "supprimer" -> { supprimerPhotos(o); continue }
                     }
                 }

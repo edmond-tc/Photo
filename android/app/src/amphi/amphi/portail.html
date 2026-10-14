@@ -107,6 +107,9 @@
   .doc-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 10px 74px; }
   .doc-actions button { border: 1px solid var(--bordure); background: #fff; color: var(--nuit); border-radius: 999px; padding: 4px 10px; font: 600 .8rem var(--police); cursor: pointer; }
   .doc-actions button.fait { background: var(--ciel); border-color: var(--bleu); }
+  button.signal { border: 0; background: none; color: var(--discret); font: 600 .78rem var(--police); cursor: pointer; padding: 2px 6px; opacity: .75; align-self: flex-start; }
+  .doc-actions button.signal { border: 0; }
+  .star button.signal { color: #fff; }
   .doc-panneau { margin: 0 12px 12px; padding: 12px; border-radius: 12px; background: var(--fond); display: flex; flex-direction: column; gap: 8px; }
   .doc-panneau .nom { font-weight: 700; font-size: .9rem; color: var(--nuit); }
   .blanche { padding-bottom: 8px; border-bottom: 1px dashed var(--bordure); }
@@ -300,7 +303,6 @@
   /* Tout en haut de la page : la première chose qu'on voit. */
   .stars-haut { display: flex; flex-direction: column; }
   .stars-haut .star { border-radius: 0; box-shadow: none; animation: none; }
-  .stars-haut .star .corps { padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
   .star .corps { position: relative; z-index: 1; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .star .etiquette { color: #ffd76a; }
   .star h3 { font-family: var(--titre); font-size: 1.45rem; line-height: 1.15; text-wrap: balance; color: #fff; text-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
@@ -330,6 +332,10 @@
   #st-toile { display: block; height: min(58vh, 480px); width: auto; max-width: 100%; margin: 10px auto; border-radius: 12px; box-shadow: 0 6px 24px rgba(16, 24, 40, .25); touch-action: pan-y pinch-zoom; }
   #st-toile.cadrage { touch-action: none; cursor: grab; outline: 3px dashed var(--bleu); outline-offset: 3px; }
   .studio-outils { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .galerie-decors { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; margin-top: 8px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+  .galerie-decors button { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px; border: 2px solid transparent; border-radius: 12px; background: none; cursor: pointer; scroll-snap-align: start; font: 600 .72rem var(--police); color: var(--nuit); }
+  .galerie-decors button canvas { width: 72px; height: 128px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
+  .galerie-decors button.choisie { border-color: var(--bleu); background: var(--ciel); }
   .studio-zoom { display: flex; align-items: center; gap: 10px; font-size: .85rem; color: var(--discret); }
   .studio-zoom input { flex: 1; }
   .puces img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 4px; }
@@ -371,7 +377,7 @@
   .fiche-recto { font-weight: 800; font-size: 1.1rem; color: var(--nuit); }
   .fiche-verso { font-family: "Cambria Math", "STIX Two Math", "Noto Serif", Georgia, serif; font-size: 1.15rem; color: var(--nuit); overflow-wrap: anywhere; }
   .quiz-haut { background: linear-gradient(160deg, #16306f, #2b579a); color: #fff; }
-  .quiz-haut .corps { max-width: 600px; margin: 0 auto; padding: calc(14px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 8px; }
+  .quiz-haut .corps { max-width: 600px; margin: 0 auto; padding: 14px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 8px; }
   .quiz-haut .etiquette, .quiz-haut .aide { color: #dbe6ff; }
   .quiz-haut h3 { font-size: 1.2rem; }
   .quiz-haut .defi-choix button { color: var(--texte); }
@@ -461,8 +467,6 @@
 </head>
 <body>
 <div class="hors-ligne" id="hors-ligne">Connexion au Wi-Fi de l'amphi perdue. La page se remet à jour dès votre retour.</div>
-<div id="stars" class="stars-haut"></div>
-<div id="quiz-direct" class="quiz-haut" hidden></div>
 <header class="hero">
   <canvas id="oscillo" aria-hidden="true"></canvas>
   <span class="mesure" id="mesure" aria-hidden="true">X:Y = 1:2 · φ = 0</span>
@@ -473,6 +477,8 @@
     <p class="heure" id="heure"></p>
   </div>
 </header>
+<div id="stars" class="stars-haut"></div>
+<div id="quiz-direct" class="quiz-haut" hidden></div>
 <div class="bandeau" id="bandeau" hidden><div id="bandeau-texte"></div></div>
 <div class="onglets"><nav id="onglets">
   <a href="#accueil" class="actif">Accueil</a>
@@ -603,7 +609,7 @@
   </div></div>
   <div class="carte" id="carte-binomes"><div class="corps">
     <h3 class="titre-carte">👥 Trouve ton binôme</h3>
-    <p class="aide">Pour réviser à deux ou en petit groupe. Visible après vérification.</p>
+    <p class="aide">Pour réviser à deux ou en petit groupe.</p>
     <select class="champ" id="bi-ue"></select>
     <input class="champ" id="bi-quartier" maxlength="40" placeholder="Quartier (ex. : Calavi, Godomey, Akpakpa)">
     <textarea class="champ" id="bi-texte" maxlength="300" placeholder="Ex. : Je cherche 2 personnes pour réviser la quantique le samedi matin à la BU"></textarea>
@@ -641,7 +647,7 @@
 
   <h3 class="sous-titre">🎂 Anniversaire : devenez la star du jour</h3>
   <div class="carte"><div class="corps">
-    <p class="aide">C'est votre anniversaire (ou celui d'un ami) ? Publiez vos plus belles photos (8 au plus) : toute la promo vous le souhaite. Visible après vérification.</p>
+    <p class="aide">C'est votre anniversaire (ou celui d'un ami) ? Publiez vos plus belles photos (8 au plus) : toute la promo vous le souhaite.</p>
     <input class="champ" id="an-nom" maxlength="30" placeholder="Prénom de la star (ex. : Koffi)">
     <textarea class="champ" id="an-message" maxlength="200" placeholder="Un mot de la star (facultatif) : Merci à tous ! 🎉"></textarea>
     <input type="file" class="champ" id="an-photos" accept="image/*" multiple>
@@ -716,7 +722,7 @@
   </div></div>
   <div class="carte"><div class="corps">
     <h3>Proposer un document à la bibliothèque</h3>
-    <p class="aide">Vos notes, photos du tableau, TD corrigés, anciens sujets… Il sera publié pour tous après vérification.</p>
+    <p class="aide">Vos notes, photos du tableau, TD corrigés, anciens sujets… Partagez-les avec toute la promo.</p>
     <input class="champ" id="prop-titre" maxlength="120" placeholder="Titre (ex. : Notes du cours d'Ondes, chapitre 2)">
     <input class="champ" id="prop-matiere" maxlength="60" placeholder="Matière (ex. : Ondes et vibrations)" list="liste-matieres">
     <datalist id="liste-matieres"></datalist>
@@ -825,7 +831,7 @@
       <input class="champ" id="av-auteur" maxlength="60" placeholder="Votre prénom">
       <input class="champ" id="av-parcours" maxlength="60" placeholder="Votre parcours (ex. : Master 1 Physique, UAC)">
       <textarea class="champ" id="av-texte" maxlength="300" placeholder="Votre conseil aux L3 (méthode, stage, choix du Master…)"></textarea>
-      <button class="bouton" id="av-envoyer" type="button" style="margin-top:8px">Envoyer (publié après vérification)</button>
+      <button class="bouton" id="av-envoyer" type="button" style="margin-top:8px">Envoyer mon conseil</button>
       <p class="aide" id="av-etat" style="margin-top:6px"></p>
     </details>
   </div></div>
@@ -1095,6 +1101,7 @@
       bb.onclick = function () { ouverts[d.id] = true; rendreDocuments(); var p = $("blanche-" + d.id); if (p) p.scrollIntoView({ behavior: "smooth", block: "center" }); };
       act.appendChild(bb);
     }
+    act.appendChild(signaler("document", d.id));
     return act;
   }
   function lienLire(id, nom, type, extra) { return "/lire?id=" + encodeURIComponent(id) + "&nom=" + encodeURIComponent(nom || "document") + "&type=" + encodeURIComponent(type || "application/octet-stream") + (extra || ""); }
@@ -1131,6 +1138,7 @@
           .catch(function () {}).then(function () { u.disabled = false; });
       };
       l.appendChild(u);
+      l.appendChild(signaler("corrige", c.cid));
       z.appendChild(l);
     });
     var f = el("div", "proposer-corrige");
@@ -1148,7 +1156,7 @@
         "&nom=" + encodeURIComponent(fichier.name) + "&type=" + encodeURIComponent(fichier.type || "") + "&note=" + encodeURIComponent(note.value.trim());
       (/^image\//.test(fichier.type) ? reduire(fichier, 2000) : Promise.resolve(null)).then(function (blob) {
         return envoyer("/corrige?" + q, blob || fichier, barre);
-      }).then(function () { etat.textContent = "✅ Envoyé ! Il apparaîtra après vérification."; fi.value = ""; note.value = ""; })
+      }).then(function (r) { etat.textContent = messageEnvoi(r, "✅ Publié ! Merci pour la promo.", "✅ Envoyé ! Il apparaîtra après vérification."); fi.value = ""; note.value = ""; chargerEchanges(); })
         .catch(function (e) { etat.textContent = "❌ " + e.message; }).then(function () { b.disabled = false; });
     };
     f.appendChild(note); f.appendChild(fi); f.appendChild(barre); f.appendChild(b); f.appendChild(etat);
@@ -1441,7 +1449,7 @@
         fetch("/question/" + q.id + "/reponse/" + x.rid + "/utile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pid: MON_ID }) })
           .then(function (r) { return r.json(); }).then(function (r) { if (r.erreur) { u.textContent = r.erreur; return; } garder("amphi-rep-" + x.rid, "1"); chargerEchanges(); }).catch(function () {});
       };
-      m.appendChild(u); d.appendChild(m); box.appendChild(d);
+      m.appendChild(u); m.appendChild(signaler("reponse", x.rid)); d.appendChild(m); box.appendChild(d);
     });
     var lien = el("button", "repondre-lien", repOuvert[q.id] ? "Fermer" : "💬 Répondre" + (rs.length ? " (" + rs.length + " réponse" + (rs.length > 1 ? "s" : "") + ")" : "")); lien.type = "button";
     lien.onclick = function () { repOuvert[q.id] = !repOuvert[q.id]; rendreQuestions(); };
@@ -1480,6 +1488,19 @@
       .catch(function () { alert("Pas de connexion au Wi-Fi de l'amphi."); })
       .then(function () { b.disabled = false; });
   };
+
+  // ── Signaler un contenu : au 3e signalement, il est masqué en attendant l'éditeur ──
+  function signaler(type, id) {
+    var b = el("button", "signal", lire("amphi-sig-" + id) ? "🚩 Signalé" : "🚩"); b.type = "button"; b.title = "Signaler un contenu déplacé";
+    b.onclick = function (e) {
+      e.stopPropagation();
+      if (lire("amphi-sig-" + id) || !confirm("Signaler ce contenu comme déplacé ?")) return;
+      fetch("/signaler", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: type, id: id }) })
+        .then(function (r) { return r.json(); }).then(function (r) { if (r.ok) { garder("amphi-sig-" + id, "1"); b.textContent = "🚩 Signalé"; if (r.n >= 3) chargerEchanges(); } }).catch(function () {});
+    };
+    return b;
+  }
+  function messageEnvoi(r, publie, attente) { return r && r.statut === "publie" ? publie : attente; }
 
   // ── Vie de la promo ──
   var ALERTES = { present: ["✅", "Le prof est là"], annule: ["❌", "Cours annulé"], salle: ["🔄", "Salle changée"], retard: ["⏳", "Le prof sera en retard"] };
@@ -1525,7 +1546,7 @@
     $("bandeau-texte").textContent = "";
     ded.slice(0, 12).forEach(function (p) { $("bandeau-texte").appendChild(el("span", null, "💌 " + p.texte)); });
     var zd = $("liste-dedicaces"); zd.textContent = "";
-    ded.forEach(function (p) { var l = el("div", "pub-promo"); var c = el("div"); c.appendChild(el("p", null, "💌 " + p.texte)); c.appendChild(el("p", "date", ilYa(p.date))); l.appendChild(c); zd.appendChild(l); });
+    ded.forEach(function (p) { var l = el("div", "pub-promo"); var c = el("div"); c.appendChild(el("p", null, "💌 " + p.texte)); c.appendChild(el("p", "date", ilYa(p.date))); l.appendChild(c); l.appendChild(signaler("publication", p.id)); zd.appendChild(l); });
     function liste(z, sortes) {
       z.textContent = "";
       pubs.filter(function (p) { return sortes.indexOf(p.sorte) >= 0; }).forEach(function (p) {
@@ -1541,7 +1562,7 @@
         if (p.prix) c.appendChild(el("p", "prix", p.prix));
         if (p.contact) c.appendChild(el("p", "meta", "👉 " + p.contact));
         c.appendChild(el("p", "date", ilYa(p.date)));
-        l.appendChild(c); z.appendChild(l);
+        l.appendChild(c); l.appendChild(signaler("publication", p.id)); z.appendChild(l);
       });
     }
     liste($("liste-objets"), ["perdu", "trouve"]);
@@ -1582,7 +1603,7 @@
     return reduire(f).then(function (corps) {
       return fetch("/publier?" + q, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: corps || new Blob([]) });
     }).then(function (r) { return r.json(); }).then(function (r) {
-      etat.textContent = r.ok ? "✅ Envoyé ! Visible après vérification." : "❌ " + (r.erreur || "Échec.");
+      etat.textContent = r.ok ? messageEnvoi(r, "✅ Publié ! Toute la promo le voit.", "✅ Envoyé ! Visible après vérification.") : "❌ " + (r.erreur || "Échec.");
       if (r.ok && photoInput) photoInput.value = "";
       return r.ok;
     }).catch(function () { etat.textContent = "❌ Pas de connexion au Wi-Fi de l'amphi."; return false; }).then(function (ok) { bouton.disabled = false; return ok; });
@@ -1689,11 +1710,13 @@
         // Plusieurs fichiers : chacun garde son nom comme titre (ou « titre (2/3) »).
         var t = n === 1 ? titre : titre ? titre + " (" + (k + 1) + "/" + n + ")" : f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
         var q = "nom=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(f.type || "") + "&titre=" + encodeURIComponent(t) + "&matiere=" + encodeURIComponent($("prop-matiere").value) + "&auteur=" + encodeURIComponent($("prop-auteur").value || $("pr-pseudo").value.trim()) + "&pid=" + encodeURIComponent(MON_ID);
-        return envoyer("/proposer?" + q, f, $("prop-barre"));
+        return envoyer("/proposer?" + q, f, $("prop-barre")).then(function (r) { dernier = r; });
       });
     });
+    var dernier = null;
     chaine.then(function () {
-      z.textContent = n > 1 ? "✅ Merci ! Vos " + n + " documents seront publiés après vérification." : "✅ Merci ! Le document sera publié après vérification.";
+      z.textContent = messageEnvoi(dernier, n > 1 ? "✅ Merci ! Vos " + n + " documents sont dans la bibliothèque." : "✅ Merci ! Le document est dans la bibliothèque.", n > 1 ? "✅ Merci ! Vos " + n + " documents seront publiés après vérification." : "✅ Merci ! Le document sera publié après vérification.");
+      charger();
       $("prop-fichier").value = ""; $("prop-titre").value = "";
     }).catch(function (e) { z.textContent = "❌ " + e.message; }).then(function () { b.disabled = false; });
   };
@@ -1777,6 +1800,7 @@
     var st = el("button", "bouton", "🎨 Faire une belle image pour " + x.nom); st.type = "button";
     st.onclick = function () { studioPour(x); };
     corps.appendChild(st);
+    corps.appendChild(signaler("star", x.id));
     c.appendChild(corps);
     return c;
   }
@@ -1812,10 +1836,11 @@
             return reduire(f, 1600).then(function (blob) { return envoyer("/star/" + r.id + "/photo?jeton=" + r.jeton, blob || f, $("an-barre")); });
           });
         });
-        return chaine;
+        return chaine.then(function () { return r; });
       })
-      .then(function () {
-        z.textContent = "✅ Envoyé ! La star apparaîtra en haut de la page après vérification.";
+      .then(function (r) {
+        z.textContent = messageEnvoi(r, "✅ Publié ! La star apparaît en haut de la page. 🎉", "✅ Envoyé ! La star apparaîtra en haut de la page après vérification.");
+        empreinteStars = ""; chargerEchanges();
         $("an-nom").value = ""; $("an-message").value = ""; $("an-photos").value = "";
       })
       .catch(function (e) { z.textContent = "❌ " + (e.message || "Pas de connexion au Wi-Fi de l'amphi."); })
@@ -1824,7 +1849,6 @@
 
   // ── Studio anniversaire : une image prête pour le statut WhatsApp ──
   var studio = { img: null, decor: "ballons", format: "statut", zoom: 1, dx: 0, dy: 0 };
-  var DECORS = [["ballons", "🎈 Ballons"], ["or", "✨ Doré"], ["oscillo", "📈 Oscillo"], ["polaroid", "📸 Polaroïd"]];
   var FORMATS = [["statut", "Statut WhatsApp"], ["post", "Publication"]];
   var toile = $("st-toile"), gs = toile.getContext("2d");
   function puces(zone, liste, champ) {
@@ -1837,19 +1861,6 @@
   }
   // Suite pseudo-aléatoire fixe : le décor ne bouge pas d'un dessin à l'autre.
   function hasard(graine) { var x = graine; return function () { x = (x * 16807) % 2147483647; return (x - 1) / 2147483646; }; }
-  function emplacement(W, H) {
-    var d = studio.decor, st = studio.format === "statut";
-    if (d === "ballons") { var t = W * 0.64, cy = H * (st ? 0.42 : 0.44); return { x: W / 2 - t / 2, y: cy - t / 2, w: t, h: t, cercle: true }; }
-    if (d === "or") return { x: W * 0.13, y: H * (st ? 0.22 : 0.2), w: W * 0.74, h: H * (st ? 0.44 : 0.5) };
-    if (d === "oscillo") return { x: W * 0.08, y: H * (st ? 0.24 : 0.22), w: W * 0.84, h: H * (st ? 0.42 : 0.46), arrondi: 36 };
-    var cw = W * 0.74; return { x: (W - cw) / 2 + 36, y: H * (st ? 0.2 : 0.17) + 36, w: cw - 72, h: cw - 72, polaroid: true, cw: cw };
-  }
-  function chemin(z) {
-    gs.beginPath();
-    if (z.cercle) gs.arc(z.x + z.w / 2, z.y + z.h / 2, z.w / 2, 0, Math.PI * 2);
-    else if (z.arrondi && gs.roundRect) gs.roundRect(z.x, z.y, z.w, z.h, z.arrondi);
-    else gs.rect(z.x, z.y, z.w, z.h);
-  }
   function photoDans(z) {
     gs.save(); chemin(z); gs.clip();
     var im = studio.img;
@@ -1861,8 +1872,7 @@
       gs.drawImage(im, z.x + (z.w - dw) / 2 + studio.dx, z.y + (z.h - dh) / 2 + studio.dy, dw, dh);
     } else {
       gs.fillStyle = "#e9e3f0"; gs.fillRect(z.x, z.y, z.w, z.h);
-      gs.fillStyle = "#8a7f99"; gs.font = "600 44px " + POLICE; gs.textAlign = "center";
-      gs.fillText("📷 Ajoutez une photo", z.x + z.w / 2, z.y + z.h / 2);
+      if (!apercu) { gs.fillStyle = "#8a7f99"; gs.font = "600 44px " + POLICE; gs.textAlign = "center"; gs.fillText("📷 Ajoutez une photo", z.x + z.w / 2, z.y + z.h / 2); }
     }
     gs.restore();
   }
@@ -1900,74 +1910,284 @@
     if (cur) l.push(cur);
     return l.slice(0, 2);
   }
-  function dessiner() {
-    var W = 1080, H = studio.format === "statut" ? 1920 : 1350;
-    if (toile.width !== W || toile.height !== H) { toile.width = W; toile.height = H; }
-    var nom = $("st-nom").value.trim(), msg = $("st-message").value.trim();
-    var z = emplacement(W, H), d = studio.decor, bas = z.y + (z.polaroid ? z.h + 230 : z.h);
-    gs.clearRect(0, 0, W, H);
-    var jour = new Date(), dateTxt = jour.getDate() + " " + MOIS[jour.getMonth()] + " " + jour.getFullYear();
-    var promo = (donnees && donnees.titre) || "La promo";
-    if (d === "ballons") {
-      var gr = gs.createLinearGradient(0, 0, W, H); gr.addColorStop(0, "#ff9a9e"); gr.addColorStop(0.5, "#fecfef"); gr.addColorStop(1, "#a18cd1");
-      gs.fillStyle = gr; gs.fillRect(0, 0, W, H);
+  // 20 décors : chacun est une « recette » (emplacement de la photo, fond, finitions, textes).
+  var MONO = "'Roboto Mono', 'Droid Sans Mono', monospace", SCRIPT = "'Dancing Script', 'Segoe Script', 'Brush Script MT', cursive";
+  var T = { nom: "", msg: "", pied: "" }, apercu = false;
+  function emplacement(W, H) { return (DECORS_DEF[studio.decor] || DECORS_DEF.ballons).slot(W, H, studio.format === "statut"); }
+  function rond(W, H, st, taille, cy) { var t = W * taille, c = H * (st ? cy : cy + 0.03); return { x: W / 2 - t / 2, y: c - t / 2, w: t, h: t, cercle: true }; }
+  function boite(W, H, st, x, y, w, h, extra) { var z = { x: W * x, y: H * (st ? y : y - 0.02), w: W * w, h: H * (st ? h : h + 0.08) }; for (var k in extra || {}) z[k] = extra[k]; return z; }
+  function chemin(z) {
+    gs.beginPath();
+    if (z.cercle) gs.arc(z.x + z.w / 2, z.y + z.h / 2, z.w / 2, 0, Math.PI * 2);
+    else if (z.hexagone) { var cx = z.x + z.w / 2, cy = z.y + z.h / 2, r = Math.min(z.w, z.h) / 2; for (var i = 0; i < 6; i++) { var a = Math.PI / 6 + i * Math.PI / 3; if (i) gs.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a)); else gs.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a)); } gs.closePath(); }
+    else if (z.arche) { var rr = z.w / 2; gs.moveTo(z.x, z.y + z.h); gs.lineTo(z.x, z.y + rr); gs.arc(z.x + rr, z.y + rr, rr, Math.PI, 0); gs.lineTo(z.x + z.w, z.y + z.h); gs.closePath(); }
+    else if (z.arrondi && gs.roundRect) gs.roundRect(z.x, z.y, z.w, z.h, z.arrondi);
+    else gs.rect(z.x, z.y, z.w, z.h);
+  }
+  function degrade(W, H, couleurs, diagonale) {
+    var g = diagonale ? gs.createLinearGradient(0, 0, W, H) : gs.createLinearGradient(0, 0, 0, H);
+    couleurs.forEach(function (c, i) { g.addColorStop(i / (couleurs.length - 1), c); });
+    gs.fillStyle = g; gs.fillRect(0, 0, W, H);
+  }
+  function radial(W, H, c1, c2, cy) { var g = gs.createRadialGradient(W / 2, H * (cy || 0.4), 40, W / 2, H * (cy || 0.4), H * 0.85); g.addColorStop(0, c1); g.addColorStop(1, c2); gs.fillStyle = g; gs.fillRect(0, 0, W, H); }
+  function etoile(x, y, r, branches, creux) { gs.beginPath(); for (var i = 0; i < branches * 2; i++) { var a = -Math.PI / 2 + i * Math.PI / branches, rr = i % 2 ? r * (creux || 0.45) : r; if (i) gs.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)); else gs.moveTo(x + rr * Math.cos(a), y + rr * Math.sin(a)); } gs.closePath(); gs.fill(); }
+  function semis(W, H, n, graine, f) { var r = hasard(graine); for (var i = 0; i < n; i++) f(r() * W, r() * H, r(), i); }
+  function coeur(x, y, s) { gs.beginPath(); gs.moveTo(x, y + s * 0.3); gs.bezierCurveTo(x, y, x - s * 0.5, y, x - s * 0.5, y + s * 0.3); gs.bezierCurveTo(x - s * 0.5, y + s * 0.6, x, y + s * 0.8, x, y + s); gs.bezierCurveTo(x, y + s * 0.8, x + s * 0.5, y + s * 0.6, x + s * 0.5, y + s * 0.3); gs.bezierCurveTo(x + s * 0.5, y, x, y, x, y + s * 0.3); gs.fill(); }
+  function fleur(x, y, r, c, centre) { gs.fillStyle = c; for (var i = 0; i < 5; i++) { var a = i * Math.PI * 2 / 5; gs.beginPath(); gs.ellipse(x + Math.cos(a) * r * 0.6, y + Math.sin(a) * r * 0.6, r * 0.5, r * 0.32, a, 0, Math.PI * 2); gs.fill(); } gs.fillStyle = centre; gs.beginPath(); gs.arc(x, y, r * 0.28, 0, 7); gs.fill(); }
+  function feuille(x, y, l, a, c) { gs.save(); gs.translate(x, y); gs.rotate(a); gs.fillStyle = c; gs.beginPath(); gs.moveTo(0, 0); gs.quadraticCurveTo(l * 0.5, -l * 0.28, l, 0); gs.quadraticCurveTo(l * 0.5, l * 0.28, 0, 0); gs.fill(); gs.strokeStyle = "rgba(0,0,0,.18)"; gs.lineWidth = 3; gs.beginPath(); gs.moveTo(0, 0); gs.lineTo(l, 0); gs.stroke(); gs.restore(); }
+  function anneau(z, couleur, ep, marge) { gs.save(); gs.strokeStyle = couleur; gs.lineWidth = ep; gs.beginPath(); gs.arc(z.x + z.w / 2, z.y + z.h / 2, z.w / 2 + (marge || ep / 2), 0, Math.PI * 2); gs.stroke(); gs.restore(); }
+  function contour(z, couleur, ep, marge, lueur) {
+    gs.save(); gs.strokeStyle = couleur; gs.lineWidth = ep; if (lueur) { gs.shadowColor = lueur; gs.shadowBlur = 40; }
+    var m = marge || 0, y = { x: z.x - m, y: z.y - m, w: z.w + 2 * m, h: z.h + 2 * m, cercle: z.cercle, hexagone: z.hexagone, arche: z.arche, arrondi: z.arrondi ? z.arrondi + m : 0 };
+    chemin(y); gs.stroke(); gs.restore();
+  }
+  function ombrePhoto(z, c) { gs.save(); gs.shadowColor = c || "rgba(0,0,0,.35)"; gs.shadowBlur = 50; gs.shadowOffsetY = 18; gs.fillStyle = "#fff"; chemin(z); gs.fill(); gs.restore(); }
+  function ruban(cx, y, w, h, c, bout) {
+    gs.fillStyle = bout || c; [-1, 1].forEach(function (s) { gs.beginPath(); gs.moveTo(cx + s * w / 2, y + 12); gs.lineTo(cx + s * (w / 2 + 70), y + 12); gs.lineTo(cx + s * (w / 2 + 40), y + h / 2 + 12); gs.lineTo(cx + s * (w / 2 + 70), y + h + 12); gs.lineTo(cx + s * w / 2, y + h + 12); gs.fill(); });
+    gs.fillStyle = c; gs.fillRect(cx - w / 2, y, w, h);
+  }
+  function couronne(cx, y, w, c) {
+    gs.fillStyle = c; gs.beginPath(); gs.moveTo(cx - w / 2, y + w * 0.45); gs.lineTo(cx - w / 2, y + w * 0.1); gs.lineTo(cx - w / 4, y + w * 0.3); gs.lineTo(cx, y); gs.lineTo(cx + w / 4, y + w * 0.3); gs.lineTo(cx + w / 2, y + w * 0.1); gs.lineTo(cx + w / 2, y + w * 0.45); gs.closePath(); gs.fill();
+    gs.fillStyle = "#e63946"; [[cx, y + w * 0.32], [cx - w * 0.3, y + w * 0.36], [cx + w * 0.3, y + w * 0.36]].forEach(function (p) { gs.beginPath(); gs.arc(p[0], p[1], w * 0.045, 0, 7); gs.fill(); });
+  }
+  function gateau(cx, y, w) {
+    var h = w * 0.22;
+    [["#f4a261", 1, 0], ["#fff1e6", 0.8, 1], ["#e76f51", 0.6, 2]].forEach(function (e) { var ww = w * e[1], yy = y - e[2] * h; gs.fillStyle = e[0]; gs.fillRect(cx - ww / 2, yy - h, ww, h); gs.fillStyle = "rgba(255,255,255,.85)"; for (var i = 0; i < 8; i++) { gs.beginPath(); gs.arc(cx - ww / 2 + (i + 0.5) * ww / 8, yy - h, ww / 18, 0, Math.PI); gs.fill(); } });
+    for (var b = 0; b < 5; b++) { var bx = cx - w * 0.2 + b * w * 0.1, by = y - 3 * h; gs.fillStyle = ["#4cc9f0", "#f72585", "#ffd166", "#06d6a0", "#7209b7"][b]; gs.fillRect(bx - 6, by - 60, 12, 60); gs.fillStyle = "#ffb703"; gs.beginPath(); gs.ellipse(bx, by - 76, 9, 16, 0, 0, 7); gs.fill(); }
+  }
+  function panneau(W, y, h, c) { gs.save(); gs.fillStyle = c; gs.beginPath(); if (gs.roundRect) gs.roundRect(W * 0.07, y, W * 0.86, h, 40); else gs.rect(W * 0.07, y, W * 0.86, h); gs.fill(); gs.restore(); }
+  function textes(W, H, bas, o) {
+    ecrire(T.nom || "Prénom", W / 2, bas + (o.d1 || 150), o.nomFont || "800 {t} " + POLICE, o.nomTaille || 128, o.nomCouleur || "#222", W * 0.86, o.nomOmbre);
+    decouper(T.msg, 30).forEach(function (l, i) { ecrire(l, W / 2, bas + (o.d2 || 245) + i * 64, o.msgFont || "italic 600 {t} " + SERIF, o.msgTaille || 54, o.msgCouleur || "#333", W * 0.86, o.msgOmbre); });
+    ecrire(T.pied, W / 2, H - 70, "600 {t} " + POLICE, 34, o.piedCouleur || "rgba(0,0,0,.6)", W * 0.9);
+  }
+  function titre(t, W, y, police, taille, couleur, ombre, espace) {
+    if (espace && "letterSpacing" in gs) gs.letterSpacing = espace;
+    ecrire(t, W / 2, y, police, taille, couleur, W * 0.9, ombre);
+    if (espace && "letterSpacing" in gs) gs.letterSpacing = "0px";
+  }
+  function orDegrade(y0, y1) { var g = gs.createLinearGradient(0, y0, 1080, y1); ["#bf953f", "#fcf6ba", "#b38728", "#fbf5b7", "#aa771c"].forEach(function (c, i) { g.addColorStop(i / 4, c); }); return g; }
+
+  var DECORS_DEF = {
+    ballons: { nom: "🎈 Ballons", slot: function (W, H, st) { return rond(W, H, st, 0.64, 0.42); }, dessin: function (W, H, z, bas) {
+      degrade(W, H, ["#ff9a9e", "#fecfef", "#a18cd1"], true);
       confettis(W, H, 90, ["#ff4d6d", "#ffd166", "#06d6a0", "#118ab2", "#ffffff"], 7);
-      [[0.12, 0.08, "#ff4d6d"], [0.88, 0.07, "#ffd166"], [0.07, 0.6, "#06d6a0"], [0.93, 0.56, "#118ab2"], [0.16, 0.86, "#ef476f"], [0.85, 0.85, "#8338ec"]]
-        .forEach(function (b) { ballon(W * b[0], H * b[1], W * 0.065, b[2]); });
-      ecrire("Joyeux anniversaire", W / 2, z.y - 70, "italic 700 {t} " + SERIF, 104, "#ffffff", W * 0.86, "rgba(91,26,74,.55)");
-      gs.save(); gs.beginPath(); gs.arc(z.x + z.w / 2, z.y + z.h / 2, z.w / 2 + 26, 0, Math.PI * 2); gs.fillStyle = "#ffd166"; gs.fill();
-      gs.beginPath(); gs.arc(z.x + z.w / 2, z.y + z.h / 2, z.w / 2 + 12, 0, Math.PI * 2); gs.fillStyle = "#ffffff"; gs.fill(); gs.restore();
-      photoDans(z);
-      ecrire(nom || "Prénom", W / 2, bas + 150, "800 {t} " + POLICE, 130, "#5b1a4a", W * 0.86);
-      decouper(msg, 30).forEach(function (l, i) { ecrire(l, W / 2, bas + 240 + i * 66, "italic 600 {t} " + SERIF, 56, "#3d1538", W * 0.86); });
-      ecrire(promo + " · " + dateTxt, W / 2, H - 70, "600 {t} " + POLICE, 34, "rgba(61,21,56,.75)", W * 0.9);
-    } else if (d === "or") {
-      var rg = gs.createRadialGradient(W / 2, H * 0.4, 50, W / 2, H * 0.45, H * 0.8); rg.addColorStop(0, "#2d2a26"); rg.addColorStop(1, "#050505");
-      gs.fillStyle = rg; gs.fillRect(0, 0, W, H);
-      var orG = gs.createLinearGradient(0, z.y, W, z.y + z.h); ["#bf953f", "#fcf6ba", "#b38728", "#fbf5b7", "#aa771c"].forEach(function (c, i) { orG.addColorStop(i / 4, c); });
-      var r = hasard(11);
-      for (var i = 0; i < 70; i++) { gs.fillStyle = "rgba(252,246,186," + (0.2 + r() * 0.6) + ")"; var sx = r() * W, sy = r() * H, sr = 2 + r() * 6; gs.beginPath(); gs.moveTo(sx, sy - sr * 2); gs.lineTo(sx + sr / 2, sy); gs.lineTo(sx, sy + sr * 2); gs.lineTo(sx - sr / 2, sy); gs.closePath(); gs.fill(); }
-      if ("letterSpacing" in gs) gs.letterSpacing = "14px";
-      ecrire("HAPPY BIRTHDAY", W / 2, z.y - 90, "700 {t} " + SERIF, 86, orG, W * 0.9);
-      if ("letterSpacing" in gs) gs.letterSpacing = "0px";
-      photoDans(z);
-      gs.strokeStyle = orG; gs.lineWidth = 18; gs.strokeRect(z.x - 9, z.y - 9, z.w + 18, z.h + 18);
-      gs.lineWidth = 4; gs.strokeRect(z.x - 34, z.y - 34, z.w + 68, z.h + 68);
-      ecrire(nom || "Prénom", W / 2, bas + 170, "italic 700 {t} " + SERIF, 140, "#ffffff", W * 0.86, "rgba(191,149,63,.6)");
-      decouper(msg, 32).forEach(function (l, i) { ecrire(l, W / 2, bas + 265 + i * 64, "500 {t} " + POLICE, 50, "#e9d8a6", W * 0.86); });
-      ecrire(promo + " · " + dateTxt, W / 2, H - 70, "600 {t} " + POLICE, 34, "rgba(233,216,166,.7)", W * 0.9);
-    } else if (d === "oscillo") {
+      [[0.12, 0.08, "#ff4d6d"], [0.88, 0.07, "#ffd166"], [0.07, 0.6, "#06d6a0"], [0.93, 0.56, "#118ab2"], [0.16, 0.86, "#ef476f"], [0.85, 0.85, "#8338ec"]].forEach(function (b) { ballon(W * b[0], H * b[1], W * 0.065, b[2]); });
+      titre("Joyeux anniversaire", W, z.y - 70, "italic 700 {t} " + SERIF, 104, "#fff", "rgba(91,26,74,.55)");
+      anneau(z, "#ffd166", 14, 26); anneau(z, "#fff", 14, 8); photoDans(z);
+      textes(W, H, bas, { nomCouleur: "#5b1a4a", msgCouleur: "#3d1538", piedCouleur: "rgba(61,21,56,.75)" });
+    } },
+    or: { nom: "✨ Doré", slot: function (W, H, st) { return boite(W, H, st, 0.13, 0.22, 0.74, 0.44); }, dessin: function (W, H, z, bas) {
+      radial(W, H, "#2d2a26", "#050505");
+      semis(W, H, 70, 11, function (x, y, r) { gs.fillStyle = "rgba(252,246,186," + (0.2 + r * 0.6) + ")"; etoile(x, y, 4 + r * 8, 4, 0.25); });
+      var og = orDegrade(z.y, z.y + z.h);
+      titre("HAPPY BIRTHDAY", W, z.y - 90, "700 {t} " + SERIF, 86, og, null, "14px");
+      photoDans(z); contour(z, og, 18, 9); contour(z, og, 4, 34);
+      textes(W, H, bas, { d1: 170, nomFont: "italic 700 {t} " + SERIF, nomTaille: 140, nomCouleur: "#fff", nomOmbre: "rgba(191,149,63,.6)", msgFont: "500 {t} " + POLICE, msgCouleur: "#e9d8a6", piedCouleur: "rgba(233,216,166,.7)" });
+    } },
+    oscillo: { nom: "📈 Oscillo", slot: function (W, H, st) { return boite(W, H, st, 0.08, 0.24, 0.84, 0.42, { arrondi: 36 }); }, dessin: function (W, H, z, bas) {
       gs.fillStyle = "#06110d"; gs.fillRect(0, 0, W, H);
       gs.strokeStyle = "rgba(61,255,162,.10)"; gs.lineWidth = 2;
       for (var gx = 0; gx <= W; gx += 60) { gs.beginPath(); gs.moveTo(gx, 0); gs.lineTo(gx, H); gs.stroke(); }
       for (var gy = 0; gy <= H; gy += 60) { gs.beginPath(); gs.moveTo(0, gy); gs.lineTo(W, gy); gs.stroke(); }
-      ecrire("JOYEUX ANNIVERSAIRE", W / 2, z.y - 200, "800 {t} " + "'Roboto Mono', 'Droid Sans Mono', monospace", 66, "#3dffa2", W * 0.9, "rgba(61,255,162,.8)");
+      titre("JOYEUX ANNIVERSAIRE", W, z.y - 200, "800 {t} " + MONO, 66, "#3dffa2", "rgba(61,255,162,.8)");
       gs.save(); gs.strokeStyle = "#3dffa2"; gs.lineWidth = 8; gs.shadowColor = "#3dffa2"; gs.shadowBlur = 24; gs.beginPath();
       for (var t = 0; t <= W; t += 6) { var yy = z.y - 95 + Math.sin(t / W * Math.PI * 6) * 42 * Math.sin(t / W * Math.PI); if (t === 0) gs.moveTo(t, yy); else gs.lineTo(t, yy); }
       gs.stroke(); gs.restore();
-      photoDans(z);
-      gs.save(); gs.strokeStyle = "#3dffa2"; gs.lineWidth = 6; gs.shadowColor = "#3dffa2"; gs.shadowBlur = 30; chemin(z); gs.stroke(); gs.restore();
-      ecrire(nom || "Prénom", W / 2, bas + 160, "800 {t} " + POLICE, 128, "#f2fff8", W * 0.86, "rgba(61,255,162,.6)");
-      decouper(msg, 30).forEach(function (l, i) { ecrire(l, W / 2, bas + 250 + i * 64, "500 {t} " + POLICE, 52, "#bfe9d6", W * 0.86); });
-      ecrire("T = 1 an · bonne fréquence pour cette nouvelle période !", W / 2, H - 120, "600 {t} 'Roboto Mono', monospace", 32, "#3dffa2", W * 0.9);
-      ecrire(promo + " · " + dateTxt, W / 2, H - 68, "600 {t} " + POLICE, 32, "rgba(191,233,214,.75)", W * 0.9);
-    } else {
-      var pg = gs.createLinearGradient(0, 0, 0, H); pg.addColorStop(0, "#a1c4fd"); pg.addColorStop(1, "#c2e9fb");
-      gs.fillStyle = pg; gs.fillRect(0, 0, W, H);
+      photoDans(z); contour(z, "#3dffa2", 6, 0, "#3dffa2");
+      textes(W, H, bas, { d1: 160, nomCouleur: "#f2fff8", nomOmbre: "rgba(61,255,162,.6)", msgFont: "500 {t} " + POLICE, msgCouleur: "#bfe9d6", piedCouleur: "rgba(191,233,214,.75)" });
+      ecrire("T = 1 an · bonne fréquence pour cette nouvelle période !", W / 2, H - 120, "600 {t} " + MONO, 32, "#3dffa2", W * 0.9);
+    } },
+    polaroid: { nom: "📸 Polaroïd", slot: function (W, H, st) { var cw = W * 0.74; return { x: (W - cw) / 2 + 36, y: H * (st ? 0.2 : 0.17) + 36, w: cw - 72, h: cw - 72, cw: cw }; }, dessin: function (W, H, z) {
+      degrade(W, H, ["#a1c4fd", "#c2e9fb"]);
       confettis(W, H, 80, ["#ff6b6b", "#feca57", "#48dbfb", "#ff9ff3", "#ffffff"], 23);
-      ecrire("Joyeux anniversaire 🎂", W / 2, z.y - 110, "italic 700 {t} " + SERIF, 92, "#1e3a8a", W * 0.9);
+      titre("Joyeux anniversaire 🎂", W, z.y - 110, "italic 700 {t} " + SERIF, 92, "#1e3a8a");
       var cx = (W - z.cw) / 2, cy = z.y - 36, ch = z.h + 72 + 160;
       gs.save(); gs.translate(W / 2, cy + ch / 2); gs.rotate(-0.045); gs.translate(-W / 2, -(cy + ch / 2));
-      gs.shadowColor = "rgba(0,0,0,.25)"; gs.shadowBlur = 30; gs.shadowOffsetY = 12; gs.fillStyle = "#ffffff"; gs.fillRect(cx, cy, z.cw, ch);
-      gs.shadowColor = "transparent";
+      gs.shadowColor = "rgba(0,0,0,.25)"; gs.shadowBlur = 30; gs.shadowOffsetY = 12; gs.fillStyle = "#fff"; gs.fillRect(cx, cy, z.cw, ch); gs.shadowColor = "transparent";
       photoDans(z);
-      ecrire(nom || "Prénom", W / 2, z.y + z.h + 120, "italic 700 {t} " + SERIF, 104, "#222222", z.cw - 60);
+      ecrire(T.nom || "Prénom", W / 2, z.y + z.h + 120, "italic 700 {t} " + SERIF, 104, "#222", z.cw - 60);
       gs.fillStyle = "rgba(255,240,170,.75)"; gs.save(); gs.translate(cx + 40, cy); gs.rotate(-0.5); gs.fillRect(-70, -22, 160, 46); gs.restore();
       gs.save(); gs.translate(cx + z.cw - 40, cy); gs.rotate(0.5); gs.fillRect(-90, -22, 160, 46); gs.restore();
       gs.restore();
-      decouper(msg, 30).forEach(function (l, i) { ecrire(l, W / 2, cy + ch + 120 + i * 64, "italic 600 {t} " + SERIF, 56, "#1e3a8a", W * 0.86); });
-      ecrire(promo + " · " + dateTxt, W / 2, H - 70, "600 {t} " + POLICE, 34, "rgba(30,58,138,.7)", W * 0.9);
-    }
+      decouper(T.msg, 30).forEach(function (l, i) { ecrire(l, W / 2, cy + ch + 120 + i * 64, "italic 600 {t} " + SERIF, 56, "#1e3a8a", W * 0.86); });
+      ecrire(T.pied, W / 2, H - 70, "600 {t} " + POLICE, 34, "rgba(30,58,138,.7)", W * 0.9);
+    } },
+    kente: { nom: "🧶 Kente", slot: function (W, H, st) { return boite(W, H, st, 0.16, 0.2, 0.68, 0.42, { arche: true }); }, dessin: function (W, H, z, bas) {
+      var bandes = ["#f6c90e", "#0b6e4f", "#c1121f", "#111", "#f6c90e", "#0b6e4f"], bh = 90;
+      for (var y = 0, i = 0; y < H; y += bh, i++) { gs.fillStyle = bandes[i % bandes.length]; gs.fillRect(0, y, W, bh); for (var x = (i % 2) * 60; x < W; x += 120) { gs.fillStyle = bandes[(i + 2) % bandes.length]; gs.fillRect(x, y + 20, 60, bh - 40); gs.fillStyle = "rgba(255,255,255,.25)"; gs.fillRect(x + 22, y + 8, 16, bh - 16); } }
+      gs.fillStyle = "rgba(0,0,0,.45)"; gs.fillRect(0, 0, W, H);
+      ombrePhoto(z); photoDans(z); contour(z, "#f6c90e", 16, 8); contour(z, "#111", 8, 22);
+      ruban(W / 2, z.y - 190, W * 0.7, 120, "#111", "#7a0c13");
+      titre("Bonne fête !", W, z.y - 108, "900 {t} " + POLICE, 84, "#f6c90e");
+      textes(W, H, bas, { d1: 160, nomCouleur: "#fff", nomOmbre: "rgba(0,0,0,.8)", msgFont: "600 {t} " + POLICE, msgCouleur: "#f6c90e", piedCouleur: "rgba(255,255,255,.8)" });
+    } },
+    wax: { nom: "🌺 Wax", slot: function (W, H, st) { return rond(W, H, st, 0.6, 0.42); }, dessin: function (W, H, z, bas) {
+      gs.fillStyle = "#f28c28"; gs.fillRect(0, 0, W, H);
+      for (var y = 0; y < H + 160; y += 160) for (var x = (y / 160 % 2) * 80; x < W + 160; x += 160) {
+        ["#1d3557", "#fff", "#2a9d8f", "#fff"].forEach(function (c, k) { gs.fillStyle = c; gs.beginPath(); gs.arc(x, y, 62 - k * 15, 0, 7); gs.fill(); });
+      }
+      gs.fillStyle = "rgba(242,140,40,.35)"; gs.fillRect(0, 0, W, H);
+      anneau(z, "#1d3557", 22, 22); anneau(z, "#fff", 14, 6); photoDans(z);
+      titre("Joyeux anniversaire", W, z.y - 80, "700 {t} " + SCRIPT, 120, "#fff", "rgba(29,53,87,.9)");
+      panneau(W, bas + 40, 300, "rgba(255,255,255,.88)");
+      textes(W, H, bas, { msgOmbre: null, nomCouleur: "#1d3557", nomOmbre: "rgba(255,255,255,.9)", msgFont: "700 {t} " + POLICE, msgCouleur: "#c75100", piedCouleur: "#1d3557" });
+    } },
+    neon: { nom: "💜 Néon", slot: function (W, H, st) { return rond(W, H, st, 0.6, 0.43); }, dessin: function (W, H, z, bas) {
+      radial(W, H, "#3a0ca3", "#10002b", 0.45);
+      semis(W, H, 40, 5, function (x, y, r) { gs.fillStyle = "rgba(255,255,255," + r * 0.5 + ")"; gs.beginPath(); gs.arc(x, y, 2 + r * 3, 0, 7); gs.fill(); });
+      photoDans(z); contour(z, "#ff4ecd", 10, 18, "#ff4ecd"); contour(z, "#4cc9f0", 6, 40, "#4cc9f0");
+      titre("Happy Birthday", W, z.y - 110, "700 {t} " + SCRIPT, 130, "#ffd6f5", "#ff4ecd");
+      textes(W, H, bas, { nomCouleur: "#d6f6ff", nomOmbre: "#4cc9f0", msgFont: "600 {t} " + POLICE, msgCouleur: "#ffd6f5", msgOmbre: "#ff4ecd", piedCouleur: "rgba(214,246,255,.7)" });
+    } },
+    bokeh: { nom: "🌟 Bokeh", slot: function (W, H, st) { return rond(W, H, st, 0.62, 0.42); }, dessin: function (W, H, z, bas) {
+      degrade(W, H, ["#0d1b4c", "#1d2a6b", "#0d1b4c"]);
+      semis(W, H, 45, 17, function (x, y, r) { var g = gs.createRadialGradient(x, y, 0, x, y, 30 + r * 70); g.addColorStop(0, "rgba(255,214,102," + (0.25 + r * 0.35) + ")"); g.addColorStop(1, "rgba(255,214,102,0)"); gs.fillStyle = g; gs.beginPath(); gs.arc(x, y, 30 + r * 70, 0, 7); gs.fill(); });
+      var og = orDegrade(z.y, z.y + z.h);
+      anneau(z, og, 10, 30); anneau(z, og, 20, 8); photoDans(z);
+      titre("Joyeux anniversaire", W, z.y - 90, "italic 700 {t} " + SERIF, 100, og);
+      textes(W, H, bas, { nomFont: "italic 700 {t} " + SERIF, nomCouleur: "#fff", msgFont: "500 {t} " + POLICE, msgCouleur: "#ffe8a3", piedCouleur: "rgba(255,232,163,.7)" });
+    } },
+    pastel: { nom: "🌸 Pastel", slot: function (W, H, st) { return boite(W, H, st, 0.18, 0.2, 0.64, 0.42, { arche: true }); }, dessin: function (W, H, z, bas) {
+      degrade(W, H, ["#fde2e4", "#fad2e1", "#e2ece9"]);
+      semis(W, H, 26, 31, function (x, y, r, i) { fleur(x, y, 34 + r * 40, ["#ffafcc", "#cdb4db", "#bde0fe", "#ffc8dd"][i % 4], "#ffe066"); });
+      ombrePhoto(z, "rgba(201,24,74,.25)"); photoDans(z); contour(z, "#fff", 18, 9);
+      titre("Joyeux anniversaire", W, z.y - 80, "700 {t} " + SCRIPT, 116, "#c9184a");
+      textes(W, H, bas, { nomFont: "800 {t} " + POLICE, nomCouleur: "#590d22", msgCouleur: "#800f2f", piedCouleur: "rgba(89,13,34,.7)" });
+    } },
+    nuit: { nom: "🌙 Nuit étoilée", slot: function (W, H, st) { return rond(W, H, st, 0.6, 0.44); }, dessin: function (W, H, z, bas) {
+      degrade(W, H, ["#0b1d3a", "#1e3c72", "#2a5298"]);
+      semis(W, H, 120, 41, function (x, y, r) { gs.fillStyle = "rgba(255,255,255," + (0.3 + r * 0.7) + ")"; if (r > 0.92) etoile(x, y, 10 + r * 8, 5); else { gs.beginPath(); gs.arc(x, y, 1.5 + r * 2.5, 0, 7); gs.fill(); } });
+      gs.fillStyle = "#fdf0d5"; gs.beginPath(); gs.arc(W * 0.8, H * 0.1, 70, 0, 7); gs.fill(); gs.fillStyle = "#1a3366"; gs.beginPath(); gs.arc(W * 0.8 + 30, H * 0.1 - 18, 62, 0, 7); gs.fill();
+      anneau(z, "#dfe7f5", 8, 26); anneau(z, "#fff", 14, 6); photoDans(z);
+      titre("Joyeux anniversaire", W, z.y - 90, "italic 700 {t} " + SERIF, 100, "#e6ecf7", "rgba(0,0,0,.4)");
+      textes(W, H, bas, { nomCouleur: "#fff", msgCouleur: "#c9d6ef", piedCouleur: "rgba(201,214,239,.7)" });
+    } },
+    tropical: { nom: "🌴 Tropical", slot: function (W, H, st) { return boite(W, H, st, 0.14, 0.22, 0.72, 0.42, { arrondi: 60 }); }, dessin: function (W, H, z, bas) {
+      degrade(W, H, ["#ffe066", "#ffb703"]);
+      [[0, 0.32, 0.3], [W, 0.36, Math.PI - 0.3], [0, 0.6, -0.2], [W, 0.64, Math.PI + 0.2], [0, 0.03, 0.9], [W, 0.03, Math.PI - 0.9]].forEach(function (f, i) { feuille(f[0], H * f[1], 380, f[2], i % 2 ? "#2d6a4f" : "#40916c"); feuille(f[0], H * f[1] + 60, 300, f[2] + 0.35, "#1b4332"); });
+      ombrePhoto(z); photoDans(z); contour(z, "#fff", 16, 8);
+      panneau(W, z.y - 160, 120, "rgba(255,255,255,.75)");
+      titre("Joyeux anniversaire !", W, z.y - 80, "900 {t} " + POLICE, 88, "#1b4332");
+      textes(W, H, bas, { nomCouleur: "#d00000", nomOmbre: "rgba(255,255,255,.6)", msgFont: "700 {t} " + POLICE, msgCouleur: "#1b4332", piedCouleur: "rgba(27,67,50,.8)" });
+    } },
+    gateau: { nom: "🎂 Gâteau", slot: function (W, H, st) { return rond(W, H, st, 0.52, 0.32); }, dessin: function (W, H, z, bas) {
+      gs.fillStyle = "#fff3e0"; gs.fillRect(0, 0, W, H);
+      for (var y = 40; y < H; y += 90) for (var x = (y / 90 % 2) * 45 + 20; x < W; x += 90) { gs.fillStyle = "rgba(244,162,97,.25)"; gs.beginPath(); gs.arc(x, y, 10, 0, 7); gs.fill(); }
+      titre("Joyeux anniversaire", W, z.y - 70, "700 {t} " + SCRIPT, 116, "#6f1d1b");
+      anneau(z, "#f4a261", 16, 10); photoDans(z);
+      ecrire(T.nom || "Prénom", W / 2, z.y + z.h + 140, "800 {t} " + POLICE, 120, "#6f1d1b", W * 0.86);
+      decouper(T.msg, 30).forEach(function (l, i) { ecrire(l, W / 2, z.y + z.h + 225 + i * 60, "italic 600 {t} " + SERIF, 50, "#99582a", W * 0.86); });
+      gateau(W / 2, H - 150, W * 0.56);
+      ecrire(T.pied, W / 2, H - 70, "600 {t} " + POLICE, 34, "rgba(111,29,27,.7)", W * 0.9);
+    } },
+    royal: { nom: "👑 Royal", slot: function (W, H, st) { return rond(W, H, st, 0.58, 0.45); }, dessin: function (W, H, z, bas) {
+      radial(W, H, "#7b2cbf", "#240046", 0.45);
+      semis(W, H, 50, 3, function (x, y, r) { gs.fillStyle = "rgba(255,215,0," + r * 0.5 + ")"; etoile(x, y, 6 + r * 10, 4, 0.3); });
+      var og = orDegrade(z.y, z.y + z.h);
+      anneau(z, og, 22, 14); photoDans(z);
+      couronne(W / 2, z.y - z.w * 0.32, z.w * 0.42, og);
+      titre("Joyeux anniversaire", W, z.y - z.w * 0.4, "italic 700 {t} " + SERIF, 92, og);
+      textes(W, H, bas, { nomFont: "700 {t} " + SERIF, nomTaille: 132, nomCouleur: "#fff", msgCouleur: "#e0aaff", piedCouleur: "rgba(224,170,255,.75)" });
+    } },
+    retro: { nom: "🌅 Rétro", slot: function (W, H, st) { return rond(W, H, st, 0.5, 0.38); }, dessin: function (W, H, z, bas) {
+      var hz = H * 0.62;
+      degrade(W, H, ["#1a0533", "#5f0f40", "#d53369", "#f9c74f"]);
+      var cx = W / 2, cy = hz, r = W * 0.42, g = gs.createLinearGradient(0, cy - r, 0, cy); g.addColorStop(0, "#ffd60a"); g.addColorStop(1, "#ff006e");
+      gs.save(); gs.beginPath(); gs.arc(cx, cy, r, Math.PI, 0); gs.clip(); gs.fillStyle = g; gs.fillRect(cx - r, cy - r, 2 * r, r);
+      gs.fillStyle = "#5f0f40"; for (var k = 0; k < 7; k++) gs.fillRect(cx - r, cy - r * 0.45 + k * r * 0.07, 2 * r, 6 + k * 3); gs.restore();
+      gs.fillStyle = "#14001f"; gs.fillRect(0, hz, W, H - hz);
+      gs.strokeStyle = "#ff4ecd"; gs.lineWidth = 3;
+      for (var i = -12; i <= 12; i++) { gs.beginPath(); gs.moveTo(cx + i * 40, hz); gs.lineTo(cx + i * 260, H); gs.stroke(); }
+      for (var j = 1; j < 12; j++) { var yy = hz + Math.pow(j / 12, 2) * (H - hz); gs.beginPath(); gs.moveTo(0, yy); gs.lineTo(W, yy); gs.stroke(); }
+      photoDans(z); contour(z, "#00f5d4", 10, 12, "#00f5d4");
+      titre("HAPPY BIRTHDAY", W, z.y - 80, "italic 900 {t} " + POLICE, 92, "#00f5d4", "#ff006e");
+      textes(W, H, bas, { d1: 170, nomFont: "italic 900 {t} " + POLICE, nomCouleur: "#fff", nomOmbre: "#ff006e", msgFont: "700 {t} " + MONO, msgCouleur: "#ffd60a", piedCouleur: "rgba(255,214,10,.8)" });
+    } },
+    magazine: { nom: "📰 Magazine", slot: function (W, H) { return { x: 0, y: 0, w: W, h: H }; }, dessin: function (W, H, z) {
+      photoDans(z);
+      var g = gs.createLinearGradient(0, H * 0.45, 0, H); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,.85)"); gs.fillStyle = g; gs.fillRect(0, 0, W, H);
+      var g2 = gs.createLinearGradient(0, 0, 0, H * 0.25); g2.addColorStop(0, "rgba(0,0,0,.6)"); g2.addColorStop(1, "rgba(0,0,0,0)"); gs.fillStyle = g2; gs.fillRect(0, 0, W, H * 0.25);
+      titre("STAR", W, H * 0.13, "900 {t} " + SERIF, 230, "#e63946", "rgba(0,0,0,.5)", "20px");
+      ecrire("DU JOUR · ÉDITION SPÉCIALE ANNIVERSAIRE", W / 2, H * 0.13 + 70, "700 {t} " + POLICE, 34, "#fff", W * 0.9);
+      ecrire("Joyeux anniversaire", W / 2, H - 330, "italic 600 {t} " + SERIF, 64, "#ffd166", W * 0.9);
+      ecrire((T.nom || "Prénom").toUpperCase(), W / 2, H - 200, "900 {t} " + POLICE, 150, "#fff", W * 0.92, "rgba(0,0,0,.6)");
+      if (T.msg) ecrire(T.msg, W / 2, H - 130, "600 {t} " + POLICE, 44, "#eee", W * 0.9);
+      ecrire(T.pied, W / 2, H - 60, "600 {t} " + POLICE, 30, "rgba(255,255,255,.7)", W * 0.9);
+    } },
+    tableau: { nom: "🧮 Tableau noir", slot: function (W, H, st) { return boite(W, H, st, 0.16, 0.24, 0.68, 0.4); }, dessin: function (W, H, z, bas) {
+      gs.fillStyle = "#1f3b2d"; gs.fillRect(0, 0, W, H);
+      semis(W, H, 400, 9, function (x, y, r) { gs.fillStyle = "rgba(255,255,255," + r * 0.05 + ")"; gs.fillRect(x, y, 3, 3); });
+      var eq = ["E = mc²", "iħ ∂ψ/∂t = Ĥψ", "S = k ln Ω", "λ = h/p", "F = ma", "∇·E = ρ/ε₀", "Δx·Δp ≥ ħ/2", "PV = nRT", "L = T − V", "Re = ρvL/η", "2d sinθ = nλ", "E = hν"];
+      var rr = hasard(13); eq.forEach(function (e) { gs.save(); gs.translate(rr() * W * 0.8 + 40, rr() * H); gs.rotate((rr() - 0.5) * 0.3); gs.font = "italic 52px " + SERIF; gs.fillStyle = "rgba(255,255,255,.13)"; gs.fillText(e, 0, 0); gs.restore(); });
+      photoDans(z); contour(z, "#8d5524", 30, 15); contour(z, "#5c3317", 6, 31);
+      titre("Joyeux anniversaire", W, z.y - 100, "700 {t} " + SCRIPT, 110, "#fdfdfd");
+      textes(W, H, bas, { d1: 170, nomFont: "700 {t} " + SCRIPT, nomTaille: 140, nomCouleur: "#fdfdfd", msgFont: "500 {t} " + SCRIPT, msgTaille: 60, msgCouleur: "#f6f1a8", piedCouleur: "rgba(255,255,255,.55)" });
+    } },
+    confetti: { nom: "🎊 Confettis", slot: function (W, H, st) { return boite(W, H, st, 0.15, 0.22, 0.7, 0.4, { hexagone: true }); }, dessin: function (W, H, z, bas) {
+      gs.fillStyle = "#fff"; gs.fillRect(0, 0, W, H);
+      confettis(W, H, 260, ["#f94144", "#f3722c", "#f9c74f", "#90be6d", "#43aa8b", "#577590", "#9b5de5"], 29);
+      var g = gs.createLinearGradient(z.x, z.y, z.x + z.w, z.y + z.h); ["#f94144", "#f9c74f", "#43aa8b", "#577590", "#9b5de5"].forEach(function (c, i) { g.addColorStop(i / 4, c); });
+      contour(z, g, 30, 10); photoDans(z);
+      var lettres = "JOYEUX ANNIVERSAIRE", cols = ["#f94144", "#f3722c", "#f9c74f", "#43aa8b", "#577590", "#9b5de5"];
+      gs.font = "900 76px " + POLICE; gs.textAlign = "left"; var lw = gs.measureText(lettres).width, xx = (W - lw) / 2;
+      Array.prototype.forEach.call(lettres, function (c, i) { gs.fillStyle = cols[i % cols.length]; gs.fillText(c, xx, z.y - 90); xx += gs.measureText(c).width; });
+      textes(W, H, bas, { d1: 160, nomCouleur: "#222", msgFont: "700 {t} " + POLICE, msgCouleur: "#577590", piedCouleur: "rgba(0,0,0,.55)" });
+    } },
+    coeurs: { nom: "💗 Cœurs", slot: function (W, H, st) { return rond(W, H, st, 0.6, 0.42); }, dessin: function (W, H, z, bas) {
+      degrade(W, H, ["#ff758f", "#ffb3c1", "#ffccd5"]);
+      semis(W, H, 40, 19, function (x, y, r) { gs.fillStyle = "rgba(255,255,255," + (0.25 + r * 0.45) + ")"; coeur(x, y, 30 + r * 60); });
+      anneau(z, "#fff", 18, 9); anneau(z, "#c9184a", 6, 28); photoDans(z);
+      titre("Joyeux anniversaire", W, z.y - 80, "700 {t} " + SCRIPT, 118, "#fff", "rgba(201,24,74,.8)");
+      textes(W, H, bas, { nomCouleur: "#800f2f", nomOmbre: "rgba(255,255,255,.7)", msgCouleur: "#a4133c", piedCouleur: "rgba(128,15,47,.75)" });
+    } },
+    benin: { nom: "🇧🇯 Bénin", slot: function (W, H, st) { return boite(W, H, st, 0.2, 0.22, 0.66, 0.42, { arrondi: 40 }); }, dessin: function (W, H, z, bas) {
+      gs.fillStyle = "#fffaf0"; gs.fillRect(0, 0, W, H);
+      gs.fillStyle = "#008751"; gs.fillRect(0, 0, W * 0.12, H);
+      gs.fillStyle = "#fcd116"; gs.fillRect(W * 0.12, 0, W * 0.88, 26);
+      gs.fillStyle = "#e8112d"; gs.fillRect(W * 0.12, H - 26, W * 0.88, 26);
+      semis(W, H, 30, 23, function (x, y, r, i) { if (x < W * 0.14) return; gs.fillStyle = ["rgba(0,135,81,.12)", "rgba(252,209,22,.18)", "rgba(232,17,45,.12)"][i % 3]; etoile(x, y, 18 + r * 22, 5); });
+      ombrePhoto(z); photoDans(z); contour(z, "#fcd116", 12, 8); contour(z, "#e8112d", 6, 22);
+      titre("Joyeux anniversaire", W * 1.12, z.y - 80, "900 {t} " + POLICE, 86, "#008751");
+      ecrire(T.nom || "Prénom", W * 0.56, bas + 150, "800 {t} " + POLICE, 124, "#e8112d", W * 0.8);
+      decouper(T.msg, 28).forEach(function (l, i) { ecrire(l, W * 0.56, bas + 240 + i * 62, "italic 600 {t} " + SERIF, 52, "#1b4332", W * 0.8); });
+      ecrire(T.pied, W * 0.56, H - 70, "600 {t} " + POLICE, 32, "rgba(0,0,0,.6)", W * 0.82);
+    } },
+    elegant: { nom: "🤍 Élégant", slot: function (W, H, st) { return boite(W, H, st, 0.17, 0.24, 0.66, 0.42); }, dessin: function (W, H, z, bas) {
+      gs.fillStyle = "#fbfaf7"; gs.fillRect(0, 0, W, H);
+      gs.strokeStyle = "#1a1a1a"; gs.lineWidth = 3; gs.strokeRect(50, 50, W - 100, H - 100); gs.lineWidth = 1; gs.strokeRect(66, 66, W - 132, H - 132);
+      titre("JOYEUX ANNIVERSAIRE", W, z.y - 90, "500 {t} " + SERIF, 52, "#1a1a1a", null, "12px");
+      gs.fillStyle = "#b08d57"; gs.fillRect(W / 2 - 80, z.y - 60, 160, 3);
+      photoDans(z); contour(z, "#1a1a1a", 2, 18);
+      textes(W, H, bas, { d1: 170, nomFont: "italic 400 {t} " + SERIF, nomTaille: 150, nomCouleur: "#1a1a1a", msgFont: "400 {t} " + SERIF, msgCouleur: "#555", piedCouleur: "#b08d57" });
+    } }
+  };
+  var DECORS = Object.keys(DECORS_DEF).map(function (k) { return [k, DECORS_DEF[k].nom]; });
+  function dessiner() {
+    var W = 1080, H = studio.format === "statut" ? 1920 : 1350;
+    if (toile.width !== W || toile.height !== H) { toile.width = W; toile.height = H; }
+    var jour = new Date();
+    T = { nom: $("st-nom").value.trim(), msg: $("st-message").value.trim(), pied: ((donnees && donnees.titre) || "La promo") + " · " + jour.getDate() + " " + MOIS[jour.getMonth()] + " " + jour.getFullYear() };
+    var d = DECORS_DEF[studio.decor] || DECORS_DEF.ballons, z = d.slot(W, H, studio.format === "statut");
+    gs.clearRect(0, 0, W, H);
+    gs.save(); d.dessin(W, H, z, z.y + z.h); gs.restore();
+  }
+  // Vignettes de tous les décors (dessinées une fois, sans photo).
+  function galerieDecors() {
+    var z = $("st-decors"); z.textContent = ""; z.className = "galerie-decors";
+    var vrai = gs, avant = studio.decor, img = studio.img;
+    studio.img = null; apercu = true;
+    DECORS.forEach(function (x) {
+      var b = el("button", studio.decor === x[0] || avant === x[0] ? "choisie" : ""); b.type = "button";
+      var c = document.createElement("canvas"); c.width = 108; c.height = 192;
+      gs = c.getContext("2d"); gs.setTransform(0.1, 0, 0, 0.1, 0, 0);
+      studio.decor = x[0];
+      try { var d = DECORS_DEF[x[0]], zz = d.slot(1080, 1920, true); T = { nom: "Koffi", msg: "", pied: "" }; d.dessin(1080, 1920, zz, zz.y + zz.h); } catch (e) {}
+      b.appendChild(c); b.appendChild(el("span", null, x[1]));
+      b.onclick = function () { studio.decor = x[0]; Array.prototype.forEach.call(z.children, function (y) { y.classList.remove("choisie"); }); b.classList.add("choisie"); dessiner(); };
+      z.appendChild(b);
+    });
+    gs = vrai; studio.decor = avant; studio.img = img; apercu = false;
   }
   function chargerPhotoStudio(src, revoquer) {
     var im = new Image();
@@ -2028,7 +2248,7 @@
     if (x.photos && x.photos.length) chargerPhotoStudio(photoUrl(x.photos[0])); else dessiner();
     $("studio").scrollIntoView({ behavior: "smooth" });
   }
-  puces($("st-decors"), DECORS, "decor");
+  galerieDecors();
   puces($("st-formats"), FORMATS, "format");
   dessiner();
 

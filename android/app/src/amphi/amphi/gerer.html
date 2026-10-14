@@ -52,6 +52,8 @@
   .apercu-jour { margin-top: 10px; border: 1px solid var(--bordure); border-radius: 10px; overflow: hidden; }
   .apercu-jour p.t { background: var(--ciel); padding: 6px 10px; font-weight: 700; color: var(--nuit); }
   .apercu-jour p.c { padding: 6px 10px; border-top: 1px solid var(--bordure); font-size: .92rem; }
+  .interrupteur { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: var(--ciel); font-size: .92rem; }
+  .interrupteur input { width: auto; margin-top: 3px; transform: scale(1.3); }
   .bilan { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-weight: 600; }
   .bilan.ok { background: var(--vert-fond); color: var(--vert); }
   .bilan.non { background: var(--rouge-fond); color: var(--rouge); }
@@ -148,7 +150,8 @@
 
   <details class="carte" id="carte-promo">
     <summary>🎉 Vie de la promo <span class="pastille" id="nb-promo" hidden></span></summary>
-    <p class="aide">Dédicaces, objets perdus et trouvés, petit marché, recherches de binôme : rien n'apparaît sans votre accord.</p>
+    <label class="interrupteur"><input type="checkbox" id="reg-libre"> <b>Publication libre</b> : tout le monde publie directement (dédicaces, objets, marché, binômes, stars, corrigés, documents). La promo peut signaler 🚩 : au 3e signalement, le contenu est masqué et revient ici.</label>
+    <p class="aide" id="reg-libre-aide"></p>
     <div id="liste-stars-attente"></div>
     <div id="liste-promo-attente"></div>
     <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">🎂 Stars du jour publiées</h3>
@@ -179,6 +182,11 @@
     <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">📝 Corrigés proposés</h3>
     <p class="aide">Vérifiez qu'il s'agit bien d'un corrigé lisible et correct. Publié : +20 points pour son auteur.</p>
     <div id="liste-corriges"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">📚 Publiés directement par les étudiants</h3>
+    <p class="aide">En publication libre, les documents envoyés arrivent tout de suite dans la bibliothèque. Retirez ceux qui ne conviennent pas.</p>
+    <div id="liste-docs-libres"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">🚩 Documents masqués (signalés 3 fois)</h3>
+    <div id="liste-masques"></div>
   </details>
 
   <details class="carte">
@@ -731,18 +739,18 @@
   var NOMS_ALERTE = { present: "✅ Le prof est là", annule: "❌ Cours annulé", salle: "🔄 Salle changée", retard: "⏳ Prof en retard" };
   function rendrePromo() {
     var pubs = (echanges.publications || []).slice().sort(function (a, b) { return b.date - a.date; });
-    var attente = pubs.filter(function (p) { return p.statut === "attente"; });
+    var attente = pubs.filter(function (p) { return p.statut === "attente" || p.statut === "signale"; });
     $("nb-promo").hidden = !attente.length; $("nb-promo").textContent = attente.length;
     function ligne(p, enAttente) {
       var l = el("div", "ligne"); l.style.flexWrap = "wrap";
       if (p.image) { var v = el("img", "vignette"); v.src = "/f/" + p.image + "?type=image/jpeg"; l.appendChild(v); }
       var i = el("div", "info");
-      i.appendChild(el("p", "nom", NOMS_PROMO[p.sorte] + (p.statut === "clos" ? " (clos)" : "")));
+      i.appendChild(el("p", "nom", (p.statut === "signale" ? "🚩 Signalé · " : "") + NOMS_PROMO[p.sorte] + (p.statut === "clos" ? " (clos)" : "")));
       i.appendChild(el("p", null, p.texte));
       i.appendChild(el("p", "meta", [p.ue, p.quartier, p.prix, p.contact, new Date(p.date).toLocaleString("fr-FR")].filter(Boolean).join(" · ")));
       l.appendChild(i);
       var act = function (a) { return function () { poster("/gerer/publication/" + p.id, { action: a }).then(chargerEchanges); }; };
-      if (enAttente) { l.appendChild(bouton("Publier", "", act("publier"))); l.appendChild(bouton("Refuser", "danger", act("refuser"))); }
+      if (enAttente) { l.appendChild(bouton(p.statut === "signale" ? "Rétablir" : "Publier", "", act("publier"))); l.appendChild(bouton(p.statut === "signale" ? "Supprimer" : "Refuser", "danger", act("refuser"))); }
       else {
         if (p.sorte !== "dedicace" && p.statut !== "clos") l.appendChild(bouton(p.sorte === "vente" || p.sorte === "achat" ? "Vendu / fini" : p.sorte === "binome" ? "Trouvé" : "Rendu", "second", act("clore")));
         l.appendChild(bouton("Retirer", "danger", act("supprimer")));
@@ -751,11 +759,11 @@
     }
     // Stars du jour (anniversaires)
     var stars = (echanges.stars || []).slice().sort(function (a, b) { return b.date - a.date; });
-    var sa = stars.filter(function (x) { return x.statut === "attente"; });
+    var sa = stars.filter(function (x) { return x.statut === "attente" || x.statut === "signale"; });
     function ligneStar(x, enAttente) {
       var l = el("div", "ligne"); l.style.flexWrap = "wrap";
       var i = el("div", "info");
-      i.appendChild(el("p", "nom", "🎂 Star du jour : " + x.nom));
+      i.appendChild(el("p", "nom", (x.statut === "signale" ? "🚩 Signalée · " : "") + "🎂 Star du jour : " + x.nom));
       if (x.message) i.appendChild(el("p", null, "« " + x.message + " »"));
       i.appendChild(el("p", "meta", (x.photos || []).length + " photo(s) · " + (x.nbVoeux || 0) + " vœu(x) · " + new Date(x.date).toLocaleString("fr-FR")));
       var g = el("div"); g.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px";
@@ -781,7 +789,7 @@
     if (!attente.length && !sa.length) za.appendChild(el("p", "aide", "Rien à vérifier pour l'instant."));
     attente.forEach(function (p) { za.appendChild(ligne(p, true)); });
     var zp = $("liste-promo-publies"); zp.textContent = "";
-    pubs.filter(function (p) { return p.statut !== "attente"; }).slice(0, 40).forEach(function (p) { zp.appendChild(ligne(p, false)); });
+    pubs.filter(function (p) { return p.statut !== "attente" && p.statut !== "signale"; }).slice(0, 40).forEach(function (p) { zp.appendChild(ligne(p, false)); });
     var zl = $("liste-alertes"); zl.textContent = "";
     if (!(echanges.alertes || []).length) zl.appendChild(el("p", "aide", "Aucune alerte en ce moment."));
     (echanges.alertes || []).forEach(function (a) {
@@ -813,21 +821,46 @@
     if (!contenu) return;
     rendrePromo();
     var corriges = echanges.corriges || [];
-    var cAttente = corriges.filter(function (c) { return c.statut === "attente"; });
+    var cAttente = corriges.filter(function (c) { return c.statut === "attente" || c.statut === "signale"; });
     var nbP = echanges.propositions.length + cAttente.length;
     $("nb-valider").hidden = !nbP; $("nb-valider").textContent = nbP;
+    // Publication libre
+    var libre = !(contenu.reglages && contenu.reglages.publicationLibre === false);
+    if (document.activeElement !== $("reg-libre")) $("reg-libre").checked = libre;
+    $("reg-libre-aide").textContent = libre ? "✅ Activée : vous n'avez rien à valider, retirez seulement ce qui ne va pas." : "⏳ Désactivée : rien n'apparaît sans votre accord.";
+    var dl2 = $("liste-docs-libres"); dl2.textContent = "";
+    var libres = (echanges.docsLibres || []).slice().sort(function (a, b) { return b.date - a.date; });
+    if (!libres.length) dl2.appendChild(el("p", "aide", "Aucun pour l'instant."));
+    libres.forEach(function (d) {
+      var l = el("div", "ligne"), i = el("div", "info");
+      i.appendChild(el("p", "nom", d.titre || d.nom)); i.appendChild(el("p", "meta", [d.matiere, d.auteur ? "par " + d.auteur : "", taille(d.taille), new Date(d.date).toLocaleString("fr-FR")].filter(Boolean).join(" · ")));
+      l.appendChild(i);
+      l.appendChild(bouton("Voir", "second", function () { location.href = "/f/" + d.id + "?type=" + encodeURIComponent(d.type) + "&nom=" + encodeURIComponent(d.nom); }));
+      l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer ce document ?")) poster("/gerer/doclibre/" + d.id, { action: "supprimer" }).then(chargerEchanges); }));
+      dl2.appendChild(l);
+    });
+    var lm = $("liste-masques"); lm.textContent = "";
+    var tousDocs = (contenu.documents || []).concat(libres);
+    if (!(echanges.masques || []).length) lm.appendChild(el("p", "aide", "Aucun."));
+    (echanges.masques || []).forEach(function (id) {
+      var d = tousDocs.filter(function (x) { return x.id === id; })[0] || { titre: "Document " + id };
+      var l = el("div", "ligne"), i = el("div", "info"); i.appendChild(el("p", "nom", "🚩 " + (d.titre || d.nom))); l.appendChild(i);
+      l.appendChild(bouton("Rétablir", "", function () { poster("/gerer/doclibre/" + id, { action: "retablir" }).then(chargerEchanges); }));
+      if (d.libre) l.appendChild(bouton("Supprimer", "danger", function () { poster("/gerer/doclibre/" + id, { action: "supprimer" }).then(chargerEchanges); }));
+      lm.appendChild(l);
+    });
     var lc = $("liste-corriges"); lc.textContent = "";
     if (!corriges.length) lc.appendChild(el("p", "aide", "Aucun corrigé pour l'instant."));
     corriges.slice().sort(function (a, b) { return (a.statut === "attente" ? 0 : 1) - (b.statut === "attente" ? 0 : 1) || b.date - a.date; }).forEach(function (c) {
       var doc = (contenu.documents || []).filter(function (d) { return d.id === c.doc; })[0];
       var l = el("div", "ligne"); l.style.flexWrap = "wrap";
       var i = el("div", "info");
-      i.appendChild(el("p", "nom", (c.statut === "attente" ? "⏳ " : "✅ ") + (c.note || c.nom)));
+      i.appendChild(el("p", "nom", (c.statut === "signale" ? "🚩 " : c.statut === "attente" ? "⏳ " : "✅ ") + (c.note || c.nom)));
       i.appendChild(el("p", "meta", "Pour : " + (doc ? doc.titre || doc.nom : "document retiré") + (c.pseudo ? " · par " + c.pseudo : "") + " · " + (c.votes || 0) + " 👍 · " + new Date(c.date).toLocaleString("fr-FR")));
       l.appendChild(i);
       var act = function (a) { return function () { poster("/gerer/corrige/" + c.cid, { action: a }).then(chargerEchanges); }; };
       l.appendChild(bouton("Voir", "second", function () { location.href = "/gerer/corrige/" + c.cid + "/f?type=" + encodeURIComponent(c.type) + "&nom=" + encodeURIComponent(c.nom); }));
-      if (c.statut === "attente") { l.appendChild(bouton("Publier", "", act("publier"))); l.appendChild(bouton("Refuser", "danger", act("refuser"))); }
+      if (c.statut === "attente" || c.statut === "signale") { l.appendChild(bouton(c.statut === "signale" ? "Rétablir" : "Publier", "", act("publier"))); l.appendChild(bouton("Refuser", "danger", act("refuser"))); }
       else l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer ce corrigé ?")) act("supprimer")(); }));
       lc.appendChild(l);
     });
@@ -974,6 +1007,11 @@
       [0, 1, 2, 3].forEach(function (i) { $("df-c" + i).value = ""; });
       chargerEchanges();
     });
+  };
+  $("reg-libre").onchange = function () {
+    contenu.reglages = contenu.reglages || {};
+    contenu.reglages.publicationLibre = this.checked;
+    enregistrer(this.checked ? "Publication libre activée ✓" : "Vérification avant publication ✓");
   };
   // ── Après la L3 ──
   function dateFr(iso) { return iso ? iso.split("-").reverse().join("/") : ""; }
