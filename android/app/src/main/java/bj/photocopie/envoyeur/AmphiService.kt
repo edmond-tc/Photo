@@ -1220,12 +1220,18 @@ class AmphiService : Service() {
             .flatMap { i -> i.inetAddresses.toList().filterIsInstance<Inet4Address>().mapNotNull { it.hostAddress } }
     } catch (_: Exception) { emptyList() }
 
+    @Volatile private var dernierMainAMain = 0L
+
     /** Recrée le Wi-Fi s'il devait être allumé et ne l'est plus. */
     private fun veillerWifi() {
         try { Thread.sleep(3000) } catch (_: InterruptedException) { return }
         while (veille) {
             try {
-                if (prefs().getBoolean("wifi", false) && autorise()) {
+                // Un transfert « Main à main » utilise aussi le Wi-Fi Direct : on
+                // ne touche à rien pendant qu'il tourne, ni dans les 2 minutes après.
+                if (MainAMain.enCours()) dernierMainAMain = System.currentTimeMillis()
+                val libre = !MainAMain.enCours() && System.currentTimeMillis() - dernierMainAMain > 120_000
+                if (libre && prefs().getBoolean("wifi", false) && autorise()) {
                     val g = groupeActuel()
                     if (g == null || !g.isGroupOwner) creerWifi("", "")
                 }
