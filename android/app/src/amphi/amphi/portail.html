@@ -351,6 +351,13 @@
   .profil-tete { display: flex; align-items: center; gap: 12px; }
   .niveau-icone { flex: none; width: 56px; height: 56px; border-radius: 16px; background: var(--ciel); display: grid; place-items: center; font-size: 1.9rem; }
   .profil-nom { flex: 1; min-width: 0; }
+  .niveau-icone.avec-photo { position: relative; padding: 0; overflow: visible; background: none; }
+  .niveau-icone.avec-photo img { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; }
+  .badge-niveau { position: absolute; right: -6px; bottom: -6px; font-size: 1.1rem; background: #fff; border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  .photo-profil { margin-top: 8px; width: 100%; }
+  .avatar { flex: none; width: 30px; height: 30px; border-radius: 50%; overflow: hidden; background: var(--ciel); color: var(--nuit); font: 800 .85rem var(--police); display: inline-grid; place-items: center; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .avatar.petit { width: 20px; height: 20px; font-size: .65rem; }
   .profil-nom h3 { font-size: 1.2rem; color: var(--nuit); }
   .serie { flex: none; font: 800 1.05rem var(--mono); color: #c2410c; background: #fff1e6; padding: 6px 10px; border-radius: 12px; }
   .serie.zero { color: var(--discret); background: var(--fond); }
@@ -592,6 +599,8 @@
       <div><b id="pr-meilleure">0</b><span>record 🔥</span></div>
     </div>
     <input class="champ" id="pr-pseudo" maxlength="20" placeholder="Votre pseudo pour le tableau d'honneur">
+    <label class="bouton second photo-profil"><input type="file" id="pr-photo" accept="image/*" hidden>📷 Ma photo de profil</label>
+    <div class="barre-envoi" id="pr-barre" hidden><i></i></div>
     <p class="aide" id="pr-etat" style="margin-top:6px">Points : 1 par jour de visite (+10 tous les 7 jours d'affilée) · défi réussi 10 (+5 aux 3 premiers), tenté 2 · document validé 15 · corrigé validé 20 · chaque « utile » ou « merci » reçu 2 à 3 · réponse à un camarade 2.</p>
   </div></div>
   <div class="carte" id="carte-defi" hidden><div class="corps">
@@ -1143,6 +1152,7 @@
     cs.forEach(function (c, i) {
       var l = el("div", "corrige" + (i === 0 && c.votes > 0 ? " meilleur" : ""));
       var t = el("div", "info");
+      l.appendChild(avatar(c.photo, c.pseudo || "?"));
       t.appendChild(el("p", "nom", (i === 0 && c.votes > 0 ? "🏅 Meilleur corrigé · " : "") + (c.note || c.nom)));
       t.appendChild(el("p", "meta", (c.pseudo ? "par " + c.pseudo + " · " : "") + (c.votes || 0) + " 👍 · " + taille(c.taille)));
       l.appendChild(t);
@@ -1461,7 +1471,7 @@
       var meilleure = i === 0 && x.votes > 0;
       var d = el("div", "rep-eleve" + (meilleure ? " meilleure" : ""));
       d.appendChild(el("p", null, (meilleure ? "⭐ " : "") + x.texte));
-      var m = el("div", "meta"); m.appendChild(el("span", null, (x.pseudo || "Un camarade") + " · " + ilYa(x.date)));
+      var m = el("div", "meta"); m.appendChild(avatar(x.photo, x.pseudo || "?", "petit")); m.appendChild(el("span", null, (x.pseudo || "Un camarade") + " · " + ilYa(x.date)));
       var deja = lire("amphi-rep-" + x.rid);
       var u = el("button", null, "👍 " + (x.votes || 0) + (deja ? " ✓" : "")); u.type = "button";
       u.onclick = function () {
@@ -2354,7 +2364,10 @@
     if (!p) return;
     var ancien = profilActuel; profilActuel = p;
     var nv = niveauDe(p.points);
-    $("pr-icone").textContent = nv.n[1]; $("pr-niveau").textContent = nv.n[2];
+    var ic = $("pr-icone"); ic.textContent = "";
+    if (p.photo) { var im = el("img"); im.src = "/f/" + p.photo + "?type=image/jpeg"; im.alt = ""; ic.appendChild(im); ic.appendChild(el("span", "badge-niveau", nv.n[1])); ic.className = "niveau-icone avec-photo"; }
+    else { ic.textContent = nv.n[1]; ic.className = "niveau-icone"; }
+    $("pr-niveau").textContent = nv.n[2];
     $("pr-prochain").textContent = nv.suivant ? "Encore " + (nv.suivant[0] - p.points) + " points pour devenir " + nv.suivant[2] + " " + nv.suivant[1] : "Niveau maximal : bravo !";
     $("pr-jauge").style.width = (nv.suivant ? Math.round(100 * (p.points - nv.n[0]) / (nv.suivant[0] - nv.n[0])) : 100) + "%";
     $("pr-points").textContent = p.points; $("pr-semaine").textContent = p.semaine;
@@ -2378,6 +2391,29 @@
       }).catch(function () {});
   }
   $("pr-pseudo").value = lire("amphi-pseudo");
+  // Photo de profil : recadrée en carré, 320 × 320, sur le téléphone avant l'envoi.
+  $("pr-photo").onchange = function () {
+    var f = this.files && this.files[0], input = this; if (!f || !MON_ID) return;
+    $("pr-etat").textContent = "Envoi de la photo…";
+    var img = new Image();
+    img.onload = function () {
+      var c = document.createElement("canvas"), t = 320, cote = Math.min(img.naturalWidth, img.naturalHeight);
+      c.width = t; c.height = t;
+      c.getContext("2d").drawImage(img, (img.naturalWidth - cote) / 2, Math.max(0, (img.naturalHeight - cote) / 3), cote, cote, 0, 0, t, t);
+      URL.revokeObjectURL(img.src);
+      c.toBlob(function (b) {
+        envoyer("/profil/photo?id=" + MON_ID, b, $("pr-barre")).then(function () { $("pr-etat").textContent = "✅ Photo de profil enregistrée."; input.value = ""; synchroniser(); })
+          .catch(function (e) { $("pr-etat").textContent = "❌ " + e.message; });
+      }, "image/jpeg", 0.85);
+    };
+    img.src = URL.createObjectURL(f);
+  };
+  function avatar(photo, nom, classe) {
+    var a = el("span", "avatar" + (classe ? " " + classe : ""));
+    if (photo) { var im = el("img"); im.src = "/f/" + photo + "?type=image/jpeg"; im.alt = ""; im.loading = "lazy"; a.appendChild(im); }
+    else a.textContent = String(nom || "?").trim().slice(0, 1).toUpperCase() || "?";
+    return a;
+  }
   $("pr-pseudo").onchange = function () { garder("amphi-pseudo", this.value.trim()); if ($("dev-pseudo") && !$("dev-pseudo").value) $("dev-pseudo").value = this.value.trim(); synchroniser(); };
 
   function rendreDefi(d) {
@@ -2440,8 +2476,10 @@
       var moi = profilActuel && profilActuel.pseudo && x.pseudo === profilActuel.pseudo;
       var r = el("div", "rang-ligne" + (moi ? " moi" : ""));
       r.appendChild(el("span", "r", ["🥇", "🥈", "🥉"][i] || String(i + 1)));
+      r.appendChild(avatar(x.photo, x.pseudo));
       r.appendChild(el("span", "p", x.pseudo + (x.serie > 2 ? " · 🔥 " + x.serie : "")));
       r.appendChild(el("span", "pts", vueHonneur === "contributeurs" ? x.points + " 📚" : x.points + " pts"));
+      if (x.photo) r.appendChild(signaler("photo", x.photo));
       z.appendChild(r);
     });
   }

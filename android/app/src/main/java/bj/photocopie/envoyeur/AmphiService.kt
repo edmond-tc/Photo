@@ -281,6 +281,7 @@ class AmphiService : Service() {
                     // ── Réviser : profil (points, niveau, série) et défi du jour ──
                     r.methode == "POST" && r.chemin == "/profil" -> profil(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/defi" -> repondreDefi(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin == "/profil/photo" -> photoProfil(sortie, r, s.inetAddress.hostAddress ?: "")
                     // ── Quiz en direct ──
                     r.methode == "GET" && r.chemin == "/quiz.json" -> json(sortie, quizPublic(r.query["pid"] ?: ""))
                     r.methode == "POST" && r.chemin == "/quiz/repondre" -> repondreQuiz(sortie, r, s.inetAddress.hostAddress ?: "")
@@ -455,6 +456,7 @@ class AmphiService : Service() {
         ajouter(lireTableau(fichierPublications), "image")
         ajouter(lireTableau(fichierCorriges), "cid")
         ajouter(lireTableau(fichierDocsLibres), "id")
+        lireObjet(fichierProfils).let { pr -> pr.keys().forEach { k -> pr.optJSONObject(k)?.optString("photo")?.takeIf { it.isNotEmpty() }?.let { utilises.add(it) } } }
         val st = lireTableau(fichierStars)
         for (i in 0 until st.length()) st.optJSONObject(i)?.optJSONArray("photos")?.let { ph -> for (k in 0 until ph.length()) utilises.add(ph.optString(k)) }
         val maintenant = System.currentTimeMillis()
@@ -1133,6 +1135,28 @@ class AmphiService : Service() {
         json(sortie, reponse.put("defi", defiPublic(id)))
     }
 
+    /** Photo de profil : nom de fichier tiré au hasard (il ne révèle jamais l'identifiant). */
+    private fun photoProfil(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "photo-profil", 6, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Attendez un peu avant de changer de photo."), 429)
+        val id = r.query["id"] ?: ""
+        if (!ID_PROFIL.matches(id)) return json(sortie, JSONObject().put("erreur", "Identifiant invalide."), 400)
+        if (!lireObjet(fichierProfils).has(id)) return json(sortie, JSONObject().put("erreur", "Profil inconnu."), 404)
+        val nom = "pp" + java.util.UUID.randomUUID().toString().replace("-", "").take(18)
+        val tmp = File(dossierFichiers, nom + "t")
+        recevoirVers(tmp, r, 2_000_000L) ?: return json(sortie, JSONObject().put("erreur", "Photo trop lourde."), 413)
+        if (!tmp.renameTo(File(dossierFichiers, nom))) { tmp.delete(); return json(sortie, JSONObject().put("erreur", "Échec."), 500) }
+        synchronized(verrouEchanges) {
+            val profils = lireObjet(fichierProfils)
+            val p = profils.optJSONObject(id) ?: return json(sortie, JSONObject().put("erreur", "Profil inconnu."), 404)
+            p.optString("photo").takeIf { idValide(it) }?.let { File(dossierFichiers, it).delete() }
+            p.put("photo", nom)
+            ecrire(fichierProfils, profils)
+        }
+        json(sortie, JSONObject().put("ok", true).put("photo", nom))
+    }
+
+    private fun photoDe(id: String): String = if (ID_PROFIL.matches(id)) lireObjet(fichierProfils).optJSONObject(id)?.optString("photo") ?: "" else ""
+
     private fun profilPublic(profils: JSONObject, id: String): JSONObject {
         val p = profils.optJSONObject(id) ?: JSONObject()
         val k = semaine()
@@ -1140,7 +1164,7 @@ class AmphiService : Service() {
         var devant = 0
         profils.keys().forEach { x -> if ((profils.optJSONObject(x)?.optJSONObject("semaines")?.optInt(k) ?: 0) > moi) devant++ }
         val serie = if (p.optString("dernier") == jourIso() || p.optString("dernier") == jourIso(-1)) p.optInt("serie") else 0
-        return JSONObject().put("pseudo", p.optString("pseudo")).put("points", p.optInt("points")).put("serie", serie)
+        return JSONObject().put("pseudo", p.optString("pseudo")).put("photo", p.optString("photo")).put("points", p.optInt("points")).put("serie", serie)
             .put("meilleure", p.optInt("meilleure")).put("semaine", moi).put("rang", if (moi > 0) devant + 1 else 0)
     }
 
@@ -1151,7 +1175,7 @@ class AmphiService : Service() {
         fun top(valeur: (JSONObject) -> Int): JSONArray {
             val t = JSONArray()
             tous.map { it to valeur(it) }.filter { it.second > 0 }.sortedByDescending { it.second }.take(10)
-                .forEach { (p, v) -> t.put(JSONObject().put("pseudo", p.optString("pseudo").ifEmpty { "Anonyme" }).put("points", v).put("serie", p.optInt("serie"))) }
+                .forEach { (p, v) -> t.put(JSONObject().put("pseudo", p.optString("pseudo").ifEmpty { "Anonyme" }).put("photo", p.optString("photo")).put("points", v).put("serie", p.optInt("serie"))) }
             return t
         }
         return JSONObject().put("semaine", top { it.optJSONObject("semaines")?.optInt(k) ?: 0 }).put("total", top { it.optInt("points") })
@@ -1582,7 +1606,7 @@ class AmphiService : Service() {
         val q = lireJson(r)
         val type = q.optString("type")
         val id = q.optString("id")
-        if (type !in setOf("publication", "star", "corrige", "document", "reponse") || !id.matches(Regex("^[a-z0-9]{6,40}$")))
+        if (type !in setOf("publication", "star", "corrige", "document", "reponse", "photo") || !id.matches(Regex("^[a-z0-9]{6,40}$")))
             return json(sortie, JSONObject().put("erreur", "Signalement invalide."), 400)
         val n: Int
         synchronized(verrouEchanges) {
@@ -1609,6 +1633,13 @@ class AmphiService : Service() {
             "star" -> statut(fichierStars, "id")
             "corrige" -> statut(fichierCorriges, "cid")
             "document" -> { val m = lireTableau(fichierMasques); if ((0 until m.length()).none { m.optString(it) == id }) { m.put(id); ecrire(fichierMasques, m) } }
+            "photo" -> {
+                // Photo de profil déplacée : retirée (le profil garde ses points).
+                val pr = lireObjet(fichierProfils)
+                pr.keys().forEach { k -> pr.optJSONObject(k)?.takeIf { it.optString("photo") == id }?.put("photo", "") }
+                ecrire(fichierProfils, pr)
+                File(dossierFichiers, id).takeIf { idValide(id) }?.delete()
+            }
             "reponse" -> {
                 val t = lireTableau(fichierQuestions)
                 for (i in 0 until t.length()) t.optJSONObject(i)?.optJSONArray("reponses")?.let { rs -> for (k in 0 until rs.length()) rs.optJSONObject(k)?.takeIf { it.optString("rid") == id }?.put("masquee", true) }
@@ -1668,7 +1699,7 @@ class AmphiService : Service() {
         synchronized(verrouEchanges) {
             val t = lireTableau(fichierCorriges)
             t.put(JSONObject().put("cid", cid).put("doc", doc).put("auteurId", (r.query["pid"] ?: "").takeIf { ID_PROFIL.matches(it) } ?: "")
-                .put("pseudo", pseudoPropre(r.query["pseudo"])).put("nom", nomPropre(r.query["nom"])).put("type", typePropre(r.query["type"]))
+                .put("pseudo", pseudoPropre(r.query["pseudo"])).put("photo", photoDe(r.query["pid"] ?: "")).put("nom", nomPropre(r.query["nom"])).put("type", typePropre(r.query["type"]))
                 .put("note", texte(r.query["note"], 120)).put("taille", taille).put("date", System.currentTimeMillis())
                 .put("statut", if (libre) "publie" else "attente").put("votes", 0).put("votants", JSONArray()))
             ecrire(fichierCorriges, t)
@@ -1790,7 +1821,7 @@ class AmphiService : Service() {
                 val rs = o.optJSONArray("reponses") ?: JSONArray()
                 if (rs.length() >= 30) return json(sortie, JSONObject().put("erreur", "Assez de réponses ici."), 400)
                 rs.put(JSONObject().put("rid", java.util.UUID.randomUUID().toString().replace("-", "").take(12)).put("texte", t)
-                    .put("pseudo", pseudoPropre(q.optString("pseudo"))).put("auteurId", pid).put("date", System.currentTimeMillis())
+                    .put("pseudo", pseudoPropre(q.optString("pseudo"))).put("photo", photoDe(pid)).put("auteurId", pid).put("date", System.currentTimeMillis())
                     .put("votes", 0).put("votants", JSONArray()))
                 o.put("reponses", rs)
                 ecrire(fichierQuestions, tout)
