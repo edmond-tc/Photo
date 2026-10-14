@@ -3,6 +3,7 @@
 // propre, et rien de ce qui est réservé au porteur du projet.
 
 import { relais, nettoyer, nettoyerSiBesoin } from "./relais.js";
+import { amphi } from "./amphi.js";
 import { definirRacine, pageAccueil, pageAccueilEn, pageAffiche, pageComment, pageConfidentialite, pageFaq, pageKit, pageTelechargerSite, robots, sitemap } from "./pages.js";
 import { pageHowItWorks, pageFaqEn, pageDownload, pagePrivacy } from "./pages-en.js";
 import { pageConditions, pageTerms, pageMentions, pageLegal } from "./pages-legal.js";
@@ -39,6 +40,8 @@ export default {
       return new Response("ok", { headers: { "cache-control": "no-store" } });
     }
     try {
+      const am = await amphi(request, env);
+      if (am) return am;
       const r = await relais(request, env);
       if (r) return r;
       if (request.method !== "GET" && request.method !== "HEAD") return new Response("Méthode non permise", { status: 405 });

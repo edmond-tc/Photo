@@ -147,12 +147,15 @@ class AmphiService : Service() {
         // Le Wi-Fi de l'amphi était allumé (redémarrage, mise à jour) : on le
         // recrée, puis on veille à ce qu'il reste allumé.
         Thread({ veillerWifi() }, "amphi-wifi").start()
+        Thread({ synchroniserEnLigne() }, "amphi-en-ligne").start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
         enMarche = false
+        arretEnLigne = true
+        reveilEnLigne.release()
         veille = false
         supprimerGroupe()
         try { serveur?.close() } catch (_: Exception) {}
@@ -320,6 +323,13 @@ class AmphiService : Service() {
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/publication/[a-z0-9]{6,30}$")) -> json(sortie, modererPublication(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin == "/gerer/defi" -> json(sortie, defiPerso(lireJson(r)))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/doclibre/[a-z0-9]{8,40}$")) -> json(sortie, modererDocLibre(r.chemin.split("/")[3], lireJson(r).optString("action")))
+                    r.methode == "GET" && r.chemin == "/gerer/enligne" -> json(sortie, etatEnLigne())
+                    r.methode == "POST" && r.chemin == "/gerer/enligne/activer" -> json(sortie, activerEnLigne())
+                    r.methode == "POST" && r.chemin == "/gerer/enligne/desactiver" -> {
+                        prefs().edit().remove("enligne_code").remove("enligne_secret").apply()
+                        json(sortie, etatEnLigne())
+                    }
+                    r.methode == "POST" && r.chemin == "/gerer/enligne/recuperer" -> { reveilEnLigne.release(); json(sortie, JSONObject().put("ok", true)) }
                     r.methode == "GET" && r.chemin == "/gerer/quiz" -> json(sortie, quizGestion())
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/quiz/(creer|suivant|terminer|fermer)$")) -> json(sortie, piloterQuiz(r.chemin.substringAfterLast("/"), lireJson(r)))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/corrige/[a-z0-9]{20}$")) -> json(sortie, modererCorrige(r.chemin.split("/")[3], lireJson(r).optString("action")))
@@ -1382,6 +1392,176 @@ class AmphiService : Service() {
         if (!permis(ip, "fiches", 3, 86_400_000)) return json(sortie, JSONObject().put("ok", true).put("points", 0))
         synchronized(verrouEchanges) { val profils = lireObjet(fichierProfils); ajouterPoints(profils, id, 2); ecrire(fichierProfils, profils) }
         json(sortie, JSONObject().put("ok", true).put("points", 2))
+    }
+
+    // ── Amphi en ligne : les étudiants publient depuis Internet (lien partagé
+    // sur Facebook ou WhatsApp) ; ce téléphone, avec ses données mobiles, va
+    // chercher toutes les 3 minutes et affiche sur le Wi-Fi de l'amphi. ──
+
+    private val SITE = "https://photocopie-benin.atinzed2.workers.dev"
+    private val reveilEnLigne = java.util.concurrent.Semaphore(0)
+    @Volatile private var arretEnLigne = false
+    private val etatSync = AtomicReference(JSONObject())
+
+    private fun lien(code: String) = "$SITE/a/$code"
+
+    private fun etatEnLigne(): JSONObject {
+        val code = prefs().getString("enligne_code", "") ?: ""
+        return JSONObject(etatSync.get().toString()).put("actif", code.isNotEmpty()).put("code", code).put("lien", if (code.isEmpty()) "" else lien(code))
+    }
+
+    private fun appel(methode: String, chemin: String, corps: String? = null, secret: String? = null): Pair<Int, ByteArray> {
+        val c = java.net.URL(SITE + chemin).openConnection() as HttpURLConnection
+        c.requestMethod = methode; c.connectTimeout = 15_000; c.readTimeout = 60_000
+        secret?.let { c.setRequestProperty("Authorization", "Bearer $it") }
+        if (corps != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(corps.toByteArray()) } }
+        val code = c.responseCode
+        val octets = try { (if (code < 400) c.inputStream else c.errorStream)?.use { it.readBytes() } ?: ByteArray(0) } catch (_: Exception) { ByteArray(0) }
+        c.disconnect()
+        return code to octets
+    }
+
+    private fun activerEnLigne(): JSONObject {
+        if ((prefs().getString("enligne_code", "") ?: "").isNotEmpty()) return etatEnLigne()
+        return try {
+            val (code, octets) = appel("POST", "/api/amphi/inscrire", JSONObject().put("titre", lireContenu().optString("titre")).toString())
+            val r = JSONObject(String(octets))
+            if (code != 200 || !r.optBoolean("ok")) return etatEnLigne().put("erreur", "Le service n'a pas répondu. Réessayez.")
+            prefs().edit().putString("enligne_code", r.optString("code")).putString("enligne_secret", r.optString("secret")).apply()
+            reveilEnLigne.release()
+            etatEnLigne()
+        } catch (_: Exception) {
+            etatEnLigne().put("erreur", "Pas d'Internet sur ce téléphone : allumez les données mobiles, puis réessayez.")
+        }
+    }
+
+    private fun synchroniserEnLigne() {
+        while (!arretEnLigne) {
+            reveilEnLigne.tryAcquire(180, TimeUnit.SECONDS)
+            if (arretEnLigne) break
+            reveilEnLigne.drainPermits()
+            val code = prefs().getString("enligne_code", "") ?: ""
+            val secret = prefs().getString("enligne_secret", "") ?: ""
+            if (code.isEmpty() || secret.isEmpty()) continue
+            try {
+                // Le titre de la page en ligne suit celui du portail.
+                val titre = lireContenu().optString("titre")
+                if (titre != prefs().getString("enligne_titre", "")) {
+                    if (appel("POST", "/api/amphi/$code/titre", JSONObject().put("titre", titre).toString(), secret).first == 200) prefs().edit().putString("enligne_titre", titre).apply()
+                }
+                val (st, octets) = appel("GET", "/api/amphi/$code/attente", null, secret)
+                if (st != 200) { etatSync.set(JSONObject().put("erreur", "Le service refuse ce téléphone (code $st).").put("date", System.currentTimeMillis())); continue }
+                val envois = JSONObject(String(octets)).optJSONArray("envois") ?: JSONArray()
+                val faits = JSONArray()
+                var importes = 0
+                for (i in 0 until envois.length()) {
+                    val e = envois.optJSONObject(i) ?: continue
+                    try { if (importer(code, secret, e)) importes++ } catch (_: Exception) {}
+                    faits.put(e.optString("id"))
+                }
+                if (faits.length() > 0) appel("POST", "/api/amphi/$code/recu", JSONObject().put("ids", faits).toString(), secret)
+                val total = etatSync.get().optInt("recus") + importes
+                etatSync.set(JSONObject().put("date", System.currentTimeMillis()).put("recus", total).put("dernier", importes))
+            } catch (_: Exception) {
+                etatSync.set(JSONObject(etatSync.get().toString()).put("erreur", "Pas d'Internet sur ce téléphone pour l'instant (données mobiles coupées ?).").put("date", System.currentTimeMillis()))
+            }
+        }
+    }
+
+    private fun telechargerEnvoi(code: String, secret: String, id: String, f: File, max: Long): Boolean {
+        val c = java.net.URL("$SITE/api/amphi/$code/fichier/$id").openConnection() as HttpURLConnection
+        c.setRequestProperty("Authorization", "Bearer $secret"); c.connectTimeout = 15_000; c.readTimeout = 120_000
+        try {
+            if (c.responseCode != 200 || c.contentLengthLong > max) return false
+            if (dossierFichiers.usableSpace < maxOf(c.contentLengthLong, 0L) + 300_000_000L) return false
+            c.inputStream.use { i -> f.outputStream().use { o -> i.copyTo(o, 64 * 1024) } }
+            return true
+        } catch (_: Exception) { f.delete(); return false } finally { c.disconnect() }
+    }
+
+    /** Range une publication venue d'Internet comme si elle venait du Wi-Fi de l'amphi. */
+    private fun importer(code: String, secret: String, e: JSONObject): Boolean {
+        val sorte = e.optString("sorte")
+        val ch = e.optJSONObject("champs") ?: JSONObject()
+        val t = texte(ch.optString("texte"), 400)
+        val libre = publicationLibre()
+        val maintenant = System.currentTimeMillis()
+        val idE = e.optString("id")
+        if (!texteCorrect("$t ${ch.optString("nom")} ${ch.optString("contact")}")) return false
+        when (sorte) {
+            "dedicace", "perdu", "trouve", "vente", "achat", "binome", "conseil" -> {
+                if (t.length < 3 || (sorte == "dedicace" && NUMERO.containsMatchIn(t))) return false
+                val id = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+                var image = ""
+                if (e.optBoolean("fichier") && e.optString("type").startsWith("image/")) {
+                    val f = File(dossierFichiers, id + "p")
+                    if (telechargerEnvoi(code, secret, idE, f, 6_000_000L)) image = f.name
+                }
+                synchronized(verrouEchanges) {
+                    val tab = lireTableau(fichierPublications)
+                    tab.put(JSONObject().put("id", id).put("sorte", sorte).put("texte", t).put("prix", texte(ch.optString("prix"), 30))
+                        .put("contact", texte(ch.optString("contact"), 60)).put("filiere", "").put("image", image)
+                        .put("ue", texte(ch.optString("ue"), 60)).put("quartier", texte(ch.optString("quartier"), 40))
+                        .put("statut", if (libre) "publie" else "attente").put("date", maintenant).put("ip", "internet").put("enLigne", true))
+                    while (tab.length() > 400) tab.remove(0)
+                    ecrire(fichierPublications, tab)
+                }
+            }
+            "question" -> {
+                if (t.length < 3) return false
+                synchronized(verrouEchanges) {
+                    val tout = lireTableau(fichierQuestions)
+                    tout.put(JSONObject().put("id", java.util.UUID.randomUUID().toString().replace("-", "").take(12)).put("texte", t).put("sorte", "question")
+                        .put("filiere", "").put("date", maintenant).put("votes", 0).put("ip", "internet"))
+                    while (tout.length() > 300) tout.remove(0)
+                    ecrire(fichierQuestions, tout)
+                }
+            }
+            "document" -> {
+                if (!e.optBoolean("fichier")) return false
+                val nom = nomPropre(e.optString("nom").ifEmpty { "document" })
+                val type = typePropre(e.optString("type"))
+                val titre = texte(ch.optString("titre"), 120).ifEmpty { nom }
+                val docId = java.util.UUID.randomUUID().toString().replace("-", "").take(20)
+                if (libre) {
+                    val f = File(dossierFichiers, docId)
+                    if (!telechargerEnvoi(code, secret, idE, f, 25_000_000L)) return false
+                    synchronized(verrouEchanges) {
+                        val tab = lireTableau(fichierDocsLibres)
+                        tab.put(JSONObject().put("id", docId).put("nom", nom).put("titre", titre).put("type", type).put("taille", f.length())
+                            .put("categorie", "Notes d'étudiants").put("matiere", texte(ch.optString("matiere"), 60)).put("filiere", "")
+                            .put("date", maintenant).put("auteur", texte(ch.optString("auteur"), 40)).put("auteurId", "").put("libre", true))
+                        ecrire(fichierDocsLibres, tab)
+                    }
+                } else {
+                    val f = File(dossierPropositions, docId)
+                    if (!telechargerEnvoi(code, secret, idE, f, 25_000_000L)) return false
+                    synchronized(verrouEchanges) {
+                        val tab = lireTableau(fichierPropositions)
+                        tab.put(JSONObject().put("id", docId).put("nom", nom).put("type", type).put("titre", titre)
+                            .put("matiere", texte(ch.optString("matiere"), 60)).put("auteur", texte(ch.optString("auteur"), 40))
+                            .put("taille", f.length()).put("date", maintenant).put("pid", ""))
+                        ecrire(fichierPropositions, tab)
+                    }
+                }
+            }
+            "star" -> {
+                val nomStar = texte(ch.optString("nom"), 30)
+                if (nomStar.length < 2 || !e.optBoolean("fichier")) return false
+                val id = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+                val f = File(dossierFichiers, "${id}s0${(100..999).random()}")
+                if (!telechargerEnvoi(code, secret, idE, f, 8_000_000L)) return false
+                synchronized(verrouEchanges) {
+                    val tab = lireTableau(fichierStars)
+                    tab.put(JSONObject().put("id", id).put("nom", nomStar).put("message", texte(ch.optString("texte"), 200)).put("filiere", "")
+                        .put("date", maintenant).put("statut", if (libre) "publie" else "attente").put("photos", JSONArray().put(f.name))
+                        .put("voeux", JSONArray()).put("nbVoeux", 0).put("jeton", java.util.UUID.randomUUID().toString().take(16)).put("ip", "internet"))
+                    ecrire(fichierStars, tab)
+                }
+            }
+            else -> return false
+        }
+        return true
     }
 
     // ── Publication libre : chacun publie directement ; la promo signale,

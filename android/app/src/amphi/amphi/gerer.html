@@ -98,6 +98,23 @@
     <p class="aide" id="w-message"></p>
   </section>
 
+  <details class="carte" id="carte-enligne">
+    <summary>🌍 Lien Internet : publier depuis Facebook ou WhatsApp</summary>
+    <p class="aide">Partagez ce lien dans le groupe de la promo : chacun publie de chez lui (dédicace, star du jour, document, question, binôme, objet perdu, marché, conseil). Ce téléphone, avec ses données mobiles, récupère toutes les 3 minutes et affiche sur le Wi-Fi de l'amphi. Gardez les données mobiles de ce téléphone allumées.</p>
+    <div id="el-inactif">
+      <div class="boutons"><button class="bouton" id="b-el-activer">Créer le lien</button></div>
+    </div>
+    <div id="el-actif" hidden>
+      <p class="tableau" style="word-break:break-all"><b id="el-lien"></b></p>
+      <div class="boutons">
+        <button class="bouton" id="b-el-partager">📤 Partager le lien</button>
+        <button class="bouton second" id="b-el-recuperer">🔄 Récupérer maintenant</button>
+        <button class="bouton danger" id="b-el-desactiver">Désactiver</button>
+      </div>
+    </div>
+    <p class="aide" id="el-etat" style="margin-top:8px"></p>
+  </details>
+
   <details class="carte" id="carte-relais">
     <summary>📡 Relais : plus de monde dans l'amphi</summary>
     <p class="aide">Un téléphone n'accueille qu'une dizaine d'étudiants à la fois. Un relais est un autre téléphone (avec cette application) qui recopie tout le contenu du téléphone principal, puis crée son propre Wi-Fi pour une dizaine de camarades de plus. Même adresse, même page. Placez un relais tous les 4 ou 5 rangs.</p>
@@ -1287,6 +1304,34 @@
   fetch("/gerer/contenu", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) { contenu = normaliser(c); remplirFormulaires(); rendreEchanges(); });
   etat();
   setInterval(etat, 5000);
+
+  // ── Lien Internet ──
+  var enLigne = null;
+  function montrerEnLigne(e) {
+    enLigne = e;
+    $("el-inactif").hidden = !!e.actif; $("el-actif").hidden = !e.actif;
+    $("el-lien").textContent = e.lien || "";
+    var t = "";
+    if (e.erreur) t = "⚠️ " + e.erreur;
+    else if (e.actif && e.date) t = "✅ Dernière récupération à " + new Date(e.date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) + " · " + (e.recus || 0) + " publication(s) reçue(s) depuis le démarrage.";
+    else if (e.actif) t = "⏳ Première récupération dans quelques instants (données mobiles allumées ?).";
+    $("el-etat").textContent = t;
+  }
+  function suivreEnLigne() { return fetch("/gerer/enligne", { cache: "no-store" }).then(function (r) { return r.json(); }).then(montrerEnLigne).catch(function () {}); }
+  $("carte-enligne").addEventListener("toggle", suivreEnLigne);
+  setInterval(function () { if ($("carte-enligne").open) suivreEnLigne(); }, 15000);
+  $("b-el-activer").onclick = function () {
+    var b = this; b.disabled = true; $("el-etat").textContent = "Création du lien…";
+    poster("/gerer/enligne/activer").then(montrerEnLigne).catch(function () { $("el-etat").textContent = "Échec. Réessayez."; }).then(function () { b.disabled = false; });
+  };
+  $("b-el-partager").onclick = function () {
+    if (!enLigne || !enLigne.lien) return;
+    var texte = "📢 " + ((contenu && contenu.titre) || "Wi-Fi de l'amphi") + " : publiez sur le Wi-Fi de l'amphi depuis chez vous (dédicaces, star du jour, documents, questions, binômes…) 👉 " + enLigne.lien;
+    if (window.Amphi && Amphi.partager) Amphi.partager(texte);
+    else if (navigator.clipboard) navigator.clipboard.writeText(texte).then(function () { toast("Lien copié ✓"); });
+  };
+  $("b-el-recuperer").onclick = function () { poster("/gerer/enligne/recuperer").then(function () { toast("Récupération lancée…"); setTimeout(suivreEnLigne, 4000); }); };
+  $("b-el-desactiver").onclick = function () { if (confirm("Désactiver le lien ? Les publications en ligne ne seront plus récupérées.")) poster("/gerer/enligne/desactiver").then(montrerEnLigne); };
 
   // ── Relais ──
   var suiviRelais = null;
