@@ -235,6 +235,10 @@ class AmphiService : Service() {
                     r.methode == "GET" && r.chemin == "/lire" -> actif(sortie, "amphi/lire.html", "text/html; charset=utf-8")
                     // UE et crédits officiels : intégrés à l'application, ils ne disparaissent jamais.
                     r.methode == "GET" && r.chemin == "/maquettes.json" -> actif(sortie, "amphi/maquettes.json", "application/json; charset=utf-8")
+                    // Icône « Amphi » sur l'écran d'accueil des étudiants.
+                    r.methode == "GET" && r.chemin == "/manifest.json" -> actif(sortie, "amphi/manifest.json", "application/manifest+json; charset=utf-8", "max-age=86400")
+                    r.methode == "GET" && (r.chemin == "/icone-192.png" || r.chemin == "/icone-512.png") ->
+                        actif(sortie, "amphi" + r.chemin, "image/png", "max-age=604800")
                     r.methode == "GET" && (r.chemin == "/lib/pdf.min.js" || r.chemin == "/lib/pdf.worker.min.js") ->
                         actif(sortie, "amphi" + r.chemin, "text/javascript; charset=utf-8", "max-age=604800")
                     r.methode == "GET" && r.chemin.startsWith("/f/") -> envoyerFichier(sortie, r, r.chemin.removePrefix("/f/"))

@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1f3f8f">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icone-192.png">
+<link rel="apple-touch-icon" href="/icone-192.png">
+<meta name="apple-mobile-web-app-title" content="Amphi">
 <title>Wi-Fi de l'amphi</title>
 <style>
   :root {
@@ -379,6 +383,15 @@
       <h2 id="accueil-titre"></h2>
       <p id="accueil-texte"></p>
       <div class="editeur" id="editeur" hidden><img id="editeur-photo" alt="" hidden><span>Page publiée par <strong id="editeur-nom"></strong></span></div>
+    </div></div>
+    <div class="carte" id="carte-icone" hidden><div class="corps">
+      <h3>📲 La prochaine fois, sans rien taper</h3>
+      <p class="aide" id="icone-consigne" style="margin-top:4px"></p>
+      <div class="ue-actions" style="padding:10px 0 0">
+        <button class="bouton" id="icone-installer" type="button" hidden>📲 Mettre l'icône « Amphi »</button>
+        <a class="bouton" id="icone-whatsapp" href="#">📤 Envoyer le lien à la promo</a>
+        <button class="bouton second" id="icone-fermer" type="button">C'est fait</button>
+      </div>
     </div></div>
     <div id="pub-haut"></div>
   </section>
@@ -1195,6 +1208,24 @@
     liens.forEach(function (a) { a.classList.toggle("actif", a === actuel); });
   }
   window.addEventListener("scroll", suivreDefilement, { passive: true });
+
+  // ── Icône sur l'écran d'accueil : connecté au Wi-Fi, un geste suffit ensuite ──
+  (function () {
+    var installe = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+    var fait = false;
+    try { fait = localStorage.getItem("amphi-icone") === "1"; } catch (e) {}
+    var iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    $("icone-consigne").textContent = iphone
+      ? "Touchez le bouton Partager (le carré avec une flèche), puis « Sur l'écran d'accueil ». L'icône « Amphi » apparaît : les autres jours, connectez-vous au Wi-Fi de l'amphi et touchez-la."
+      : "Dans Chrome, touchez ⋮ en haut à droite, puis « Ajouter à l'écran d'accueil ». L'icône « Amphi » apparaît : les autres jours, connectez-vous au Wi-Fi de l'amphi et touchez-la.";
+    var texte = "📶 Page de l'amphi (gratuite, sans forfait) : connectez-vous au Wi-Fi de l'amphi, coupez vos données mobiles, puis touchez ce lien : " + location.origin + "/";
+    $("icone-whatsapp").href = "whatsapp://send?text=" + encodeURIComponent(texte);
+    $("carte-icone").hidden = installe || fait;
+    $("icone-fermer").onclick = function () { $("carte-icone").hidden = true; try { localStorage.setItem("amphi-icone", "1"); } catch (e) {} };
+    var invite = null;
+    window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); invite = e; $("icone-installer").hidden = false; });
+    $("icone-installer").onclick = function () { if (invite) { invite.prompt(); invite = null; $("icone-installer").hidden = true; } };
+  })();
 
   $("recherche").addEventListener("input", function () { if (donnees) rendreDocuments(); });
   horloge();
