@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -12,6 +13,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.MediaStore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
@@ -28,6 +30,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 /**
  * Portail de l'amphi : le téléphone partage sa connexion (point d'accès
@@ -47,6 +52,8 @@ class AmphiService : Service() {
         private const val CONTENU_MAX = 2_000_000
         private const val FICHIER_MAX = 2_000_000_000L
 
+        private const val PREFS = "amphi"
+
         @Volatile var enMarche = false
             private set
 
@@ -54,9 +61,14 @@ class AmphiService : Service() {
             ctx.startForegroundService(Intent(ctx, AmphiService::class.java))
         }
 
+        /** Arrêt voulu par l'éditeur : le portail ne redémarre plus tout seul. */
         fun arreter(ctx: Context) {
+            ctx.getSharedPreferences(PREFS, 0).edit().putBoolean("actif", false).apply()
             ctx.stopService(Intent(ctx, AmphiService::class.java))
         }
+
+        /** Le portail tournait avant l'extinction du téléphone : on le relance. */
+        fun doitTourner(ctx: Context) = ctx.getSharedPreferences(PREFS, 0).getBoolean("actif", false)
 
         /** Adresses IPv4 du téléphone sur ses réseaux locaux (point d'accès compris). */
         fun adresses(): List<String> = try {
@@ -81,6 +93,7 @@ class AmphiService : Service() {
     private val dossierFichiers by lazy { File(getExternalFilesDir(null) ?: filesDir, "amphi").apply { mkdirs() } }
     private val fichierContenu get() = File(dossier, "contenu.json")
     private val fichierStats get() = File(dossier, "stats.json")
+    private val fichierCompteurs get() = File(dossier, "compteurs.json")
     private val visiteursDuJour = HashSet<String>()
     private var jourCourant = ""
 
@@ -114,6 +127,7 @@ class AmphiService : Service() {
         verrouWifi = (applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
             ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "photocopie:amphi")?.apply { setReferenceCounted(false); acquire() }
 
+        getSharedPreferences(PREFS, 0).edit().putBoolean("actif", true).apply()
         chargerStats()
         Thread({ ecouter() }, "amphi-serveur").start()
     }
@@ -202,6 +216,11 @@ class AmphiService : Service() {
                     }
                     r.methode == "GET" && r.chemin == "/donnees.json" -> json(sortie, contenuPublic())
                     r.methode == "GET" && r.chemin.startsWith("/f/") -> envoyerFichier(sortie, r, r.chemin.removePrefix("/f/"))
+                    r.methode == "POST" && r.chemin.startsWith("/c/") -> {
+                        // Clic sur une publicité (appel, WhatsApp) : la preuve pour l'annonceur.
+                        r.chemin.removePrefix("/c/").takeIf { it.matches(Regex("^[a-z0-9]{4,40}$")) }?.let { compter("clics", it) }
+                        repondre(sortie, 200, "text/plain", ByteArray(0))
+                    }
                     r.chemin.startsWith("/gerer") && !local -> repondre(sortie, 403, "text/plain; charset=utf-8", "Réservé au téléphone de l'éditeur.".toByteArray())
                     r.methode == "GET" && r.chemin == "/gerer" -> actif(sortie, "amphi/gerer.html", "text/html; charset=utf-8")
                     r.methode == "GET" && r.chemin == "/gerer/qrcode.js" -> actif(sortie, "amphi/qrcode.js", "text/javascript; charset=utf-8")
@@ -209,6 +228,8 @@ class AmphiService : Service() {
                     r.methode == "GET" && r.chemin == "/gerer/contenu" -> json(sortie, lireContenu())
                     r.methode == "POST" && r.chemin == "/gerer/contenu" -> enregistrerContenu(sortie, r)
                     r.methode == "POST" && r.chemin == "/gerer/fichier" -> recevoirFichier(sortie, r)
+                    r.methode == "POST" && r.chemin == "/gerer/sauvegarder" -> json(sortie, sauvegarder())
+                    r.methode == "POST" && r.chemin == "/gerer/restaurer" -> restaurer(sortie, r)
                     else -> repondre(sortie, 404, "text/plain; charset=utf-8", "Introuvable".toByteArray())
                 }
             } catch (_: Exception) {
@@ -242,10 +263,23 @@ class AmphiService : Service() {
         .put("documents", JSONArray())
         .put("pubs", JSONArray())
 
-    /** Ce que voient les étudiants : le contenu, sans le texte brut collé. */
+    /** Ce que voient les étudiants : le contenu sans le texte brut collé, et
+     * sans les annonces ni les publicités arrivées à leur date de fin. */
     private fun contenuPublic(): JSONObject {
         val c = lireContenu()
         c.optJSONObject("programme")?.remove("brut")
+        c.optJSONObject("programmes")?.let { ps -> ps.keys().asSequence().toList().forEach { k -> ps.optJSONObject(k)?.remove("brut") } }
+        val maintenant = System.currentTimeMillis()
+        for (cle in listOf("annonces", "pubs")) {
+            val t = c.optJSONArray(cle) ?: continue
+            val gardes = JSONArray()
+            for (i in 0 until t.length()) {
+                val o = t.optJSONObject(i) ?: continue
+                val fin = o.optLong("fin", 0L)
+                if (fin <= 0L || fin > maintenant) gardes.put(o)
+            }
+            c.put(cle, gardes)
+        }
         return c
     }
 
@@ -338,6 +372,8 @@ class AmphiService : Service() {
                 partiel = true
             }
         }
+        // Un téléchargement (ou l'affichage d'une image de publicité) = un de plus.
+        if (debut == 0L) compter("telechargements", id)
         if (debut > fin || debut >= total) {
             return repondre(sortie, 416, "text/plain", ByteArray(0), mapOf("Content-Range" to "bytes */$total"))
         }
@@ -395,6 +431,97 @@ class AmphiService : Service() {
         try { fichierStats.writeText(st.toString()) } catch (_: Exception) {}
     }
 
+    private fun compter(sorte: String, id: String) = synchronized(visiteursDuJour) {
+        val c = try { if (fichierCompteurs.exists()) JSONObject(fichierCompteurs.readText()) else JSONObject() } catch (_: Exception) { JSONObject() }
+        val t = c.optJSONObject(sorte) ?: JSONObject()
+        t.put(id, t.optInt(id) + 1)
+        c.put(sorte, t)
+        try { fichierCompteurs.writeText(c.toString()) } catch (_: Exception) {}
+    }
+
+    private fun compteurs(): JSONObject = try {
+        if (fichierCompteurs.exists()) JSONObject(fichierCompteurs.readText()) else JSONObject()
+    } catch (_: Exception) { JSONObject() }
+
+    // ── Sauvegarde et restauration (téléphone perdu, changé ou réinitialisé) ──
+
+    /** Tout le portail dans un seul fichier, rangé dans « Téléchargements ». */
+    private fun sauvegarder(): JSONObject {
+        val nom = "Portail-Amphi-" + SimpleDateFormat("yyyy-MM-dd-HH'h'mm", Locale.FRANCE).format(Date()) + ".zip"
+        return try {
+            val valeurs = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, nom)
+                put(MediaStore.Downloads.MIME_TYPE, "application/zip")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, valeurs)
+                ?: return JSONObject().put("erreur", "Impossible de créer le fichier.")
+            contentResolver.openOutputStream(uri)!!.use { sortie ->
+                ZipOutputStream(sortie).use { z ->
+                    z.putNextEntry(ZipEntry("contenu.json"))
+                    z.write(lireContenu().toString().toByteArray())
+                    z.closeEntry()
+                    dossierFichiers.listFiles()?.filter { idValide(it.name) }?.forEach { f ->
+                        z.putNextEntry(ZipEntry("fichiers/" + f.name))
+                        f.inputStream().use { it.copyTo(z) }
+                        z.closeEntry()
+                    }
+                }
+            }
+            valeurs.clear()
+            valeurs.put(MediaStore.Downloads.IS_PENDING, 0)
+            contentResolver.update(uri, valeurs, null, null)
+            JSONObject().put("ok", true).put("nom", nom)
+        } catch (e: Exception) {
+            JSONObject().put("erreur", e.message ?: "échec")
+        }
+    }
+
+    /** Ne lit pas plus que la taille annoncée de la requête. */
+    private class Borne(private val source: InputStream, private var reste: Long) : InputStream() {
+        override fun read(): Int = if (reste <= 0) -1 else source.read().also { if (it >= 0) reste-- }
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (reste <= 0) return -1
+            val n = source.read(b, off, minOf(len.toLong(), reste).toInt())
+            if (n > 0) reste -= n
+            return n
+        }
+    }
+
+    private fun restaurer(sortie: OutputStream, r: Requete) {
+        val taille = r.entetes["content-length"]?.toLongOrNull() ?: 0
+        if (taille <= 0 || taille > FICHIER_MAX * 4) return json(sortie, JSONObject().put("erreur", "taille"), 413)
+        if (dossierFichiers.usableSpace < taille + 200_000_000L) {
+            return json(sortie, JSONObject().put("erreur", "Plus assez de place sur le téléphone."), 507)
+        }
+        var contenu: JSONObject? = null
+        var fichiers = 0
+        try {
+            ZipInputStream(Borne(r.corps, taille)).use { z ->
+                while (true) {
+                    val e = z.nextEntry ?: break
+                    val nom = e.name
+                    when {
+                        nom == "contenu.json" -> contenu = JSONObject(String(z.readBytes(), Charsets.UTF_8))
+                        nom.startsWith("fichiers/") && idValide(nom.removePrefix("fichiers/")) -> {
+                            File(dossierFichiers, nom.removePrefix("fichiers/")).outputStream().use { z.copyTo(it) }
+                            fichiers++
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            return json(sortie, JSONObject().put("erreur", "Ce fichier n'est pas une sauvegarde du Portail Amphi."), 400)
+        }
+        val c = contenu ?: return json(sortie, JSONObject().put("erreur", "Ce fichier n'est pas une sauvegarde du Portail Amphi."), 400)
+        synchronized(this) {
+            val tmp = File(dossier, "contenu.json.tmp")
+            tmp.writeText(c.toString())
+            tmp.renameTo(fichierContenu)
+        }
+        json(sortie, JSONObject().put("ok", true).put("fichiers", fichiers))
+    }
+
     private fun etat(): JSONObject {
         val st = stats()
         val jour = aujourdhui()
@@ -417,5 +544,6 @@ class AmphiService : Service() {
             .put("visiteurs7jours", visiteurs7)
             .put("vues7jours", vues7)
             .put("placeLibre", dossierFichiers.usableSpace)
+            .put("compteurs", compteurs())
     }
 }

@@ -118,5 +118,7 @@ class BalayageRecepteur : BroadcastReceiver() {
 class DemarrageRecepteur : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         Balayage.demarrer(ctx)
+        // Portail Amphi : il tournait avant l'extinction ou la mise à jour, on le relance.
+        try { if (AmphiService.doitTourner(ctx)) AmphiService.demarrer(ctx) } catch (_: Exception) {}
     }
 }

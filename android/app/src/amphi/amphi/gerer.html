@@ -18,7 +18,7 @@
   details[open].carte > summary { margin-bottom: 12px; }
   details[open].carte > summary::after { content: "▴"; }
   label { display: block; font-size: .9rem; font-weight: 600; color: var(--discret); margin: 10px 0 4px; }
-  input[type=text], input[type=tel], textarea, select { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--bordure); border-radius: 10px; background: #fff; color: var(--texte); }
+  input[type=text], input[type=tel], input[type=date], textarea, select { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--bordure); border-radius: 10px; background: #fff; color: var(--texte); }
   textarea { min-height: 90px; resize: vertical; }
   .bouton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-weight: 700; padding: 11px 16px; border-radius: 10px; border: 0; background: var(--bleu); color: #fff; cursor: pointer; margin-top: 12px; }
   .bouton.second { background: var(--ciel); color: var(--nuit); }
@@ -77,6 +77,7 @@
       <button class="bouton" id="b-point">📶 Point d'accès mobile</button>
       <button class="bouton second" id="b-partager">Partager l'adresse</button>
       <button class="bouton second" id="b-voir">Voir la page des étudiants</button>
+      <button class="bouton danger" id="b-arreter">⏹ Arrêter le portail</button>
     </div>
     <p class="aide">Conseil aux étudiants Android : couper les données mobiles le temps d'ouvrir la page, sinon le téléphone peut chercher l'adresse sur Internet.</p>
   </section>
@@ -91,8 +92,19 @@
     <p class="aide">Montrez ces chiffres aux commerçants qui veulent une publicité sur le portail.</p>
   </section>
 
+  <details class="carte">
+    <summary>🎓 Filières et niveaux</summary>
+    <p class="aide">Une filière par groupe d'étudiants (ex. : Physique L3, Chimie L2). Chaque étudiant choisit la sienne sur la page ; le programme, les annonces et les documents peuvent être propres à une filière ou pour tous.</p>
+    <div id="liste-filieres"></div>
+    <label for="f-nom">Nouvelle filière</label>
+    <input type="text" id="f-nom" placeholder="Ex. : Chimie · Licence 2">
+    <div class="boutons"><button class="bouton" id="b-filiere">Ajouter la filière</button></div>
+  </details>
+
   <details class="carte" open>
     <summary>📅 Programme de la semaine</summary>
+    <label for="p-filiere">Filière</label>
+    <select id="p-filiere" class="choix-filiere"></select>
     <p class="aide">Copiez le message du programme reçu sur WhatsApp, collez-le ici : les cartes se font toutes seules.</p>
     <textarea id="p-brut" placeholder="Collez ici le message du programme (LUNDI 28/09/2026, 07h à 09h50, Mécanique quantique…)" style="min-height:160px"></textarea>
     <div class="boutons"><button class="bouton second" id="b-lire">Lire le message</button></div>
@@ -112,6 +124,10 @@
     <textarea id="a-texte"></textarea>
     <label for="a-image">Image (facultative)</label>
     <input type="file" id="a-image" accept="image/*">
+    <label for="a-filiere">Pour qui</label>
+    <select id="a-filiere" class="choix-filiere avec-tous"></select>
+    <label for="a-fin">Afficher jusqu'au (facultatif)</label>
+    <input type="date" id="a-fin">
     <label class="case"><input type="checkbox" id="a-epingle"> Épingler en haut de la page</label>
     <div class="boutons"><button class="bouton" id="b-annonce">Publier l'annonce</button></div>
     <div id="liste-annonces" style="margin-top:12px"></div>
@@ -119,7 +135,9 @@
 
   <details class="carte">
     <summary>📚 Documents (cours, TD, épreuves, vidéos)</summary>
-    <label for="d-categorie">Rubrique</label>
+    <label for="d-filiere">Pour qui</label>
+    <select id="d-filiere" class="choix-filiere avec-tous"></select>
+    <label for="d-categorie">Type</label>
     <select id="d-categorie"><option>Cours</option><option>TD et TP</option><option>Épreuves et corrigés</option><option>Vidéos</option><option>Applications</option><option>Autres</option></select>
     <label for="d-fichiers">Fichiers</label>
     <input type="file" id="d-fichiers" multiple>
@@ -140,6 +158,8 @@
     <input type="tel" id="pub-contact" placeholder="+229 01 00 00 00 00">
     <label for="pub-image">Image (facultative)</label>
     <input type="file" id="pub-image" accept="image/*">
+    <label for="pub-fin">Payée jusqu'au (facultatif : elle s'arrête toute seule ce jour-là)</label>
+    <input type="date" id="pub-fin">
     <div class="boutons"><button class="bouton" id="b-pub">Ajouter la publicité</button></div>
     <div id="liste-pubs" style="margin-top:12px"></div>
   </details>
@@ -160,6 +180,15 @@
     <input type="file" id="c-photo" accept="image/*">
     <div class="boutons"><button class="bouton" id="b-accueil">Enregistrer</button><button class="bouton danger" id="b-sans-photo">Retirer la photo</button></div>
   </details>
+
+  <details class="carte">
+    <summary>💾 Sauvegarde</summary>
+    <p class="aide">Une copie de tout le portail (textes, documents, images) dans « Téléchargements ». Gardez-la aussi ailleurs (clé USB, Google Drive) : si le téléphone est perdu ou réinitialisé, tout revient en un geste.</p>
+    <div class="boutons"><button class="bouton" id="b-sauvegarder">💾 Sauvegarder maintenant</button></div>
+    <label for="r-fichier">Restaurer une sauvegarde (fichier Portail-Amphi-….zip)</label>
+    <input type="file" id="r-fichier" accept=".zip,application/zip">
+    <p class="aide" id="r-etat"></p>
+  </details>
 </main>
 <div class="toast" id="toast"></div>
 <script src="/gerer/qrcode.js"></script>
@@ -168,10 +197,31 @@
   "use strict";
   var contenu = null;
   var adresseActuelle = "";
+  var compteurs = { telechargements: {}, clics: {} };
   function $(id) { return document.getElementById(id); }
   function el(tag, classe, texte) { var e = document.createElement(tag); if (classe) e.className = classe; if (texte != null) e.textContent = texte; return e; }
   function toast(t) { var b = $("toast"); b.textContent = t; b.className = "toast on"; clearTimeout(toast.m); toast.m = setTimeout(function () { b.className = "toast"; }, 2200); }
   function nouvelId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function finDuJour(valeur) { if (!valeur) return 0; var p = valeur.split("-"); return new Date(+p[0], +p[1] - 1, +p[2], 23, 59, 59).getTime(); }
+  function expire(o) { return o.fin && o.fin < Date.now(); }
+  function nomFiliere(id) { var f = (contenu.filieres || []).filter(function (x) { return x.id === id; })[0]; return f ? f.nom : "Tous"; }
+  /** Anciennes données (une seule filière, « programme ») → filières. */
+  function normaliser(c) {
+    if (!c.filieres || !c.filieres.length) c.filieres = [{ id: "principale", nom: c.titre || "Ma filière" }];
+    if (!c.programmes) c.programmes = {};
+    if (c.programme && c.programme.jours && !c.programmes[c.filieres[0].id]) c.programmes[c.filieres[0].id] = c.programme;
+    delete c.programme;
+    return c;
+  }
+  function remplirChoixFilieres() {
+    Array.prototype.forEach.call(document.querySelectorAll(".choix-filiere"), function (sel) {
+      var avant = sel.value;
+      sel.textContent = "";
+      if (sel.classList.contains("avec-tous")) { var t = el("option", null, "Tous les étudiants"); t.value = ""; sel.appendChild(t); }
+      contenu.filieres.forEach(function (f) { var o = el("option", null, f.nom); o.value = f.id; sel.appendChild(o); });
+      if (avant !== "" && Array.prototype.some.call(sel.options, function (o) { return o.value === avant; })) sel.value = avant;
+    });
+  }
   function taille(o) { o = +o || 0; return o >= 1e9 ? (o / 1e9).toFixed(1) + " Go" : o >= 1e6 ? (o / 1e6).toFixed(1) + " Mo" : Math.max(1, Math.round(o / 1e3)) + " Ko"; }
 
   // ── Lecture du message WhatsApp du programme ──
@@ -278,10 +328,28 @@
   // ── Listes ──
   function bouton(texte, classe, action) { var b = el("button", "bouton petit " + (classe || ""), texte); b.type = "button"; b.onclick = action; return b; }
   function rendreListes() {
+    remplirChoixFilieres();
+    var lf = $("liste-filieres"); lf.textContent = "";
+    contenu.filieres.forEach(function (f) {
+      var l = el("div", "ligne");
+      var i = el("div", "info"); i.appendChild(el("p", "nom", f.nom));
+      var prog = contenu.programmes[f.id];
+      i.appendChild(el("p", "meta", prog && prog.jours && prog.jours.length ? prog.jours.length + " jour(s) de programme" : "Pas encore de programme"));
+      l.appendChild(i);
+      l.appendChild(bouton("Renommer", "second", function () { var n = prompt("Nouveau nom", f.nom); if (n && n.trim()) { f.nom = n.trim(); enregistrer("Filière renommée"); } }));
+      if (contenu.filieres.length > 1) l.appendChild(bouton("Retirer", "danger", function () {
+        if (!confirm("Retirer « " + f.nom + " » et son programme ?")) return;
+        contenu.filieres = contenu.filieres.filter(function (x) { return x !== f; });
+        delete contenu.programmes[f.id];
+        enregistrer("Filière retirée");
+      }));
+      lf.appendChild(l);
+    });
     var la = $("liste-annonces"); la.textContent = "";
     (contenu.annonces || []).slice().sort(function (a, b) { return (b.date || 0) - (a.date || 0); }).forEach(function (a) {
       var l = el("div", "ligne");
-      var i = el("div", "info"); i.appendChild(el("p", "nom", (a.epingle ? "📌 " : "") + (a.titre || "Annonce"))); i.appendChild(el("p", "meta", new Date(a.date).toLocaleString("fr-FR")));
+      var i = el("div", "info"); i.appendChild(el("p", "nom", (a.epingle ? "📌 " : "") + (a.titre || "Annonce")));
+      i.appendChild(el("p", "meta", nomFiliere(a.filiere || "") + " · " + new Date(a.date).toLocaleDateString("fr-FR") + (a.fin ? (expire(a) ? " · terminée (plus affichée)" : " · jusqu'au " + new Date(a.fin).toLocaleDateString("fr-FR")) : "")));
       l.appendChild(i);
       l.appendChild(bouton(a.epingle ? "Désépingler" : "Épingler", "second", function () { a.epingle = !a.epingle; enregistrer(); }));
       l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer cette annonce ?")) { contenu.annonces = contenu.annonces.filter(function (x) { return x !== a; }); enregistrer("Annonce retirée"); } }));
@@ -290,7 +358,8 @@
     var ld = $("liste-docs"); ld.textContent = "";
     (contenu.documents || []).slice().sort(function (a, b) { return (b.date || 0) - (a.date || 0); }).forEach(function (d) {
       var l = el("div", "ligne");
-      var i = el("div", "info"); i.appendChild(el("p", "nom", d.titre || d.nom)); i.appendChild(el("p", "meta", (d.categorie || "") + " · " + taille(d.taille)));
+      var nbT = compteurs.telechargements[d.id] || 0;
+      var i = el("div", "info"); i.appendChild(el("p", "nom", d.titre || d.nom)); i.appendChild(el("p", "meta", nomFiliere(d.filiere || "") + " · " + (d.categorie || "") + " · " + taille(d.taille) + " · " + nbT + " téléchargement" + (nbT > 1 ? "s" : "")));
       l.appendChild(i);
       l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer « " + (d.titre || d.nom) + " » ?")) { contenu.documents = contenu.documents.filter(function (x) { return x !== d; }); enregistrer("Document retiré"); } }));
       ld.appendChild(l);
@@ -299,7 +368,9 @@
     (contenu.pubs || []).forEach(function (p) {
       var l = el("div", "ligne");
       if (p.image) { var v = el("img", "vignette"); v.src = "/f/" + p.image + "?type=image/jpeg"; l.appendChild(v); }
-      var i = el("div", "info"); i.appendChild(el("p", "nom", p.titre || "Publicité")); if (p.contact) i.appendChild(el("p", "meta", p.contact));
+      var vues = p.image ? (compteurs.telechargements[p.image] || 0) : 0, clics = compteurs.clics[p.id] || 0;
+      var i = el("div", "info"); i.appendChild(el("p", "nom", p.titre || "Publicité"));
+      i.appendChild(el("p", "meta", (p.image ? vues + " affichage" + (vues > 1 ? "s" : "") + " · " : "") + clics + " clic" + (clics > 1 ? "s" : "") + (p.fin ? (expire(p) ? " · terminée" : " · jusqu'au " + new Date(p.fin).toLocaleDateString("fr-FR")) : "")));
       l.appendChild(i);
       l.appendChild(bouton("Retirer", "danger", function () { if (confirm("Retirer cette publicité ?")) { contenu.pubs = contenu.pubs.filter(function (x) { return x !== p; }); enregistrer("Publicité retirée"); } }));
       lp.appendChild(l);
@@ -313,20 +384,60 @@
     $("c-accueil").value = a.titre || "";
     $("c-texte").value = a.texte || "";
     $("c-editeur").value = a.editeur || "";
-    var p = contenu.programme || {};
+    rendreListes();
+    remplirProgramme();
+  }
+
+  function remplirProgramme() {
+    var p = contenu.programmes[$("p-filiere").value] || {};
     $("p-titre").value = p.titre || "";
     $("p-lieu").value = p.lieu || "";
     $("p-brut").value = p.brut || "";
+    $("p-apercu").textContent = "";
     if (p.jours && p.jours.length) montrerApercu(p);
-    rendreListes();
   }
+  $("p-filiere").onchange = remplirProgramme;
+  $("b-filiere").onclick = function () {
+    var n = $("f-nom").value.trim();
+    if (!n) return toast("Écrivez le nom de la filière.");
+    contenu.filieres.push({ id: nouvelId(), nom: n });
+    $("f-nom").value = "";
+    enregistrer("Filière ajoutée ✓");
+  };
+  $("b-arreter").onclick = function () {
+    if (!confirm("Arrêter le portail ? Les étudiants ne verront plus la page.")) return;
+    if (window.Amphi) Amphi.arreter();
+    $("etat").className = "etat attente"; $("etat").textContent = "⏹ Portail arrêté. Rouvrez « Portail Amphi » pour le relancer.";
+  };
+  $("b-sauvegarder").onclick = function () {
+    var b = this; b.disabled = true; toast("Sauvegarde en cours…");
+    fetch("/gerer/sauvegarder", { method: "POST" }).then(function (r) { return r.json(); }).then(function (r) {
+      toast(r.ok ? "Sauvegardé dans Téléchargements ✓" : "Échec : " + (r.erreur || ""));
+      if (r.ok) $("r-etat").textContent = "Dernière sauvegarde : " + r.nom + " (dossier Téléchargements).";
+    }).catch(function () { toast("Échec de la sauvegarde."); }).then(function () { b.disabled = false; });
+  };
+  $("r-fichier").onchange = function () {
+    var f = this.files && this.files[0], input = this;
+    if (!f) return;
+    if (!confirm("Remplacer tout le portail par cette sauvegarde ?")) { input.value = ""; return; }
+    $("r-etat").textContent = "Restauration en cours…";
+    fetch("/gerer/restaurer", { method: "POST", headers: { "content-type": "application/zip" }, body: f })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        input.value = "";
+        if (!r.ok) { $("r-etat").textContent = r.erreur || "Échec."; return; }
+        $("r-etat").textContent = "Restauré : " + r.fichiers + " fichier(s). La page se recharge…";
+        setTimeout(function () { location.reload(); }, 1200);
+      })
+      .catch(function () { $("r-etat").textContent = "Échec de la restauration."; });
+  };
 
   // ── Actions ──
   $("b-lire").onclick = function () { programmeLu = lireProgramme($("p-brut").value); montrerApercu(programmeLu); if (programmeLu.lieu && !$("p-lieu").value) $("p-lieu").value = programmeLu.lieu; };
   $("b-publier-programme").onclick = function () {
     var p = lireProgramme($("p-brut").value);
     if (!p.jours.length) { montrerApercu(p); return toast("Aucun cours trouvé dans le message."); }
-    contenu.programme = { titre: $("p-titre").value.trim(), lieu: $("p-lieu").value.trim() || p.lieu, periode: p.periode, jours: p.jours, brut: $("p-brut").value };
+    contenu.programmes[$("p-filiere").value] = { titre: $("p-titre").value.trim(), lieu: $("p-lieu").value.trim() || p.lieu, periode: p.periode, jours: p.jours, brut: $("p-brut").value };
     montrerApercu(p);
     enregistrer("Programme publié ✓");
   };
@@ -335,8 +446,8 @@
     if (!titre && !texte) return toast("Écrivez un titre ou un texte.");
     var b = this; b.disabled = true;
     envoyerImage($("a-image")).then(function (image) {
-      (contenu.annonces = contenu.annonces || []).push({ id: nouvelId(), titre: titre, texte: texte, image: image, epingle: $("a-epingle").checked, date: Date.now() });
-      $("a-titre").value = ""; $("a-texte").value = ""; $("a-epingle").checked = false;
+      (contenu.annonces = contenu.annonces || []).push({ id: nouvelId(), titre: titre, texte: texte, image: image, epingle: $("a-epingle").checked, filiere: $("a-filiere").value, fin: finDuJour($("a-fin").value), date: Date.now() });
+      $("a-titre").value = ""; $("a-texte").value = ""; $("a-epingle").checked = false; $("a-fin").value = "";
       return enregistrer("Annonce publiée ✓");
     }).catch(function () { toast("L'image n'a pas pu être envoyée."); }).then(function () { b.disabled = false; });
   };
@@ -351,7 +462,7 @@
       var f = fichiers[i];
       $("d-etat").textContent = "Envoi de « " + f.name + " » (" + (i + 1) + "/" + fichiers.length + ")…";
       return envoyerFichier(f, function (x) { barre.firstChild.style.width = Math.round(x * 100) + "%"; }).then(function (r) {
-        (contenu.documents = contenu.documents || []).push({ id: r.id, nom: f.name, titre: f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "), type: f.type || "application/octet-stream", taille: r.taille, categorie: $("d-categorie").value, date: Date.now() });
+        (contenu.documents = contenu.documents || []).push({ id: r.id, nom: f.name, titre: f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "), type: f.type || "application/octet-stream", taille: r.taille, categorie: $("d-categorie").value, filiere: $("d-filiere").value, date: Date.now() });
         i++; return suivant();
       }).catch(function (e) { barre.hidden = true; $("d-etat").textContent = "Échec pour « " + f.name + " » : " + (e.message || "erreur") + "."; i++; return suivant(); });
     }
@@ -362,8 +473,8 @@
     if (!titre && !($("pub-image").files || []).length) return toast("Donnez au moins un titre ou une image.");
     var b = this; b.disabled = true;
     envoyerImage($("pub-image")).then(function (image) {
-      (contenu.pubs = contenu.pubs || []).push({ id: nouvelId(), titre: titre, texte: $("pub-texte").value.trim(), contact: $("pub-contact").value.trim(), image: image, date: Date.now() });
-      $("pub-titre").value = ""; $("pub-texte").value = ""; $("pub-contact").value = "";
+      (contenu.pubs = contenu.pubs || []).push({ id: nouvelId(), titre: titre, texte: $("pub-texte").value.trim(), contact: $("pub-contact").value.trim(), image: image, fin: finDuJour($("pub-fin").value), date: Date.now() });
+      $("pub-titre").value = ""; $("pub-texte").value = ""; $("pub-contact").value = ""; $("pub-fin").value = "";
       return enregistrer("Publicité ajoutée ✓");
     }).catch(function () { toast("L'image n'a pas pu être envoyée."); }).then(function () { b.disabled = false; });
   };
@@ -415,6 +526,10 @@
       $("v-semaine").textContent = e.visiteurs7jours || 0;
       $("vues-semaine").textContent = e.vues7jours || 0;
       $("place").textContent = "Place libre sur le téléphone : " + taille(e.placeLibre) + ".";
+      var nouveaux = e.compteurs || {};
+      var change = JSON.stringify(nouveaux) !== JSON.stringify(compteurs);
+      compteurs = { telechargements: nouveaux.telechargements || {}, clics: nouveaux.clics || {} };
+      if (change && contenu) rendreListes();
     }).catch(function () { $("etat").className = "etat attente"; $("etat").textContent = "⏳ Démarrage du portail…"; });
   }
   $("b-point").onclick = function () { if (window.Amphi) Amphi.ouvrirPointAcces(); };
@@ -425,7 +540,7 @@
   };
   $("b-voir").onclick = function () { location.href = adresseActuelle || ("http://127.0.0.1:" + location.port + "/"); };
 
-  fetch("/gerer/contenu", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) { contenu = c; remplirFormulaires(); });
+  fetch("/gerer/contenu", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) { contenu = normaliser(c); remplirFormulaires(); });
   etat();
   setInterval(etat, 5000);
 })();

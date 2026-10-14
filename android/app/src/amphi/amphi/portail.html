@@ -106,6 +106,11 @@
 
   footer { text-align: center; color: var(--discret); font-size: .85rem; padding: 6px 10px 0; }
   footer p + p { margin-top: 6px; }
+  .filieres { max-width: 600px; margin: 12px auto 0; padding: 0 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filieres span { font-size: .85rem; color: var(--discret); font-weight: 600; }
+  .filieres button { border: 1px solid var(--bordure); background: #fff; color: var(--nuit); border-radius: 999px; padding: 6px 12px; font-weight: 600; font-size: .88rem; cursor: pointer; }
+  .filieres button.choisie { background: var(--bleu); border-color: var(--bleu); color: #fff; }
+  .recherche { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--bordure); border-radius: 10px; margin: 0 0 4px; background: #fff; }
   .hors-ligne { display: none; background: var(--or-fond); color: var(--or); text-align: center; padding: 8px; font-size: .9rem; font-weight: 600; }
   .hors-ligne.on { display: block; }
   @media (prefers-reduced-motion: reduce) { .pilule i { animation: none; } html { scroll-behavior: auto; } }
@@ -128,6 +133,7 @@
   <a href="#annonces">Annonces</a>
 </nav></div>
 
+<div class="filieres" id="filieres" hidden></div>
 <main>
   <section id="accueil" style="display:flex;flex-direction:column;gap:16px">
     <div class="carte" id="carte-prochain" hidden>
@@ -155,6 +161,7 @@
   <div id="pub-milieu"></div>
 
   <h2 class="titre-section" id="documents">📚 Documents</h2>
+  <input type="search" class="recherche" id="recherche" placeholder="🔎 Chercher un document (matière, TD, épreuve…)" hidden>
   <div class="carte" id="liste-docs"></div>
 
   <h2 class="titre-section" id="annonces">📢 Annonces</h2>
@@ -176,6 +183,31 @@
   var MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
   var donnees = null;
   var empreinte = "";
+  var filiere = "";
+  try { filiere = localStorage.getItem("amphi-filiere") || ""; } catch (e) {}
+  function normaliser(c) {
+    if (!c.filieres || !c.filieres.length) c.filieres = [{ id: "principale", nom: c.titre || "" }];
+    if (!c.programmes) c.programmes = {};
+    if (c.programme && c.programme.jours && !c.programmes[c.filieres[0].id]) c.programmes[c.filieres[0].id] = c.programme;
+    return c;
+  }
+  function pourMoi(x) { return !x.filiere || x.filiere === filiere; }
+  function actif(x) { return !x.fin || x.fin > Date.now(); }
+  function rendreFilieres() {
+    var f = donnees.filieres;
+    if (!f.some(function (x) { return x.id === filiere; })) filiere = f[0].id;
+    var boite = $("filieres");
+    boite.textContent = "";
+    boite.hidden = f.length < 2;
+    if (f.length < 2) return;
+    boite.appendChild(el("span", null, "Ma filière :"));
+    f.forEach(function (x) {
+      var b = el("button", x.id === filiere ? "choisie" : "", x.nom);
+      b.type = "button";
+      b.onclick = function () { filiere = x.id; try { localStorage.setItem("amphi-filiere", filiere); } catch (e) {} rendre(); };
+      boite.appendChild(b);
+    });
+  }
 
   function el(tag, classe, texte) {
     var e = document.createElement(tag);
@@ -212,7 +244,7 @@
 
   // ── Programme ──
   function rendreProgramme() {
-    var p = (donnees && donnees.programme) || {};
+    var p = (donnees && donnees.programmes && donnees.programmes[filiere]) || {};
     var boite = $("semaine");
     boite.textContent = "";
     var jours = p.jours || [];
@@ -222,7 +254,8 @@
       return;
     }
     var tete = el("div", "semaine-tete");
-    tete.appendChild(el("h3", null, p.titre || "Programme de la semaine"));
+    var nomF = (donnees.filieres.filter(function (x) { return x.id === filiere; })[0] || {}).nom;
+    tete.appendChild(el("h3", null, p.titre || nomF || "Programme de la semaine"));
     if (p.periode) tete.appendChild(el("p", null, p.periode));
     if (p.source) tete.appendChild(el("p", null, p.source));
     boite.appendChild(tete);
@@ -273,8 +306,14 @@
   function rendreDocuments() {
     var boite = $("liste-docs");
     boite.textContent = "";
-    var docs = ((donnees && donnees.documents) || []).slice().sort(function (a, b) { return (b.date || 0) - (a.date || 0); });
-    if (!docs.length) { boite.appendChild(el("p", "corps vide", "Aucun document pour l'instant.")); return; }
+    var tous = ((donnees && donnees.documents) || []).filter(pourMoi);
+    $("recherche").hidden = tous.length < 6;
+    var mots = ($("recherche").value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/).filter(Boolean);
+    var docs = tous.filter(function (d) {
+      var t = ((d.titre || "") + " " + (d.nom || "") + " " + (d.categorie || "")).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      return mots.every(function (m) { return t.indexOf(m) >= 0; });
+    }).sort(function (a, b) { return (b.date || 0) - (a.date || 0); });
+    if (!docs.length) { boite.appendChild(el("p", "corps vide", tous.length ? "Aucun document ne correspond à votre recherche." : "Aucun document pour l'instant.")); return; }
     var groupes = {};
     var ordre = [];
     docs.forEach(function (d) { var g = d.categorie || "Documents"; if (!groupes[g]) { groupes[g] = []; ordre.push(g); } groupes[g].push(d); });
@@ -313,7 +352,7 @@
   function rendreAnnonces() {
     var boite = $("liste-annonces");
     boite.textContent = "";
-    var liste = ((donnees && donnees.annonces) || []).slice().sort(function (a, b) { return (b.epingle ? 1 : 0) - (a.epingle ? 1 : 0) || (b.date || 0) - (a.date || 0); });
+    var liste = ((donnees && donnees.annonces) || []).filter(function (a) { return pourMoi(a) && actif(a); }).sort(function (a, b) { return (b.epingle ? 1 : 0) - (a.epingle ? 1 : 0) || (b.date || 0) - (a.date || 0); });
     if (!liste.length) boite.appendChild(el("p", "corps vide", "Aucune annonce pour l'instant."));
     liste.forEach(function (a) { boite.appendChild(blocAnnonce(a)); });
     // « À la une » : l'annonce épinglée, sinon la plus récente de moins de 3 jours.
@@ -341,6 +380,8 @@
       var actions = el("div", "actions");
       var appel = el("a", "bouton", "📞 Appeler"); appel.href = "tel:" + num; actions.appendChild(appel);
       var wa = el("a", "bouton second", "WhatsApp"); wa.href = "https://wa.me/" + num.replace(/^\+/, ""); actions.appendChild(wa);
+      // Chaque clic est compté : la preuve pour l'annonceur.
+      [appel, wa].forEach(function (a) { a.addEventListener("click", function () { try { navigator.sendBeacon("/c/" + encodeURIComponent(p.id || "")); } catch (e) {} }); });
       corps.appendChild(actions);
     }
     c.appendChild(corps);
@@ -348,7 +389,7 @@
   }
   var tourner = null;
   function rendrePubs() {
-    var pubs = ((donnees && donnees.pubs) || []).filter(function (p) { return p.titre || p.image; });
+    var pubs = ((donnees && donnees.pubs) || []).filter(function (p) { return (p.titre || p.image) && actif(p); });
     ["pub-haut", "pub-milieu", "pub-bas"].forEach(function (id) { $(id).textContent = ""; });
     if (tourner) { clearInterval(tourner); tourner = null; }
     if (!pubs.length) return;
@@ -371,6 +412,7 @@
   }
 
   function rendre() {
+    rendreFilieres();
     document.title = donnees.titre || "Wi-Fi de l'amphi";
     $("titre").textContent = donnees.titre || "Wi-Fi de l'amphi";
     var acc = donnees.accueil || {};
@@ -396,7 +438,7 @@
         $("hors-ligne").className = "hors-ligne";
         if (t === empreinte) { rendreProgramme(); return; }
         empreinte = t;
-        donnees = JSON.parse(t);
+        donnees = normaliser(JSON.parse(t));
         rendre();
       })
       .catch(function () { $("hors-ligne").className = "hors-ligne on"; });
@@ -414,6 +456,7 @@
   }
   window.addEventListener("scroll", suivreDefilement, { passive: true });
 
+  $("recherche").addEventListener("input", function () { if (donnees) rendreDocuments(); });
   horloge();
   setInterval(horloge, 30000);
   charger();
