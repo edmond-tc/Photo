@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Portail Amphi</title>
 <style>
+  [hidden] { display: none !important; }
   :root { --bleu: #2b579a; --nuit: #16306f; --ciel: #e8eef8; --fond: #f4f6fb; --texte: #1f2430; --discret: #5d6475; --bordure: #dde2ec; --vert: #0e7a34; --vert-fond: #dcf5e4; --rouge: #b42318; --rouge-fond: #fdecea; --police: "Segoe UI", Roboto, Arial, sans-serif; }
   *, *::before, *::after { box-sizing: border-box; }
   html { font-size: 13.5px; }
@@ -148,7 +149,10 @@
   <details class="carte" id="carte-promo">
     <summary>🎉 Vie de la promo <span class="pastille" id="nb-promo" hidden></span></summary>
     <p class="aide">Dédicaces, objets perdus et trouvés, petit marché : rien n'apparaît sans votre accord.</p>
+    <div id="liste-stars-attente"></div>
     <div id="liste-promo-attente"></div>
+    <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">🎂 Stars du jour publiées</h3>
+    <div id="liste-stars-publiees"></div>
     <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">Publiés</h3>
     <div id="liste-promo-publies"></div>
     <h3 style="margin-top:14px; font-size:1rem; color:var(--nuit)">📢 Alertes cours en cours</h3>
@@ -205,6 +209,25 @@
     <select id="e-filiere" class="choix-filiere avec-tous"></select>
     <div class="boutons"><button class="bouton" id="b-examen">Ajouter</button></div>
     <div id="liste-examens" style="margin-top:12px"></div>
+  </details>
+
+  <details class="carte">
+    <summary>🎉 Événements de la promo</summary>
+    <p class="aide">Soirée, sortie, match, anniversaire collectif, réunion… Affichés en haut de la page avec un compte à rebours ; les étudiants touchent « J'y serai » et vous voyez combien viennent.</p>
+    <label for="ev-titre">Événement</label>
+    <input type="text" id="ev-titre" maxlength="80" placeholder="Ex. : Soirée de fin d'année de la L3">
+    <label for="ev-date">Date</label>
+    <input type="date" id="ev-date">
+    <label for="ev-heure">Heure et lieu</label>
+    <input type="text" id="ev-heure" maxlength="80" placeholder="Ex. : 18h, Esplanade de la FAST">
+    <label for="ev-texte">Détails (facultatif)</label>
+    <textarea id="ev-texte" maxlength="400" placeholder="Ex. : Tenue blanche, participation 1 000 F"></textarea>
+    <label for="ev-image">Affiche ou photo (facultatif)</label>
+    <input type="file" id="ev-image" accept="image/*">
+    <label for="ev-filiere">Pour qui</label>
+    <select id="ev-filiere" class="choix-filiere avec-tous"></select>
+    <div class="boutons"><button class="bouton" id="b-evenement">Publier l'événement</button></div>
+    <div id="liste-evenements" style="margin-top:12px"></div>
   </details>
 
   <details class="carte">
@@ -642,8 +665,34 @@
       }
       return l;
     }
+    // Stars du jour (anniversaires)
+    var stars = (echanges.stars || []).slice().sort(function (a, b) { return b.date - a.date; });
+    var sa = stars.filter(function (x) { return x.statut === "attente"; });
+    function ligneStar(x, enAttente) {
+      var l = el("div", "ligne"); l.style.flexWrap = "wrap";
+      var i = el("div", "info");
+      i.appendChild(el("p", "nom", "🎂 Star du jour : " + x.nom));
+      if (x.message) i.appendChild(el("p", null, "« " + x.message + " »"));
+      i.appendChild(el("p", "meta", (x.photos || []).length + " photo(s) · " + (x.nbVoeux || 0) + " vœu(x) · " + new Date(x.date).toLocaleString("fr-FR")));
+      var g = el("div"); g.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px";
+      (x.photos || []).forEach(function (ph) { var v = el("img", "vignette"); v.src = "/f/" + ph + "?type=image/jpeg"; g.appendChild(v); });
+      i.appendChild(g);
+      l.appendChild(i);
+      var act = function (a) { return function () { poster("/gerer/star/" + x.id, { action: a }).then(chargerEchanges); }; };
+      if (enAttente) { l.appendChild(bouton("Publier", "", act("publier"))); l.appendChild(bouton("Refuser", "danger", act("refuser"))); }
+      else l.appendChild(bouton("Retirer", "danger", act("supprimer")));
+      return l;
+    }
+    var zs = $("liste-stars-attente"); zs.textContent = "";
+    sa.forEach(function (x) { zs.appendChild(ligneStar(x, true)); });
+    var zsp = $("liste-stars-publiees"); zsp.textContent = "";
+    var sp = stars.filter(function (x) { return x.statut === "publie"; });
+    if (!sp.length) zsp.appendChild(el("p", "aide", "Aucune pour l'instant."));
+    sp.forEach(function (x) { zsp.appendChild(ligneStar(x, false)); });
+    if (sa.length) { $("nb-promo").hidden = false; $("nb-promo").textContent = attente.length + sa.length; }
+    rendreEvenements();
     var za = $("liste-promo-attente"); za.textContent = "";
-    if (!attente.length) za.appendChild(el("p", "aide", "Rien à vérifier pour l'instant."));
+    if (!attente.length && !sa.length) za.appendChild(el("p", "aide", "Rien à vérifier pour l'instant."));
     attente.forEach(function (p) { za.appendChild(ligne(p, true)); });
     var zp = $("liste-promo-publies"); zp.textContent = "";
     pubs.filter(function (p) { return p.statut !== "attente"; }).slice(0, 40).forEach(function (p) { zp.appendChild(ligne(p, false)); });
@@ -751,6 +800,29 @@
     (contenu.sondages = contenu.sondages || []).unshift({ id: nouvelId(), question: q, options: opts.slice(0, 10), filiere: $("s-filiere").value, ouvert: true, date: Date.now() });
     $("s-question").value = ""; $("s-options").value = "";
     enregistrer("Sondage lancé ✓");
+  };
+  function rendreEvenements() {
+    var z = $("liste-evenements"); if (!z) return; z.textContent = "";
+    var part = (echanges && echanges.participations) || {};
+    (contenu.evenements || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (x) {
+      var l = el("div", "ligne"), i = el("div", "info");
+      if (x.image) { var v = el("img", "vignette"); v.src = "/f/" + x.image + "?type=image/jpeg"; l.appendChild(v); }
+      i.appendChild(el("p", "nom", x.titre));
+      i.appendChild(el("p", "meta", x.date.split("-").reverse().join("/") + (x.heure ? " · " + x.heure : "") + " · " + nomFiliere(x.filiere || "") + " · 🙋 " + ((part[x.id] || {}).n || 0) + " participant(s)"));
+      l.appendChild(i);
+      l.appendChild(bouton("Retirer", "danger", function () { contenu.evenements = contenu.evenements.filter(function (y) { return y !== x; }); enregistrer("Retiré"); }));
+      z.appendChild(l);
+    });
+  }
+  $("b-evenement").onclick = function () {
+    var t = $("ev-titre").value.trim(), d = $("ev-date").value, b = this;
+    if (!t || !d) return toast("Un titre et une date.");
+    b.disabled = true;
+    envoyerImage($("ev-image")).then(function (image) {
+      (contenu.evenements = contenu.evenements || []).push({ id: nouvelId(), titre: t, date: d, heure: $("ev-heure").value.trim(), texte: $("ev-texte").value.trim(), image: image, filiere: $("ev-filiere").value });
+      $("ev-titre").value = ""; $("ev-date").value = ""; $("ev-heure").value = ""; $("ev-texte").value = "";
+      return enregistrer("Événement publié ✓");
+    }).catch(function () { toast("Échec de l'envoi de l'image."); }).then(function () { b.disabled = false; });
   };
   $("b-examen").onclick = function () {
     var t = $("e-titre").value.trim(), d = $("e-date").value;

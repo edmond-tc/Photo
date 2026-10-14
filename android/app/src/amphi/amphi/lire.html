@@ -41,7 +41,8 @@
   var id = q.get("id") || "", nom = q.get("nom") || "document", type = q.get("type") || "application/octet-stream", taille = +q.get("taille") || 0;
   var code = (q.get("code") || "").replace(/\D/g, "");
   // Fichier de la bibliothèque, ou fichier partagé par un camarade (code à 4 chiffres).
-  var adresse = code ? "/partage/" + code + "/f" : "/f/" + encodeURIComponent(id) + "?nom=" + encodeURIComponent(nom) + "&type=" + encodeURIComponent(type);
+  var rang = parseInt(q.get("i") || "0", 10) || 0;
+  var adresse = code ? "/partage/" + code + "/f" + (rang ? "?i=" + rang : "") : "/f/" + encodeURIComponent(id) + "?nom=" + encodeURIComponent(nom) + "&type=" + encodeURIComponent(type);
   var zone = document.getElementById("contenu");
   document.getElementById("titre").textContent = nom;
   document.title = nom;

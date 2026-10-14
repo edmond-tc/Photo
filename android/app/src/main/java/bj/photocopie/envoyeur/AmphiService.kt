@@ -263,6 +263,11 @@ class AmphiService : Service() {
                     r.methode == "POST" && r.chemin == "/alerte" -> alerter(sortie, r, s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.matches(Regex("^/alerte/[a-z0-9]{6,30}/plus$")) -> confirmerAlerte(sortie, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin == "/devinette" -> repondreDevinette(sortie, r, s.inetAddress.hostAddress ?: "")
+                    // ── Star du jour (anniversaires) et événements ──
+                    r.methode == "POST" && r.chemin == "/star" -> creerStar(sortie, r, s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/star/[a-z0-9]{16}/photo$")) -> photoStar(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/star/[a-z0-9]{16}/voeu$")) -> voeuStar(sortie, r, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
+                    r.methode == "POST" && r.chemin.matches(Regex("^/evenement/[a-z0-9]{6,30}/viens$")) -> participer(sortie, r.chemin.split("/")[2], s.inetAddress.hostAddress ?: "")
                     r.methode == "POST" && r.chemin.startsWith("/c/") -> {
                         // Clic sur une publicité (appel, WhatsApp) : la preuve pour l'annonceur.
                         r.chemin.removePrefix("/c/").takeIf { it.matches(Regex("^[a-z0-9]{4,40}$")) }?.let { compter("clics", it) }
@@ -287,6 +292,7 @@ class AmphiService : Service() {
                         json(sortie, deciderProposition(morceaux[3], morceaux[4] == "accepter"))
                     }
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/publication/[a-z0-9]{6,30}$")) -> json(sortie, modererPublication(r.chemin.split("/")[3], lireJson(r).optString("action")))
+                    r.methode == "POST" && r.chemin.matches(Regex("^/gerer/star/[a-z0-9]{16}$")) -> json(sortie, modererStar(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/alerte/[a-z0-9]{6,30}$")) -> json(sortie, modererAlerte(r.chemin.split("/")[3], lireJson(r).optString("action")))
                     r.methode == "POST" && r.chemin.matches(Regex("^/gerer/question/[a-z0-9]{6,30}$")) -> {
                         json(sortie, modererQuestion(r.chemin.split("/")[3], lireJson(r)))
@@ -388,8 +394,11 @@ class AmphiService : Service() {
         ajouter(c.optJSONArray("documents"), "id")
         ajouter(c.optJSONArray("pubs"), "image")
         ajouter(c.optJSONArray("annonces"), "image")
+        ajouter(c.optJSONArray("evenements"), "image")
         c.optJSONObject("accueil")?.optString("photo")?.takeIf { it.isNotEmpty() }?.let { utilises.add(it) }
         ajouter(lireTableau(fichierPublications), "image")
+        val st = lireTableau(fichierStars)
+        for (i in 0 until st.length()) st.optJSONObject(i)?.optJSONArray("photos")?.let { ph -> for (k in 0 until ph.length()) utilises.add(ph.optString(k)) }
         val maintenant = System.currentTimeMillis()
         dossierFichiers.listFiles()?.forEach { f ->
             // Un fichier tout juste reçu (pas encore enregistré dans le contenu) est gardé une heure.
@@ -661,36 +670,68 @@ class AmphiService : Service() {
     private fun texte(v: String?, max: Int) = (v ?: "").replace(Regex("[\\u0000-\\u0008\\u000B-\\u001F]"), "").trim().take(max)
 
     /** Partage d'un téléphone à l'autre : un code à 4 chiffres, valable 24 heures. */
+    /** Plusieurs fichiers sous un même code : le premier envoi donne le code
+     * et un jeton secret ; les suivants s'ajoutent avec ce jeton. */
     private fun deposerPartage(sortie: OutputStream, r: Requete, ip: String) {
-        if (!permis(ip, "partage", 15, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop de partages : réessayez dans une heure."), 429)
+        val ajout = r.query["code"]?.takeIf { it.matches(Regex("^\\d{4}$")) }
+        val jetonDonne = r.query["jeton"] ?: ""
+        val (genre, max) = if (ajout != null) "partage-ajout" to 80 else "partage" to 15
+        if (!permis(ip, genre, max, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop de partages : réessayez dans une heure."), 429)
         nettoyerPartages()
-        val code: String = synchronized(verrouEchanges) {
-            var c: String
-            do { c = (1000..9999).random().toString() } while (dossierPartages.listFiles()?.any { it.name.startsWith("$c-") } == true)
-            c
+        val code: String
+        val jeton: String
+        val rang: Int
+        val f: File
+        val info: File
+        synchronized(verrouEchanges) {
+            if (ajout != null) {
+                val deja = partages(ajout)
+                if (deja.isEmpty()) return json(sortie, JSONObject().put("erreur", "Code expiré."), 404)
+                if (jetonDonne.isEmpty() || deja[0].second.optString("jeton") != jetonDonne) return json(sortie, JSONObject().put("erreur", "Code refusé."), 403)
+                if (deja.size >= 30) return json(sortie, JSONObject().put("erreur", "30 fichiers au plus par code."), 400)
+                code = ajout; jeton = jetonDonne; rang = deja.size
+            } else {
+                var c: String
+                do { c = (1000..9999).random().toString() } while (dossierPartages.listFiles()?.any { it.name.startsWith("$c-") } == true)
+                code = c; jeton = java.util.UUID.randomUUID().toString().replace("-", "").take(16); rang = 0
+            }
+            // Le code est réservé tout de suite : fichier d'information écrit avant le contenu.
+            f = File(dossierPartages, "$code-" + java.util.UUID.randomUUID().toString().replace("-", "").take(12))
+            info = File(f.path + ".json")
+            info.writeText(JSONObject().put("nom", nomPropre(r.query["nom"])).put("type", typePropre(r.query["type"])).put("taille", 0)
+                .put("date", System.currentTimeMillis()).put("jeton", jeton).put("rang", rang).toString())
         }
-        val nom = nomPropre(r.query["nom"])
-        val f = File(dossierPartages, "$code-" + java.util.UUID.randomUUID().toString().replace("-", "").take(12))
         val taille = recevoirVers(f, r, 150_000_000L)
-            ?: return json(sortie, JSONObject().put("erreur", "Fichier trop gros (150 Mo au plus) ou téléphone plein."), 413)
-        File(f.path + ".json").writeText(JSONObject().put("nom", nom).put("type", typePropre(r.query["type"])).put("taille", taille).put("date", System.currentTimeMillis()).toString())
-        json(sortie, JSONObject().put("ok", true).put("code", code))
+        if (taille == null) {
+            info.delete()
+            return json(sortie, JSONObject().put("erreur", "Fichier trop gros (150 Mo au plus) ou téléphone plein."), 413)
+        }
+        info.writeText(JSONObject(info.readText()).put("taille", taille).toString())
+        json(sortie, JSONObject().put("ok", true).put("code", code).put("jeton", jeton))
     }
 
-    private fun trouverPartage(code: String): Pair<File, JSONObject>? {
-        nettoyerPartages()
-        val f = dossierPartages.listFiles()?.firstOrNull { it.name.startsWith("$code-") && !it.name.endsWith(".json") } ?: return null
-        val info = try { JSONObject(File(f.path + ".json").readText()) } catch (_: Exception) { return null }
-        return f to info
-    }
+    /** Les fichiers d'un code, dans l'ordre d'envoi. */
+    private fun partages(code: String): List<Pair<File, JSONObject>> =
+        (dossierPartages.listFiles() ?: emptyArray())
+            .filter { it.name.startsWith("$code-") && !it.name.endsWith(".json") }
+            .mapNotNull { f -> try { f to JSONObject(File(f.path + ".json").readText()) } catch (_: Exception) { null } }
+            .filter { it.second.optLong("taille") > 0 }
+            .sortedBy { it.second.optInt("rang") }
 
     private fun infoPartage(sortie: OutputStream, code: String) {
-        val (_, info) = trouverPartage(code) ?: return json(sortie, JSONObject().put("erreur", "Code inconnu ou expiré."), 404)
-        json(sortie, info)
+        nettoyerPartages()
+        val liste = partages(code)
+        if (liste.isEmpty()) return json(sortie, JSONObject().put("erreur", "Code inconnu ou expiré."), 404)
+        val fichiers = JSONArray()
+        liste.forEach { (_, i) -> fichiers.put(JSONObject().put("nom", i.optString("nom")).put("type", i.optString("type")).put("taille", i.optLong("taille"))) }
+        val premier = liste[0].second
+        json(sortie, JSONObject().put("nom", premier.optString("nom")).put("type", premier.optString("type")).put("taille", premier.optLong("taille")).put("fichiers", fichiers))
     }
 
     private fun fichierPartage(sortie: OutputStream, r: Requete, code: String) {
-        val (f, info) = trouverPartage(code) ?: return repondre(sortie, 404, "text/plain", "Code inconnu ou expiré.".toByteArray())
+        nettoyerPartages()
+        val liste = partages(code)
+        val (f, info) = liste.getOrNull(r.query["i"]?.toIntOrNull() ?: 0) ?: return repondre(sortie, 404, "text/plain", "Code inconnu ou expiré.".toByteArray())
         envoyerChemin(sortie, r, f, info.optString("type"), info.optString("nom"), null)
     }
 
@@ -822,6 +863,8 @@ class AmphiService : Service() {
             .put("alertes", alertesActives(ip))
             .put("motDuJour", motDuJour())
             .put("devinette", devinettePublique(ip))
+            .put("stars", starsPubliques())
+            .put("participations", participations(ip))
     }
 
     private fun echangesGestion(): JSONObject {
@@ -832,7 +875,7 @@ class AmphiService : Service() {
         val pubsSansIp = JSONArray()
         for (i in 0 until pubs.length()) { val o = JSONObject(pubs.getJSONObject(i).toString()); o.remove("ip"); pubsSansIp.put(o) }
         return JSONObject().put("propositions", lireTableau(fichierPropositions)).put("questions", sansIp).put("resultats", resultats())
-            .put("publications", pubsSansIp).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
+            .put("publications", pubsSansIp).put("stars", starsGestion()).put("participations", participations("")).put("alertes", alertesActives("")).put("motDuJour", motDuJour()).put("devinette", devinettePublique("").put("reponses", devinetteDuJour().optJSONArray("reponses")))
     }
 
     private fun modererQuestion(id: String, q: JSONObject): JSONObject = synchronized(verrouEchanges) {
@@ -933,6 +976,170 @@ class AmphiService : Service() {
             ecrire(fichierPublications, gardees)
         }
         return JSONObject().put("ok", true)
+    }
+
+    // ── Star du jour : celui qui fête son anniversaire publie ses photos ;
+    // la promo lui souhaite (phrases toutes faites : rien à modérer). ─────
+
+    private val fichierStars get() = File(dossier, "stars.json")
+    private val fichierParticipations get() = File(dossier, "participations.json")
+    private val NB_VOEUX = 8
+
+    private fun nouvelId16() = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+
+    private fun creerStar(sortie: OutputStream, r: Requete, ip: String) {
+        if (!permis(ip, "star", 3, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop d'envois : réessayez dans une heure."), 429)
+        val q = lireJson(r)
+        val nom = texte(q.optString("nom"), 30)
+        val message = texte(q.optString("message"), 200)
+        if (nom.length < 2) return json(sortie, JSONObject().put("erreur", "Écrivez le prénom de la star."), 400)
+        if (!texteCorrect("$nom $message")) return json(sortie, JSONObject().put("erreur", "Message refusé : restez correct."), 400)
+        if (NUMERO.containsMatchIn("$nom $message")) return json(sortie, JSONObject().put("erreur", "Pas de numéro de téléphone."), 400)
+        val id = nouvelId16()
+        val jeton = nouvelId16()
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierStars)
+            val gardees = JSONArray()
+            val limite = System.currentTimeMillis() - 8L * 86_400_000
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optLong("date") < limite) { supprimerPhotos(o); continue }
+                gardees.put(o)
+            }
+            gardees.put(JSONObject().put("id", id).put("nom", nom).put("message", message)
+                .put("filiere", texte(q.optString("filiere"), 40)).put("date", System.currentTimeMillis())
+                .put("statut", "attente").put("photos", JSONArray()).put("voeux", JSONArray()).put("nbVoeux", 0)
+                .put("jeton", jeton).put("ip", ip))
+            ecrire(fichierStars, gardees)
+        }
+        json(sortie, JSONObject().put("ok", true).put("id", id).put("jeton", jeton))
+    }
+
+    private fun supprimerPhotos(o: JSONObject) {
+        o.optJSONArray("photos")?.let { ph -> for (k in 0 until ph.length()) File(dossierFichiers, ph.optString(k)).takeIf { idValide(it.name) }?.delete() }
+    }
+
+    private fun photoStar(sortie: OutputStream, r: Requete, id: String, ip: String) {
+        if (!permis(ip, "star-photo", 24, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Trop de photos : réessayez plus tard."), 429)
+        val jeton = r.query["jeton"] ?: ""
+        val n = synchronized(verrouEchanges) {
+            val o = trouverStar(id) ?: return json(sortie, JSONObject().put("erreur", "Star introuvable."), 404)
+            if (jeton.isEmpty() || o.optString("jeton") != jeton) return json(sortie, JSONObject().put("erreur", "Refusé."), 403)
+            val ph = o.optJSONArray("photos") ?: JSONArray()
+            if (ph.length() >= 8) return json(sortie, JSONObject().put("erreur", "8 photos au plus."), 400)
+            ph.length()
+        }
+        val f = File(dossierFichiers, "${id}s$n${(100..999).random()}")
+        recevoirVers(f, r, 6_000_000L) ?: return json(sortie, JSONObject().put("erreur", "Photo trop lourde (6 Mo au plus)."), 413)
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierStars)
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("id") == id) o.put("photos", (o.optJSONArray("photos") ?: JSONArray()).put(f.name))
+            }
+            ecrire(fichierStars, t)
+        }
+        json(sortie, JSONObject().put("ok", true).put("photo", f.name))
+    }
+
+    private fun trouverStar(id: String): JSONObject? {
+        val t = lireTableau(fichierStars)
+        for (i in 0 until t.length()) if (t.getJSONObject(i).optString("id") == id) return t.getJSONObject(i)
+        return null
+    }
+
+    private fun voeuStar(sortie: OutputStream, r: Requete, id: String, ip: String) {
+        val q = lireJson(r)
+        val phrase = q.optInt("phrase", -1)
+        if (phrase !in 0 until NB_VOEUX) return json(sortie, JSONObject().put("erreur", "Vœu inconnu."), 400)
+        var de = texte(q.optString("de"), 20)
+        if (!texteCorrect(de) || NUMERO.containsMatchIn(de)) de = ""
+        if (!permis(ip, "voeu-$id", 2, 86_400_000)) return json(sortie, JSONObject().put("erreur", "Vous avez déjà souhaité à cette star 🎉"), 429)
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierStars)
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("id") != id || o.optString("statut") != "publie") continue
+                val v = o.optJSONArray("voeux") ?: JSONArray()
+                v.put(JSONObject().put("p", phrase).put("de", de).put("date", System.currentTimeMillis()))
+                while (v.length() > 300) v.remove(0)
+                o.put("voeux", v).put("nbVoeux", o.optInt("nbVoeux") + 1)
+            }
+            ecrire(fichierStars, t)
+        }
+        json(sortie, JSONObject().put("ok", true))
+    }
+
+    /** Stars validées des 3 derniers jours (la page met en avant celles du jour). */
+    private fun starsPubliques(): JSONArray {
+        val t = lireTableau(fichierStars)
+        val limite = System.currentTimeMillis() - 3L * 86_400_000
+        val r = JSONArray()
+        for (i in 0 until t.length()) {
+            val o = t.getJSONObject(i)
+            if (o.optString("statut") != "publie" || o.optLong("date") < limite) continue
+            val p = JSONObject(o.toString()); p.remove("ip"); p.remove("jeton")
+            val v = p.optJSONArray("voeux") ?: JSONArray()
+            val derniers = JSONArray()
+            for (k in maxOf(0, v.length() - 40) until v.length()) derniers.put(v.get(k))
+            p.put("voeux", derniers)
+            r.put(p)
+        }
+        return r
+    }
+
+    private fun starsGestion(): JSONArray {
+        val t = lireTableau(fichierStars)
+        val r = JSONArray()
+        for (i in 0 until t.length()) { val p = JSONObject(t.getJSONObject(i).toString()); p.remove("ip"); p.remove("jeton"); p.remove("voeux"); r.put(p) }
+        return r
+    }
+
+    private fun modererStar(id: String, action: String): JSONObject {
+        synchronized(verrouEchanges) {
+            val t = lireTableau(fichierStars)
+            val gardees = JSONArray()
+            for (i in 0 until t.length()) {
+                val o = t.getJSONObject(i)
+                if (o.optString("id") == id) {
+                    when (action) {
+                        "publier" -> o.put("statut", "publie")
+                        "refuser", "supprimer" -> { supprimerPhotos(o); continue }
+                    }
+                }
+                gardees.put(o)
+            }
+            ecrire(fichierStars, gardees)
+        }
+        return JSONObject().put("ok", true)
+    }
+
+    /** « J'y serai » aux événements de la promo (un par téléphone, touche à nouveau pour annuler). */
+    private fun participer(sortie: OutputStream, id: String, ip: String) {
+        if (!permis(ip, "viens", 30, 3_600_000)) return json(sortie, JSONObject().put("erreur", "Attendez un peu."), 429)
+        val moi: Boolean
+        synchronized(verrouEchanges) {
+            val p = lireObjet(fichierParticipations)
+            val liste = p.optJSONArray(id) ?: JSONArray()
+            val gardee = JSONArray()
+            var etait = false
+            for (k in 0 until liste.length()) if (liste.optString(k) == ip) etait = true else gardee.put(liste.optString(k))
+            if (!etait) gardee.put(ip)
+            moi = !etait
+            p.put(id, gardee)
+            ecrire(fichierParticipations, p)
+        }
+        json(sortie, JSONObject().put("ok", true).put("moi", moi))
+    }
+
+    private fun participations(ip: String): JSONObject {
+        val p = lireObjet(fichierParticipations)
+        val r = JSONObject()
+        p.keys().forEach { k ->
+            val l = p.optJSONArray(k) ?: JSONArray()
+            r.put(k, JSONObject().put("n", l.length()).put("moi", ip.isNotEmpty() && (0 until l.length()).any { l.optString(it) == ip }))
+        }
+        return r
     }
 
     // ── Alerte cours : signalée par les étudiants, confirmée par les +1 ──
@@ -1317,6 +1524,7 @@ class AmphiService : Service() {
             ajouter(c.optJSONArray("documents"), "id", "taille")
             ajouter(c.optJSONArray("pubs"), "image", null)
             ajouter(c.optJSONArray("annonces"), "image", null)
+            ajouter(c.optJSONArray("evenements"), "image", null)
             c.optJSONObject("accueil")?.optString("photo")?.takeIf { idValide(it) }?.let { besoins[it] = -1L }
             var fait = 0
             var octets = 0L

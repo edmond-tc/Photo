@@ -18,6 +18,8 @@
     --police: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
   *, *::before, *::after { box-sizing: border-box; }
+  /* « hidden » cache toujours, même un élément mis en flex ou en grille. */
+  [hidden] { display: none !important; }
   /* Écriture plus petite (14 px de base) : plus de contenu visible d'un coup. */
   html { font-size: 13px; scroll-behavior: smooth; scroll-padding-top: 52px; }
   body { margin: 0; background: var(--fond); color: var(--texte); font: 1rem/1.45 var(--police); -webkit-text-size-adjust: 100%; }
@@ -277,6 +279,45 @@
 
   /* Publicité : passage en fondu glissé */
   #pub-haut .carte { animation: pub .6s cubic-bezier(.2, .8, .2, 1) both; }
+  /* Star du jour : carte de fête */
+  .star { position: relative; background: linear-gradient(160deg, #2a0f3d, #6a1b4d 55%, #c2185b); color: #fff; }
+  .star .corps { position: relative; z-index: 1; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .star .etiquette { color: #ffd76a; }
+  .star h3 { font-family: var(--titre); font-size: 1.45rem; line-height: 1.15; text-wrap: balance; color: #fff; text-shadow: 0 2px 10px rgba(0, 0, 0, .35); }
+  .star .msg { font-style: italic; opacity: .92; max-width: 36ch; }
+  .star-anneau { position: relative; width: 146px; height: 146px; border-radius: 50%; display: grid; place-items: center; margin-top: 4px; }
+  .star-anneau::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(#ffd76a, #ff6fb5, #7cc6ff, #5cf08b, #ffd76a); animation: tourner 4s linear infinite; }
+  .star-anneau img { position: relative; width: 134px; height: 134px; border-radius: 50%; object-fit: cover; border: 3px solid #2a0f3d; cursor: zoom-in; }
+  @keyframes tourner { to { transform: rotate(360deg); } }
+  .star-galerie { display: flex; gap: 8px; overflow-x: auto; max-width: 100%; padding: 2px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .star-galerie img { flex: none; width: 70px; height: 70px; border-radius: 10px; object-fit: cover; border: 2px solid rgba(255, 255, 255, .5); scroll-snap-align: start; cursor: zoom-in; }
+  .star-compte { font: 800 1.2rem var(--mono); color: #ffd76a; }
+  .voeux-boutons { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .voeux-boutons button { border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .12); color: #fff; border-radius: 999px; padding: 6px 11px; font-weight: 600; font-size: .85rem; cursor: pointer; }
+  .voeux-boutons button:disabled { opacity: .5; }
+  .star .champ { background: rgba(255, 255, 255, .95); max-width: 260px; }
+  .voeux-liste { font-size: .85rem; opacity: .9; }
+  .star .bouton { background: #ffd76a; color: #2a0f3d; }
+  .ballon { position: absolute; bottom: -40px; font-size: 1.6rem; animation: envol 9s ease-in infinite; opacity: .85; z-index: 0; pointer-events: none; }
+  @keyframes envol { 0% { transform: translateY(0) rotate(-6deg); opacity: 0; } 10% { opacity: .9; } 100% { transform: translateY(-560px) rotate(8deg); opacity: 0; } }
+  .anniv { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--bordure); cursor: pointer; }
+  .anniv img { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; flex: none; }
+  .visionneuse { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .94); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; }
+  .visionneuse img { max-width: 100%; max-height: 78vh; border-radius: 8px; object-fit: contain; }
+  .visionneuse .barre-vis { display: flex; gap: 10px; align-items: center; color: #fff; font-weight: 700; }
+  .visionneuse button, .visionneuse a { background: rgba(255, 255, 255, .15); color: #fff; border: 0; border-radius: 999px; padding: 9px 14px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+  #st-toile { display: block; width: 100%; max-width: 330px; height: auto; margin: 10px auto; border-radius: 12px; box-shadow: 0 6px 24px rgba(16, 24, 40, .25); touch-action: none; cursor: grab; }
+  .studio-zoom { display: flex; align-items: center; gap: 10px; font-size: .85rem; color: var(--discret); }
+  .studio-zoom input { flex: 1; }
+  .puces img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 4px; }
+  /* Événements */
+  .evenement img { display: block; width: 100%; max-height: 190px; object-fit: cover; }
+  .evenement .corps { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .evenement h3 { font-size: 1.1rem; color: var(--nuit); }
+  .ev-tete { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+  .ev-tete b.j { font: 800 .85rem var(--mono); background: var(--or-fond); color: var(--or); padding: 3px 9px; border-radius: 999px; }
+  @media (prefers-reduced-motion: reduce) { .star-anneau::before, .ballon { animation: none; } .ballon { display: none; } }
+
   /* UE et crédits : fiche permanente de la filière */
   .ue-tete { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 16px 10px; border-bottom: 1px solid var(--bordure); }
   .ue-tete h3 { font-size: 1rem; color: var(--nuit); text-wrap: balance; }
@@ -350,6 +391,7 @@
         <button type="button" data-alerte="retard">⏳ Prof en retard</button>
       </div>
     </div>
+    <div id="stars" style="display:flex;flex-direction:column;gap:16px"></div>
     <div class="carte" id="carte-prochain" hidden>
       <div class="prochain">
         <div class="icone" aria-hidden="true">⏰</div>
@@ -362,6 +404,7 @@
     </div>
     <div class="carte" id="une" hidden></div>
     <div class="carte" id="examens" hidden></div>
+    <div id="evenements" style="display:flex;flex-direction:column;gap:16px"></div>
     <div class="carte" id="carte-mot" hidden><div class="corps">
       <p class="etiquette">💬 Le mot du jour</p>
       <p class="citation" id="mot-texte"></p>
@@ -415,6 +458,32 @@
   <h2 class="titre-section" id="promo">🎉 La vie de la promo</h2>
   <p class="aide" style="margin:0 2px">Tout est vérifié avant d'apparaître. Pas de nom complet, pas d'insulte.</p>
 
+  <h3 class="sous-titre">🎂 Anniversaire : devenez la star du jour</h3>
+  <div class="carte"><div class="corps">
+    <p class="aide">C'est votre anniversaire (ou celui d'un ami) ? Publiez vos plus belles photos (8 au plus) : toute la promo vous le souhaite. Visible après vérification.</p>
+    <input class="champ" id="an-nom" maxlength="30" placeholder="Prénom de la star (ex. : Koffi)">
+    <textarea class="champ" id="an-message" maxlength="200" placeholder="Un mot de la star (facultatif) : Merci à tous ! 🎉"></textarea>
+    <input type="file" class="champ" id="an-photos" accept="image/*" multiple>
+    <div class="barre-envoi" id="an-barre" hidden><i></i></div>
+    <button class="bouton" type="button" id="an-envoyer" style="margin-top:8px">🎂 Publier</button>
+    <p class="aide" id="an-etat" style="margin-top:6px"></p>
+  </div><div id="liste-anniversaires"></div></div>
+
+  <h3 class="sous-titre" id="studio">🎨 Studio anniversaire</h3>
+  <div class="carte"><div class="corps">
+    <p class="aide">Une belle image pour le statut WhatsApp : une photo, un décor, puis « Enregistrer ». Faites glisser la photo pour la cadrer, et réglez le zoom.</p>
+    <input type="file" class="champ" id="st-photo" accept="image/*">
+    <div class="puces" id="st-stars" hidden style="margin-top:8px"></div>
+    <input class="champ" id="st-nom" maxlength="30" placeholder="Prénom (ex. : Koffi)">
+    <input class="champ" id="st-message" maxlength="80" placeholder="Message (ex. : Longue vie à toi !)">
+    <div class="puces" id="st-decors" style="margin-top:8px"></div>
+    <div class="puces" id="st-formats" style="margin-top:6px"></div>
+    <canvas id="st-toile" width="1080" height="1920" aria-label="Aperçu de l'image d'anniversaire"></canvas>
+    <label class="studio-zoom">🔍 Zoom <input type="range" id="st-zoom" min="1" max="3" step="0.01" value="1"></label>
+    <button class="bouton" id="st-enregistrer" type="button" style="margin-top:8px">💾 Enregistrer l'image</button>
+    <p class="aide" id="st-etat" style="margin-top:6px"></p>
+  </div></div>
+
   <h3 class="sous-titre">💌 Dédicaces</h3>
   <div class="carte"><div class="corps">
     <textarea class="champ" id="ded-texte" maxlength="300" placeholder="Ex. : Joyeux anniversaire Koffi 🎂 / Courage à toute la L3 pour l'exam 💪"></textarea>
@@ -453,8 +522,8 @@
   <h2 class="titre-section" id="partager">🔁 Partager sans forfait</h2>
   <div class="carte"><div class="corps">
     <h3>Envoyer un fichier à quelqu'un</h3>
-    <p class="aide">Choisissez le fichier : vous recevez un code à 4 chiffres, à donner à votre camarade. Valable 24 heures, sans Internet.</p>
-    <input type="file" class="champ" id="p-envoi">
+    <p class="aide">Choisissez un ou plusieurs fichiers : vous recevez un seul code à 4 chiffres, à donner à votre camarade. Valable 24 heures, sans Internet.</p>
+    <input type="file" class="champ" id="p-envoi" multiple>
     <div class="barre-envoi" id="p-barre" hidden><i></i></div>
     <div id="p-code"></div>
   </div></div>
@@ -470,7 +539,7 @@
     <input class="champ" id="prop-matiere" maxlength="60" placeholder="Matière (ex. : Ondes et vibrations)" list="liste-matieres">
     <datalist id="liste-matieres"></datalist>
     <input class="champ" id="prop-auteur" maxlength="40" placeholder="Votre prénom (facultatif)">
-    <input type="file" class="champ" id="prop-fichier">
+    <input type="file" class="champ" id="prop-fichier" multiple>
     <div class="barre-envoi" id="prop-barre" hidden><i></i></div>
     <button class="bouton" id="prop-envoyer" type="button" style="margin-top:10px">Envoyer pour vérification</button>
     <p class="aide" id="prop-etat" style="margin-top:6px"></p>
@@ -520,6 +589,11 @@
   </footer>
 </main>
 
+<div class="visionneuse" id="visionneuse" hidden>
+  <img id="vis-img" alt="Photo">
+  <div class="barre-vis"><button type="button" id="vis-prec">‹</button><span id="vis-compte"></span><button type="button" id="vis-suiv">›</button></div>
+  <div class="barre-vis"><a id="vis-garder" href="#">💾 Enregistrer</a><button type="button" id="vis-fermer">✕ Fermer</button></div>
+</div>
 <script>
 (function () {
   "use strict";
@@ -808,6 +882,7 @@
     rendreAnnonces();
     rendrePubs();
     rendreExamens();
+    rendreEvenements();
     rendreSondages();
   }
 
@@ -984,7 +1059,7 @@
   }
   function chargerEchanges() {
     return fetch("/echanges.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (e) {
-      echanges = e; rendreQuestions(); rendrePromo(); if (donnees) rendreSondages();
+      echanges = e; rendreQuestions(); rendrePromo(); rendreStars(); if (donnees) { rendreSondages(); rendreEvenements(); }
     }).catch(function () {});
   }
   $("q-publier").onclick = function () {
@@ -1099,11 +1174,11 @@
       return r.ok;
     }).catch(function () { etat.textContent = "❌ Pas de connexion au Wi-Fi de l'amphi."; return false; }).then(function (ok) { bouton.disabled = false; return ok; });
   }
-  function reduire(f) {
+  function reduire(f, maxi) {
     return new Promise(function (ok) {
       if (!f || !/^image\//.test(f.type)) return ok(null);
       var img = new Image();
-      img.onload = function () { var k = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight)); var c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); c.toBlob(function (b) { ok(b); }, "image/jpeg", 0.8); };
+      img.onload = function () { var k = Math.min(1, (maxi || 1024) / Math.max(img.naturalWidth, img.naturalHeight)); var c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); c.toBlob(function (b) { ok(b); }, "image/jpeg", 0.8); };
       img.onerror = function () { ok(null); };
       img.src = URL.createObjectURL(f);
     });
@@ -1130,38 +1205,441 @@
       x.send(fichier);
     });
   }
+  // Plusieurs fichiers : un seul code. Le premier envoi donne le code et un
+  // jeton ; les suivants s'ajoutent au même code.
   $("p-envoi").onchange = function () {
-    var f = this.files && this.files[0], input = this; if (!f) return;
+    var fichiers = Array.prototype.slice.call(this.files || []), input = this; if (!fichiers.length) return;
     var z = $("p-code"); z.textContent = "";
-    envoyer("/partage?nom=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(f.type || ""), f, $("p-barre")).then(function (r) {
-      z.appendChild(el("p", "aide", "Code à donner pour « " + f.name + " » :"));
-      z.appendChild(el("p", "code-partage", r.code));
+    var etat = el("p", "aide", ""); z.appendChild(etat);
+    var code = "", jeton = "", faits = [];
+    var chaine = Promise.resolve();
+    fichiers.forEach(function (f, k) {
+      chaine = chaine.then(function () {
+        etat.textContent = "Envoi " + (k + 1) + " / " + fichiers.length + " : " + f.name;
+        var url = "/partage?nom=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(f.type || "") + (code ? "&code=" + code + "&jeton=" + jeton : "");
+        return envoyer(url, f, $("p-barre")).then(function (r) { code = r.code; jeton = r.jeton || ""; faits.push(f.name); });
+      });
+    });
+    chaine.then(function () {
+      etat.textContent = faits.length > 1 ? "Code à donner pour vos " + faits.length + " fichiers :" : "Code à donner pour « " + faits[0] + " » :";
+      z.appendChild(el("p", "code-partage", code));
       z.appendChild(el("p", "aide", "Valable 24 heures. Votre camarade le tape dans « Recevoir un fichier »."));
       input.value = "";
-    }).catch(function (e) { z.appendChild(el("p", "aide", "❌ " + e.message)); });
+    }).catch(function (e) {
+      etat.textContent = "❌ " + e.message;
+      if (code) { z.appendChild(el("p", "aide", faits.length + " fichier(s) déjà envoyé(s) avec ce code :")); z.appendChild(el("p", "code-partage", code)); }
+    });
   };
   $("p-recevoir").onclick = function () {
     var code = $("p-saisie").value.replace(/\D/g, ""), z = $("p-recu"); z.textContent = "";
     if (code.length !== 4) { z.appendChild(el("p", "aide", "Le code a 4 chiffres.")); return; }
     fetch("/partage/" + code).then(function (r) { return r.json(); }).then(function (i) {
       if (i.erreur) { z.appendChild(el("p", "aide", "❌ " + i.erreur)); return; }
-      var l = el("div", "doc"); l.style.padding = "10px 0 0";
-      var info = el("div", "info"); info.appendChild(el("p", "nom", i.nom)); info.appendChild(el("p", "meta", taille(i.taille)));
-      var a = el("a", "bouton", "Ouvrir");
-      a.href = "/lire?code=" + code + "&nom=" + encodeURIComponent(i.nom) + "&type=" + encodeURIComponent(i.type) + "&taille=" + i.taille;
-      l.appendChild(info); l.appendChild(a); z.appendChild(l);
+      var liste = i.fichiers || [i];
+      if (liste.length > 1) z.appendChild(el("p", "aide", liste.length + " fichiers :"));
+      liste.forEach(function (x, k) {
+        var l = el("div", "doc"); l.style.padding = "10px 0 0";
+        var info = el("div", "info"); info.appendChild(el("p", "nom", x.nom)); info.appendChild(el("p", "meta", taille(x.taille)));
+        var a = el("a", "bouton", "Ouvrir");
+        a.href = "/lire?code=" + code + "&i=" + k + "&nom=" + encodeURIComponent(x.nom) + "&type=" + encodeURIComponent(x.type) + "&taille=" + x.taille;
+        l.appendChild(info); l.appendChild(a); z.appendChild(l);
+      });
+      if (liste.length > 1) {
+        var tout = el("button", "bouton second", "💾 Tout enregistrer"); tout.type = "button"; tout.style.marginTop = "10px";
+        tout.onclick = function () {
+          tout.disabled = true;
+          var chaine = Promise.resolve();
+          liste.forEach(function (x, k) {
+            chaine = chaine.then(function () {
+              tout.textContent = "Enregistrement " + (k + 1) + " / " + liste.length + "…";
+              return fetch("/partage/" + code + "/f?i=" + k).then(function (r) { return r.blob(); }).then(function (b) {
+                var a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = x.nom;
+                document.body.appendChild(a); a.click();
+                setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+              });
+            });
+          });
+          chaine.then(function () { tout.textContent = "✅ Tout est dans vos téléchargements"; }).catch(function () { tout.textContent = "❌ Échec, réessayez"; tout.disabled = false; });
+        };
+        z.appendChild(tout);
+      }
     }).catch(function () { z.appendChild(el("p", "aide", "❌ Pas de connexion au Wi-Fi de l'amphi.")); });
   };
   $("prop-envoyer").onclick = function () {
-    var f = $("prop-fichier").files && $("prop-fichier").files[0], z = $("prop-etat");
-    if (!f) { z.textContent = "Choisissez d'abord le fichier."; return; }
-    var b = this; b.disabled = true; z.textContent = "Envoi…";
-    var q = "nom=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(f.type || "") + "&titre=" + encodeURIComponent($("prop-titre").value) + "&matiere=" + encodeURIComponent($("prop-matiere").value) + "&auteur=" + encodeURIComponent($("prop-auteur").value);
-    envoyer("/proposer?" + q, f, $("prop-barre")).then(function () {
-      z.textContent = "✅ Merci ! Le document sera publié après vérification.";
+    var fichiers = Array.prototype.slice.call($("prop-fichier").files || []).slice(0, 10), z = $("prop-etat");
+    if (!fichiers.length) { z.textContent = "Choisissez d'abord le ou les fichiers."; return; }
+    var b = this; b.disabled = true;
+    var titre = $("prop-titre").value.trim(), n = fichiers.length, chaine = Promise.resolve();
+    fichiers.forEach(function (f, k) {
+      chaine = chaine.then(function () {
+        z.textContent = "Envoi " + (k + 1) + " / " + n + "…";
+        // Plusieurs fichiers : chacun garde son nom comme titre (ou « titre (2/3) »).
+        var t = n === 1 ? titre : titre ? titre + " (" + (k + 1) + "/" + n + ")" : f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+        var q = "nom=" + encodeURIComponent(f.name) + "&type=" + encodeURIComponent(f.type || "") + "&titre=" + encodeURIComponent(t) + "&matiere=" + encodeURIComponent($("prop-matiere").value) + "&auteur=" + encodeURIComponent($("prop-auteur").value);
+        return envoyer("/proposer?" + q, f, $("prop-barre"));
+      });
+    });
+    chaine.then(function () {
+      z.textContent = n > 1 ? "✅ Merci ! Vos " + n + " documents seront publiés après vérification." : "✅ Merci ! Le document sera publié après vérification.";
       $("prop-fichier").value = ""; $("prop-titre").value = "";
     }).catch(function (e) { z.textContent = "❌ " + e.message; }).then(function () { b.disabled = false; });
   };
+
+  // ── Star du jour (anniversaires) ──
+  var VOEUX = ["Joyeux anniversaire ! 🎂", "Bonne fête ! 🎉", "Longue vie ! 🙏", "Que Dieu te bénisse ! ✨", "Plein de succès cette année ! 📚", "Reste toi-même, tu es top ! 💪", "Happy birthday ! 🥳", "Que tous tes vœux se réalisent ! 🌟"];
+  function photoUrl(id) { return "/f/" + encodeURIComponent(id) + "?type=image/jpeg&nom=photo.jpg"; }
+  function lire(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+  function garder(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var empreinteStars = "";
+  function rendreStars() {
+    var tous = (echanges.stars || []).filter(pourMoi).sort(function (a, b) { return a.date - b.date; });
+    var auj = cle(new Date());
+    var duJour = tous.filter(function (x) { return cle(new Date(x.date)) === auj; });
+    // Pas de nouveau dessin si rien n'a changé : le prénom tapé et les ballons restent.
+    var emp = JSON.stringify(tous);
+    if (emp === empreinteStars) return;
+    empreinteStars = emp;
+    var z = $("stars"); z.textContent = "";
+    duJour.forEach(function (x) { z.appendChild(carteStar(x)); });
+    if (duJour.length && !lire("amphi-fete-" + auj)) { garder("amphi-fete-" + auj, "1"); setTimeout(function () { if (window.amphiFete) window.amphiFete(); }, 900); }
+    var la = $("liste-anniversaires"); la.textContent = "";
+    tous.slice().reverse().forEach(function (x) {
+      var l = el("div", "anniv");
+      if (x.photos && x.photos.length) { var i = el("img"); i.src = photoUrl(x.photos[0]); i.alt = ""; i.loading = "lazy"; l.appendChild(i); }
+      var t = el("div"); t.appendChild(el("p", "nom", "🎂 " + x.nom)); t.appendChild(el("p", "aide", ilYa(x.date) + " · " + (x.nbVoeux || 0) + " vœu(x) · " + (x.photos || []).length + " photo(s)"));
+      l.appendChild(t);
+      l.onclick = function () { if (x.photos && x.photos.length) visionner(x.photos, 0); };
+      la.appendChild(l);
+    });
+    remplirStudioStars(tous);
+  }
+  function carteStar(x) {
+    var c = el("div", "carte star");
+    ["🎈", "🎉", "🎈", "✨", "🎈", "🎊"].forEach(function (b, i) { var e = el("span", "ballon", b); e.style.left = (6 + i * 16) + "%"; e.style.animationDelay = (i * 1.4) + "s"; c.appendChild(e); });
+    var corps = el("div", "corps");
+    corps.appendChild(el("p", "etiquette", "🎂 Star du jour"));
+    var ph = x.photos || [];
+    if (ph.length) {
+      var an = el("div", "star-anneau"), im = el("img"); im.src = photoUrl(ph[0]); im.alt = x.nom;
+      im.onclick = function () { visionner(ph, 0); };
+      an.appendChild(im); corps.appendChild(an);
+    }
+    corps.appendChild(el("h3", null, "Joyeux anniversaire " + x.nom + " !"));
+    if (x.message) corps.appendChild(el("p", "msg", "« " + x.message + " »"));
+    if (ph.length > 1) {
+      var g = el("div", "star-galerie");
+      ph.forEach(function (p, i) { var t = el("img"); t.src = photoUrl(p); t.alt = ""; t.loading = "lazy"; t.onclick = function () { visionner(ph, i); }; g.appendChild(t); });
+      corps.appendChild(g);
+    }
+    var n = x.nbVoeux || 0;
+    corps.appendChild(el("p", "star-compte", n + (n > 1 ? " vœux" : " vœu")));
+    var boutons = el("div", "voeux-boutons");
+    if (lire("amphi-voeu-" + x.id)) {
+      boutons.appendChild(el("p", null, "✅ Vous lui avez souhaité. Merci !"));
+    } else {
+      var de = el("input", "champ"); de.maxLength = 20; de.placeholder = "Votre prénom (facultatif)"; de.value = lire("amphi-prenom");
+      corps.appendChild(de);
+      VOEUX.forEach(function (v, i) {
+        var b = el("button", null, v); b.type = "button";
+        b.onclick = function () {
+          Array.prototype.forEach.call(boutons.querySelectorAll("button"), function (y) { y.disabled = true; });
+          fetch("/star/" + x.id + "/voeu", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phrase: i, de: de.value.trim() }) })
+            .then(function (r) { return r.json(); })
+            .then(function (r) {
+              if (!r.ok && !/déjà/.test(r.erreur || "")) throw new Error(r.erreur);
+              garder("amphi-voeu-" + x.id, "1");
+              if (de.value.trim()) garder("amphi-prenom", de.value.trim());
+              if (window.amphiFete) window.amphiFete();
+              empreinteStars = ""; chargerEchanges();
+            })
+            .catch(function () { Array.prototype.forEach.call(boutons.querySelectorAll("button"), function (y) { y.disabled = false; }); });
+        };
+        boutons.appendChild(b);
+      });
+    }
+    corps.appendChild(boutons);
+    var vx = el("div", "voeux-liste");
+    (x.voeux || []).slice(-4).reverse().forEach(function (v) { vx.appendChild(el("p", null, (v.de ? v.de + " : " : "") + (VOEUX[v.p] || "🎉"))); });
+    corps.appendChild(vx);
+    var st = el("button", "bouton", "🎨 Faire une belle image pour " + x.nom); st.type = "button";
+    st.onclick = function () { studioPour(x); };
+    corps.appendChild(st);
+    c.appendChild(corps);
+    return c;
+  }
+
+  // Visionneuse de photos
+  var vis = { liste: [], i: 0 };
+  function visionner(liste, i) { vis.liste = liste; vis.i = i; montrerVis(); $("visionneuse").hidden = false; }
+  function montrerVis() {
+    var id = vis.liste[vis.i];
+    $("vis-img").src = photoUrl(id);
+    $("vis-compte").textContent = (vis.i + 1) + " / " + vis.liste.length;
+    $("vis-garder").href = "/lire?id=" + encodeURIComponent(id) + "&nom=photo-" + (vis.i + 1) + ".jpg&type=image/jpeg";
+  }
+  $("vis-fermer").onclick = function () { $("visionneuse").hidden = true; };
+  $("vis-prec").onclick = function () { vis.i = (vis.i - 1 + vis.liste.length) % vis.liste.length; montrerVis(); };
+  $("vis-suiv").onclick = function () { vis.i = (vis.i + 1) % vis.liste.length; montrerVis(); };
+
+  // Publier sa star du jour : la fiche, puis les photos une à une.
+  $("an-envoyer").onclick = function () {
+    var b = this, z = $("an-etat"), nom = $("an-nom").value.trim();
+    var photos = Array.prototype.slice.call($("an-photos").files || []).filter(function (f) { return /^image\//.test(f.type); }).slice(0, 8);
+    if (nom.length < 2) { z.textContent = "Écrivez le prénom de la star."; return; }
+    if (!photos.length) { z.textContent = "Choisissez au moins une photo."; return; }
+    b.disabled = true; z.textContent = "Envoi…";
+    fetch("/star", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nom: nom, message: $("an-message").value.trim(), filiere: (donnees && donnees.filieres.length > 1) ? filiere : "" }) })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.erreur || "Échec.");
+        var chaine = Promise.resolve();
+        photos.forEach(function (f, k) {
+          chaine = chaine.then(function () {
+            z.textContent = "Photo " + (k + 1) + " / " + photos.length + "…";
+            return reduire(f, 1600).then(function (blob) { return envoyer("/star/" + r.id + "/photo?jeton=" + r.jeton, blob || f, $("an-barre")); });
+          });
+        });
+        return chaine;
+      })
+      .then(function () {
+        z.textContent = "✅ Envoyé ! La star apparaîtra en haut de la page après vérification.";
+        $("an-nom").value = ""; $("an-message").value = ""; $("an-photos").value = "";
+      })
+      .catch(function (e) { z.textContent = "❌ " + (e.message || "Pas de connexion au Wi-Fi de l'amphi."); })
+      .then(function () { b.disabled = false; });
+  };
+
+  // ── Studio anniversaire : une image prête pour le statut WhatsApp ──
+  var studio = { img: null, decor: "ballons", format: "statut", zoom: 1, dx: 0, dy: 0 };
+  var DECORS = [["ballons", "🎈 Ballons"], ["or", "✨ Doré"], ["oscillo", "📈 Oscillo"], ["polaroid", "📸 Polaroïd"]];
+  var FORMATS = [["statut", "Statut WhatsApp"], ["post", "Publication"]];
+  var toile = $("st-toile"), gs = toile.getContext("2d");
+  function puces(zone, liste, champ) {
+    zone.textContent = "";
+    liste.forEach(function (x) {
+      var b = el("button", studio[champ] === x[0] ? "choisie" : "", x[1]); b.type = "button";
+      b.onclick = function () { studio[champ] = x[0]; puces(zone, liste, champ); dessiner(); };
+      zone.appendChild(b);
+    });
+  }
+  // Suite pseudo-aléatoire fixe : le décor ne bouge pas d'un dessin à l'autre.
+  function hasard(graine) { var x = graine; return function () { x = (x * 16807) % 2147483647; return (x - 1) / 2147483646; }; }
+  function emplacement(W, H) {
+    var d = studio.decor, st = studio.format === "statut";
+    if (d === "ballons") { var t = W * 0.64, cy = H * (st ? 0.42 : 0.44); return { x: W / 2 - t / 2, y: cy - t / 2, w: t, h: t, cercle: true }; }
+    if (d === "or") return { x: W * 0.13, y: H * (st ? 0.22 : 0.2), w: W * 0.74, h: H * (st ? 0.44 : 0.5) };
+    if (d === "oscillo") return { x: W * 0.08, y: H * (st ? 0.24 : 0.22), w: W * 0.84, h: H * (st ? 0.42 : 0.46), arrondi: 36 };
+    var cw = W * 0.74; return { x: (W - cw) / 2 + 36, y: H * (st ? 0.2 : 0.17) + 36, w: cw - 72, h: cw - 72, polaroid: true, cw: cw };
+  }
+  function chemin(z) {
+    gs.beginPath();
+    if (z.cercle) gs.arc(z.x + z.w / 2, z.y + z.h / 2, z.w / 2, 0, Math.PI * 2);
+    else if (z.arrondi && gs.roundRect) gs.roundRect(z.x, z.y, z.w, z.h, z.arrondi);
+    else gs.rect(z.x, z.y, z.w, z.h);
+  }
+  function photoDans(z) {
+    gs.save(); chemin(z); gs.clip();
+    var im = studio.img;
+    if (im) {
+      var k = Math.max(z.w / im.naturalWidth, z.h / im.naturalHeight) * studio.zoom;
+      var dw = im.naturalWidth * k, dh = im.naturalHeight * k;
+      var mx = (dw - z.w) / 2, my = (dh - z.h) / 2;
+      studio.dx = Math.max(-mx, Math.min(mx, studio.dx)); studio.dy = Math.max(-my, Math.min(my, studio.dy));
+      gs.drawImage(im, z.x + (z.w - dw) / 2 + studio.dx, z.y + (z.h - dh) / 2 + studio.dy, dw, dh);
+    } else {
+      gs.fillStyle = "#e9e3f0"; gs.fillRect(z.x, z.y, z.w, z.h);
+      gs.fillStyle = "#8a7f99"; gs.font = "600 44px " + POLICE; gs.textAlign = "center";
+      gs.fillText("📷 Ajoutez une photo", z.x + z.w / 2, z.y + z.h / 2);
+    }
+    gs.restore();
+  }
+  var POLICE = "Roboto, 'Segoe UI', Arial, sans-serif", SERIF = "Georgia, 'Times New Roman', serif";
+  function ecrire(t, x, y, police, taillePx, couleur, maxW, ombre) {
+    if (!t) return;
+    var n = taillePx;
+    do { gs.font = police.replace("{t}", n + "px"); n -= 4; } while (gs.measureText(t).width > maxW && n > 20);
+    gs.textAlign = "center"; gs.fillStyle = couleur;
+    if (ombre) { gs.shadowColor = ombre; gs.shadowBlur = 18; gs.shadowOffsetY = 4; }
+    gs.fillText(t, x, y);
+    gs.shadowColor = "transparent"; gs.shadowBlur = 0; gs.shadowOffsetY = 0;
+  }
+  function confettis(W, H, n, couleurs, graine) {
+    var r = hasard(graine);
+    for (var i = 0; i < n; i++) {
+      gs.save(); gs.translate(r() * W, r() * H); gs.rotate(r() * Math.PI);
+      gs.fillStyle = couleurs[i % couleurs.length]; gs.globalAlpha = 0.75;
+      gs.fillRect(-9, -4, 18, 8); gs.restore();
+    }
+  }
+  function ballon(x, y, r, couleur) {
+    gs.save();
+    gs.strokeStyle = "rgba(255,255,255,.8)"; gs.lineWidth = 3;
+    gs.beginPath(); gs.moveTo(x, y + r * 1.2); gs.bezierCurveTo(x - 30, y + r * 2, x + 30, y + r * 2.6, x, y + r * 3.4); gs.stroke();
+    var gr = gs.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.2);
+    gr.addColorStop(0, "#ffffff"); gr.addColorStop(0.25, couleur); gr.addColorStop(1, couleur);
+    gs.fillStyle = gr; gs.beginPath(); gs.ellipse(x, y, r, r * 1.2, 0, 0, Math.PI * 2); gs.fill();
+    gs.beginPath(); gs.moveTo(x - 10, y + r * 1.25); gs.lineTo(x + 10, y + r * 1.25); gs.lineTo(x, y + r * 1.12); gs.closePath(); gs.fill();
+    gs.restore();
+  }
+  function decouper(t, max) {
+    var mots = String(t || "").split(/\s+/), l = [], cur = "";
+    mots.forEach(function (m) { if ((cur + " " + m).trim().length > max) { if (cur) l.push(cur); cur = m; } else cur = (cur + " " + m).trim(); });
+    if (cur) l.push(cur);
+    return l.slice(0, 2);
+  }
+  function dessiner() {
+    var W = 1080, H = studio.format === "statut" ? 1920 : 1350;
+    if (toile.width !== W || toile.height !== H) { toile.width = W; toile.height = H; }
+    var nom = $("st-nom").value.trim(), msg = $("st-message").value.trim();
+    var z = emplacement(W, H), d = studio.decor, bas = z.y + (z.polaroid ? z.h + 230 : z.h);
+    gs.clearRect(0, 0, W, H);
+    var jour = new Date(), dateTxt = jour.getDate() + " " + MOIS[jour.getMonth()] + " " + jour.getFullYear();
+    var promo = (donnees && donnees.titre) || "La promo";
+    if (d === "ballons") {
+      var gr = gs.createLinearGradient(0, 0, W, H); gr.addColorStop(0, "#ff9a9e"); gr.addColorStop(0.5, "#fecfef"); gr.addColorStop(1, "#a18cd1");
+      gs.fillStyle = gr; gs.fillRect(0, 0, W, H);
+      confettis(W, H, 90, ["#ff4d6d", "#ffd166", "#06d6a0", "#118ab2", "#ffffff"], 7);
+      [[0.12, 0.08, "#ff4d6d"], [0.88, 0.07, "#ffd166"], [0.07, 0.6, "#06d6a0"], [0.93, 0.56, "#118ab2"], [0.16, 0.86, "#ef476f"], [0.85, 0.85, "#8338ec"]]
+        .forEach(function (b) { ballon(W * b[0], H * b[1], W * 0.065, b[2]); });
+      ecrire("Joyeux anniversaire", W / 2, z.y - 70, "italic 700 {t} " + SERIF, 104, "#ffffff", W * 0.86, "rgba(91,26,74,.55)");
+      gs.save(); gs.beginPath(); gs.arc(z.x + z.w / 2, z.y + z.h / 2, z.w / 2 + 26, 0, Math.PI * 2); gs.fillStyle = "#ffd166"; gs.fill();
+      gs.beginPath(); gs.arc(z.x + z.w / 2, z.y + z.h / 2, z.w / 2 + 12, 0, Math.PI * 2); gs.fillStyle = "#ffffff"; gs.fill(); gs.restore();
+      photoDans(z);
+      ecrire(nom || "Prénom", W / 2, bas + 150, "800 {t} " + POLICE, 130, "#5b1a4a", W * 0.86);
+      decouper(msg, 30).forEach(function (l, i) { ecrire(l, W / 2, bas + 240 + i * 66, "italic 600 {t} " + SERIF, 56, "#3d1538", W * 0.86); });
+      ecrire(promo + " · " + dateTxt, W / 2, H - 70, "600 {t} " + POLICE, 34, "rgba(61,21,56,.75)", W * 0.9);
+    } else if (d === "or") {
+      var rg = gs.createRadialGradient(W / 2, H * 0.4, 50, W / 2, H * 0.45, H * 0.8); rg.addColorStop(0, "#2d2a26"); rg.addColorStop(1, "#050505");
+      gs.fillStyle = rg; gs.fillRect(0, 0, W, H);
+      var orG = gs.createLinearGradient(0, z.y, W, z.y + z.h); ["#bf953f", "#fcf6ba", "#b38728", "#fbf5b7", "#aa771c"].forEach(function (c, i) { orG.addColorStop(i / 4, c); });
+      var r = hasard(11);
+      for (var i = 0; i < 70; i++) { gs.fillStyle = "rgba(252,246,186," + (0.2 + r() * 0.6) + ")"; var sx = r() * W, sy = r() * H, sr = 2 + r() * 6; gs.beginPath(); gs.moveTo(sx, sy - sr * 2); gs.lineTo(sx + sr / 2, sy); gs.lineTo(sx, sy + sr * 2); gs.lineTo(sx - sr / 2, sy); gs.closePath(); gs.fill(); }
+      if ("letterSpacing" in gs) gs.letterSpacing = "14px";
+      ecrire("HAPPY BIRTHDAY", W / 2, z.y - 90, "700 {t} " + SERIF, 86, orG, W * 0.9);
+      if ("letterSpacing" in gs) gs.letterSpacing = "0px";
+      photoDans(z);
+      gs.strokeStyle = orG; gs.lineWidth = 18; gs.strokeRect(z.x - 9, z.y - 9, z.w + 18, z.h + 18);
+      gs.lineWidth = 4; gs.strokeRect(z.x - 34, z.y - 34, z.w + 68, z.h + 68);
+      ecrire(nom || "Prénom", W / 2, bas + 170, "italic 700 {t} " + SERIF, 140, "#ffffff", W * 0.86, "rgba(191,149,63,.6)");
+      decouper(msg, 32).forEach(function (l, i) { ecrire(l, W / 2, bas + 265 + i * 64, "500 {t} " + POLICE, 50, "#e9d8a6", W * 0.86); });
+      ecrire(promo + " · " + dateTxt, W / 2, H - 70, "600 {t} " + POLICE, 34, "rgba(233,216,166,.7)", W * 0.9);
+    } else if (d === "oscillo") {
+      gs.fillStyle = "#06110d"; gs.fillRect(0, 0, W, H);
+      gs.strokeStyle = "rgba(61,255,162,.10)"; gs.lineWidth = 2;
+      for (var gx = 0; gx <= W; gx += 60) { gs.beginPath(); gs.moveTo(gx, 0); gs.lineTo(gx, H); gs.stroke(); }
+      for (var gy = 0; gy <= H; gy += 60) { gs.beginPath(); gs.moveTo(0, gy); gs.lineTo(W, gy); gs.stroke(); }
+      ecrire("JOYEUX ANNIVERSAIRE", W / 2, z.y - 200, "800 {t} " + "'Roboto Mono', 'Droid Sans Mono', monospace", 66, "#3dffa2", W * 0.9, "rgba(61,255,162,.8)");
+      gs.save(); gs.strokeStyle = "#3dffa2"; gs.lineWidth = 8; gs.shadowColor = "#3dffa2"; gs.shadowBlur = 24; gs.beginPath();
+      for (var t = 0; t <= W; t += 6) { var yy = z.y - 95 + Math.sin(t / W * Math.PI * 6) * 42 * Math.sin(t / W * Math.PI); if (t === 0) gs.moveTo(t, yy); else gs.lineTo(t, yy); }
+      gs.stroke(); gs.restore();
+      photoDans(z);
+      gs.save(); gs.strokeStyle = "#3dffa2"; gs.lineWidth = 6; gs.shadowColor = "#3dffa2"; gs.shadowBlur = 30; chemin(z); gs.stroke(); gs.restore();
+      ecrire(nom || "Prénom", W / 2, bas + 160, "800 {t} " + POLICE, 128, "#f2fff8", W * 0.86, "rgba(61,255,162,.6)");
+      decouper(msg, 30).forEach(function (l, i) { ecrire(l, W / 2, bas + 250 + i * 64, "500 {t} " + POLICE, 52, "#bfe9d6", W * 0.86); });
+      ecrire("T = 1 an · bonne fréquence pour cette nouvelle période !", W / 2, H - 120, "600 {t} 'Roboto Mono', monospace", 32, "#3dffa2", W * 0.9);
+      ecrire(promo + " · " + dateTxt, W / 2, H - 68, "600 {t} " + POLICE, 32, "rgba(191,233,214,.75)", W * 0.9);
+    } else {
+      var pg = gs.createLinearGradient(0, 0, 0, H); pg.addColorStop(0, "#a1c4fd"); pg.addColorStop(1, "#c2e9fb");
+      gs.fillStyle = pg; gs.fillRect(0, 0, W, H);
+      confettis(W, H, 80, ["#ff6b6b", "#feca57", "#48dbfb", "#ff9ff3", "#ffffff"], 23);
+      ecrire("Joyeux anniversaire 🎂", W / 2, z.y - 110, "italic 700 {t} " + SERIF, 92, "#1e3a8a", W * 0.9);
+      var cx = (W - z.cw) / 2, cy = z.y - 36, ch = z.h + 72 + 160;
+      gs.save(); gs.translate(W / 2, cy + ch / 2); gs.rotate(-0.045); gs.translate(-W / 2, -(cy + ch / 2));
+      gs.shadowColor = "rgba(0,0,0,.25)"; gs.shadowBlur = 30; gs.shadowOffsetY = 12; gs.fillStyle = "#ffffff"; gs.fillRect(cx, cy, z.cw, ch);
+      gs.shadowColor = "transparent";
+      photoDans(z);
+      ecrire(nom || "Prénom", W / 2, z.y + z.h + 120, "italic 700 {t} " + SERIF, 104, "#222222", z.cw - 60);
+      gs.fillStyle = "rgba(255,240,170,.75)"; gs.save(); gs.translate(cx + 40, cy); gs.rotate(-0.5); gs.fillRect(-70, -22, 160, 46); gs.restore();
+      gs.save(); gs.translate(cx + z.cw - 40, cy); gs.rotate(0.5); gs.fillRect(-90, -22, 160, 46); gs.restore();
+      gs.restore();
+      decouper(msg, 30).forEach(function (l, i) { ecrire(l, W / 2, cy + ch + 120 + i * 64, "italic 600 {t} " + SERIF, 56, "#1e3a8a", W * 0.86); });
+      ecrire(promo + " · " + dateTxt, W / 2, H - 70, "600 {t} " + POLICE, 34, "rgba(30,58,138,.7)", W * 0.9);
+    }
+  }
+  function chargerPhotoStudio(src, revoquer) {
+    var im = new Image();
+    im.onload = function () { studio.img = im; studio.zoom = 1; studio.dx = 0; studio.dy = 0; $("st-zoom").value = 1; dessiner(); if (revoquer) URL.revokeObjectURL(src); };
+    im.src = src;
+  }
+  $("st-photo").onchange = function () { var f = this.files && this.files[0]; if (f) chargerPhotoStudio(URL.createObjectURL(f), true); };
+  $("st-zoom").oninput = function () { studio.zoom = +this.value; dessiner(); };
+  $("st-nom").oninput = dessiner; $("st-message").oninput = dessiner;
+  var tirage = null;
+  toile.addEventListener("pointerdown", function (e) { tirage = { x: e.clientX, y: e.clientY, dx: studio.dx, dy: studio.dy }; try { toile.setPointerCapture(e.pointerId); } catch (x) {} });
+  toile.addEventListener("pointermove", function (e) {
+    if (!tirage) return;
+    var k = toile.width / toile.clientWidth;
+    studio.dx = tirage.dx + (e.clientX - tirage.x) * k; studio.dy = tirage.dy + (e.clientY - tirage.y) * k;
+    dessiner();
+  });
+  ["pointerup", "pointercancel"].forEach(function (t) { toile.addEventListener(t, function () { tirage = null; }); });
+  $("st-enregistrer").onclick = function () {
+    var nom = $("st-nom").value.trim() || "star";
+    toile.toBlob(function (b) {
+      if (!b) { $("st-etat").textContent = "❌ L'image n'a pas pu être créée."; return; }
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(b); a.download = "anniversaire-" + nom.replace(/[^\wÀ-ÿ-]+/g, "-") + ".jpg";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+      $("st-etat").textContent = "✅ Image enregistrée dans vos téléchargements : mettez-la en statut !";
+      if (window.amphiFete) window.amphiFete();
+    }, "image/jpeg", 0.92);
+  };
+  function remplirStudioStars(tous) {
+    var z = $("st-stars"); z.textContent = "";
+    var avec = tous.filter(function (x) { return x.photos && x.photos.length; });
+    z.hidden = !avec.length;
+    avec.forEach(function (x) {
+      x.photos.forEach(function (p, i) {
+        var b = el("button"); b.type = "button";
+        var im = el("img"); im.src = photoUrl(p); im.alt = ""; b.appendChild(im);
+        b.appendChild(document.createTextNode(x.nom + (x.photos.length > 1 ? " " + (i + 1) : "")));
+        b.onclick = function () { $("st-nom").value = x.nom; chargerPhotoStudio(photoUrl(p)); };
+        z.appendChild(b);
+      });
+    });
+  }
+  function studioPour(x) {
+    $("st-nom").value = x.nom;
+    if (x.photos && x.photos.length) chargerPhotoStudio(photoUrl(x.photos[0])); else dessiner();
+    $("studio").scrollIntoView({ behavior: "smooth" });
+  }
+  puces($("st-decors"), DECORS, "decor");
+  puces($("st-formats"), FORMATS, "format");
+  dessiner();
+
+  // ── Événements de la promo ──
+  function rendreEvenements() {
+    var z = $("evenements"); z.textContent = "";
+    var auj = new Date(); auj.setHours(0, 0, 0, 0);
+    var part = (echanges && echanges.participations) || {};
+    var liste = ((donnees && donnees.evenements) || []).filter(pourMoi).map(function (e) {
+      var p = String(e.date || "").split("-"); var d = new Date(+p[0], +p[1] - 1, +p[2]);
+      return { e: e, d: d, j: Math.round((d - auj) / 86400000) };
+    }).filter(function (x) { return x.j >= 0; }).sort(function (a, b) { return a.d - b.d; });
+    liste.slice(0, 4).forEach(function (x) {
+      var c = el("div", "carte evenement");
+      if (x.e.image) { var im = el("img"); im.src = lienFichier(x.e.image, "affiche.jpg", "image/jpeg"); im.alt = ""; c.appendChild(im); }
+      var corps = el("div", "corps");
+      var tete = el("div", "ev-tete"); tete.appendChild(el("p", "etiquette", "🎉 Événement")); tete.appendChild(el("b", "j", x.j === 0 ? "Aujourd'hui" : x.j === 1 ? "Demain" : "J-" + x.j));
+      corps.appendChild(tete);
+      corps.appendChild(el("h3", null, x.e.titre));
+      corps.appendChild(el("p", "quand", dateLisible(cle(x.d)) + (x.e.heure ? " · " + x.e.heure : "")));
+      if (x.e.texte) corps.appendChild(el("p", "aide", x.e.texte));
+      var p = part[x.e.id] || { n: 0, moi: false };
+      var b = el("button", "bouton" + (p.moi ? " second" : ""), (p.moi ? "✅ J'y serai" : "🙋 J'y serai") + " · " + p.n); b.type = "button";
+      b.onclick = function () {
+        b.disabled = true;
+        fetch("/evenement/" + x.e.id + "/viens", { method: "POST" }).then(function (r) { return r.json(); }).then(function (r) {
+          if (r.ok && r.moi && window.amphiFete) window.amphiFete();
+          return chargerEchanges();
+        }).catch(function () {}).then(function () { b.disabled = false; });
+      };
+      corps.appendChild(b);
+      c.appendChild(corps);
+      z.appendChild(c);
+    });
+  }
 
   // ── Calculateur de moyenne (reste sur le téléphone) ──
   var lignes = [];
