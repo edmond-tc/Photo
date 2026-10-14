@@ -608,25 +608,27 @@ class AmphiService : Service() {
 
     private fun supprimerGroupe() {
         val m = p2p ?: return
-        try { attendre { m.removeGroup(canalP2p, it) } } catch (_: Exception) {}
+        val c = canalP2p ?: return
+        try { attendre { m.removeGroup(c, it) } } catch (_: Exception) {}
     }
 
     @SuppressLint("MissingPermission")
     private fun groupeActuel(): WifiP2pGroup? {
         val m = gestionnaire() ?: return null
+        val c = canalP2p ?: return null
         val g = AtomicReference<WifiP2pGroup?>(null)
         val fini = CountDownLatch(1)
         try {
-            m.requestGroupInfo(canalP2p) { groupe -> g.set(groupe); fini.countDown() }
+            m.requestGroupInfo(c) { groupe -> g.set(groupe); fini.countDown() }
             fini.await(5, TimeUnit.SECONDS)
         } catch (_: Exception) {}
         return g.get()
     }
 
-    private val verrouWifi = Any()
+    private val verrouCreation = Any()
 
     /** Un seul essai à la fois ; la page des étudiants n'attend jamais après. */
-    private fun creerWifi(nomVoulu: String, mdpVoulu: String): JSONObject = synchronized(verrouWifi) { creerWifiMaintenant(nomVoulu, mdpVoulu) }
+    private fun creerWifi(nomVoulu: String, mdpVoulu: String): JSONObject = synchronized(verrouCreation) { creerWifiMaintenant(nomVoulu, mdpVoulu) }
 
     @SuppressLint("MissingPermission")
     private fun creerWifiMaintenant(nomVoulu: String, mdpVoulu: String): JSONObject {
@@ -634,6 +636,7 @@ class AmphiService : Service() {
         if (wifi != null && !wifi.isWifiEnabled) return JSONObject().put("erreur", "wifi_eteint")
         if (!autorise()) return JSONObject().put("erreur", "autorisation")
         val m = gestionnaire() ?: return JSONObject().put("erreur", "Ce téléphone ne sait pas créer de Wi-Fi Direct.")
+        val canal = canalP2p ?: return JSONObject().put("erreur", "Ce téléphone ne sait pas créer de Wi-Fi Direct.")
         val nomRetenu = nomVoulu.ifBlank { prefs().getString("wifi_nom", "") ?: "" }
         val nom = nomDuReseau(nomRetenu)
         val mdp = mdpVoulu.ifBlank { prefs().getString("wifi_mdp", "") ?: "" }.trim()
@@ -646,7 +649,7 @@ class AmphiService : Service() {
             .build()
         var raison: Int? = null
         for (essai in 0..1) {
-            raison = attendre { m.createGroup(canalP2p, config, it) }
+            raison = attendre { m.createGroup(canal, config, it) }
             if (raison == -1) break
             supprimerGroupe()
             Thread.sleep(2000)
